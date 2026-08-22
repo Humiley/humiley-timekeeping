@@ -202,6 +202,37 @@ engineers are who fill them in.
 
 ---
 
+## Holds, assumptions, and the interdisciplinary check
+
+Three things the module described but did not enforce.
+
+**The check now has to exist, and has to be somebody else.** `checkedBy` was a stamped field: a
+drawing could reach IFC with it blank, or naming the person who drew it, provided one other name
+appeared as the approver. Checking and approving are separate acts — the checker confirms the
+content, the approver authorises the release — and ISO 9001 §8.3.4 asks for the verification, not
+only the authorisation. An external issue (IFA / IFC / IFT / IFP / as-built) is now refused unless
+a checker is recorded and differs from the preparer. IFR is untouched: a one-engineer discipline
+must still be able to circulate a check print.
+
+**Holds and assumptions are a register, not a text box.** They are different in kind and the
+module now treats them differently:
+
+| | what it is | what it does |
+|---|---|---|
+| **Assumption** | a number the design proceeded on because nobody had the real one | declared, listed, carried on the face of the document — does **not** block |
+| **Hold** | an open question the design cannot answer | **blocks every external issue** of the deliverable it sits on |
+
+A hold may sit on a drawing through every internal circulation. It must not reach somebody who
+will build from it — an assumption that shipped and was never revisited is how a consultancy
+inherits a liability it never priced. Closing a hold releases documents, so it is an e-signed act,
+and the engineer who raised it does not close it alone.
+
+**IDC is a matrix of signatures.** "IDC complete on every discipline" was a line on the Detail gate
+checklist with nothing behind it. Each `eng_idc` row is one discipline signing that it checked its
+own interfaces on one deliverable, and the engineer who prepared that deliverable cannot sign its
+IDC. The matrix shows a cell per deliverable × discipline; a blank cell is not missing paperwork,
+it is a check nobody has done.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value

@@ -4984,6 +4984,78 @@ class Handler(BaseHTTPRequestHandler):
                     return ("The engineer who prepared a document does not approve their own issue "
                             "of it. Record the checker / approver, or keep this issue internal "
                             "(IFR) until somebody else can sign it.")
+                # The CHECK is a separate act from the approval, and it was being recorded without
+                # ever being required. `checkedBy` was a stamped field and nothing more: a drawing
+                # could reach IFC with it blank, or naming the person who drew it, provided one
+                # other name appeared as approver. Check confirms the technical content; approval
+                # authorises the release. ISO 9001 8.3.4 asks for the verification, not only the
+                # authorisation, and a consultancy is audited on being able to show who checked.
+                chk = rec.get("checkedBy")
+                if not str(chk or "").strip():
+                    return ("Record who checked this document before issuing it outside the "
+                            "office. Checking and approving are separate acts — the checker "
+                            "confirms the content, the approver authorises the release. Keep it "
+                            "internal (IFR) until it has been checked.")
+                if prep and (self._pm_same_person(chk, prep)
+                             or str(chk).strip().lower() == str(prep).strip().lower()):
+                    return ("The engineer who prepared this document cannot also be its checker. "
+                            "An independent check is the point of the check.")
+                # A HOLD is an open question the design is waiting on. It may sit on a drawing all
+                # the way through internal circulation, but it must not leave the office inside a
+                # document somebody will build from — that is the assumption-that-shipped, which is
+                # the classic way a design consultancy inherits a liability it never priced.
+                # Assumptions do NOT block: they are declared, listed and carried on the document.
+                # The MDR already had a hold flag on the deliverable — a chip in the register that
+                # displayed and blocked nothing. Leaving it beside a register that DOES block would
+                # be two places to record the same fact, one of which quietly offers no protection:
+                # whichever an engineer reaches for, they would believe they were covered. Both are
+                # honoured here, so the flag now means what its name always implied.
+                _dhold = str(deliv.get("hold") or "").strip().lower() in ("yes", "true", "on hold")
+                if _dhold:
+                    return ("This deliverable is flagged On hold in the register%s. Clear the hold "
+                            "or issue it internally (IFR)." %
+                            (" — " + str(deliv.get("holdReason")).strip()
+                             if str(deliv.get("holdReason") or "").strip() else ""))
+                _open = [h for h in db.list_collection("eng_holds")
+                         if str(h.get("kind") or "hold").strip().lower() == "hold"
+                         and str(h.get("status") or "open").strip().lower() in ("open", "raised")
+                         and (h.get("deliverableId") == rec.get("deliverableId")
+                              or rec.get("deliverableId") in (h.get("deliverableIds") or []))]
+                if _open:
+                    _refs = ", ".join(str(h.get("ref") or h.get("title") or "?") for h in _open[:4])
+                    return ("This deliverable still carries %d open HOLD(s) — %s. Close them, or "
+                            "downgrade the issue to IFR while the answer is outstanding. A hold "
+                            "that leaves the office inside an issued document is an assumption "
+                            "nobody agreed to." % (len(_open), _refs))
+            return None
+
+        if coll == "eng_idc":
+            if t not in ("clear", "commented", "rejected", "checked"):
+                return None
+            # An interdisciplinary check is worth exactly as much as its independence. The gate
+            # criterion "IDC complete on every discipline" used to be a sentence somebody ticked;
+            # these records are what it is now computed from, so the same rule that protects the
+            # main check has to protect them or the criterion is decorative again.
+            deliv = next((d for d in db.list_collection("eng_deliverables")
+                          if d.get("id") == rec.get("deliverableId")), {})
+            _prep = deliv.get("preparedBy") or rec.get("preparedBy")
+            if _prep and (self._pm_same_person(_prep, u.get("name"))
+                          or str(_prep).strip().lower() == str(u.get("name") or "").strip().lower()):
+                return ("You prepared this deliverable, so you cannot sign the interdisciplinary "
+                        "check on it. Ask the other discipline to check their own interface.")
+            return None
+
+        if coll == "eng_holds":
+            if t not in ("closed", "confirmed", "superseded", "void"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("A hold is closed by the Design Manager or Lead Engineer named on the "
+                        "commission — closing one releases a document for issue.")
+            _raised = rec.get("raisedBy") or rec.get("createdBy")
+            if _raised and (self._pm_same_person(_raised, u.get("name"))
+                            or str(_raised).strip().lower() == str(u.get("name") or "").strip().lower()):
+                return ("The engineer who raised a hold does not close it alone. Somebody else "
+                        "confirms the answer that resolves it.")
             return None
 
         if coll == "eng_stages":
@@ -6583,6 +6655,16 @@ class Handler(BaseHTTPRequestHandler):
             if coll == "eng_reviews" and set_status in ("Approved", "Closed"):
                 item["approvedBy"] = signer_name
                 item.setdefault("approvedOn", time.strftime("%Y-%m-%d"))
+            # The interdisciplinary check: one signature per discipline, per deliverable. The gate
+            # criterion "IDC complete on every discipline" is counted from these, so the name on
+            # them has to come from the session like every other engineering signature.
+            if coll == "eng_idc" and set_status in ("Clear", "Commented", "Rejected", "Checked"):
+                item["checkedBy"] = signer_name
+                item.setdefault("checkedOn", time.strftime("%Y-%m-%d"))
+            # Closing a hold releases documents for issue, so it is a signed act, not a status edit.
+            if coll == "eng_holds" and set_status in ("Closed", "Confirmed", "Superseded", "Void"):
+                item["closedBy"] = signer_name
+                item.setdefault("closedOn", time.strftime("%Y-%m-%d"))
             if coll == "eng_comments" and set_status in ("Closed", "Resolved"):
                 item["closedBy"] = signer_name
                 item.setdefault("closedOn", time.strftime("%Y-%m-%d"))
@@ -8421,9 +8503,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -9601,6 +9683,15 @@ class Handler(BaseHTTPRequestHandler):
                        "gateDecision", "decidedBy", "decidedOn", "approvedBy", "approvedOn",
                        "closedBy", "closedOn", "supersededBy", "supersededOn"):
                 item.pop(_k, None)
+            # `checkedBy` means two different things and only one of them is a signature. On a
+            # REVISION it is a typed record — the engineer names who checked the drawing, and the
+            # control is that the name exists and is not the preparer's. On an IDC entry it IS the
+            # signature, applied by the discipline doing the checking. Stripping it everywhere
+            # would delete the field the revision rule requires; stripping it nowhere would let a
+            # browser sign an interdisciplinary check nobody performed.
+            if name == "eng_idc":
+                for _k in ("checkedBy", "checkedOn"):
+                    item.pop(_k, None)
         # A chat message says who said it, so authorship is stamped from the SESSION and the client's
         # version is discarded — setdefault would let a browser claim to be somebody else. Same for the
         # time: a client-supplied ts could backdate a message into the middle of an argument. Posting
@@ -15704,6 +15795,11 @@ class Handler(BaseHTTPRequestHandler):
                 "eng_reviews": ("signatures", "approvedBy", "approvedOn"),
                 "eng_comments": ("signatures", "closedBy", "closedOn"),
                 "eng_transmittals": ("signatures", "issuedBy", "issuedOn"),
+                # An IDC entry is a signature by a named discipline checker; a hold is closed by
+                # whoever answered the question. Both are evidence somebody stands behind, so both
+                # freeze the same way every other signed engineering record does.
+                "eng_idc": ("signatures", "checkedBy", "checkedOn"),
+                "eng_holds": ("signatures", "closedBy", "closedOn"),
             }
             if name in _SIG_KEYS:
                 if existing:
