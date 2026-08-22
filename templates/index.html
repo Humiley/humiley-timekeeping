@@ -5794,7 +5794,11 @@ function _applyRole(role) {
   const avaEl    = document.getElementById('sidebar-ava');
   const titleText = (TK.user && TK.user.title) || (isManager ? 'Managing Director' : 'Staff');
   if (badge)    { badge.textContent = _LEVEL_LABEL[_userLevel] || (isManager ? 'Manager' : 'Staff'); badge.className = 'role-badge ' + (isManager ? 'mgr' : 'staff'); }
-  if (roleText) roleText.firstChild.textContent = titleText;
+  // Assign to the ELEMENT, not to its existing text node. `firstChild.textContent = x` mutates a
+  // text node in place, which is a characterData mutation — and the VN observer watches childList
+  // only, so it never fires and the job title stays English on a Vietnamese screen however complete
+  // _VI is. Setting element.textContent replaces the child, which the observer does see.
+  if (roleText) roleText.textContent = titleText;
   if (nameEl && TK.user && TK.user.name) nameEl.textContent = TK.user.name;
   if (avaEl && TK.user) avaEl.textContent = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
   try { _tkPaintUserAva(); } catch (e) {}
@@ -36934,6 +36938,383 @@ const _VI = {
   "Reset to standard": "Khôi phục bộ chuẩn",
   "New condition": "Điều kiện mới",
   "Type the condition here.": "Nhập nội dung điều kiện tại đây.",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "Checking for sample data…": "Đang kiểm tra dữ liệu mẫu…",
+  "Sample data shipped with the portal": "Dữ liệu mẫu đi kèm cổng thông tin",
+  "None of the shipped sample is still in this database. Nothing to remove.": "Không còn dữ liệu mẫu nào trong cơ sở dữ liệu này. Không có gì để xoá.",
+  "These rows match the sample org the portal ships with, on id AND name AND email. Removing them deletes their attendance and leave with them — every row is snapshotted into the audit entry first, so it can be recovered.": "Các dòng này khớp với tổ chức mẫu đi kèm cổng, theo CẢ mã, họ tên VÀ email. Xoá chúng sẽ xoá luôn dữ liệu chấm công và nghỉ phép của họ — mỗi dòng đều được chụp lại vào nhật ký kiểm toán trước, nên vẫn khôi phục được.",
+  "Attendance records": "Bản ghi chấm công",
+  "Leave requests": "Đơn nghỉ phép",
+  "Zones": "Vùng GPS",
+  "Left alone": "Giữ nguyên",
+  "I have a current backup of this database.": "Tôi đã có bản sao lưu mới nhất của cơ sở dữ liệu này.",
+  "Remove sample data": "Xoá dữ liệu mẫu",
+  "to enable.": "để bật.",
+  "Confirm a current backup exists first.": "Hãy xác nhận đã có bản sao lưu mới nhất trước.",
+  "Remove the shipped sample data? Every removed row is snapshotted into the audit log and can be recovered from there.": "Xoá dữ liệu mẫu đi kèm? Mỗi dòng bị xoá đều được chụp lại vào nhật ký kiểm toán và có thể khôi phục từ đó.",
+  "attendance": "chấm công",
+  "leave": "nghỉ phép",
+  "zone(s)": "vùng GPS",
+  "CPI needs both actual cost and earned value": "CPI cần có cả chi phí thực tế và giá trị thu được",
+  "SPI needs a baseline or a time-phased cost plan": "SPI cần có mốc chuẩn hoặc kế hoạch chi phí phân bổ theo thời gian",
+  "Averages cover": "Số trung bình tính trên",
+  "projects for CPI": "dự án cho CPI",
+  "for SPI": "cho SPI",
+  "No project has recorded enough to measure CPI or SPI yet.": "Chưa dự án nào ghi nhận đủ dữ liệu để tính CPI hoặc SPI.",
+  "Some figures here are hidden by your access level, so any total that depends on them is incomplete.": "Một số số liệu ở đây bị ẩn theo cấp truy cập của bạn, nên mọi tổng số phụ thuộc vào chúng đều chưa đầy đủ.",
+  "Hidden": "Đang ẩn",
+  "No item in this package has both a start and a finish, so there is nothing to measure progress against yet.": "Chưa hạng mục nào trong gói này có đủ cả ngày bắt đầu và ngày kết thúc, nên chưa có căn cứ để đo tiến độ.",
+  "Planned and Variance are measured on": "Kế hoạch và Chênh lệch được tính trên",
+  "of the package by weight — the rest has no dates.": "của gói theo trọng số — phần còn lại chưa có ngày.",
+  "Mixed weighting": "Trọng số không đồng nhất",
+  "items carry a value in ₫; the rest fall back to duration in days. Those two are not the same unit, so the day-weighted items count for almost nothing in these figures. Give every item a value, or none.": "hạng mục có giá trị bằng ₫; phần còn lại lấy theo số ngày thực hiện. Hai đại lượng này khác đơn vị, nên các hạng mục tính theo ngày gần như không có trọng lượng trong các số liệu này. Hãy nhập giá trị cho mọi hạng mục, hoặc không hạng mục nào.",
+  "One date only": "Chỉ có một mốc ngày",
+  "Hide the date columns and give the width to the chart": "Ẩn các cột ngày và dành chỗ cho biểu đồ",
+  "Show columns": "Hiện cột",
+  "More chart": "Mở rộng biểu đồ",
+  "from sub-tasks": "từ công việc con",
+  "rolled up": "tổng hợp lên",
+  "No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.": "Chưa có dự báo: dự báo chi phí khi hoàn thành cần giá trị thu được, mà dự án này chưa ghi nhận giá trị nào.",
+  "consultant time and expenses": "thời gian và chi phí của tư vấn",
+  "effective day rate": "đơn giá ngày thực tế",
+  "Not stated": "Chưa nêu",
+  "As low as": "Thấp nhất",
+  "Quoted": "Đã chào giá",
+  "As high as": "Cao nhất",
+  "Maturity": "Mức độ hoàn thiện",
+  "Accuracy not stated": "Chưa nêu cấp độ chính xác",
+  "Could not save the accuracy class": "Không lưu được cấp độ chính xác",
+  "Click to write": "Bấm để nhập",
+  "not stated": "chưa nêu",
+  "Basis of estimate": "Cơ sở lập dự toán",
+  "A price is only meaningful against a scope. Whatever a client assumes was included, was.": "Một mức giá chỉ có ý nghĩa khi gắn với phạm vi. Những gì khách hàng hiểu là đã bao gồm thì coi như đã bao gồm.",
+  "What the money is spent on": "Tiền được chi vào đâu",
+  "Of the cost base, not the selling price — so it does not move when somebody edits the margin.": "Tính trên giá thành, không phải giá bán — nên không thay đổi khi có người sửa tỷ suất lợi nhuận.",
+  "Per": "Trên mỗi",
+  "a total cannot be compared with the last job; a rate can.": "một con số tổng thì không so được với công trình trước; một đơn giá thì so được.",
+  "No benchmark quantity set, so this tender cannot be compared with any other. Set one in Assumptions — floor area, airflow, units — and every figure here becomes a rate.": "Chưa đặt khối lượng chuẩn để đối chiếu, nên hồ sơ thầu này không so sánh được với hồ sơ nào khác. Hãy đặt một giá trị trong mục Giả định — diện tích sàn, lưu lượng gió, số bộ — và mọi con số ở đây sẽ thành đơn giá.",
+  "Budget (cost base)": "Ngân sách (giá thành)",
+  "Lines": "Số dòng",
+  "Profit held back": "Lợi nhuận giữ lại",
+  "Recoverable VAT excluded": "Không gồm VAT được khấu trừ",
+  "What the job is funded for. The selling price and the profit are deliberately not here — a project that spends its profit has not stayed within budget, it has consumed the reason the job was taken.": "Số tiền công trình được cấp để thực hiện. Giá bán và lợi nhuận cố ý không nằm ở đây — một dự án tiêu vào lợi nhuận không phải là giữ được ngân sách, mà là ăn mất lý do nhận việc.",
+  "Nothing priced yet, so there is nothing to hand over.": "Chưa định giá gì nên chưa có gì để chuyển giao.",
+  "Already the budget for": "Đã là ngân sách của",
+  "Re-baselining a live job is a decision, not a re-click — raise a revised tender instead.": "Đặt lại mốc chuẩn cho một công trình đang chạy là một quyết định, không phải bấm lại — hãy lập hồ sơ thầu sửa đổi.",
+  "Choose the project this job becomes": "Chọn dự án mà công trình này sẽ trở thành",
+  "Set as project budget": "Đặt làm ngân sách dự án",
+  "Once only. Approved or won tenders, management only.": "Chỉ một lần. Chỉ với hồ sơ đã duyệt hoặc trúng thầu, và chỉ ban quản lý.",
+  "A tender becomes a budget once it is approved or won.": "Hồ sơ thầu trở thành ngân sách khi được duyệt hoặc trúng thầu.",
+  "It can only be done once. Re-baselining a live job afterwards needs a revised tender.": "Chỉ làm được một lần. Muốn đặt lại mốc chuẩn cho công trình đang chạy sau đó thì phải lập hồ sơ thầu sửa đổi.",
+  "Consultant days": "Số ngày công tư vấn",
+  "Fee": "Phí",
+  "Effective day rate": "Đơn giá ngày thực tế",
+  "Declined by the client and excluded from the quotation": "Khách hàng từ chối và đã loại khỏi báo giá",
+  "no effort priced": "chưa định giá khối lượng công việc",
+  "travel": "đi lại",
+  "hotel": "lưu trú",
+  "per diem": "công tác phí khoán",
+  "No work packages yet. A services tender is priced one package at a time — scope, deliverables, and the days behind them.": "Chưa có gói công việc nào. Hồ sơ thầu dịch vụ được định giá theo từng gói — phạm vi, sản phẩm bàn giao và số ngày công đứng sau chúng.",
+  "Add work package": "Thêm gói công việc",
+  "Signed pay runs": "Bảng lương đã ký",
+  "from the finalised pay run(s) for this period, as signed.": "lấy từ (các) bảng lương đã chốt của kỳ này, đúng như đã ký.",
+  "run(s)": "bảng lương",
+  "Cost model, not a payroll": "Mô hình chi phí, không phải bảng lương",
+  "no finalised pay run covers this period, so these figures are computed from today’s employee records. They exclude overtime, unpaid leave and manual adjustments, and are not what anybody was paid.": "không có bảng lương đã chốt nào bao trùm kỳ này, nên các số liệu được tính từ hồ sơ nhân viên hiện tại. Chúng không gồm tiền lương làm thêm giờ, nghỉ không lương và các điều chỉnh thủ công, và không phải là số tiền đã trả cho bất kỳ ai.",
+  "Not the whole company": "Không phải toàn công ty",
+  "active employees appear in the signed run(s) for this period. The totals below are for those people only.": "nhân viên đang làm việc có mặt trong (các) bảng lương đã ký của kỳ này. Các tổng số bên dưới chỉ tính cho những người đó.",
+  "Overlapping pay runs": "Bảng lương trùng kỳ",
+  "the same person appears in more than one finalised run for this period, so only their first line is counted here": "cùng một người xuất hiện trong nhiều hơn một bảng lương đã chốt của kỳ này, nên ở đây chỉ tính dòng đầu tiên của họ",
+  "The payroll journal refuses this rather than choosing which run wins. Cancel or supersede the duplicate.": "Bút toán tiền lương từ chối trường hợp này thay vì tự chọn bảng lương nào thắng. Hãy huỷ hoặc thay thế bảng lương trùng.",
+  "line(s) predate the frozen-payslip snapshot": "dòng có trước thời điểm chốt ảnh phiếu lương",
+  "their gross, net and employer cost are exact, but the statutory split and the P1/P2 breakdown were never stored for them, so the doughnuts below understate those.": "lương gộp, thực lãnh và chi phí của người sử dụng lao động là chính xác, nhưng phần tách các khoản đóng bắt buộc và cơ cấu P1/P2 chưa từng được lưu cho họ, nên các biểu đồ bên dưới đang phản ánh thiếu phần đó.",
+  "employee(s) have no salary on record and are NOT in these totals": "nhân viên chưa có mức lương trên hồ sơ và KHÔNG nằm trong các tổng số này",
+  "employee(s) could not be costed and are not in these totals.": "nhân viên không tính được chi phí và không nằm trong các tổng số này.",
+  "Whether the measurements this factory has signed can be defended — the instruments, the people, and which units got a given part": "Liệu các phép đo nhà máy đã ký có bảo vệ được hay không — thiết bị đo, con người, và những sản phẩm nào đã dùng một chi tiết cụ thể",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "Delete zone": "Xoá vùng GPS",
+  "Advance stage": "Chuyển sang bước sau",
+  "View details": "Xem chi tiết",
+  "Approval routing": "Định tuyến phê duyệt",
+  "Click to enlarge": "Bấm để phóng to",
+  "Download attachment": "Tải tệp đính kèm",
+  "Approved overtime — Labour Code Art. 98": "Giờ làm thêm đã duyệt — Bộ luật Lao động Điều 98",
+  "Linked travel request": "Đề nghị công tác liên quan",
+  "Read hd@humiley.com and auto-extract new supplier invoices": "Đọc hòm thư hd@humiley.com và tự động bóc tách hoá đơn nhà cung cấp mới",
+  "Fill the amounts of the notification-only invoices in one screen": "Điền số tiền cho các hoá đơn chỉ có email thông báo, trên cùng một màn hình",
+  "Matched to a payment request": "Đã khớp với một đề nghị thanh toán",
+  "Same invoice no + tax code appears more than once": "Cùng số hoá đơn và mã số thuế xuất hiện nhiều hơn một lần",
+  "Admins always have every app": "Quản trị viên luôn có tất cả ứng dụng",
+  "Mark Won": "Đánh dấu Thắng",
+  "Mark Lost": "Đánh dấu Mất",
+  "Create a PMC project from this won deal": "Tạo dự án PMC từ cơ hội đã thắng này",
+  "Set priority": "Đặt mức ưu tiên",
+  "Convert to deal": "Chuyển thành cơ hội",
+  "Filter by salesman": "Lọc theo nhân viên kinh doanh",
+  "Filter by product / service type": "Lọc theo loại sản phẩm / dịch vụ",
+  "Import from Excel / CSV": "Nhập từ Excel / CSV",
+  "Export to Excel": "Xuất ra Excel",
+  "Download a blank Excel template": "Tải mẫu Excel trống",
+  "Import schedule from MS Project XML or Excel/CSV": "Nhập tiến độ từ MS Project XML hoặc Excel/CSV",
+  "Open the project SharePoint document library": "Mở thư viện tài liệu SharePoint của dự án",
+  "Weekly progress report (PDF)": "Báo cáo tiến độ tuần (PDF)",
+  "Monthly progress report (PDF)": "Báo cáo tiến độ tháng (PDF)",
+  "Project Closeout Report (PDF)": "Báo cáo kết thúc dự án (PDF)",
+  "Export this month to a branded PDF": "Xuất tháng này ra PDF theo nhận diện thương hiệu",
+  "Unassigned": "Chưa phân công",
+  "Filter the schedule by period": "Lọc tiến độ theo kỳ",
+  "From day": "Từ ngày",
+  "To day": "Đến ngày",
+  "Clear day range": "Xoá khoảng ngày",
+  "Critical path": "Đường găng",
+  "Record the disposition, then sign the verification of closure": "Ghi hướng xử lý, sau đó ký xác minh đóng hồ sơ",
+  "Download a PnP PowerShell script that creates every empty folder in SharePoint": "Tải script PnP PowerShell tạo toàn bộ thư mục rỗng trên SharePoint",
+  "Create the folders directly in SharePoint via Microsoft 365": "Tạo thư mục trực tiếp trên SharePoint qua Microsoft 365",
+  "Upload a file straight into the project SharePoint folder": "Tải tệp thẳng vào thư mục SharePoint của dự án",
+  "Copy the full folder list": "Sao chép toàn bộ danh sách thư mục",
+  "Design & Development Plan (ISO 9001 8.3.2)": "Kế hoạch thiết kế và phát triển (ISO 9001 8.3.2)",
+  "Design status report": "Báo cáo tình trạng thiết kế",
+  "Mandatory": "Bắt buộc",
+  "A later revision is drafted but not yet issued": "Đã soạn phiên bản mới hơn nhưng chưa phát hành",
+  "Export the register on the letterhead": "Xuất sổ đăng ký trên giấy tiêu đề công ty",
+  "Download as CSV for Excel": "Tải về dạng CSV cho Excel",
+  "Create the typical deliverable set for a stage": "Tạo bộ sản phẩm điển hình cho một giai đoạn",
+  "taken from the deliverable — this issue predates per-revision stages": "lấy theo sản phẩm — lần phát hành này có trước khi ghi giai đoạn theo từng phiên bản",
+  "Signed records cannot be edited — issue a superseding revision": "Hồ sơ đã ký không sửa được — hãy phát hành phiên bản thay thế",
+  "a newer edition has been published — moving to it needs a change": "đã có ấn bản mới hơn — chuyển sang dùng nó phải lập yêu cầu thay đổi",
+  "the originating discipline": "bộ môn phát sinh",
+  "Download a PnP PowerShell script that creates every folder": "Tải script PnP PowerShell tạo toàn bộ thư mục",
+  "Create the folders directly in SharePoint": "Tạo thư mục trực tiếp trên SharePoint",
+  "A printable card with a scannable code beside every remaining step, so sign-offs happen at the machine.": "Phiếu in được, có mã quét bên cạnh từng bước còn lại, để việc ký duyệt diễn ra ngay tại máy.",
+  "Re-read the route from the standard after a specification change. Signatures and readings are carried forward.": "Đọc lại lộ trình từ tiêu chuẩn sau khi thay đổi quy cách. Chữ ký và số liệu đo được giữ nguyên.",
+  "Record that this step did not pass. This is signed too — who decided a unit failed is exactly what an investigation needs.": "Ghi nhận bước này không đạt. Việc này cũng phải ký — ai kết luận một sản phẩm không đạt chính là điều một cuộc điều tra cần biết.",
+  "This line does not say where the material came from": "Dòng này chưa nêu vật tư lấy từ đâu",
+  "Toggle menu": "Bật/tắt menu",
+  "Search employees and records": "Tìm nhân viên và hồ sơ",
+  "Search results": "Kết quả tìm kiếm",
+  "Find an app": "Tìm ứng dụng",
+  "Search name or department": "Tìm theo tên hoặc phòng ban",
+  "Search employee": "Tìm nhân viên",
+  "Assign": "Cấp phát",
+  "signature": "chữ ký",
+  "Preview": "Xem trước",
+  "Project image": "Hình ảnh dự án",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "Commission not found.": "Không tìm thấy hợp đồng thiết kế.",
+  "Back to Design Projects": "Quay lại Dự án thiết kế",
+  "You are not on this design commission.": "Bạn không thuộc hợp đồng thiết kế này.",
+  "Open →": "Mở →",
+  "Nothing outstanding — no overdue issues, open comments, unanswered queries or pending changes.": "Không còn tồn đọng — không có phát hành quá hạn, ý kiến chưa đóng, câu hỏi chưa trả lời hay thay đổi đang chờ.",
+  "Conditions carried out of the gate:": "Điều kiện chuyển tiếp khỏi cổng:",
+  "Typical outputs:": "Sản phẩm điển hình:",
+  ", which requires reviews \"to evaluate the ability of the results of design and development to meet requirements\".": ", điều khoản yêu cầu rà soát “để đánh giá khả năng đáp ứng yêu cầu của kết quả thiết kế và phát triển”.",
+  "of the": "của",
+  "land under NĐ 15/2021 — record the reference on the stage.": "thuộc phạm vi NĐ 15/2021 — hãy ghi số văn bản vào giai đoạn.",
+  "You can still pass the gate, but say so honestly — choose": "Bạn vẫn có thể thông qua cổng, nhưng hãy ghi nhận trung thực — chọn",
+  "and list what is carried forward.": "và liệt kê những gì được chuyển tiếp.",
+  "against those inputs": "so với các dữ liệu đầu vào đó",
+  "— which is only possible if the inputs were written down as discrete, checkable statements in the first place.": "— điều chỉ làm được nếu ngay từ đầu các đầu vào đã được viết thành những mệnh đề riêng rẽ, kiểm tra được.",
+  "not allocated": "chưa phân bổ",
+  "Input": "Đầu vào",
+  "unissued": "chưa phát hành",
+  "The MDR is the list of everything this commission will produce, and it is written at the": "MDR là danh mục mọi sản phẩm hợp đồng này sẽ tạo ra, và được lập ngay từ",
+  "start": "đầu",
+  "weight": "trọng số",
+  "rule of credit": "thang ghi nhận",
+  "A drawing is not a different species here: it is a row whose type is a drawing. The": "Bản vẽ ở đây không phải một loại khác biệt: nó là một dòng có kiểu là bản vẽ. Tab",
+  "tab is the same register filtered to those rows, with the revision history opened up.": "chính là sổ đăng ký này lọc theo các dòng đó, kèm lịch sử phiên bản được mở ra.",
+  "Seed deliverables from a stage template": "Tạo sản phẩm từ mẫu giai đoạn",
+  "superseded": "đã bị thay thế",
+  "not issued": "chưa phát hành",
+  "locked": "đã khoá",
+  "No revisions yet — add the first one to start the issue history.": "Chưa có phiên bản nào — hãy thêm phiên bản đầu tiên để bắt đầu lịch sử phát hành.",
+  "Hold:": "Tạm dừng:",
+  "Revision": "Phiên bản",
+  "Suitability (ISO 19650)": "Mức độ phù hợp (ISO 19650)",
+  "— not used on this commission —": "— không dùng cho hợp đồng này —",
+  "Reason for issue / description of change": "Lý do phát hành / mô tả thay đổi",
+  "Checked by": "Người kiểm tra",
+  "Change authority (ECN reference, if this revision implements one)": "Thẩm quyền thay đổi (số ECN, nếu phiên bản này thực hiện một ECN)",
+  "The revision is created as a": "Phiên bản được tạo ở trạng thái",
+  "draft": "bản nháp",
+  ". Attach the file and sign it as": ". Hãy đính kèm tệp và ký ở trạng thái",
+  "from the revision table — that is the act that makes it the current revision.": "từ bảng phiên bản — chính thao tác đó làm nó thành phiên bản hiện hành.",
+  "Purpose:": "Mục đích:",
+  "Reason for issue:": "Lý do phát hành:",
+  "Nobody is recorded as having": "Chưa ghi nhận ai đã",
+  "checked": "kiểm tra",
+  "this revision. ISO 9001 §8.3.4 expects verification that the output meets the input before it is released.": "phiên bản này. ISO 9001 §8.3.4 yêu cầu thẩm tra rằng đầu ra đáp ứng đầu vào trước khi phát hành.",
+  "You are recorded as the": "Bạn được ghi nhận là",
+  "preparer": "người lập",
+  "for internal review instead.": "để rà soát nội bộ thay thế.",
+  "becomes superseded when this one is issued.": "sẽ bị thay thế khi phiên bản này được phát hành.",
+  "which revision is current": "phiên bản nào đang hiện hành",
+  "what it was issued for": "phát hành để làm gì",
+  "who checked and approved it": "ai đã kiểm tra và phê duyệt",
+  "what changed since the last one": "thay đổi gì so với lần trước",
+  "Suitability": "Mức độ phù hợp",
+  "Issuing a revision is": "Việc phát hành một phiên bản là",
+  "Reason for issue": "Lý do phát hành",
+  "Prepared / checked": "Người lập / kiểm tra",
+  "awaiting approver": "đang chờ người phê duyệt",
+  "Validation": "Xác nhận giá trị sử dụng",
+  "and of any necessary actions": "và của mọi hành động cần thiết",
+  "The": "Tab",
+  "Comments raised in a review belong on the": "Ý kiến nêu trong một cuộc rà soát thuộc về tab",
+  "tab, one row each, so each can be answered and closed individually rather than disappearing into a set of minutes.": ", mỗi ý kiến một dòng, để từng ý kiến được trả lời và đóng riêng thay vì tan vào một biên bản họp.",
+  "One row per comment. Each carries the document and revision it is against, where on the sheet, who raised it, how serious it is, and a": "Mỗi ý kiến một dòng. Mỗi dòng ghi tài liệu và phiên bản bị góp ý, vị trí trên bản vẽ, người nêu, mức độ nghiêm trọng, và một",
+  "review code": "mã rà soát",
+  ". The codes are the industry-standard four:": ". Có bốn mã theo thông lệ ngành:",
+  "Code 1": "Mã 1",
+  "approved,": "chấp thuận,",
+  "Code 2": "Mã 2",
+  "approved with comments (proceed, incorporate at the next revision),": "chấp thuận kèm ý kiến (được triển khai, cập nhật ở phiên bản sau),",
+  "Code 3": "Mã 3",
+  "revise and resubmit,": "sửa và trình lại,",
+  "Code 4": "Mã 4",
+  "Turnaround — days from raised to closed — is the number worth watching. Slow comment turnaround shows up as late drawings six weeks later.": "Thời gian xử lý — số ngày từ lúc nêu đến lúc đóng — là con số đáng theo dõi. Xử lý ý kiến chậm sẽ hiện ra thành bản vẽ trễ sáu tuần sau đó.",
+  "total ·": "tổng ·",
+  "no response yet": "chưa có phản hồi",
+  "Response / disposition": "Phản hồi / hướng xử lý",
+  "Incorporated in revision": "Đã cập nhật ở phiên bản",
+  "Closed — actioned": "Đã đóng — đã xử lý",
+  "Agreed — to be actioned at next revision": "Đồng ý — sẽ xử lý ở phiên bản sau",
+  "Not accepted — reasoned reply given": "Không chấp thuận — đã trả lời có lý do",
+  "Closing a comment is signed, so the register records who answered it.": "Việc đóng một ý kiến phải ký, nên sổ đăng ký ghi lại ai đã trả lời.",
+  "calls the same thing configuration change control.": "gọi chính việc này là kiểm soát thay đổi cấu hình.",
+  "Classification matters.": "Việc phân loại là quan trọng.",
+  "Impact:": "Tác động:",
+  "Chargeable:": "Tính phí:",
+  "You raised this change. A change is authorised by somebody other than the person who raised it — the portal will refuse this signature.": "Bạn là người lập thay đổi này. Một thay đổi phải do người khác với người lập phê duyệt — cổng sẽ từ chối chữ ký này.",
+  "Warnings are not failures.": "Cảnh báo không phải là lỗi.",
+  "Every number and revision in this register fits the scheme.": "Mọi số hiệu và phiên bản trong sổ này đều đúng quy tắc đánh số.",
+  "eliminate": "loại bỏ",
+  "the hazard, then": "mối nguy, rồi",
+  "reduce": "giảm thiểu",
+  "it, then": "nó, rồi",
+  "control": "kiểm soát",
+  "it, and only then": "nó, và chỉ sau đó mới",
+  "inform": "thông báo",
+  "What cannot be designed out is carried by somebody else: the contractor who builds it, the technician who changes the filter at 4 m.": "Thứ không thể loại bỏ bằng thiết kế sẽ do người khác gánh: nhà thầu thi công, hay kỹ thuật viên thay phin lọc ở độ cao 4 m.",
+  "A residual risk passed to somebody who was never told stays ours.": "Một rủi ro tồn dư chuyển cho người chưa từng được thông báo thì vẫn là rủi ro của chúng ta.",
+  "Scores are": "Điểm được",
+  "computed": "tính toán",
+  "from likelihood × severity, initial and residual. A rating somebody typed is a number that can disagree with its own inputs.": "từ khả năng xảy ra × mức độ nghiêm trọng, cả ban đầu và tồn dư. Một mức điểm do người dùng gõ tay là con số có thể mâu thuẫn với chính đầu vào của nó.",
+  "commission-wide": "toàn hợp đồng",
+  "Until that is written down the risk is still ours, and any drawing they sit on will not issue for construction.": "Chừng nào điều đó chưa được ghi lại thì rủi ro vẫn là của chúng ta, và bản vẽ liên quan sẽ không được phát hành thi công.",
+  "deviation": "sai lệch",
+  "is asked for before the fact: the design cannot meet a clause and proposes something else, with the reasoning that makes it acceptable. A": "được xin trước khi làm: thiết kế không đáp ứng được một điều khoản và đề xuất phương án khác, kèm lập luận cho thấy phương án đó chấp nhận được. Một",
+  "concession": "nhân nhượng",
+  "And a departure from a": "Còn việc không tuân thủ một quy định",
+  "statutory": "pháp quy",
+  "The question an auditor asks is never \"did you follow the code\". It is": "Câu hỏi của người đánh giá không bao giờ là “bạn có tuân theo quy chuẩn không”. Mà là",
+  "which code, at which edition, and show me the drawings were checked against that text": "quy chuẩn nào, ấn bản nào, và hãy cho tôi xem bản vẽ đã được đối chiếu với chính văn bản đó",
+  "Sign them from the row, so the register can say who fixed the edition.": "Hãy ký ngay trên dòng, để sổ đăng ký ghi được ai đã chốt ấn bản.",
+  "assumption": "giả định",
+  "hold": "điểm chờ",
+  "The matrix is what the gate reads. A blank cell is not an omission in the paperwork; it is a check nobody has done.": "Ma trận này chính là thứ cổng phê duyệt đọc. Một ô trống không phải là thiếu sót giấy tờ; đó là một phép kiểm tra chưa ai làm.",
+  "No Detail-stage deliverables yet — the matrix fills itself as the MDR does.": "Chưa có sản phẩm nào ở giai đoạn Thiết kế chi tiết — ma trận sẽ tự đầy lên cùng với MDR.",
+  "First, the answer becomes a": "Trước hết, câu trả lời trở thành một",
+  "design input": "dữ liệu đầu vào thiết kế",
+  "Set the": "Hãy đặt",
+  "impact": "tác động",
+  "awaiting answer": "đang chờ trả lời",
+  "Each transmittal names the documents": "Mỗi phiếu chuyển ghi rõ các tài liệu",
+  "and their revisions": "và phiên bản của chúng",
+  "Rev issued": "Phiên bản đã phát hành",
+  "Current rev now": "Phiên bản hiện hành",
+  "not in this register": "không có trong sổ này",
+  "No documents listed. Edit the transmittal and list them one per line as “DOCNO REV”.": "Chưa liệt kê tài liệu nào. Hãy sửa phiếu chuyển và liệt kê mỗi dòng một tài liệu theo dạng “SỐ HIỆU PHIÊN BẢN”.",
+  "prepared by": "người lập",
+  "checked by": "người kiểm tra",
+  "approved by": "người phê duyệt",
+  "In Vietnam the person signing as design lead must additionally hold a valid practising certificate (": "Tại Việt Nam, người ký với vai trò chủ trì thiết kế còn phải có chứng chỉ hành nghề còn hiệu lực (",
+  "Adding somebody here also gives them access to this commission in the portal.": "Thêm một người ở đây đồng thời cấp cho họ quyền truy cập hợp đồng này trong cổng.",
+  "A drawing signed by somebody whose certificate has lapsed is a drawing a statutory appraiser can reject.": "Bản vẽ do người có chứng chỉ đã hết hạn ký là bản vẽ mà cơ quan thẩm định có quyền từ chối.",
+  "stage": "giai đoạn",
+  ", then by": ", rồi theo",
+  "what the document is": "tài liệu đó là gì",
+  ", matches how design work is actually searched.": ", đúng với cách người ta thực sự tra cứu hồ sơ thiết kế.",
+  "Superseded revisions are retained, never deleted.": "Các phiên bản đã bị thay thế được lưu giữ, không bao giờ xoá.",
+  "No SharePoint folder is linked yet. Add one on the": "Chưa liên kết thư mục SharePoint nào. Hãy thêm ở tab",
+  "No design commissions yet": "Chưa có hợp đồng thiết kế nào",
+  "Start by creating a commission. Give it a": "Bắt đầu bằng việc tạo một hợp đồng. Hãy đặt cho nó một",
+  "project code": "mã dự án",
+  "— it becomes the prefix of every document number — and name a": "— mã này thành tiền tố của mọi số hiệu tài liệu — và chỉ định một",
+  "Ask a manager to create one and add you to the team.": "Hãy đề nghị quản lý tạo một hợp đồng và thêm bạn vào nhóm.",
+  "No design commissions to report on yet. Create one under": "Chưa có hợp đồng thiết kế nào để báo cáo. Hãy tạo tại",
+  "Commission health": "Tình trạng hợp đồng",
+  "on plan": "đúng kế hoạch",
+  "at risk": "có rủi ro",
+  "behind": "chậm tiến độ",
+  "not started": "chưa bắt đầu",
+  "Why": "Lý do",
+  "Completion": "Mức hoàn thành",
+  "State": "Trạng thái",
+  "Not measured": "Chưa đo",
+  "No data yet": "Chưa có dữ liệu",
+  "Objectives & KPIs": "Mục tiêu & chỉ số",
+  "Order": "Đơn hàng",
+  "Customer": "Khách hàng",
+  "PO / contract": "Đơn hàng / hợp đồng",
+  "Units": "Số sản phẩm",
+  "Back to the register": "Quay lại sổ đăng ký",
+  "— not recorded —": "— chưa ghi nhận —",
+  "Measured with": "Đo bằng",
+  "No measured check on this step — signing it records that it was done.": "Bước này không có phép đo — việc ký chỉ ghi nhận rằng công việc đã làm.",
+  "— computed by AeroSelect": "— do AeroSelect tính",
+  "Nothing filed against this unit yet.": "Chưa lưu hồ sơ nào cho sản phẩm này.",
+  "Document no.": "Số hiệu tài liệu",
+  "Form": "Biểu mẫu",
+  "No bill of materials raised.": "Chưa lập danh mục vật tư.",
+  "Gate G3 needs every line kitted, incoming inspection closed and no shortage.": "Cổng G3 yêu cầu mọi dòng đã soạn đủ bộ, đã đóng kiểm tra đầu vào và không thiếu hụt.",
+  "Part no.": "Mã linh kiện",
+  "Required": "Yêu cầu",
+  "Kitted": "Đã soạn bộ",
+  "Received": "Đã nhận",
+  "Short": "Thiếu",
+  "No serial numbers recorded yet.": "Chưa ghi nhận số sê-ri nào.",
+  "SOP section 10.4 — fan, coil, filter and controller serials against this PIN.": "SOP mục 10.4 — số sê-ri của quạt, dàn trao đổi nhiệt, phin lọc và bộ điều khiển theo số hiệu sản xuất này.",
+  "Component": "Linh kiện",
+  "Make": "Hãng sản xuất",
+  "Serial / batch": "Số sê-ri / lô",
+  "Nothing raised against this unit.": "Chưa lập hồ sơ nào cho sản phẩm này.",
+  "AHU-FM-902 / 903 / 603. Gates G4 and G5 refuse while anything here is open.": "AHU-FM-902 / 903 / 603. Cổng G4 và G5 sẽ từ chối chừng nào còn mục nào ở đây chưa đóng.",
+  "Step": "Bước",
+  "Everything gate G6 asks for is in place.": "Mọi thứ cổng G6 yêu cầu đều đã có.",
+  "No packing record yet.": "Chưa có hồ sơ đóng gói.",
+  "Packaging configurations": "Cấu hình đóng gói",
+  "SOP section 12.3": "SOP mục 12.3",
+  "Everything this unit is: what it was built against, what went into it, who signed each step and what was measured.": "Toàn bộ hồ sơ của sản phẩm này: được chế tạo theo tài liệu nào, dùng những gì, ai ký từng bước và đã đo được gì.",
+  "Nothing measured yet.": "Chưa đo gì.",
+  "(setting": "(thiết lập",
+  "). Require a current qualification:": "). Yêu cầu chứng nhận năng lực còn hiệu lực:",
+  "No unit records that.": "Chưa sản phẩm nào ghi nhận điều đó.",
+  "Order / customer": "Đơn hàng / khách hàng",
+  "Where it is": "Đang ở đâu",
+  "The seven stages and six gates": "Bảy công đoạn và sáu cổng",
+  "Typical": "Điển hình",
+  "Gate": "Cổng",
+  "What the gate checks": "Cổng kiểm tra những gì",
+  "Workstations": "Trạm làm việc",
+  "Station": "Trạm",
+  "Activity": "Công việc",
+  "Work instruction": "Hướng dẫn công việc",
+  "Applies to": "Áp dụng cho",
+  "In-process hold points": "Điểm dừng kiểm tra trong quá trình",
+  "Each is inspected by QA/QC — never by the person who did the work.": "Mỗi điểm do QA/QC kiểm tra — không bao giờ do chính người thực hiện công việc.",
+  "Test matrix": "Ma trận thử nghiệm",
+  "SOP section 11.2. A limit shown as “from the unit’s declared …” is resolved per unit at test time.": "SOP mục 11.2. Giới hạn ghi là “theo thông số công bố của sản phẩm …” được xác định riêng cho từng sản phẩm tại thời điểm thử nghiệm.",
+  "Print": "In",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "Linked to": "Đã liên kết tới",
+  "— every folder below opens directly in SharePoint.": "— mọi thư mục bên dưới mở thẳng trong SharePoint.",
+  "This looks like a SharePoint": "Đây có vẻ là một",
+  "share link": "liên kết chia sẻ",
+  "address-bar URL": "địa chỉ trên thanh URL",
+  "(the one containing": "(loại có chứa",
+  "EN 1886 class thresholds": "Ngưỡng phân cấp theo EN 1886",
+  "Where the SOP and the standard differ": "Chỗ SOP và tiêu chuẩn khác nhau",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -36952,14 +37333,36 @@ function _viTranslateText(tn) {
   const m = key.match(/^(\d[\d.,]*)\s+([A-Za-z][A-Za-z -]*)$/);
   if (m) { const unit = m[2], uvi = _VI[unit]; if (uvi && uvi !== unit) { const nv = raw.replace(unit, uvi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
 }
+/* Attributes the DOM-walk translates, each with the data-* shadow that holds the English so
+   _restoreEN can put it back. It used to do placeholders and nothing else, so every title= tooltip
+   and aria-label stayed English on a Vietnamese screen — including 37 whose translation was already
+   sitting in _VI, unused. alt is here too: only strings _VI knows are touched, so a brand name like
+   "Humiley" has no key and is left alone. */
+const _VI_ATTRS = [['placeholder', 'data-enph'], ['title', 'data-entitle'], ['aria-label', 'data-enaria'], ['alt', 'data-enalt']];
+const _VI_ATTR_SEL = _VI_ATTRS.map(a => '[' + a[0] + ']').join(',');
+function _viAttrs(el) {
+  if (!el || !el.getAttribute || !el.setAttribute) return;
+  for (let i = 0; i < _VI_ATTRS.length; i++) {
+    const attr = _VI_ATTRS[i][0], shadow = _VI_ATTRS[i][1];
+    const cur = el.getAttribute(attr);
+    if (!cur) continue;
+    const vi = _VI[cur.trim()];
+    // Only when the shadow is absent, or a second pass would overwrite the English with the
+    // Vietnamese it already wrote and _restoreEN would hand back Vietnamese.
+    if (vi && vi !== cur && el.getAttribute(shadow) === null) {
+      el.setAttribute(shadow, cur);
+      el.setAttribute(attr, vi);
+    }
+  }
+}
 function _viWalk(root) {
   if (!root) return;
   if (root.nodeType === 3) { _viTranslateText(root); return; }
   if (root.nodeType !== 1) return;
   const tag = (root.tagName || '').toUpperCase(); if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CANVAS' || tag === 'SVG') return;
-  if (root.placeholder) { const v = _VI[root.placeholder]; if (v && root.getAttribute('data-enph') === null) { root.setAttribute('data-enph', root.placeholder); root.placeholder = v; } }
+  _viAttrs(root);
   try { const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null); const arr = []; let n; while (n = tw.nextNode()) { const p = n.parentNode; const pt = p && (p.tagName || '').toUpperCase(); if (pt === 'SCRIPT' || pt === 'STYLE') continue; arr.push(n); } arr.forEach(_viTranslateText); } catch (e) {}
-  if (root.querySelectorAll) root.querySelectorAll('[placeholder]').forEach(el => { const v = _VI[el.placeholder]; if (v && el.getAttribute('data-enph') === null) { el.setAttribute('data-enph', el.placeholder); el.placeholder = v; } });
+  if (root.querySelectorAll) root.querySelectorAll(_VI_ATTR_SEL).forEach(_viAttrs);
 }
 /* Translate added subtrees OFF the paint path: the observer used to walk every innerHTML swap
    synchronously in its callback (before the next frame), so big view renders hitched in VN mode.
@@ -36988,7 +37391,18 @@ function _startVIObserver() {
   _viObs.observe(document.body, { childList: true, subtree: true });
 }
 function _stopVIObserver() { if (_viObs) { _viObs.disconnect(); _viObs = null; } }
-function _restoreEN() { _viNodes.forEach(o => { try { o.n.nodeValue = o.en; } catch (e) {} }); _viNodes = []; document.querySelectorAll('[data-enph]').forEach(el => { el.placeholder = el.getAttribute('data-enph'); el.removeAttribute('data-enph'); }); }
+function _restoreEN() {
+  _viNodes.forEach(o => { try { o.n.nodeValue = o.en; } catch (e) {} }); _viNodes = [];
+  // Every attribute _viAttrs translated, not just placeholders — restoring one of four would leave
+  // Vietnamese tooltips on an English screen, which is the same bug the other way round.
+  _VI_ATTRS.forEach(function (a) {
+    const attr = a[0], shadow = a[1];
+    document.querySelectorAll('[' + shadow + ']').forEach(function (el) {
+      el.setAttribute(attr, el.getAttribute(shadow));
+      el.removeAttribute(shadow);
+    });
+  });
+}
 function tkSetLang(lang) {
   lang = lang === 'vi' ? 'vi' : 'en'; _LANG.cur = lang;
   try { localStorage.setItem('tkLang', lang); } catch (e) {}
@@ -41955,7 +42369,11 @@ function _a11yChartTitle(cv) {
         if (p.classList && p.classList.contains('sr-only')) continue;   // never read back our own table
         if (p.tagName === 'CANVAS') continue;
         const s = (p.textContent || '').replace(/\s+/g, ' ').trim();
-        if (s && s.length <= 120) return s;
+        // Through _t(): this reads the heading straight off the DOM, and in VN the walker
+        // translates headings asynchronously (it drains on idle). A chart built before that drain
+        // snapshots the ENGLISH heading, giving screen readers "My Attendance This Month — biểu đồ"
+        // — half a language each. Asking _VI directly makes the label independent of walker timing.
+        if (s && s.length <= 120) return _t(s);
       }
       if (n.classList && n.classList.contains('card')) break;           // don't wander out of the card
     }
@@ -41968,7 +42386,11 @@ function _a11yChart(cv, cfg) {
     const labels = cfg.data.labels || [];
     const sets = (cfg.data.datasets || []).filter(d => d && d.data);
     if (!sets.length) return;
-    const sig = (cfg.type || '') + '|' + labels.join('') + '|' +
+    // Language belongs in the signature. Without it a chart whose DATA has not changed is skipped
+    // on a language switch, so the aria-label and the sr-only table keep the language they were
+    // built in — a screen reader on an English screen still reads Vietnamese. The visible chart
+    // looks correct throughout, which is why this survives any amount of looking at it.
+    const sig = (typeof _LANG !== 'undefined' ? _LANG.cur : '') + '|' + (cfg.type || '') + '|' + labels.join('') + '|' +
       sets.map(d => (d.label || '') + ':' + (d.data || []).join(',')).join(';');
     if (cv._a11ySig === sig) return;                       // nothing changed — skip
     cv._a11ySig = sig;
