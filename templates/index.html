@@ -20875,8 +20875,11 @@ function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
   const so = _pmSort[coll] || {};
-  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
-  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
+  // Per-column sizing. A column that knows how much it needs (`w`) and refuses to wrap (`nowrap`)
+  // hands the slack to the one column that can actually use it — the name.
+  const _cw = c => (c.w ? 'width:' + c.w + ';' : '') + (c.nowrap ? 'white-space:nowrap;' : '');
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + ((c.align || c.w || c.nowrap) ? ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap;width:1%">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table' + (opts.minw ? ' style="min-width:' + opts.minw + 'px"' : ' style="min-width:820px"') + '>' + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
 
@@ -23082,12 +23085,14 @@ function pmRenderSchedule(pid) {
   _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
   _pmSchedBuild['d-calendar'] = () => _pdView(pid, 'calendar');
   _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
-    { label: 'WBS', sk: 'wbs', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
-    { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
-    { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
-    { label: 'Float', align: 'right', tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
+    { label: 'WBS', sk: 'wbs', w: '1%', nowrap: true, render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
+    // The name is the column people read. Everything else takes a small fixed claim so this one
+    // gets the remainder instead of losing width to a date that wrapped.
+    { label: 'Task', sk: 'name', w: '46%', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
+    { label: 'Assignee', sk: 'assignee', w: '1%', nowrap: true, render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', w: '1%', nowrap: true, render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', w: '1%', nowrap: true, render: r => _pmFmt(r.finish) },
+    { label: 'Float', align: 'right', w: '1%', nowrap: true, tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
       render: r => (cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].inNet) ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
-    { label: '%', sk: 'pctComplete', align: 'right', render: r => {
+    { label: '%', sk: 'pctComplete', align: 'right', w: '1%', nowrap: true, render: r => {
         // One source of truth: when detail lines report against this activity, its percentage is
         // their weighted roll-up. A typed number that disagrees with the site's own daily report is
         // the thing this whole level exists to stop.
@@ -23095,7 +23100,7 @@ function pmRenderSchedule(pid) {
         return d ? ('<span title="Rolled up from ' + d.n + ' detail item' + (d.n === 1 ? '' : 's') + '" style="font-weight:700">' + d.pct + '%</span><span style="font-size:9.5px;color:var(--text-light);display:block;line-height:1">rolled up</span>')
                  : (_pmPct(r.pctComplete) + '%');
       } },
-    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
+    { label: 'Status', sk: 'status', w: '1%', nowrap: true, render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
