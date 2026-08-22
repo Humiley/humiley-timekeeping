@@ -25824,6 +25824,14 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Attachment (PDF / image)', type: 'file' }
     ]
   },
+  eng_chases: {
+    title: 'Chase', coll: 'eng_chases', reload: 'eng_chases', fields: [
+      { k: 'transmittalId', label: 'Transmittal being chased', type: 'ref', src: 'eng_transmittals' },
+      { k: 'method', label: 'How', type: 'select', options: ['Email', 'Phone call', 'Meeting', 'Client portal', 'Formal letter'] },
+      { k: 'to', label: 'Who was chased' },
+      { k: 'note', label: 'What was said', type: 'textarea' }
+    ]
+  },
   eng_transmittals: {
     title: 'Transmittal', coll: 'eng_transmittals', reload: 'eng_transmittals', fields: [
       { k: 'subject', label: 'Subject' }, { k: 'trnNo', label: 'Transmittal No.' },
@@ -25838,6 +25846,8 @@ Object.assign(_QA_SPECS, {
       { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Issued', 'Acknowledged', 'Responded', 'Closed'] },
       { k: 'acknowledgedOn', label: 'Acknowledged on', type: 'date' },
       { k: 'acknowledgedBy', label: 'Acknowledged by' },
+      { k: 'responseDate', label: 'Response actually received on', type: 'date' },
+      { k: 'closureNote', label: 'If it is being closed with no response — what happened', type: 'textarea' },
       { k: 'note', label: 'Notes / covering message', type: 'textarea' },
       { k: 'attachment', label: 'Signed transmittal / receipt (PDF)', type: 'file' }
     ]
@@ -25951,6 +25961,7 @@ const _ENG_TABS = [
   { k: 'changes', label: 'Change Control', fn: 'engRenderChanges', need: ['eng_projects', 'eng_changes', 'eng_deliverables'] },
   { k: 'queries', label: 'Technical Queries', fn: 'engRenderTq', need: ['eng_projects', 'eng_tq'] },
   { k: 'transmittals', label: 'Transmittals', fn: 'engRenderTransmittals', need: ['eng_projects', 'eng_transmittals', 'eng_deliverables', 'eng_revisions'] },
+  { k: 'awaiting', label: 'Awaiting Response', fn: 'engRenderAwaiting', need: ['eng_projects', 'eng_transmittals', 'eng_chases'] },
   { k: 'team', label: 'Team & Authority', fn: 'engRenderTeam', need: ['eng_projects', 'eng_team', 'eng_deliverables'] },
   { k: 'documents', label: 'Document Structure', fn: 'engRenderDocuments', need: ['eng_projects'] }
 ];
@@ -27097,6 +27108,66 @@ function _engCheckRegister(project, delivs, revs) {
   return out;
 }
 /* ── END ENG REGISTER CHECK ── */
+
+function _engDaysBetween(a, b) {
+  const x = Date.parse(a), y = Date.parse(b);
+  return (isNaN(x) || isNaN(y)) ? null : Math.round((y - x) / 86400000);
+}
+function engRenderAwaiting(pid) {
+  const trns = _engScopeFor('eng_transmittals', pid), chases = _engScopeFor('eng_chases', pid);
+  const today = _engToday();
+  const guide = _engGuide('awaiting', 'Awaiting response — the clock on everybody else',
+    '<p>A design programme slips because approvals arrive late far more often than because drawings do. The evidence for that is contemporaneous or it is nothing: at the time it is one line, a year later it is an inbox archaeology exercise, and by then the claim is a matter of opinion.</p>' +
+    '<p>Every transmittal that asked for something has a clock. This is what is still running, how long it has been running, and what was done about it — because "we chased them three times" is worth exactly what its record is worth.</p>' +
+    '<p>The register will not let a transmittal be marked Responded without the date the answer arrived, nor closed over an answer that never came without somebody writing what happened. Silence is a fact, and it is the fact an extension of time is built on.</p>');
+  const wants = trns.filter(t => String(t.responseRequired || 'No').toLowerCase().indexOf('yes') === 0);
+  const answered = wants.filter(t => String(t.responseDate || '').trim());
+  const openT = wants.filter(t => !String(t.responseDate || '').trim()
+                              && ['closed', 'responded'].indexOf(String(t.status || '').toLowerCase()) < 0);
+  const late = openT.filter(t => t.responseDue && String(t.responseDue).slice(0, 10) < today);
+  const turns = answered.map(t => _engDaysBetween(t.issueDate, t.responseDate)).filter(n => n != null && n >= 0);
+  const avg = turns.length ? Math.round(turns.reduce((a, b) => a + b, 0) / turns.length) : null;
+  const lateDays = late.map(t => _engDaysBetween(t.responseDue, today)).filter(n => n != null && n > 0);
+  const worst = lateDays.length ? Math.max.apply(null, lateDays) : null;
+  const kpis = _hrKpiRow([
+    _hrKpi('Awaiting a response', openT.length, openT.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Past the date agreed', late.length, late.length ? '#EF4444' : '#00B060'),
+    _hrKpi('Longest wait', worst == null ? '—' : worst + 'd', worst != null && worst > 14 ? '#EF4444' : 'var(--navy)'),
+    _hrKpi('Average turnaround', avg == null ? '—' : avg + 'd')
+  ]);
+  const chasesOf = id => chases.filter(c => c.transmittalId === id)
+    .sort((a, b) => String(b.chasedOn || '').localeCompare(String(a.chasedOn || '')));
+  const rows = openT.slice().sort((a, b) => String(a.responseDue || '9999').localeCompare(String(b.responseDue || '9999')));
+  const tbl = _engCard('Outstanding responses', 'eng_chases', 'Log a chase', _engTable('eng_transmittals', [
+    { label: 'Transmittal', sk: 'trnNo', render: r => '<div style="font-weight:700;font-variant-numeric:tabular-nums;font-size:11.5px">' + _engEsc(r.trnNo || '—') + '</div><div style="font-size:10.5px;color:var(--text-light);max-width:230px">' + _engEsc(r.subject || '') + '</div>' },
+    { label: 'With', render: r => '<div style="font-size:11.5px">' + _engEsc(r.toOrg || '—') + '</div>' + (r.toPerson ? '<div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.toPerson) + '</div>' : '') },
+    { label: 'Asked for', k: 'responseRequired' },
+    { label: 'Issued', sk: 'issueDate', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.issueDate) + '</span>' },
+    { label: 'Due', sk: 'responseDue', render: r => r.responseDue ? '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.responseDue) + '</span>' : '<span style="color:var(--text-light);font-size:11px">none agreed</span>' },
+    { label: 'Waiting', align: 'right', render: r => { const d = _engDaysBetween(r.responseDue, today);
+        if (d == null) { const w = _engDaysBetween(r.issueDate, today); return w == null ? '—' : '<span style="font-size:11.5px;color:var(--text-light)">' + w + 'd since issue</span>'; }
+        if (d <= 0) return '<span style="font-size:11.5px;color:var(--text-light)">' + (-d) + 'd left</span>';
+        const hex = d > 14 ? '#B91C1C' : '#B45309';
+        return '<span style="font-weight:700;font-variant-numeric:tabular-nums;color:' + hex + '">' + d + 'd late</span>'; } },
+    { label: 'Chased', render: r => { const cs = chasesOf(r.id);
+        if (!cs.length) return '<span style="color:#B45309;font-size:11px">never</span>';
+        return '<div style="font-size:11px;font-weight:600">' + cs.length + '×</div><div style="font-size:10px;color:var(--text-light);white-space:nowrap">last ' + _engFmt(cs[0].chasedOn) + '</div>'; } },
+    { label: 'Status', render: r => _engStatusChip(r.status || 'Issued') }
+  ], rows, { empty: 'Nothing is waiting on anybody. Either the client is quick, or the transmittals are not recording what they asked for.', minw: 1050 }));
+  let warn = '';
+  const neverChased = late.filter(t => !chasesOf(t.id).length);
+  if (neverChased.length) warn = '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEF3C7;border:1px solid #FDE68A;font-size:12px;color:#92400E">' +
+    '<b>' + neverChased.length + ' response(s) are past the date agreed and have never been chased.</b> A delay nobody asked about is a delay that is partly ours — log the chase when you make it, not when the claim is being written.</div>';
+  const log = chases.length ? _engCard('Chase log', 'eng_chases', 'Log a chase', _engTable('eng_chases', [
+    { label: 'When', sk: 'chasedOn', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.chasedOn) + '</span>' },
+    { label: 'Transmittal', render: r => { const t = trns.filter(x => x.id === r.transmittalId)[0]; return '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(t ? (t.trnNo || t.subject || '?') : '—') + '</span>'; } },
+    { label: 'How', k: 'method' },
+    { label: 'Who', k: 'to' },
+    { label: 'What was said', render: r => '<div style="max-width:320px;font-size:11.5px">' + _engEsc(r.note || '') + '</div>' },
+    { label: 'By', render: r => r.chasedBy ? '<span style="font-size:11px">✍ ' + _engEsc(r.chasedBy) + '</span>' : '<span style="color:var(--text-light);font-size:11px">unsigned</span>' }
+  ], chases.slice().sort((a, b) => String(b.chasedOn || '').localeCompare(String(a.chasedOn || ''))), { minw: 900 })) : '';
+  return guide + kpis + warn + tbl + log;
+}
 
 function engRenderCheck(pid) {
   const proj = _engProj(pid), delivs = _engScopeFor('eng_deliverables', pid), revs = _engScopeFor('eng_revisions', pid);
@@ -32854,6 +32925,24 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Awaiting Response': 'Đang chờ phản hồi',
+  'Awaiting a response': 'Đang chờ phản hồi',
+  'Past the date agreed': 'Quá hạn đã thống nhất',
+  'Longest wait': 'Chờ lâu nhất',
+  'Average turnaround': 'Thời gian phản hồi trung bình',
+  'Outstanding responses': 'Phản hồi còn tồn',
+  'Chase log': 'Nhật ký nhắc',
+  'Log a chase': 'Ghi nhận một lần nhắc',
+  'Chase': 'Nhắc phản hồi',
+  'Asked for': 'Yêu cầu',
+  'Waiting': 'Đang chờ',
+  'Chased': 'Đã nhắc',
+  'never': 'chưa bao giờ',
+  'What was said': 'Nội dung trao đổi',
+  'Who was chased': 'Đã nhắc ai',
+  'How': 'Bằng cách nào',
+  'Transmittal being chased': 'Phiếu chuyển đang nhắc',
+  'unsigned': 'chưa ký',
   'Register Check': 'Kiểm tra sổ đăng ký',
   'Deliverables checked': 'Số tài liệu đã kiểm',
   'Revisions checked': 'Số bản sửa đổi đã kiểm',
