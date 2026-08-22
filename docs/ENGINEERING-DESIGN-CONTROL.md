@@ -280,6 +280,25 @@ same office that wanted it. So:
 The register links each departure to the code and clause in the standards register, so the force of
 that code (statutory / contractual / client / guidance) decides which rule applies.
 
+## Design risk and safety in design
+
+A designer's duty runs in an order: **eliminate** the hazard, then **reduce** it, then **control**
+it, and only then **inform** the people who will inherit what is left. `eng_risks` is worth having
+only if it records which of those actually happened.
+
+- Signing a risk off as **Controlled** requires the action written down. "Controlled" with an empty
+  action column is an opinion, and it is the register that gets produced after an accident and
+  proves nothing.
+- Marking one **Transferred** requires the record of how the people carrying it were told — the
+  drawing note, the H&S file entry, the residual-risk schedule that went out with a transmittal. A
+  residual risk passed to somebody who was never told stays ours.
+- A drawing carrying an **uninformed** residual risk will not issue for construction. The duty to
+  inform is discharged by the issue itself, so that is the last moment it can be caught.
+- Scores are **computed** from likelihood × severity, initial and residual. A rating somebody typed
+  is a number that can disagree with its own inputs.
+
+An open risk blocks nothing — it is still being worked. Only one being passed on needs the telling.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value

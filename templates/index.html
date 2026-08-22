@@ -25381,7 +25381,7 @@ const _ENG_NUMSPEC = {
   eng_inputs: { f: 'reqNo', tag: 'DI' }, eng_reviews: { f: 'reviewNo', tag: 'DR' },
   eng_comments: { f: 'commentNo', tag: 'CMT' }, eng_changes: { f: 'ecnNo', tag: 'ECN' },
   eng_tq: { f: 'tqNo', tag: 'TQ' }, eng_transmittals: { f: 'trnNo', tag: 'TRN' },
-  eng_holds: { f: 'ref', tag: 'HLD' }, eng_deviations: { f: 'ref', tag: 'DEV' }
+  eng_holds: { f: 'ref', tag: 'HLD' }, eng_deviations: { f: 'ref', tag: 'DEV' }, eng_risks: { f: 'ref', tag: 'RSK' }
 };
 function _engAutoNumber(coll, data) {
   const sp = _ENG_NUMSPEC[coll]; if (!sp) return;
@@ -25715,6 +25715,25 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Supporting file (PDF / image)', type: 'file' }
     ]
   },
+  eng_risks: {
+    title: 'Design risk', coll: 'eng_risks', reload: 'eng_risks', fields: [
+      { k: 'ref', label: 'Ref' },
+      { k: 'hazard', label: 'The hazard — what could hurt somebody, or fail' },
+      { k: 'phase', label: 'When it bites', type: 'select', options: ['Construction', 'Commissioning', 'Operation', 'Maintenance', 'Cleaning', 'Alteration', 'Demolition'] },
+      { k: 'category', label: 'Kind', type: 'select', options: ['Safety in design', 'Technical / performance', 'Interface', 'Constructability', 'Environmental'] },
+      { k: 'discipline', label: 'Discipline', type: 'select', options: _ENG_DISC_KEYS },
+      { k: 'deliverableId', label: 'Deliverable it sits on', type: 'ref', src: 'eng_deliverables', blank: '— commission-wide —' },
+      { k: 'likelihood', label: 'Likelihood (1 rare … 5 almost certain)', type: 'number' },
+      { k: 'severity', label: 'Severity (1 negligible … 5 catastrophic)', type: 'number' },
+      { k: 'action', label: 'What the DESIGN did — eliminated, reduced, isolated, controlled', type: 'textarea' },
+      { k: 'residualLikelihood', label: 'Residual likelihood', type: 'number' },
+      { k: 'residualSeverity', label: 'Residual severity', type: 'number' },
+      { k: 'informedBy', label: 'If it is carried by somebody else — how they were told', type: 'textarea' },
+      { k: 'owner', label: 'Owner', type: 'combo', dyn: 'eng_people' },
+      { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Controlled', 'Transferred', 'Closed'] },
+      { k: 'note', label: 'Notes', type: 'textarea' }
+    ]
+  },
   eng_deviations: {
     title: 'Deviation / Concession', coll: 'eng_deviations', reload: 'eng_deviations', fields: [
       { k: 'kind', label: 'Kind — a DEVIATION is asked for before, a CONCESSION accepts what was already built', type: 'select', options: ['Deviation', 'Concession'] },
@@ -25914,6 +25933,7 @@ const _ENG_TABS = [
   { k: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
   { k: 'standards', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
   { k: 'deviations', label: 'Deviations', fn: 'engRenderDeviations', need: ['eng_projects', 'eng_deviations', 'eng_standards', 'eng_deliverables'] },
+  { k: 'risks', label: 'Design Risk', fn: 'engRenderRisks', need: ['eng_projects', 'eng_risks', 'eng_deliverables'] },
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
@@ -26906,6 +26926,50 @@ function engChangeDecideSave(id) {
 }
 
 /* ============================ 9. Technical queries ============================ */
+function _engRiskScore(l, sv) { const a = +l || 0, b = +sv || 0; return (a > 0 && b > 0) ? a * b : null; }
+function _engRiskChip(n) {
+  if (n == null) return '<span style="color:var(--text-light);font-size:11px">—</span>';
+  const hex = n >= 15 ? '#B91C1C' : (n >= 8 ? '#B45309' : (n >= 4 ? '#0369A1' : '#047857'));
+  const bg = n >= 15 ? '#FEE2E2' : (n >= 8 ? '#FEF3C7' : (n >= 4 ? '#E0F2FE' : '#D1FAE5'));
+  return '<span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:' + bg + ';color:' + hex + ';font-variant-numeric:tabular-nums">' + n + '</span>';
+}
+function engRenderRisks(pid) {
+  const all = _engScopeFor('eng_risks', pid), delivs = _engScopeFor('eng_deliverables', pid);
+  const guide = _engGuide('risks', 'Design risk and safety in design — what the design did, and who was told what it could not fix',
+    '<p>A designer\'s duty runs in an order: <b>eliminate</b> the hazard, then <b>reduce</b> it, then <b>control</b> it, and only then <b>inform</b> the people who will inherit what is left. This register is worth having only if it records which of those actually happened, which is why signing a risk off as controlled needs the action written down. "Controlled" with an empty action column is an opinion — and it is the register that gets produced after an accident and proves nothing.</p>' +
+    '<p>What cannot be designed out is carried by somebody else: the contractor who builds it, the technician who changes the filter at 4 m. <b>A residual risk passed to somebody who was never told stays ours.</b> So a risk marked Transferred needs the record of how they were told — the drawing note, the H&S file entry, the residual-risk schedule that went out with the transmittal — and a drawing carrying an uninformed one will not issue for construction.</p>' +
+    '<p>Scores are <b>computed</b> from likelihood × severity, initial and residual. A rating somebody typed is a number that can disagree with its own inputs.</p>');
+  const open = all.filter(r => ['open', ''].indexOf(String(r.status || 'Open').toLowerCase()) >= 0);
+  const transferred = all.filter(r => String(r.status || '').toLowerCase() === 'transferred');
+  const untold = transferred.filter(r => !String(r.informedBy || '').trim());
+  const high = all.map(r => _engRiskScore(r.residualLikelihood || r.likelihood, r.residualSeverity || r.severity)).filter(n => n != null && n >= 15);
+  const kpis = _hrKpiRow([
+    _hrKpi('Risks on the register', all.length),
+    _hrKpi('Still open', open.length, open.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Carried by others', transferred.length),
+    _hrKpi('Passed on, nobody told', untold.length, untold.length ? '#EF4444' : '#00B060')
+  ]);
+  const specs = [{ k: 'phase', label: 'Phase' }, { k: 'category', label: 'Kind' }, { k: 'discipline', label: 'Discipline' }, { k: 'status', label: 'Status' }];
+  const bar = _engFiltBar('eng_risks', all, specs), rows = _engFiltApply('eng_risks', all, specs);
+  const dname = id => { const d = delivs.filter(x => x.id === id)[0]; return d ? (d.docNo || d.title || '') : ''; };
+  const tbl = _engCard('Design Risk Register', 'eng_risks', 'Record a risk', bar + _engTable('eng_risks', [
+    { label: 'Ref', k: 'ref', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.ref || '—') + '</span>' },
+    { label: 'Hazard', render: r => '<div style="font-weight:600;max-width:270px">' + _engEsc(r.hazard || '') + '</div>' + (r.category ? '<div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.category) + '</div>' : '') },
+    { label: 'When', k: 'phase' },
+    { label: 'On document', render: r => r.deliverableId ? '<span style="font-size:11px;font-variant-numeric:tabular-nums">' + _engEsc(dname(r.deliverableId)) + '</span>' : '<span style="color:var(--text-light);font-size:11px">commission-wide</span>' },
+    { label: 'Initial', align: 'center', render: r => _engRiskChip(_engRiskScore(r.likelihood, r.severity)) },
+    { label: 'What the design did', render: r => r.action ? '<div style="max-width:250px;font-size:11.5px">' + _engEsc(String(r.action).slice(0, 120)) + '</div>' : '<span style="color:#B45309;font-size:11px">nothing recorded</span>' },
+    { label: 'Residual', align: 'center', render: r => _engRiskChip(_engRiskScore(r.residualLikelihood, r.residualSeverity)) },
+    { label: 'Who was told', render: r => String(r.status || '').toLowerCase() === 'transferred'
+        ? (String(r.informedBy || '').trim() ? '<div style="font-size:11px;max-width:200px">' + _engEsc(String(r.informedBy).slice(0, 90)) + '</div>' : '<span style="color:#B91C1C;font-weight:700;font-size:11px">NOBODY</span>')
+        : '<span style="color:var(--text-light);font-size:11px">—</span>' },
+    { label: 'Status', render: r => r.signedOffBy ? '<div>' + _engStatusChip(r.status || '') + '</div><div style="font-size:10px;color:var(--text-light)">✍ ' + _engEsc(r.signedOffBy) + '</div>' : _engStatusChip(r.status || 'Open') }
+  ], rows, { empty: 'No risks recorded. Every design carries some; an empty register means they are in somebody\'s head.', minw: 1200 }));
+  const warn = untold.length ? '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEE2E2;border:1px solid #FCA5A5;font-size:12px;color:#7F1D1D">' +
+    '<b>' + untold.length + ' risk(s) are marked as carried by somebody else with no record of how they were told.</b> Until that is written down the risk is still ours, and any drawing they sit on will not issue for construction.</div>' : '';
+  return guide + kpis + warn + tbl;
+}
+
 function engRenderDeviations(pid) {
   const all = _engScopeFor('eng_deviations', pid), stds = _engScopeFor('eng_standards', pid), delivs = _engScopeFor('eng_deliverables', pid);
   const guide = _engGuide('deviations', 'Deviations and concessions — where the design does not follow the code, and who agreed',
@@ -32317,6 +32381,25 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Design Risk': 'Rủi ro thiết kế',
+  'Design Risk Register': 'Sổ đăng ký rủi ro thiết kế',
+  'Design risk': 'Rủi ro thiết kế',
+  'Record a risk': 'Ghi nhận một rủi ro',
+  'Risks on the register': 'Rủi ro đã ghi nhận',
+  'Carried by others': 'Chuyển cho bên khác',
+  'Passed on, nobody told': 'Đã chuyển nhưng chưa thông báo',
+  'Hazard': 'Mối nguy',
+  'Initial': 'Ban đầu',
+  'Residual': 'Còn lại',
+  'What the design did': 'Thiết kế đã xử lý thế nào',
+  'Who was told': 'Đã thông báo cho ai',
+  'nothing recorded': 'chưa ghi nhận',
+  'Safety in design': 'An toàn trong thiết kế',
+  'Constructability': 'Khả năng thi công',
+  'Maintenance': 'Bảo trì',
+  'Demolition': 'Phá dỡ',
+  'Controlled': 'Đã kiểm soát',
+  'Transferred': 'Đã chuyển giao',
   'Deviations': 'Sai lệch',
   'Deviations & Concessions': 'Sai lệch & Chấp thuận ngoại lệ',
   'Deviation / Concession': 'Sai lệch / Chấp thuận ngoại lệ',
