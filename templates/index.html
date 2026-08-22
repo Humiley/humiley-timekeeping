@@ -29685,7 +29685,29 @@ function _tndHeadline() {
     tile('Quotation (excl VAT)', _tndMoney(q.net), q.lineCount + ' ' + _t('lines') + ' · ' + _t('VAT') + ' ' + _tndMoney(q.vat), 'var(--emerald-deep)') +
     tile('Gross margin', _tndPct(q.grossMarginPct), _tndPct(q.effectiveMarkupPct) + ' ' + _t('effective mark-up'), q.grossMarginPct < 10 ? 'var(--warning)' : 'var(--navy)') +
     (vatRec ? tile('Import VAT recoverable', _tndMoney(vatRec), _t('a receivable, deliberately not in the cost')) : '') +
-    '</div>';
+    '</div>' +
+    /* WHAT IS WRONG WITH THIS PRICE, beside the price rather than on a tab somebody has to open.
+       Every warning the server raises here was a figure that used to reach a PDF in silence: a
+       discount typed as 150 instead of 15 that inverted the invoice, days of effort at a grade
+       nobody recognised costing nothing at all, a line carrying a quantity and no money. None of
+       them raise; all of them look like totals. The banner is attached to the headline so it
+       appears on every tab, because the tab it did not appear on is the one that gets sent. */
+    _tndWarnBanner();
+}
+
+function _tndWarnBanner() {
+  /* ONE panel, driven by issue_check — the server's single answer to "what should be looked at
+     before this is sent". It used to live on the Quote tab only, which is the surface you reach
+     when you have already decided to send; a capped discount or a package of free days is
+     something you want to see while you are still pricing. */
+  const w = ((_tndSum || {}).issue || {}).warnings || [];
+  if (!w.length) return '';
+  return '<div style="margin-top:14px;border:1px solid var(--warning);border-left-width:4px;' +
+    'border-radius:8px;background:rgba(217,119,6,.07);padding:11px 14px">' +
+    '<div style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;' +
+    'color:var(--warning)">' + _t('Worth a second look before you send it') + '</div>' +
+    '<ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.6">' +
+    w.map(x => '<li>' + _estEsc(_t(x)) + '</li>').join('') + '</ul></div>';
 }
 
 /* ── Assumptions — the workbook's one sheet, grouped as it groups them ── */
@@ -30466,12 +30488,8 @@ function tndTabQuote() {
       (iss.missing || []).map(x => _estEsc(_t(x))).join(', ') + '</b></div>' +
       (can ? '<button class="btn btn-outline btn-sm" style="margin-top:9px;font-size:11px" onclick="tkQuickAdd(\'est_projects\',\'' + e.id + '\')">' + _PENCIL + ' ' + _t('Edit the tender') + '</button>' : '') + '</div>'
     : '';
-  const warn = (iss.warnings || []).length
-    ? '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--warning)">' +
-      '<div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:4px">' + _t('Worth a second look before you send it') + '</div>' +
-      '<ul style="font-size:12.5px;color:var(--text-light);padding-left:18px;margin:0">' +
-      (iss.warnings || []).map(w => '<li style="margin-bottom:2px">' + _estEsc(_t(w)) + '</li>').join('') + '</ul></div>'
-    : '';
+  // The advisory panel is rendered once, beside the headline in _tndWarnBanner(), where it shows
+  // on every tab. The BLOCKING gate stays here: it is about this tab's export buttons.
 
   const bar = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">' +
     '<div style="font-size:12.5px;color:var(--text-light)">' + _t('This is exactly what the customer will receive. Nothing here shows cost or mark-up.') +
@@ -30483,7 +30501,7 @@ function tndTabQuote() {
     '<button class="btn btn-primary btn-sm" onclick="tndQuotePDF()"' + (iss.canIssue ? '' : ' disabled title="' + _tkEscA(_t('Complete the missing fields first')) + '"') + '>' +
     tkIcon('download', 13) + ' ' + _t('Export PDF') + '</button></div></div>';
 
-  _estSet(bar + gate + warn + _tndQuoteSheet(doc, q) + _tndConditionsEditor(doc, can));
+  _estSet(bar + gate + _tndQuoteSheet(doc, q) + _tndConditionsEditor(doc, can));
 }
 
 /* The preview. Shaped like the LETTER, not like a data table — somebody about to send this to a
