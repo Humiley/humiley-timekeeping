@@ -3503,7 +3503,12 @@ async function tkBootstrap() {
     if ('requestIdleCallback' in window) requestIdleCallback(hydrate, { timeout: 6000 }); else setTimeout(hydrate, 3500);
   })();
   _DEMO_LEAVE      = lv.leave;
-  _DEMO_ZONES      = zn.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius }));
+  /* An explicit key list, so a field the server starts returning does NOT silently appear in the
+     gate — but it must list every field the gate needs. `active` and `dept` were missing, which is
+     why the Active toggle and the Department select on this screen decided nothing. */
+  _DEMO_ZONES      = zn.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius,
+                                          active: z.active == null ? 1 : (+z.active ? 1 : 0),
+                                          dept: z.dept || 'All', notes: z.notes || '' }));
   try { tkFillDeptSelects(); } catch (e) {}   // populate all department dropdowns from the real roster
   try { if (!((typeof _HR !== 'undefined' && _HR.schedules) || []).length) { tkLoadColl('schedules').then(function () { try { tkFillSchedSelects(); } catch (e) {} }); } else { tkFillSchedSelects(); } } catch (e) {}   // schedule dropdowns from persisted patterns
 }
@@ -3582,9 +3587,14 @@ function tkRenderZones() {
       '<div><div style="font-size:13px;font-weight:700">' + nm + '</div><div style="font-size:11px;color:var(--text-light)">Approved zone</div></div></div></td>' +
       '<td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">' + lat.toFixed(4) + '°N<br>' + lon.toFixed(4) + '°E</td>' +
       '<td><span class="badge b-navy">' + (z.radius || 0) + 'm</span></td>' +
-      '<td>All Depts</td>' +
-      '<td><button class="toggle on" onclick="this.classList.toggle(\'on\');this.classList.toggle(\'off\')"></button></td>' +
-      '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,\'' + safe + '\',' + lat + ',' + lon + ',' + (z.radius || 200) + ')">Edit</button> <button class="btn btn-ghost btn-sm" title="Delete zone" style="color:#C00000" onclick="tkDeleteZone(' + (z.id || 0) + ',\'' + safe + '\')">' + _TRASH + '</button></td>' +
+      '<td>' + _crmEsc((z.dept && z.dept !== 'All') ? z.dept : _t('All Depts')) + '</td>' +
+      /* A real control now: it PATCHes and re-renders from the answer. The class no longer says
+         "on" unconditionally — it says what the record says. */
+      '<td><button class="toggle ' + ((+z.active === 0) ? 'off' : 'on') + '" role="switch" aria-checked="' +
+        ((+z.active === 0) ? 'false' : 'true') + '" title="' +
+        _tkEscA(_t('Switch this zone off to stop it authorising check-in')) +
+        '" onclick="tkToggleZone(' + (z.id || 0) + ',' + ((+z.active === 0) ? 1 : 0) + ')"></button></td>' +
+      '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,\'' + safe + '\',' + lat + ',' + lon + ',' + (z.radius || 200) + ',' + (z.id || 0) + ',\'' + _tkEscA(z.dept || 'All') + '\',\'' + _tkEscA(z.notes || '') + '\')">Edit</button> <button class="btn btn-ghost btn-sm" title="Delete zone" style="color:#C00000" onclick="tkDeleteZone(' + (z.id || 0) + ',\'' + safe + '\')">' + _TRASH + '</button></td>' +
       '</tr>';
   }).join('');
   const kp = document.getElementById('loc-kpis');
@@ -5006,7 +5016,11 @@ async function _tkInitMap(centerLat, centerLon, zoom) {
 
 function tkOpenLocationModal() {
   openModal('locationModal');
+  // Adding, not editing. Without this an Add straight after an Edit would PATCH the zone the
+  // previous click left in _tkZoneEditId — overwriting a live geofence with a new one's details.
+  _tkZoneEditId = '';
   ['loc-name', 'loc-notes', 'loc-address'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const _dsel = document.getElementById('loc-dept'); if (_dsel) _dsel.value = 'All';
   const r = document.getElementById('loc-radius'); if (r && !r.value) r.value = 200;
   /* Pre-fill coordinates IMMEDIATELY (center on first zone or HCMC) so Save
      always has valid coords even before the map finishes loading / if GPS is
@@ -17357,8 +17371,27 @@ function _haversineMetres(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function _checkGeofence(userLat, userLon, zones) {
+/* A zone authorises a punch only if it is SWITCHED ON and applies to this employee's department.
+   Both were on screen long before they were consulted: the toggle's whole handler was two classList
+   calls, and the Department select was read into a variable saveLocation never sent. An
+   administrator could retire a decommissioned site, watch the row grey out, and have it go on
+   clearing check-ins there.
+   Both default OPEN — active missing means 1, dept missing or 'All' means everybody — so every zone
+   that exists today keeps authorising exactly what it authorises now. Scoping is opt-in and never
+   retroactive. */
+function _zoneApplies(z, dept) {
+  if (!z) return false;
+  if (z.active != null && !+z.active) return false;
+  const scope = String(z.dept || 'All').trim();
+  if (!scope || scope === 'All') return true;
+  return scope.toLowerCase() === String(dept || '').trim().toLowerCase();
+}
+function _checkGeofence(userLat, userLon, zones, dept) {
+  // The caller's department when it knows one; otherwise the signed-in user's. A caller that passes
+  // nothing gets the same answer it always did, because an unscoped zone applies to everyone.
+  const d = dept != null ? dept : ((TK && TK.user && (TK.user.dept || TK.user.department)) || '');
   for (const z of zones) {
+    if (!_zoneApplies(z, d)) continue;
     if (_haversineMetres(userLat, userLon, z.lat, z.lon) <= z.radius) return { ok: true, zone: z.name };
   }
   return { ok: false, zone: null };
@@ -21209,7 +21242,12 @@ function _pmTable(coll, cols, rows, opts) {
   // Per-column sizing. A column that knows how much it needs (`w`) and refuses to wrap (`nowrap`)
   // hands the slack to the one column that can actually use it — the name.
   const _cw = c => (c.w ? 'width:' + c.w + ';' : '') + (c.nowrap ? 'white-space:nowrap;' : '');
-  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; /* \u00A0, not a plain space. A sort arrow separated from its label by a BREAKING space is a
+       wrap opportunity, and the header cells are 11px uppercase with .6px letter-spacing inside
+       columns as narrow as 27px of content — so "WBS" took one line and "\u21C5" took the next, and
+       every header in the table grew to two lines to match. Measured: th height 55px, two line
+       boxes, the arrow alone on the second. The arrow belongs to the label; make it unbreakable. */
+      const arrow = active ? (so.dir > 0 ? '\u00A0\u25B2' : '\u00A0\u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400">\u00A0\u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
   const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + ((c.align || c.w || c.nowrap) ? ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap;width:1%">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table' + (opts.minw ? ' style="min-width:' + opts.minw + 'px"' : ' style="min-width:820px"') + '>' + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
@@ -26371,7 +26409,7 @@ function _engTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _engSortRows(coll, cols, rows);
   const so = _engSort[coll] || {};
-  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const active = so.key === key; const arrow = active ? (so.dir > 0 ? ' ▲' : ' ▼') : '<span style="opacity:.3;font-weight:400"> ⇅</span>'; return '<th onclick="engTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '" style="' + (c.align ? 'text-align:' + c.align + ';' : '') + 'cursor:pointer;user-select:none;' + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const active = so.key === key; const arrow = active ? (so.dir > 0 ? '\u00A0▲' : '\u00A0▼') : '<span style="opacity:.3;font-weight:400">\u00A0⇅</span>';   /* non-breaking — see _pmTable */ return '<th onclick="engTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '" style="' + (c.align ? 'text-align:' + c.align + ';' : '') + 'cursor:pointer;user-select:none;' + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
   const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _engEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + _hrEditDel(coll, r.id, coll) + '</td>') + '</tr>').join('')
     : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table' + (opts.minw ? ' style="min-width:' + opts.minw + 'px"' : ' style="min-width:900px"') + '><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
@@ -38260,6 +38298,11 @@ const _VI = {
   "Nothing is linked to the Master Schedule yet.": "Chưa có liên kết nào với Tiến độ tổng.",
   "Use Link on a row to choose the activities that deliver it — progress, due date and status then follow the schedule.": "Bấm Gắn trên một dòng để chọn các công việc tạo ra gói đó — tiến độ, hạn hoàn thành và trạng thái sẽ bám theo tiến độ.",
   "Progress, due date and status are read from the master-schedule activities linked to each package. A package with none keeps the values typed on it.": "Tiến độ, hạn hoàn thành và trạng thái được lấy từ các công việc trong Tiến độ tổng gắn với từng gói. Gói chưa gắn công việc nào vẫn giữ số liệu nhập tay.",
+  // ── Geofence zones: the Active toggle and the Department scope, now that they decide something ──
+  "Switch this zone off to stop it authorising check-in": "Tắt khu vực này để không còn cho phép chấm công tại đây",
+  "Zone switched on": "Đã bật khu vực",
+  "Zone switched off — it no longer authorises check-in": "Đã tắt khu vực — không còn cho phép chấm công tại đây",
+  "Zone updated": "Đã cập nhật khu vực",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -42869,13 +42912,21 @@ function saveLocation() {
   toast('Saving location…');
   /* persist the zone to the backend, then re-render the table from the DB so
      it shows for everyone (and survives navigation/reload) */
-  tkPersist('/api/zones', { name, lat, lon, radius })
+  /* `dept` and `notes` are read out of the form four lines above and used to be dropped right here —
+     the whole body was {name, lat, lon, radius}. An administrator scoped a zone to Factory, saved,
+     and the register answered "All Depts", which reads as the column's default rather than as a
+     refusal. Send what the form collected; and when the modal was opened by Edit, PATCH that zone
+     instead of appending a second one. */
+  const editing = _tkZoneEditId;
+  _tkZoneEditId = '';
+  tkPersist(editing ? ('/api/zones/' + editing) : '/api/zones',
+            { name, lat, lon, radius, dept, notes }, editing ? 'PATCH' : 'POST')
     .then(async (res) => {
-      if (res === null) { toast('Save failed — please try again', 'error'); return; }
+      if (res === null) { toast(_t('Save failed — please try again'), 'error'); return; }
       try { await tkBootstrap(); } catch (e) {}
       try { tkRenderZones(); } catch (e) {}
-      try { _reEvalGate(); } catch (e) {}   /* new zone may now include current position */
-      toast('Location "' + name + '" saved to geofence zones');
+      try { _reEvalGate(); } catch (e) {}   /* the zone may now include, or no longer include, current position */
+      toast(editing ? (_t('Zone updated') + ': ' + name) : ('Location "' + name + '" saved to geofence zones'));
     });
 }
 
@@ -43914,12 +43965,32 @@ async function tkDeleteZone(id, name) {
     toast('Zone deleted: ' + name); tkRenderZones();
   } catch (e) { toast(_t('Could not delete') + ': ' + _errMsg(e), 'error', 5000); }
 }
-function editLocationRow(btn, name, lat, lon, radius) {
+/* Which zone the modal is editing, or '' for a new one. Without it "Edit" opened a PREFILLED ADD
+   form: widening HQ from 200 m to 500 m left the 200 m zone gating check-in and appended a second
+   one beside it. The control said Edit and could not edit. */
+let _tkZoneEditId = '';
+/* Switch a zone off without deleting it — a site closed for Tet, a client office between
+   contracts. Writes, re-reads, and re-evaluates the gate, because the position the user is standing
+   in may have just stopped being in-zone. */
+async function tkToggleZone(id, on) {
+  if (!id) return;
+  try {
+    await tkApi('/api/zones/' + id, { method: 'PATCH', body: { active: on ? 1 : 0 } });
+    const z = (_DEMO_ZONES || []).find(x => +x.id === +id); if (z) z.active = on ? 1 : 0;
+    tkRenderZones();
+    try { _reEvalGate(); } catch (e) {}
+    toast(on ? _t('Zone switched on') : _t('Zone switched off — it no longer authorises check-in'));
+  } catch (e) { toast(_t('Could not update') + ': ' + _errMsg(e), 'error', 5000); }
+}
+function editLocationRow(btn, name, lat, lon, radius, id, dept, notes) {
   openModal('locationModal');
+  _tkZoneEditId = id || '';
   document.getElementById('loc-name').value   = name;
   document.getElementById('loc-lat').value    = lat || '';
   document.getElementById('loc-lon').value    = lon || '';
   document.getElementById('loc-radius').value = radius || 200;
+  const dsel = document.getElementById('loc-dept'); if (dsel) dsel.value = dept || 'All';
+  const nel  = document.getElementById('loc-notes'); if (nel) nel.value = notes || '';
   /* show the map pinned to the existing coordinates */
   setTimeout(async () => {
     _tkClearPin();
