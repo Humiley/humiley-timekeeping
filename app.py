@@ -14481,10 +14481,14 @@ class Handler(BaseHTTPRequestHandler):
     def _demo_plan(self):
         """The shipped sample as it stands in THIS database. Read-only; see demo_data."""
         emps = db.list_employees()
+        _leave = db.list_leave() or []
         return demo_data.plan(
             emps, db.list_zones(),
-            lambda eid: len(db.list_attendance(emp_id=eid) or []),
-            lambda eid: len([l for l in (db.list_leave() or []) if l.get("emp_id") == eid]))
+            lambda eid: db.list_attendance(emp_id=eid) or [],
+            lambda eid: [l for l in _leave if l.get("emp_id") == eid],
+            # The same evidence _emp_delete refuses on. A sample record with real activity on it is
+            # in use, and in use means it is somebody's, whatever its id says.
+            db.employee_references)
 
     def _demo_data_preview(self, u):
         """What a removal WOULD do. Deletes nothing, ever — this is the screen somebody reads before
@@ -14528,6 +14532,12 @@ class Handler(BaseHTTPRequestHandler):
         removed = {"employees": 0, "attendance": 0, "leave": 0, "zones": 0,
                    "empEvents": 0, "esignPins": 0}
         snap = {"employees": [], "zones": []}
+
+        # ── PASS 1: read everything, write the recovery record, and only THEN destroy anything ──
+        # The audit entry is this endpoint's sole recoverability guarantee, and it used to be written
+        # last. Every delete commits on its own connection, so an exception anywhere in the loop —
+        # or in the audit write itself — left the sample org destroyed with no snapshot at all. The
+        # record of what was removed has to exist before the removal does.
         for e in plan["employees"]["demo"]:
             full = db.get_employee(e["id"])
             if not full:
@@ -14553,22 +14563,14 @@ class Handler(BaseHTTPRequestHandler):
             removed["empEvents"] += len(events)
             if db.employee_references(e["id"]).get("e-signature PIN"):
                 removed["esignPins"] += 1
-            db.delete_employee(e["id"])
-            # emp_events has NO foreign key, deliberately — it is the effective-dated employment
-            # record and is append-only through the API, which is why there is no deleter for it.
-            # Its rows therefore SURVIVE, pointing at an id nobody holds any more. That is harmless
-            # (nothing resolves them) and it is the right trade: adding a delete path into an
-            # append-only employment record, to tidy up a demo account, would be a far worse thing
-            # to have built than a few unreferenced rows. Counted and reported, not hidden.
             removed["employees"] += 1
         for z in plan["zones"]["demo"]:
             full = next((x for x in (db.list_zones() or []) if x.get("id") == z["id"]), None)
             if full:
                 snap["zones"].append(full)
-                db.delete_zone(z["id"])
                 removed["zones"] += 1
 
-        db.put_collection_item("audit", {
+        audit_row = db.put_collection_item("audit", {
             "actor": u.get("name") or "Administrator", "actorId": u.get("id") or "",
             "action": "Removed shipped sample data",
             "target": "employees/zones",
@@ -14580,8 +14582,21 @@ class Handler(BaseHTTPRequestHandler):
                        "credential hash does not belong in an audit log." % removed),
             "snapshot": snap,
             "ts": self._utc_now()})
+
+        # ── PASS 2: destroy. The recovery record is already committed above. ──
+        # emp_events has NO foreign key, deliberately — it is the effective-dated employment record
+        # and is append-only through the API, which is why there is no deleter for it. Its rows
+        # SURVIVE, pointing at an id nobody holds. Harmless (nothing resolves them) and the right
+        # trade: adding a delete path into an append-only employment record, to tidy up a demo
+        # account, is a worse thing to build than a few unreferenced rows.
+        for entry in snap["employees"]:
+            db.delete_employee(entry["employee"]["id"])
+        for z in snap["zones"]:
+            db.delete_zone(z.get("id"))
+
         return self._json({
             "ok": True, "removed": removed, "plan": plan,
+            "auditId": (audit_row or {}).get("id"),
             "note": ("Every removed record is snapshotted in the audit entry for this action and can "
                      "be recovered from it, except two things named plainly: signature PINs are "
                      "credential hashes and are destroyed rather than archived, and employment-history "

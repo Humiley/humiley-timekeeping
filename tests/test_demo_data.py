@@ -9,7 +9,15 @@ import seed_data
 
 
 def _readers(att=0, lv=0):
-    return (lambda _id: att), (lambda _id: lv)
+    """plan() takes ROWS now, not counts — it has to look at each attendance row's date to tell a
+    sample punch from a real one. Sample-shaped rows by default, so a test that wants "in use"
+    behaviour has to ask for it."""
+    day = sorted(demo_data.seed_attendance_dates())[0]
+    rows = [{"emp_id": "x", "date": day} for _ in range(att)]
+    lv_key = list(demo_data.seed_leave_keys())[0] if lv else None
+    lvs = [{"emp_id": lv_key[0], "type": lv_key[1],
+            "startDate": lv_key[2], "endDate": lv_key[3]} for _ in range(lv)] if lv else []
+    return (lambda _id: rows), (lambda _id: lvs)
 
 
 def _seed_emp(i=0):
@@ -97,8 +105,8 @@ def test_an_edited_sample_row_contributes_nothing():
 # ── zones: a geofence decides whether a punch is on site ────────────────────────────────────────
 def test_a_zone_must_match_on_name_AND_position():
     z = seed_data.ZONES[0]
-    same = {"id": 1, "name": z["name"], "lat": z["lat"], "lon": z["lon"]}
-    moved = {"id": 2, "name": z["name"], "lat": z["lat"] + 0.02, "lon": z["lon"]}
+    same = {"id": 1, "name": z["name"], "lat": z["lat"], "lon": z["lon"], "radius": z["radius"]}
+    moved = {"id": 2, "name": z["name"], "lat": z["lat"] + 0.02, "lon": z["lon"], "radius": z["radius"]}
     p = demo_data.plan([], [same, moved], *_readers())
     assert [x["id"] for x in p["zones"]["demo"]] == [1]
     assert [x["id"] for x in p["zones"]["keep"]] == [2], \
@@ -106,8 +114,8 @@ def test_a_zone_must_match_on_name_AND_position():
 
 
 def test_a_real_zone_is_kept():
-    p = demo_data.plan([], [{"id": 7, "name": "Mega Lifesciences Site", "lat": 10.9, "lon": 106.7}],
-                       *_readers())
+    p = demo_data.plan([], [{"id": 7, "name": "Mega Lifesciences Site", "lat": 10.9,
+                             "lon": 106.7, "radius": 200}], *_readers())
     assert p["zones"]["keep"] and not p["zones"]["demo"]
 
 
@@ -125,3 +133,28 @@ def test_the_hr_sample_caveat_is_always_stated():
     p = demo_data.plan([], [], *_readers())
     assert any("belong to REAL people" in n for n in p["notes"]), \
         "the one thing this cannot identify has to be said every time, not only when it is convenient"
+
+
+# ── the two properties the adversarial review added ─────────────────────────────────────────────
+def test_a_sample_record_with_activity_on_it_is_in_use():
+    """An EDIT already makes a sample row real. Accrued ACTIVITY is the stronger signal, and the
+    single-employee delete path has always refused on it."""
+    att = lambda _i: [{"emp_id": "EMP002", "date": "2026-08-19"}]      # not a seed date
+    p = demo_data.plan([_seed_emp(1)], [], att, lambda _i: [])
+    assert p["totals"]["employees"] == 0
+    assert p["employees"]["inUse"] and "punching in" in p["employees"]["inUse"][0]["why"]
+
+
+def test_a_reference_elsewhere_also_means_in_use():
+    p = demo_data.plan([_seed_emp(1)], [], lambda _i: [], lambda _i: [],
+                       lambda _i: {"payruns": 1})
+    assert p["totals"]["employees"] == 0 and p["employees"]["inUse"]
+
+
+def test_a_zone_whose_radius_was_changed_is_an_edit():
+    z = seed_data.ZONES[0]
+    widened = {"id": 9, "name": z["name"], "lat": z["lat"], "lon": z["lon"],
+               "radius": int(z["radius"]) + 150}
+    p = demo_data.plan([], [widened], *_readers())
+    assert not p["zones"]["demo"], "a geofence somebody widened is theirs, not the sample's"
+    assert [x["id"] for x in p["zones"]["edited"]] == [9]
