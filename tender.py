@@ -470,8 +470,16 @@ def package_cost(pkg, a):
         rate = _num(e.get("rate")) or _num(a.get("rate" + grade.title())) or GRADE_RATE.get(grade, 0)
         cost = vnd(days * rate)
         labour += cost
+        # Days that cost nothing are days quoted for free, and `GRADE_RATE.get(grade, 0)` will hand
+        # out exactly that for any grade it does not recognise — a typo, an import from a rate card
+        # whose grade codes differ, or a grade retired from GRADES while packages still reference
+        # it. Every one of those produced a package priced at zero that read on screen as though it
+        # had been costed. The cost still computes (refusing to price a stored tender would take
+        # the whole summary down over one bad row); it is the SILENCE that is fixed.
         effort.append({"grade": grade, "label": GRADE_LABEL.get(grade, grade),
-                       "days": days, "rate": vnd(rate), "cost": cost})
+                       "days": days, "rate": vnd(rate), "cost": cost,
+                       "unpriced": bool(days and not rate),
+                       "unknownGrade": grade not in GRADE_RATE})
 
     people = _num(pkg.get("travelPeople"))
     trips = _num(pkg.get("travelTrips"))
@@ -502,6 +510,10 @@ def package_cost(pkg, a):
                     or pkg.get("optional") is True,
         "effort": effort,
         "days": round(sum(e["days"] for e in effort), 2),
+        # Carried on the package, not just the row, so a handful of free days cannot hide inside a
+        # package whose other grades priced normally and whose total therefore looks healthy.
+        "unpricedDays": round(sum(e["days"] for e in effort if e["unpriced"]), 2),
+        "unknownGrades": sorted({e["grade"] for e in effort if e["unknownGrade"] and e["days"]}),
         "labour": labour,
         "expenseDetail": {"travel": trip_cost, "hotel": hotel, "perDiem": per_diem, "other": other},
         "expenses": expenses,
@@ -540,6 +552,8 @@ def services_rollup(packages, a, config=None):
         "packages": rows,
         "packageCount": len(rows),
         "days": days,
+        "unpricedDays": round(sum(r["unpricedDays"] for r in rows), 2),
+        "unknownGrades": sorted({g for r in rows for g in r["unknownGrades"]}),
         "labour": sum(r["labour"] for r in rows),
         "expenses": sum(r["expenses"] for r in rows),
         "cost": cost,
@@ -674,7 +688,15 @@ def quotation(tender, master=None, rollup=None, overrides=None):
     # its VAT relieved on the wrong base. apportion() is the same largest-remainder splitter used
     # for preliminaries and the cash-flow spread, so the parts sum to the whole exactly — a
     # discount that loses a dong to rounding makes the customer's own arithmetic fail to add up.
-    disc_pct = _num(tender.get("discountPct"))
+    # A discount is a share of the price, so it lives in 0..100. Outside that it stops being a
+    # discount: 150 (a typo for 15, one keystroke) produced a NEGATIVE invoice — negative net,
+    # negative VAT, a grand total owed by us to the customer — and every downstream figure, P&L and
+    # cash flow included, followed it down without a word. A negative percentage silently put the
+    # price UP. Capped rather than rejected, because a stored tender must still open; what was
+    # asked for is kept beside what was applied so the difference can be shown rather than hidden.
+    asked_pct = _num(tender.get("discountPct"))
+    disc_pct = min(max(asked_pct, 0.0), 100.0)
+    capped_disc = asked_pct != disc_pct
     disc_frac = _frac(disc_pct)
     discount = vnd(subtotal * disc_frac)
     if discount and subtotal:
@@ -692,6 +714,15 @@ def quotation(tender, master=None, rollup=None, overrides=None):
 
     net = subtotal - discount
     vat = sum(l["vat"] for l in lines)
+
+    # Facts about what is wrong with this price, not sentences about it. issue_check() is where a
+    # tender says what should be looked at before it is sent, and it already had a list; a second
+    # list computed somewhere else is how two surfaces come to say different things about one
+    # quotation. What lands here is only what this function can see and that one cannot.
+    unpriced_lines = [str(l.get("desc") or l.get("id") or "?")
+                      for l in lines if _num(l.get("qty")) > 0 and _num(l.get("net")) <= 0]
+    src = rollup or {}
+
     return {
         "costingType": ctype,
         "lines": lines,
@@ -702,10 +733,19 @@ def quotation(tender, master=None, rollup=None, overrides=None):
         # that is revenue.
         "subtotal": subtotal,
         "discountPct": round(disc_pct, 4),
+        "discountPctAsked": round(asked_pct, 4),
+        "discountCapped": capped_disc,
         "discount": discount,
         "net": net,
         "vat": vat,
         "gross": net + vat,
+        # A line with a quantity and no money: "we forgot to price this", carried by name so the
+        # warning can say WHICH line rather than that there is one.
+        "unpricedLines": unpriced_lines,
+        # Days of effort that cost nothing — see package_cost(). Carried up from the rollup because
+        # the quotation is the only object every caller has.
+        "unpricedDays": _num(src.get("unpricedDays")),
+        "unknownGrades": list(src.get("unknownGrades") or []),
         "grossProfit": net - cogs,
         "grossMarginPct": round((net - cogs) / net * 100, 2) if net else 0.0,
         # The effective mark-up actually taken across the whole quotation — the one number that
@@ -992,7 +1032,12 @@ def accuracy(tender, quote=None):
                 "lowPct": 0.0, "highPct": 0.0, "low": net, "high": net, "maturity": "",
                 "spread": 0}
     label, lo, hi, maturity, note = ACCURACY_BY_KEY[key]
-    low, high = vnd(net * (1 + lo / 100.0)), vnd(net * (1 + hi / 100.0))
+    # Ordered rather than assumed. The percentages run low-to-high, which orders the money only
+    # while the money is positive: on a negative net — a credit, a line entered with a minus — the
+    # -20%/+50% band comes out as "as low as -80m, as high as -150m", read straight off the screen
+    # under those two labels, with a negative spread beneath it. Nothing errors; it simply says the
+    # opposite of what it means.
+    low, high = sorted((vnd(net * (1 + lo / 100.0)), vnd(net * (1 + hi / 100.0))))
     return {"key": key, "stated": True, "label": label, "note": note, "maturity": maturity,
             "lowPct": lo, "highPct": hi, "low": low, "high": high, "spread": high - low}
 
@@ -1645,6 +1690,33 @@ def issue_check(tender, quote):
     # The discount cap was declared as an assumption — "Maximum discount sales may offer without
     # approval" — and referenced by nothing. A control nobody enforces is not a control; it reads
     # like governance in the settings screen while any discount whatsoever went out unremarked.
+    # A discount that is not a share of the price. 150 is one keystroke from 15, and it used to
+    # produce a negative net, a negative VAT and a grand total the company owed the customer, with
+    # the P&L and the cash flow following it down without a word. quotation() now caps it; this is
+    # what says so, because a number silently corrected is the same class of problem as a number
+    # silently wrong.
+    if quote.get("discountCapped"):
+        warnings.append("A discount of %.1f%% was entered; %.1f%% was applied. A discount is a "
+                        "share of the price, so it can be neither negative nor greater than the "
+                        "price itself."
+                        % (_num(quote.get("discountPctAsked")), _num(quote.get("discountPct"))))
+
+    # Work that costs nothing. An unrecognised grade — a typo, a rate card with different codes, a
+    # grade retired while packages still reference it — priced at zero and read on screen as though
+    # it had been costed.
+    if _num(quote.get("unpricedDays")):
+        unknown = quote.get("unknownGrades") or []
+        warnings.append("%s day(s) of effort are priced at a rate of zero%s. Days that cost "
+                        "nothing are days quoted for free."
+                        % (_num(quote["unpricedDays"]),
+                           " — unrecognised grade(s): " + ", ".join(unknown) if unknown else ""))
+
+    free = quote.get("unpricedLines") or []
+    if free:
+        warnings.append("%d line(s) carry a quantity but no money: %s. A zero in a tender reads as "
+                        "\"we forgot to price this\"."
+                        % (len(free), ", ".join(free[:4]) + (" …" if len(free) > 4 else "")))
+
     a = assumptions(tender.get("assump"))
     cap = _num(a.get("discountCapPct"))
     given = _num(quote.get("discountPct", tender.get("discountPct")))
