@@ -639,15 +639,14 @@ def quotation(tender, master=None, rollup=None, overrides=None):
                 "vatPct": round(vat, 4), "vat": vnd(net * _frac(vat)),
                 "gross": net + vnd(net * _frac(vat)), "cogs": p["cost"],
                 # The client's tender form asks for professional fee and travel & expenses
-                # separately. The letterhead table is built on the template's seven fixed columns,
-                # so rather than restructure a customer-facing document the split travels as a
-                # sub-line under the description — the same information, and it renders identically
-                # in the PDF, the on-screen preview and the Excel export instead of only in
-                # whichever of the three got new columns.
+                # separately, and they now have COLUMNS of their own — see tender.columns().
+                #
+                # These same two figures used to be printed as a sub-line under the description,
+                # because the table had no room for them. With the columns in place that sub-line
+                # became the same numbers twice on one row of a customer's quotation, so it is
+                # gone. A document that says a thing twice invites the reader to look for the
+                # difference between the two statements.
                 "professionalFee": p["professionalFee"], "expenses": p["expensesQuoted"],
-                "descNote": ("Professional fee %s  ·  Travel & expenses %s  ·  %s consultant days"
-                             % (format(p["professionalFee"], ","), format(p["expensesQuoted"], ","),
-                                ("%g" % p["days"]))) if p["days"] else "",
                 "durationMonths": p["durationMonths"], "days": p["days"],
             })
     else:
@@ -1757,6 +1756,49 @@ def doc_kind(tender):
     return "Quotation"
 
 
+# WHAT THE PRICED TABLE'S SEVEN COLUMNS MEAN, decided once, on the server.
+#
+# The letterhead template gives seven columns and no more, so this is not a choice about how many
+# but about what they carry. Goods are sold by quantity at a rate; a consultancy engagement is not.
+# "Qty 1, Unit: package" is a column pair saying nothing, printed beside a fee whose two halves —
+# professional time and travel — the client's own tender form asks for separately.
+#
+# Emitted from here rather than repeated in each renderer. The same seven headers were written out
+# three times (PDF, on-screen preview, Excel), which is exactly the arrangement that let the
+# discount be applied differently by each of four surfaces: the moment they disagree, the letter a
+# customer holds and the file they open stop being the same document.
+#
+# Renderers still FORMAT — a PDF draws money as text and Excel writes it as a number — but they no
+# longer decide what a column is.
+
+COLUMNS_DEFAULT = [
+    {"key": "idx", "label": "#", "align": "center"},
+    {"key": "itemCode", "label": "Item", "align": "left"},
+    {"key": "desc", "label": "Description", "align": "left"},
+    {"key": "qty", "label": "Qty", "align": "center"},
+    {"key": "unit", "label": "Unit", "align": "center"},
+    {"key": "unitSell", "label": "Unit Price (VND)", "align": "right", "money": True},
+    {"key": "net", "label": "Amount (VND)", "align": "right", "money": True},
+]
+
+COLUMNS_SERVICES = [
+    {"key": "idx", "label": "#", "align": "center"},
+    # The evaluator cross-checks this against their requirement spec, so it is named for what it
+    # is rather than left as a generic "Item".
+    {"key": "itemCode", "label": "URS Ref.", "align": "left"},
+    {"key": "desc", "label": "Scope of Services", "align": "left"},
+    {"key": "days", "label": "Days", "align": "center"},
+    {"key": "professionalFee", "label": "Professional Fee (VND)", "align": "right", "money": True},
+    {"key": "expenses", "label": "Travel & Expenses (VND)", "align": "right", "money": True},
+    {"key": "net", "label": "Total Price (VND)", "align": "right", "money": True},
+]
+
+
+def columns(tender):
+    ctype = str(tender.get("costingType") or TRADING).strip().lower()
+    return COLUMNS_SERVICES if ctype == SERVICES else COLUMNS_DEFAULT
+
+
 def document(tender, quote, company=None):
     """The quotation as the customer will read it — shaped as the LETTERHEAD, not as a data table.
 
@@ -1835,6 +1877,7 @@ def document(tender, quote, company=None):
                     or ("Sales Quotation No. " + (tender.get("quoteNo") or "")
                         + (" — " + tender["projectName"] if tender.get("projectName") else ""))),
         "docKind": doc_kind(tender),
+        "columns": columns(tender),
         "termsParagraph": terms_paragraph(tender),
         "conditions": conditions(tender),
         "conditionsAreDefault": is_default_conditions(tender),
