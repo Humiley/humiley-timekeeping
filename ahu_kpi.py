@@ -182,7 +182,31 @@ def on_time_delivery(units):
 
 
 # ── The eight, as the SOP states them ────────────────────────────────────────────────────────────
-def summary(units, incidents=None, worked_hours=None):
+def customer_complaints(units, complaints):
+    """Complaints per delivered unit, over the units this summary covers.
+
+    The SOP names the KPI but nothing captured a complaint, so it read NOT_MEASURED. It is a rate,
+    not a count: two complaints against forty units delivered and two against four are the same
+    number and opposite facts.
+
+    Delivered is the denominator, not built. A complaint can only be raised against a unit somebody
+    has — dividing by work in progress would flatter the figure by exactly the amount of work in
+    progress.
+    """
+    delivered = [u for u in (units or [])
+                 if _norm((u.get("unit") or {}).get("status")) in ("dispatched", "delivered",
+                                                                   "closed")]
+    if not delivered:
+        return None
+    ids = {str((u.get("unit") or {}).get("id")) for u in delivered}
+    against = [c for c in (complaints or []) if str(c.get("unitId") or "") in ids]
+    open_ = [c for c in against
+             if _norm(c.get("status")) not in ("closed", "resolved", "rejected", "withdrawn")]
+    return {"delivered": len(delivered), "complaints": len(against), "open": len(open_),
+            "per100": round(100.0 * len(against) / len(delivered), 1)}
+
+
+def summary(units, incidents=None, worked_hours=None, complaints=None):
     """Every KPI in SOP section 1.4, each with its target, its owner and its actual.
 
     `incidents` is the portal's OSH register (optional); `worked_hours` the exposure hours the LTIR
@@ -237,13 +261,27 @@ def summary(units, incidents=None, worked_hours=None):
          "achieved is not something this factory tests."),
         ("Thermal Transmittance",
          "EN 1886 T likewise requires a calibrated chamber. Recorded as sold, never measured here."),
-        ("Customer Complaints",
-         "Nothing in the portal captures a complaint against a delivered AHU. This needs a "
-         "register before the KPI can mean anything."),
     ):
         out.append({"kpi": title, "target": "per SOP 1.4", "owner": "Engineering" if "Class" in title
                     or "Transmittance" in title else "QA/QC",
                     "status": NOT_MEASURED, "why": why})
+
+    # Customer Complaints — computed once a register exists AND something has been delivered.
+    # Both halves are stated separately, because "no complaints" and "nothing delivered yet" are
+    # very different facts and a single zero would report them identically.
+    cc = customer_complaints(units, complaints)
+    if cc is None:
+        out.append({"kpi": "Customer Complaints", "target": "per SOP 1.4", "owner": "QA/QC",
+                    "status": NOT_MEASURED,
+                    "why": ("No unit in this period has been dispatched, so there is nothing a "
+                            "customer could yet complain about. The register exists; the "
+                            "denominator does not.")})
+    else:
+        out.append({"kpi": "Customer Complaints", "target": "per SOP 1.4", "owner": "QA/QC",
+                    "value": cc["complaints"], "pct": cc["per100"], "n": cc["delivered"],
+                    "detail": ("%d complaint(s) against %d delivered unit(s); %d still open."
+                               % (cc["complaints"], cc["delivered"], cc["open"])),
+                    "status": "OK" if cc["complaints"] == 0 else "WATCH"})
 
     computed = [k for k in out if k.get("status") != NOT_MEASURED]
     return {

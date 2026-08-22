@@ -460,6 +460,15 @@ DOSSIER = [
      "when": "FAT was performed"},
     {"k": "co_ce", "label": "Certificate of Origin / CE / CB", "form": None, "always": False,
      "when": "Export or CE-marked supply"},
+    # Eurovent 6/18 section 12.2 requires both of these with EVERY unit. The SOP's own section 12.5
+    # list does not carry them, so they are added here as conditional rather than mandatory: making
+    # one an unconditional G6 criterion changes what the factory is refused for, and that is the
+    # SOP owner's decision. Promoting either is a one-line change to `always`.
+    {"k": "spares", "label": "Spare parts list", "form": None, "always": False,
+     "when": "Eurovent 6/18 12.2 — recommended with every unit"},
+    {"k": "nameplate", "label": "Name plate fitted and warning labels applied", "form": None,
+     "always": False,
+     "when": "Eurovent 6/18 12.2 — recommended with every unit; the first thing an inspector looks for"},
 ]
 
 
