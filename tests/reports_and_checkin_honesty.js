@@ -54,6 +54,9 @@ console.log('\nReports that read the data, and a Check In screen that tells the 
 const api = {};
 new Function(
   take('function _attMinutes(', '_attMinutes') +
+  // _attIsAnomaly delegates to the shared stamp parser now — the Manager view reads the same one,
+  // which is the whole point. Without it here the sandbox throws ReferenceError.
+  take('function _attGpsState(', '_attGpsState') +
   take('function _attIsAnomaly(', '_attIsAnomaly') +
   '\nObject.assign(this, { _attMinutes, _attIsAnomaly });'
 ).call(api);
