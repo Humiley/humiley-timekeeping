@@ -781,6 +781,152 @@ def pnl(quote, tender):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#   4b. THE HANDOVER — a won tender becomes the budget the job is measured against
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Pricing a job and controlling it were two disconnected halves. `estimating.budget_lines` hands a
+# BoQ estimate to a project as its baseline, and nothing did the same for the three engines in this
+# module: a trading deal, a turnkey plant or a consultancy engagement could be priced to the dong,
+# won, and then spent against nothing at all. Cost CONTROL is a comparison. Without a baseline in
+# the project there is no comparison, only a second number arriving later with nothing to sit
+# beside.
+#
+# What is handed over is the COST BASE — never the selling price and never the profit. A project
+# that spends its profit has not stayed within budget; it has consumed the reason the job was
+# taken. Same rule as the BoQ path, restated here because it is the one that gets quietly broken.
+#
+# EACH ENGINE HANDS OVER THE STRUCTURE IT WAS PRICED IN, because that is the structure the job will
+# be controlled in and a budget in some other shape cannot be compared without re-mapping it by
+# hand every month:
+#
+#   TRADING   the customs chain, split the way the money is actually committed and paid — goods to
+#             the supplier, freight to the forwarder, duty to customs, clearance to the broker.
+#             One "landed cost" line would be a number nobody can chase.
+#   EPC       one line per cost centre. Civil, MEP, cleanroom and each production line are what the
+#             site reports against and what the schedule is built from.
+#   SERVICES  one line per work package, because a package is what gets delivered, invoiced and
+#             argued about.
+#
+# Project fees follow as their own lines whichever engine priced the job: PM, design, supervision,
+# installation, commissioning, training, spares, warranty, contingency. They are delivery cost, so
+# they belong in the budget — and each is separately controllable, so each is its own line.
+
+BUDGET_CATEGORY_TRADING = [
+    # (key on the landed line, budget category, label)
+    ("exwVnd", "Material", "Goods — EXW supplier price"),
+    ("legVnd", "Logistics", "Freight, insurance and origin charges"),
+    ("duty", "Duty & tax", "Import duty"),
+    ("sct", "Duty & tax", "Special consumption tax"),
+    ("customs", "Logistics", "Customs clearance"),
+    ("handling", "Logistics", "Port handling"),
+    ("localTrans", "Logistics", "Local transport to site"),
+    ("bank", "Other", "Bank charges (TT / LC)"),
+    ("inspect", "Other", "Inspection"),
+]
+
+
+def _trading_budget(master, keep=None):
+    """The customs chain, split into what each party actually gets paid.
+
+    Recoverable import VAT is NOT here, for the same reason it is not in the landed cost: it is a
+    receivable from the state, not a cost of the job. Budgeting it would show the project
+    overspending by the VAT on every import and then mysteriously recovering it.
+
+    `keep` is the set of source ids the QUOTATION actually carries. A line excluded from the quote
+    is not being sold, so it is not being bought, and budgeting it would fund a purchase nobody is
+    making — then report an underspend for not making it. Without this the budget summed the cost
+    master while the quote summed only what it sells, the two disagreed by the excluded line, and
+    the reconciliation assert took the whole tender summary down with a 500.
+    """
+    rows = [r for r in (master or {}).get("rows", []) if r.get("source") == IMPORT]
+    local = [r for r in (master or {}).get("rows", []) if r.get("source") == LOCAL]
+    if keep is not None:
+        rows = [r for r in rows if str(r.get("id")) in keep]
+        local = [r for r in local if str(r.get("id")) in keep]
+    pot = {}
+    for r in rows:
+        # EXW in dong: the landed total less everything added on top of it.
+        charges = r.get("charges") or {}
+        exw_vnd = r["cif"] - vnd(r["cif"] - (_num(r.get("exwTotal")) * _num(r.get("fx"))))
+        pot["exwVnd"] = pot.get("exwVnd", 0) + exw_vnd
+        pot["legVnd"] = pot.get("legVnd", 0) + (r["cif"] - exw_vnd)
+        pot["duty"] = pot.get("duty", 0) + r.get("duty", 0)
+        pot["sct"] = pot.get("sct", 0) + r.get("sct", 0)
+        for k in ("customs", "handling", "localTrans", "bank", "inspect"):
+            pot[k] = pot.get(k, 0) + charges.get(k, 0)
+    out = []
+    for key, category, label in BUDGET_CATEGORY_TRADING:
+        amount = pot.get(key, 0)
+        if amount:
+            out.append({"category": category, "amount": amount, "note": label})
+    bought_local = sum(r.get("landed", 0) for r in local)
+    if bought_local:
+        out.append({"category": "Material", "amount": bought_local,
+                    "note": "Goods bought in Vietnam — delivered cost"})
+    return out
+
+
+def _epc_budget(rollup):
+    return [{"category": "Subcontract" if c["costCentre"] != "CON" else "Overhead",
+             "amount": c["costVnd"],
+             "note": "%s — %s" % (c["costCentre"], c["label"])}
+            for c in (rollup or {}).get("centres", []) if c["costVnd"]]
+
+
+def _services_budget(rollup):
+    out = []
+    for p in (rollup or {}).get("packages", []):
+        if p["labour"]:
+            out.append({"category": "Labor", "amount": p["labour"],
+                        "note": "%s %s — %g consultant days" % (p.get("code") or "", p.get("name") or "",
+                                                                p["days"])})
+        if p["expenses"]:
+            out.append({"category": "Other", "amount": p["expenses"],
+                        "note": "%s %s — travel & expenses" % (p.get("code") or "", p.get("name") or "")})
+    return out
+
+
+def budget_lines(tender, quote, master=None, rollup=None):
+    """The cost base of a won tender, as project budget lines.
+
+    Asserted to sum to the cost base pnl() charges against revenue. If those two ever disagree, one
+    of the screens is lying about the same job — and the one people trust is whichever they opened
+    first.
+    """
+    ctype = str(tender.get("costingType") or TRADING).strip().lower()
+    if ctype == EPC:
+        out = _epc_budget(rollup)
+    elif ctype == SERVICES:
+        out = _services_budget(rollup)
+    else:
+        # Budget what is being sold, not what was costed. The quotation is where exclusions are
+        # decided, so it is the quotation that says which lines the job actually carries.
+        keep = {str(l.get("srcId")) for l in (quote or {}).get("lines", [])}
+        out = _trading_budget(master, keep)
+
+    goods = sum(l["amount"] for l in out)
+    fees = project_fees(tender, _num((quote or {}).get("cogs")) or goods)
+    for f in fees["lines"]:
+        out.append({"category": "Overhead", "amount": f["amount"],
+                    "note": f["label"] + (" %g%%" % f["pct"] if f["pct"] else " (lump sum)")})
+
+    total = sum(l["amount"] for l in out)
+    cost_base = _num((quote or {}).get("cogs")) + fees["total"]
+    # The goods figure the engines roll up and the cogs the quotation carries are the same money by
+    # two routes; a mismatch means a line was priced into one and not the other.
+    assert abs(total - cost_base) <= len(out), (
+        "budget lines (%d) do not reconcile to the cost base (%d)" % (total, cost_base))
+    return {
+        "lines": out,
+        "total": total,
+        "costingType": ctype,
+        # Stated, not implied. Somebody reading a budget wants to know what was left out of it.
+        "excludesProfit": _num((quote or {}).get("net")) - cost_base,
+        "excludesRecoverableVat": _num((master or {}).get("vatRecoverable")),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #   5. CASH FLOW — when the money leaves and when it comes back
 # ══════════════════════════════════════════════════════════════════════════════
 

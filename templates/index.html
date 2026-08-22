@@ -28410,7 +28410,8 @@ function _tndTabs() {
     { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
-    { k: 'risk', label: 'Risk', fn: 'tndTabRisk' }
+    { k: 'risk', label: 'Risk', fn: 'tndTabRisk' },
+    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
   ];
   if (t === 'services') return [
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
@@ -28418,7 +28419,8 @@ function _tndTabs() {
     { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
-    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' }
+    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
+    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
   ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
@@ -28428,7 +28430,8 @@ function _tndTabs() {
     { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
-    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' }
+    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
+    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
   ];
   return _EST_TABS;
 }
@@ -28496,7 +28499,11 @@ async function tndSetAssump(key, v) {
 }
 
 async function tndReload() {
-  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote']);
+  // pm_projects feeds the Budget Handover dropdown. Loaded here rather than relied upon:
+  // whether it is already in _HR depends on which view the user happened to open first,
+  // and an empty dropdown reads as 'there are no projects' rather than 'not loaded yet'.
+  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote',
+                  'pm_projects']);
   await estRenderWorkspace();
 }
 
@@ -28639,6 +28646,97 @@ async function tndSetConfig(centre, field, v) {
    Shows the effort BEHIND each fee, not only the fee. A professional fee that cannot be traced to
    days x grade cannot be defended when the client asks how it was arrived at, and cannot be
    compared afterwards with what the engagement actually cost. */
+/* The handover: what this tender becomes once it is won.
+   Shown before anybody adopts it, so the baseline a job is measured against is a figure somebody
+   read and agreed to rather than a total that appeared after a button press. */
+function tndTabBudget() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const b = _tndSum.budget || { lines: [], total: 0 };
+  const can = _estCanPrice() && !_estFrozen(e);
+  const adopted = e.adoptedProjectId;
+
+  const byCat = {};
+  (b.lines || []).forEach(l => { byCat[l.category] = (byCat[l.category] || 0) + l.amount; });
+
+  const head = '<div class="card" style="margin-bottom:14px"><div style="display:flex;gap:26px;flex-wrap:wrap">' +
+    [[_t('Budget (cost base)'), _tndMoney(b.total)],
+     [_t('Lines'), String((b.lines || []).length)],
+     [_t('Profit held back'), _tndMoney(b.excludesProfit)],
+     [_t('Recoverable VAT excluded'), _tndMoney(b.excludesRecoverableVat)]]
+      .map(function (kv) {
+        return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' + kv[0] +
+          '</div><div style="font-size:15px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + kv[1] + '</div></div>';
+      }).join('') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:10px">' +
+    _t('What the job is funded for. The selling price and the profit are deliberately not here — a project that spends its profit has not stayed within budget, it has consumed the reason the job was taken.') +
+    '</div></div>';
+
+  const catRow = Object.keys(byCat).sort().map(function (c) {
+    return '<span style="display:inline-block;margin:0 14px 6px 0;font-size:12px">' +
+      '<b style="color:var(--navy)">' + _estEsc(c) + '</b> ' +
+      '<span style="font-variant-numeric:tabular-nums">' + _tndMoney(byCat[c]) + '</span></span>';
+  }).join('');
+
+  const rows = (b.lines || []).length ? b.lines.map(function (l) {
+    return '<tr>' +
+      '<td style="white-space:nowrap"><b style="color:var(--navy)">' + _estEsc(l.category) + '</b></td>' +
+      '<td>' + _estEsc(l.note) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(l.amount) + '</td></tr>';
+  }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:22px">' +
+      _t('Nothing priced yet, so there is nothing to hand over.') + '</td></tr>';
+
+  const projects = (_HR.pm_projects || []).filter(function (p) {
+    return p.id && String(p.status || '').toLowerCase() !== 'closed';
+  });
+  const action = adopted
+    ? '<div style="font-size:13px"><b style="color:var(--emerald-deep)">' + _t('Already the budget for') + ' ' +
+        _estEsc(adopted) + '</b><div style="font-size:12px;color:var(--text-light);margin-top:4px">' +
+        _t('Adopted') + ' ' + _estEsc(String(e.adoptedAt || '').slice(0, 10)) + ' · ' + _estEsc(e.adoptedBy || '') +
+        '. ' + _t('Re-baselining a live job is a decision, not a re-click — raise a revised tender instead.') +
+        '</div></div>'
+    : (can && (b.lines || []).length
+        ? '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+          '<select id="tnd-adopt-proj" class="form-control" style="max-width:320px">' +
+          '<option value="">' + _t('Choose the project this job becomes') + '</option>' +
+          projects.map(function (p) { return '<option value="' + _estEsc(p.id) + '">' + _estEsc(p.name || p.id) + '</option>'; }).join('') +
+          '</select>' +
+          '<button class="btn btn-primary btn-sm" onclick="tndAdopt()">' + tkIcon('check') + _t('Set as project budget') + '</button>' +
+          '<span style="font-size:11.5px;color:var(--text-light)">' + _t('Once only. Approved or won tenders, management only.') + '</span></div>'
+        : '<div style="font-size:12px;color:var(--text-light)">' +
+          _t('A tender becomes a budget once it is approved or won.') + '</div>');
+
+  _estSet(head +
+    (catRow ? '<div class="card" style="margin-bottom:14px">' + catRow + '</div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="table-wrap"><table style="min-width:640px"><thead><tr>' +
+    ['Category', 'What it funds', 'Budget'].map(function (h, i) {
+      return '<th style="font-size:10.5px' + (i === 2 ? ';text-align:right' : '') + '">' + _t(h) + '</th>';
+    }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div class="card" style="padding:16px 18px">' + action + '</div>');
+}
+
+async function tndAdopt() {
+  const e = _estById(_estCur); if (!e) return;
+  const pid = (document.getElementById('tnd-adopt-proj') || {}).value;
+  const proj = (_HR.pm_projects || []).find(function (p) { return p.id === pid; });
+  if (!proj) { toast(_t('Pick a project first.'), 'warn'); return; }
+  const b = (_tndSum || {}).budget || {};
+  const ok = await tkConfirm({
+    title: _t('Set the project budget'),
+    body: _t('This writes the cost base of') + ' ' + (e.estNo || e.title) + ' ' + _t('into') + ' ' +
+      (proj.name || pid) + ' ' + _t('as its budget:') + '\n\n' + _tndMoney(b.total) + '  (' +
+      ((b.lines || []).length) + ' ' + _t('lines') + ')\n\n' +
+      _t('It can only be done once. Re-baselining a live job afterwards needs a revised tender.'),
+    confirmText: _t('Set budget')
+  });
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/est/adopt', { method: 'POST', body: { estId: e.id, projectId: pid } });
+    tkCollInvalidate('pm_costs'); tkCollInvalidate('est_projects');
+    toast(_t('Budget set') + ' — ' + r.lines + ' ' + _t('lines') + ', ' + _tndMoney(r.total), 'success', 5000);
+    await tndReload();
+  } catch (x) { toast(_t('Could not set the budget') + ': ' + _errMsg(x), 'error', 6000); }
+}
+
 function tndTabWbs() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
   const roll = _tndSum.rollup || { packages: [] };
