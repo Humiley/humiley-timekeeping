@@ -28803,6 +28803,113 @@ async function tndSetConfig(centre, field, v) {
 /* The handover: what this tender becomes once it is won.
    Shown before anybody adopts it, so the baseline a job is measured against is a figure somebody
    read and agreed to rather than a total that appeared after a button press. */
+/* HOW GOOD IS THIS NUMBER. A budgetary figure and a firm price looked identical on screen — same
+   currency, same tabular numerals, same confidence — and nothing recorded which one a reader was
+   holding. The range is what makes it real: "Class 4" is a label somebody nods at; "between 878bn
+   and 1,342bn" is a sentence that changes what they do next. */
+function _tndAccuracyPanel() {
+  const a = (_tndSum || {}).accuracy || {};
+  const classes = (_tndSum || {}).accuracyClasses || [];
+  const e = _estById(_estCur) || {};
+  const can = _estCanPrice() && !_estFrozen(e);
+
+  const picker = can ? '<select class="form-control" style="max-width:360px;margin-top:10px" ' +
+      'onchange="tndSetAccuracy(this.value)">' +
+      '<option value=""' + (a.stated ? '' : ' selected') + '>' + _t('Not stated') + '</option>' +
+      classes.map(function (c) {
+        return '<option value="' + _tkEscA(c.key) + '"' + (a.key === c.key ? ' selected' : '') + '>' +
+          _estEsc(c.label) + '  (' + _tndNum(c.lowPct, 0) + '% / +' + _tndNum(c.highPct, 0) + '%)</option>';
+      }).join('') + '</select>' : '';
+
+  const band = a.stated
+    ? '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:10px">' +
+      [[_t('As low as'), _tndMoney(a.low)], [_t('Quoted'), _tndMoney((_tndSum.quote || {}).net)],
+       [_t('As high as'), _tndMoney(a.high)], [_t('Maturity'), _estEsc(a.maturity)]]
+        .map(function (kv) {
+          return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' +
+            kv[0] + '</div><div style="font-size:14px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+            kv[1] + '</div></div>';
+        }).join('') + '</div>'
+    : '';
+
+  return '<div class="card" style="margin-bottom:14px' +
+    (a.stated ? '' : ';border-left:3px solid var(--warning)') + '">' +
+    '<div style="font-size:12.5px;font-weight:800;color:' + (a.stated ? 'var(--navy)' : 'var(--warning)') + '">' +
+      _estEsc(a.label || _t('Accuracy not stated')) + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:3px">' + _estEsc(a.note || '') + '</div>' +
+    band + picker + '</div>';
+}
+
+async function tndSetAccuracy(key) {
+  const e = _estById(_estCur); if (!e) return;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id,
+                { method: 'PATCH', body: Object.assign({}, e, { accuracyClass: key }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) { toast(_t('Could not save the accuracy class') + ': ' + _errMsg(x), 'error', 6000); }
+}
+
+/* WHAT THE PRICE WAS FOR. The scope argument is the one that actually happens six months in — "we
+   assumed the client provided the crane". An estimate that records its exclusions has that
+   argument once, in writing, before anybody signs; one that does not has it repeatedly, from
+   memory, after.
+
+   Edited in place rather than through tkPrompt: that dialog is a single-line <input> and treats an
+   empty answer as a dismissal, so it could neither hold a list of exclusions nor let anybody clear
+   one. This is the same contenteditable the quotation letter already uses. */
+function _tndBasisPanel() {
+  const b = (_tndSum || {}).basis || { sections: [], stated: 0, total: 0 };
+  const e = _estById(_estCur) || {};
+  const can = _estCanPrice() && !_estFrozen(e);
+  const rows = (b.sections || []).map(function (sec) {
+    const body = can
+      ? '<div contenteditable="true" spellcheck="false" data-basis="' + _tkEscA(sec.key) + '"' +
+        ' data-orig="' + _tkEscA(sec.text || '') + '" onblur="tndSaveBasis(this)"' +
+        ' style="font-size:12.5px;line-height:1.55;white-space:pre-wrap;min-height:20px;outline:none;' +
+        'border-radius:4px;padding:3px 5px;margin:2px -5px 0;cursor:text;' +
+        (sec.stated ? '' : 'color:var(--text-light);font-style:italic;') + '"' +
+        ' onfocus="this.style.background=\'rgba(0,176,96,.10)\'"' +
+        ' onmouseover="if(document.activeElement!==this)this.style.background=\'rgba(32,80,144,.05)\'"' +
+        ' onmouseout="if(document.activeElement!==this)this.style.background=\'transparent\'"' +
+        ' title="' + _tkEscA(_t('Click to write')) + '">' +
+        _estEsc(sec.stated ? sec.text : sec.prompt) + '</div>'
+      : '<div style="font-size:12.5px;white-space:pre-wrap;line-height:1.55' +
+        (sec.stated ? '' : ';color:var(--text-light);font-style:italic') + '">' +
+        _estEsc(sec.stated ? sec.text : sec.prompt) + '</div>';
+    return '<div style="padding:9px 0;border-top:1px solid var(--line)">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy)">' + _estEsc(sec.label) +
+      (sec.stated ? '' : ' <span style="font-weight:600;color:var(--warning)">' + _t('not stated') + '</span>') +
+      '</div>' + body + '</div>';
+  }).join('');
+  return '<div class="card" style="margin-bottom:14px">' +
+    '<div style="font-size:12.5px;font-weight:800;color:var(--navy)">' + _t('Basis of estimate') +
+      ' <span style="font-weight:600;color:var(--text-light)">' + b.stated + '/' + b.total + '</span></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:3px">' +
+      _t('A price is only meaningful against a scope. Whatever a client assumes was included, was.') +
+      '</div>' + rows + '</div>';
+}
+
+async function tndSaveBasis(el) {
+  const key = el.getAttribute('data-basis');
+  const orig = el.getAttribute('data-orig') || '';
+  const val = (el.textContent || '').replace(/\s+$/, '');
+  el.style.background = 'transparent';
+  if (val === orig) return;
+  const e = _estById(_estCur); if (!e) return;
+  const basis = Object.assign({}, e.basis || {});
+  basis[key] = val;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id,
+                { method: 'PATCH', body: Object.assign({}, e, { basis: basis }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) {
+    toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 6000);
+    el.textContent = orig;
+  }
+}
+
 function tndTabBudget() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
   const b = _tndSum.budget || { lines: [], total: 0 };
@@ -28906,7 +29013,7 @@ function tndTabBudget() {
         : '<div style="font-size:12px;color:var(--text-light)">' +
           _t('A tender becomes a budget once it is approved or won.') + '</div>');
 
-  _estSet(head + elemPanel + bmPanel +
+  _estSet(head + _tndAccuracyPanel() + _tndBasisPanel() + elemPanel + bmPanel +
     (catRow ? '<div class="card" style="margin-bottom:14px">' + catRow + '</div>' : '') +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="table-wrap"><table style="min-width:640px"><thead><tr>' +
     ['Category', 'What it funds', 'Budget'].map(function (h, i) {

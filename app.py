@@ -8222,6 +8222,16 @@ class Handler(BaseHTTPRequestHandler):
             # What the money is spent ON, and what it costs per unit of whatever this job is
             # measured in. Both derived — only the EPC bill of materials carries an element
             # field, because the other two engines already know the answer.
+            # How good this number is, and what it was a price FOR. Both computed for every
+            # tender rather than only when set, so the screen can say "not stated" — which is
+            # the answer that matters.
+            out["accuracy"] = tender.accuracy(e, quote)
+            out["basis"] = tender.basis_of_estimate(e)
+            out["accuracyClasses"] = [
+                {"key": k, "label": l, "lowPct": lo, "highPct": hi, "maturity": m, "note": n}
+                for k, l, lo, hi, m, n in tender.ACCURACY_CLASSES]
+            out["basisSections"] = [{"key": k, "label": l, "prompt": pr}
+                                    for k, l, pr in tender.BASIS_SECTIONS]
             out["elements"] = tender.cost_elements(e, master=master, rollup=rollup)
             out["benchmarks"] = tender.benchmarks(e, quote, out["elements"])
             try:
