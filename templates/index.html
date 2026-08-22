@@ -30169,11 +30169,16 @@ function _tndQuoteSheet(doc, q) {
     '<td style="text-align:center;color:var(--text-light);font-variant-numeric:tabular-nums;border:1px solid #CFD6E2;padding:6px 4px">' + (i + 1) + '</td>' +
     '<td style="font-weight:700;color:var(--navy);border:1px solid #CFD6E2;padding:6px 8px">' + _estEsc(l.itemCode || '') + '</td>' +
     '<td style="border:1px solid #CFD6E2;padding:6px 8px;white-space:pre-line;line-height:1.45">' + _estEsc(l.desc || '') +
-      (l.descNote ? '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _estEsc(l.descNote) + '</div>' : '') + '</td>' +
-    '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 2) + '</td>' +
-    '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px">' + _estEsc(l.unit || '') + '</td>' +
-    '<td style="text-align:right;border:1px solid #CFD6E2;padding:6px 8px;font-variant-numeric:tabular-nums">' + money(l.unitSell) + '</td>' +
-    '<td style="text-align:right;border:1px solid #CFD6E2;padding:6px 8px;font-variant-numeric:tabular-nums">' + money(l.net) + '</td></tr>';
+      '</td>' +
+    (doc.columns || []).slice(3).map(function (c) {
+      const v = l[c.key];
+      const txt = c.money ? money(v)
+        : (c.key === 'qty' ? _tndNum(v, 2)
+        : (c.key === 'days' ? _tndNum(v, 1) : _estEsc(v == null ? '' : String(v))));
+      return '<td style="text-align:' + (c.align === 'right' ? 'right' : 'center') +
+        ';border:1px solid #CFD6E2;padding:6px ' + (c.align === 'right' ? '8px' : '4px') +
+        ';font-variant-numeric:tabular-nums">' + txt + '</td>';
+    }).join('') + '</tr>';
 
   const spacer = '<tr>' + _QT_COLS.map(() => '<td style="border:1px solid #CFD6E2;padding:9px 8px">&nbsp;</td>').join('') + '</tr>';
   const totRow = (label, pct, value, opts) => {
@@ -30229,7 +30234,7 @@ function _tndQuoteSheet(doc, q) {
     /* the priced table */
     '<div class="table-wrap" style="margin-top:16px"><table style="width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px">' +
     '<colgroup>' + _QT_COLS.map((_c, i) => '<col style="width:' + _qtPct(i) + '">').join('') + '</colgroup>' +
-    '<thead><tr>' + ['#', 'Item', 'Description', 'Qty', 'Unit', 'Unit Price (VND)', 'Amount (VND)']
+    '<thead><tr>' + (doc.columns || []).map(c => c.label)
       // The global theme sets `th{background:transparent !important}` so table headers stay flat
       // everywhere else in the portal. This one is not a table header in that sense — it is the
       // navy band the letterhead prints. Inline !important is what beats a stylesheet !important.
@@ -30445,7 +30450,12 @@ function tndQuotePDF() {
   doc.text(intro, _QT_ML, y); y += intro.length * 4.6 + 5;
 
   /* the priced table */
-  const heads = ['#', 'Item', 'Description', 'Qty', 'Unit', 'Unit Price (VND)', 'Amount (VND)'];
+  /* From the server, not from here. The same seven headers used to be written out in three
+     renderers; the moment they disagree, the letter a customer holds and the file they open stop
+     being the same document. A services engagement gets URS Ref / Scope / Days / Professional Fee
+     / Travel & Expenses, because "Qty 1, Unit: package" is a column pair that says nothing. */
+  const cols = d.columns || [];
+  const heads = cols.map(c => c.label);
   const drawHead = () => {
     doc.setFillColor(32, 80, 144); doc.rect(_QT_ML, y, _QT_TW, 7, 'F');
     _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
@@ -30462,13 +30472,7 @@ function tndQuotePDF() {
   (d.lines || []).forEach((l, i) => {
     _pdfFont(doc, 'normal'); doc.setFontSize(9);
     const desc = doc.splitTextToSize(_pmPdfTxt(l.desc || ''), W[2] - 4);
-    /* A services line carries what makes up its price — professional fee, travel & expenses and
-       the consultant days behind them. The client's tender form asks for those separately, and
-       the letterhead table has seven fixed columns from the template, so the split is set beneath
-       the description rather than in columns of its own. It reads the same in the PDF, the
-       preview and the Excel export, which columns added to only one of them would not. */
-    const note = l.descNote ? doc.splitTextToSize(_pmPdfTxt(l.descNote), W[2] - 4) : [];
-    const h = Math.max(7, (desc.length + note.length) * 4 + 3);
+    const h = Math.max(7, desc.length * 4 + 3);
     if (y + h > 258) { y = newPage(); drawHead(); }
     cellBorders(h);
     doc.setTextColor(92, 100, 112);
@@ -30477,16 +30481,21 @@ function tndQuotePDF() {
     doc.text(_pmPdfTxt(l.itemCode || ''), _QT_ML + W[0] + 2, y + 5);
     _pdfFont(doc, 'normal'); doc.setTextColor(31, 41, 55);
     doc.text(desc, _QT_ML + W[0] + W[1] + 2, y + 5);
-    if (note.length) {
-      _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
-      doc.text(note, _QT_ML + W[0] + W[1] + 2, y + 5 + desc.length * 4);
-      doc.setFontSize(9); doc.setTextColor(31, 41, 55);
-    }
     const x3 = _QT_ML + W[0] + W[1] + W[2];
-    doc.text(_pmPdfTxt(_tndNum(l.qty, 2)), x3 + W[3] / 2, y + 5, { align: 'center' });
-    doc.text(_pmPdfTxt(l.unit || ''), x3 + W[3] + W[4] / 2, y + 5, { align: 'center' });
-    doc.text(money(l.unitSell), x3 + W[3] + W[4] + W[5] - 2, y + 5, { align: 'right' });
-    doc.text(money(l.net), _QT_ML + _QT_TW - 2, y + 5, { align: 'right' });
+    /* Columns 4-7 by key, so a services line prints days and its two fee halves where a goods
+       line prints quantity, unit and rate. */
+    const cell = (c) => {
+      const v = l[c.key];
+      if (c.money) return money(v);
+      if (c.key === 'qty') return _pmPdfTxt(_tndNum(v, 2));
+      if (c.key === 'days') return _pmPdfTxt(_tndNum(v, 1));
+      return _pmPdfTxt(v == null ? '' : String(v));
+    };
+    doc.text(cell(cols[3]), x3 + W[3] / 2, y + 5, { align: 'center' });
+    doc.text(cell(cols[4]), cols[4].align === 'right' ? x3 + W[3] + W[4] - 2 : x3 + W[3] + W[4] / 2,
+             y + 5, { align: cols[4].align === 'right' ? 'right' : 'center' });
+    doc.text(cell(cols[5]), x3 + W[3] + W[4] + W[5] - 2, y + 5, { align: 'right' });
+    doc.text(cell(cols[6]), _QT_ML + _QT_TW - 2, y + 5, { align: 'right' });
     y += h;
   });
   for (let b = (d.lines || []).length; b < 8; b++) {
