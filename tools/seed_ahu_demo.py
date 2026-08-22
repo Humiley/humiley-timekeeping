@@ -78,4 +78,63 @@ if not db.list_collection("ahu_orders"):
             "shortageQty": 0})
     print("seeded a GA drawing and 5 BOM lines on the first unit")
 
+# ── The evidence registers ──────────────────────────────────────────────────────────────────────
+# Seeded because an empty screen cannot be told apart from a broken one. Somebody opening Quality
+# Evidence on a fresh demo database was seeing nothing at all, which is the same thing a bug looks
+# like — and it gave them no idea what a good record is supposed to contain.
+#
+# The examples are deliberately not all healthy. One instrument is out of calibration, one has no
+# due date at all, and one qualification has expired: those are the three states the screen exists
+# to separate, and a demo where everything is green demonstrates nothing.
+
+if not db.list_collection("ahu_instruments"):
+    for i in [
+        {"id": "ahu-instr-1", "name": "Digital manometer", "type": "Manometer",
+         "serial": "DM-99181", "maker": "Testo 512-1", "calDate": "2026-03-15",
+         "calDue": "2027-03-15", "certNo": "VN-CAL-2026-4417", "calBy": "QUATEST 3",
+         "location": "QC room"},
+        {"id": "ahu-instr-2", "name": "Hi-pot tester", "type": "Hi-pot tester",
+         "serial": "HP-0042", "maker": "Kikusui TOS5301", "calDate": "2025-06-30",
+         # Out of calibration: signing a T7 against this is refused, which is the point.
+         "calDue": "2026-06-30", "certNo": "VN-CAL-2025-2210", "calBy": "QUATEST 3",
+         "location": "Test bay"},
+        {"id": "ahu-instr-3", "name": "Vane anemometer", "type": "Anemometer",
+         "serial": "AN-7734", "maker": "TSI 5725",
+         # No due date recorded. Reads UNKNOWN, never VALID — and is listed separately, because an
+         # instrument with no due date never appears in a report sorted by due date.
+         "location": "Test bay"},
+    ]:
+        db.put_collection_item("ahu_instruments", i)
+    print("seeded 3 test instruments (one expired, one with no due date)")
+
+if not db.list_collection("ahu_quals"):
+    for q in [
+        {"id": "ahu-qual-1", "person": "Pham Thi Mai", "scope": "ipqc",
+         "qualifiedOn": "2025-02-01", "expiresOn": "2028-02-01", "certRef": "HML-QA-COMP-014",
+         "issuedBy": "QA Manager"},
+        {"id": "ahu-qual-2", "person": "Pham Thi Mai", "scope": "T3, T4",
+         "qualifiedOn": "2025-02-01", "expiresOn": "2028-02-01", "certRef": "HML-QA-COMP-015",
+         "issuedBy": "QA Manager"},
+        {"id": "ahu-qual-3", "person": "Tran Van Long", "scope": "T7",
+         # Expired: the hi-pot qualification lapsed and nobody renewed it.
+         "qualifiedOn": "2023-01-10", "expiresOn": "2026-01-10", "certRef": "HML-QA-COMP-009",
+         "issuedBy": "QA Manager"},
+    ]:
+        db.put_collection_item("ahu_quals", q)
+    print("seeded 3 qualifications (one expired)")
+
+if not db.list_collection("ahu_trace"):
+    # Two units share a fan batch, so the recall search has something real to find. This is the shape
+    # of the question that matters: a supplier reports a fault in B-2026-14, which units got it?
+    for n, (unit_id, comp, maker, serial, batch) in enumerate([
+        ("ahu-unit-demo-1", "Fan", "ebm-papst", "EB-2026-0091", "B-2026-14"),
+        ("ahu-unit-demo-2", "Fan", "ebm-papst", "EB-2026-0092", "B-2026-14"),
+        ("ahu-unit-demo-1", "Motor", "WEG", "WG-2026-5512", "M-2026-03"),
+        ("ahu-unit-demo-1", "Coil", "Kaori", "KO-771-A", "C-2026-99"),
+    ]):
+        db.put_collection_item("ahu_trace", {
+            "id": "ahu-trace-demo-%d" % n, "unitId": unit_id, "component": comp,
+            "maker": maker, "serial": serial, "batch": batch, "recordedOn": "2026-08-05"})
+    print("seeded 4 component serials (two units share fan batch B-2026-14)")
+
 print("done")
