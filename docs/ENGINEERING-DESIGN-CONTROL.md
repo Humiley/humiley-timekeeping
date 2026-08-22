@@ -233,6 +233,30 @@ own interfaces on one deliverable, and the engineer who prepared that deliverabl
 IDC. The matrix shows a cell per deliverable × discipline; a blank cell is not missing paperwork,
 it is a check nobody has done.
 
+## Codes and standards — at which edition
+
+The question an auditor asks is never "did you follow the code". It is **which code, at which
+edition, and show me the drawings were checked against that text**. A design basis that says
+"designed to TCVN 5687" answers none of it: the 2010 and the 2024 differ, and so does what a
+reviewer should have been looking for.
+
+`eng_standards` holds the codes a commission is designed to, each with its **governing edition**,
+its issuing body, its force (statutory / contractual / client standard / guidance), what it governs
+here, and the clauses relied on. Adopting an edition is an e-signed act of the Design Manager or
+Lead Engineer — it decides what every deliverable is verified against, so it is not a line anybody
+can edit into the register.
+
+**The edition cannot drift.** Once adopted, every deliverable has been designed and checked against
+that text; moving the register to a newer edition silently re-bases the whole design and leaves the
+drawings claiming compliance with something nobody verified. ISO 9001 §8.3.6 calls that a change to
+a design input and wants the review, the authorisation and the record. So the edition may still
+move — codes really are reissued mid-project — but only carrying the change reference that says who
+looked at what it broke. Before adoption the register is still being assembled and moves freely.
+
+A newer edition being published is **not** automatically a problem: a commission is designed to the
+edition in force when it was fixed. Record it in *A newer edition exists* and the register will
+carry the flag without pretending a decision has been made.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value
