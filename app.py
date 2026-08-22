@@ -5016,6 +5016,19 @@ class Handler(BaseHTTPRequestHandler):
                             "or issue it internally (IFR)." %
                             (" — " + str(deliv.get("holdReason")).strip()
                              if str(deliv.get("holdReason") or "").strip() else ""))
+                # A deviation that has not been agreed yet is a document that does not comply
+                # with the code it claims to be designed to. It may circulate internally while the
+                # argument is had; issuing it externally publishes the non-compliance as though it
+                # were the design. Same shape as a hold, different reason.
+                _dev = [d for d in db.list_collection("eng_deviations")
+                        if d.get("deliverableId") == rec.get("deliverableId")
+                        and str(d.get("decision") or "").strip().lower() not in
+                            ("approved", "rejected", "withdrawn", "closed")]
+                if _dev:
+                    _drefs = ", ".join(str(d.get("ref") or d.get("title") or "?") for d in _dev[:4])
+                    return ("This deliverable has %d deviation(s) still to be agreed — %s. A "
+                            "departure that has not been accepted is a non-compliance until it is: "
+                            "get it agreed, or issue internally (IFR)." % (len(_dev), _drefs))
                 _open = [h for h in db.list_collection("eng_holds")
                          if str(h.get("kind") or "hold").strip().lower() == "hold"
                          and str(h.get("status") or "open").strip().lower() in ("open", "raised")
@@ -5043,6 +5056,35 @@ class Handler(BaseHTTPRequestHandler):
                           or str(_prep).strip().lower() == str(u.get("name") or "").strip().lower()):
                 return ("You prepared this deliverable, so you cannot sign the interdisciplinary "
                         "check on it. Ask the other discipline to check their own interface.")
+            return None
+
+        if coll == "eng_deviations":
+            if t not in ("approved", "rejected", "closed"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("A departure from an adopted standard is agreed by the Design Manager or "
+                        "Lead Engineer named on the commission.")
+            # Somebody who wants a departure is not the person who decides it is acceptable — the
+            # same rule the change register and the payroll run already carry.
+            _req = rec.get("requestedBy") or rec.get("createdBy")
+            if _req and (self._pm_same_person(_req, u.get("name"))
+                         or str(_req).strip().lower() == str(u.get("name") or "").strip().lower()):
+                return ("A deviation is agreed by somebody other than the engineer who asked for "
+                        "it.")
+            # A departure from something with the force of law is not ours to grant. Internal
+            # agreement records that WE find it acceptable; it cannot make a building lawful. The
+            # authority's or client's written agreement has to exist and be referenced, or the
+            # register would let a design office self-certify its way past a building code — which
+            # is exactly the paper trail an investigation looks for and does not find.
+            _std = next((x for x in db.list_collection("eng_standards")
+                         if x.get("id") == rec.get("standardId")), {})
+            _force = str(_std.get("obligation") or rec.get("obligation") or "").strip().lower()
+            if t == "approved" and _force.startswith("statutor") \
+                    and not str(rec.get("externalApprovalRef") or "").strip():
+                return ("%s is statutory on this commission. A departure from it cannot be agreed "
+                        "inside the office: record the authority's or client's written agreement "
+                        "in 'External approval reference' first." %
+                        (_std.get("code") or "That standard"))
             return None
 
         if coll == "eng_standards":
@@ -6673,6 +6715,10 @@ class Handler(BaseHTTPRequestHandler):
             if coll == "eng_idc" and set_status in ("Clear", "Commented", "Rejected", "Checked"):
                 item["checkedBy"] = signer_name
                 item.setdefault("checkedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_deviations" and set_status in ("Approved", "Rejected", "Closed"):
+                item["decision"] = set_status
+                item["decidedBy"] = signer_name
+                item.setdefault("decidedOn", time.strftime("%Y-%m-%d"))
             if coll == "eng_standards" and set_status in ("Adopted", "Superseded", "Withdrawn"):
                 item["adoptedBy" if set_status == "Adopted" else "retiredBy"] = signer_name
                 item.setdefault("adoptedOn" if set_status == "Adopted" else "retiredOn",
@@ -8569,9 +8615,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -9760,6 +9806,9 @@ class Handler(BaseHTTPRequestHandler):
                     item.pop(_k, None)
             if name == "eng_standards":
                 for _k in ("adoptedBy", "adoptedOn", "retiredBy", "retiredOn"):
+                    item.pop(_k, None)
+            if name == "eng_deviations":
+                for _k in ("decision", "decidedBy", "decidedOn"):
                     item.pop(_k, None)
         # A chat message says who said it, so authorship is stamped from the SESSION and the client's
         # version is discarded — setdefault would let a browser claim to be somebody else. Same for the

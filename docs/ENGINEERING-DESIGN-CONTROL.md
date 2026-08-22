@@ -257,6 +257,29 @@ A newer edition being published is **not** automatically a problem: a commission
 edition in force when it was fixed. Record it in *A newer edition exists* and the register will
 carry the flag without pretending a decision has been made.
 
+## Deviations and concessions
+
+A **deviation** is asked for before the fact: the design cannot meet a clause and proposes
+something else, with the reasoning that makes it acceptable. A **concession** is the same
+conversation afterwards — what was built does not match what was specified, and somebody has to
+decide whether to accept it.
+
+Neither is a failure. What fails an audit is a departure nobody wrote down, or one agreed by the
+same office that wanted it. So:
+
+- a departure is agreed by somebody **other than** the engineer who asked for it;
+- until it is agreed, the deliverable it sits on **will not issue externally** — an unaccepted
+  departure is a non-compliance until somebody accepts it, and issuing it publishes that
+  non-compliance as though it were the design. Internal circulation (IFR) stays open, because that
+  is where the argument happens;
+- a departure from a **statutory** code cannot be agreed inside the office at all. Internal
+  agreement records that we find it acceptable; it cannot make a building lawful. The authority's
+  or client's written agreement must be referenced on the record before it can be approved here.
+  Rejecting one needs no external paper — saying no is always ours to do.
+
+The register links each departure to the code and clause in the standards register, so the force of
+that code (statutory / contractual / client / guidance) decides which rule applies.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value
