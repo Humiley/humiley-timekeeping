@@ -321,9 +321,13 @@ def init_db():
     # module side by side without ever introducing them, so labour cost per job — the number a
     # contractor most needs — had no answer. Nullable on purpose: a blank means "nobody recorded it",
     # which the cost report reports as unattributed rather than guessing.
+    # away_reason: why somebody clocked in while the app could see they were NOT at the site they
+    # picked. Blocking that punch outright is what makes people work unrecorded, and unrecorded
+    # hours are the employer's exposure, not the worker's — so the punch is taken and the reason
+    # is taken with it, in its own column rather than smuggled into the 120-char loc label.
     for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT",
                 "amended_by TEXT", "amended_at TEXT", "amend_reason TEXT", "amend_count INTEGER",
-                "project TEXT"):
+                "project TEXT", "away_reason TEXT"):
         try:
             conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -1100,15 +1104,16 @@ def set_attendance_project(att_id, project):
     return get_attendance(att_id)
 
 
-def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time", project=None):
+def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time", project=None,
+             away_reason=None):
     emp = get_employee(emp_id)
     conn = get_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon,project) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon,project,away_reason) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
-             date, time_hm, status, loc, lat, lon, (project or None)))
+             date, time_hm, status, loc, lat, lon, (project or None), (away_reason or None)))
         conn.commit()
     except sqlite3.IntegrityError:
         # uq_att_open: a concurrent request already opened today's record — atomic double-tap guard
