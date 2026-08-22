@@ -865,6 +865,12 @@ def revision(tender, quote, elements=None, note=""):
         "net": _num(quote.get("net")),
         "cogs": _num(quote.get("cogs")),
         "gross": _num(quote.get("gross")),
+        # The lines below are frozen at their PRE-discount value, because that is what a line is
+        # worth; the discount is a fact about the document. Both numbers have to be here or the
+        # difference between them lands in `unexplained`, which is the signal reserved for a change
+        # no line accounts for — see compare_revisions().
+        "subtotal": _num(quote.get("subtotal")),
+        "discount": _num(quote.get("discount")),
         "discountPct": _num(quote.get("discountPct")),
         "grossMarginPct": _num(quote.get("grossMarginPct")),
         "labourPct": _num((elements or {}).get("labourPct")),
@@ -953,6 +959,26 @@ def compare_revisions(before, after):
     was_net = _num((before or {}).get("net"))
     now_net = _num((after or {}).get("net"))
     explained = sum(r["delta"] for r in rows)
+
+    # THE DISCOUNT IS NOT AN UNEXPLAINED MOVEMENT.
+    #
+    # Lines are frozen pre-discount; the header net is post-discount. So on any tender carrying a
+    # discount, re-pricing a line moved the two by different amounts and the difference — the
+    # discount's own share, moving in step, entirely explainable — was reported as `unexplained`.
+    # That is the label reserved for a change no line accounts for: a mark-up somebody altered, a
+    # discount PERCENTAGE somebody changed. A phantom residual on every ordinary re-price does not
+    # just mislead, it drowns the signal it is competing with.
+    #
+    # Attributed as its own component now. Revisions taken before this carry no `subtotal`, and
+    # there is no honest way to recover the discount from what they do carry, so they say the
+    # attribution is unavailable rather than implying a zero.
+    known = "subtotal" in (before or {"subtotal": 0}) and "subtotal" in (after or {})
+    disc_moved = (_num((after or {}).get("discount")) - _num((before or {}).get("discount"))
+                  if known else None)
+    # More discount given away moves the price DOWN, hence the sign.
+    disc_effect = -disc_moved if known else 0.0
+    unexplained = (now_net - was_net) - explained - disc_effect
+
     return {
         "rows": rows,
         "changed": len(rows),
@@ -965,7 +991,12 @@ def compare_revisions(before, after):
         # mark-up, a project fee. Reported rather than hidden: an unexplained difference is the one
         # worth looking at, and rounding it into the line list would lose it.
         "explainedByLines": explained,
-        "unexplained": (now_net - was_net) - explained,
+        # How much of the movement is the discount changing, and whether that could be worked out
+        # at all. `None` means this pair predates the record of it — not that it was nothing.
+        "discountMoved": disc_moved,
+        "discountEffect": disc_effect if known else None,
+        "discountKnown": known,
+        "unexplained": unexplained,
         "marginMoved": round(_num((after or {}).get("grossMarginPct"))
                              - _num((before or {}).get("grossMarginPct")), 2),
     }

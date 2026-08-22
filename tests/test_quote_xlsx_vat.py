@@ -106,3 +106,45 @@ def test_a_discounted_mixed_rate_tender_is_still_consistent():
     assert value == float(quote["vat"])
     # VAT is charged on the discounted base, per line, and the lines still add up to the header.
     assert sum(l["vat"] for l in quote["lines"]) == quote["vat"]
+
+
+# --- the discount, taken rather than recomputed ------------------------------------------------
+
+def _sheet_numbers(doc):
+    z = zipfile.ZipFile(io.BytesIO(quote_xlsx.build(doc)))
+    name = [n for n in z.namelist() if n.startswith("xl/worksheets/sheet")][0]
+    xml = z.read(name).decode("utf-8")
+    return {float(m.group(1)) for m in re.finditer(r"<v>(-?\d+(?:\.\d+)?)</v>", xml)}
+
+
+def _drifting_doc(pct):
+    """A tender whose discount lands on a half — where round() and vnd() disagree. The default
+    fixture in this file does not, which is exactly why the drift went unnoticed."""
+    master = tender.cost_master(
+        [dict(qty=2, exwUnit=100000, currency="USD", mfnDutyPct=10, id="L1", desc="Pump"),
+         dict(qty=5, exwUnit=45000, currency="USD", mfnDutyPct=5, id="L2", desc="Fan")], [], A)
+    t = dict(T, discountPct=pct)
+    quote = tender.quotation(t, master=master)
+    return tender.document(t, quote), quote
+
+
+def test_the_workbook_prints_the_letters_discount_not_its_own():
+    """The writer used to multiply the subtotal by the rate itself. Python's round() is
+    banker's; the server's vnd() is not — they part company on a half, and the workbook printed a
+    grand total one dong away from the letter for the same tender. One dong is not the point: a
+    customer holding two documents that disagree has to ask which one is real."""
+    doc, quote = _drifting_doc(6)
+    nums = _sheet_numbers(doc)
+    assert float(quote["discount"]) in nums, "the sheet's discount is not the server's"
+    for label in ("subtotal", "vat", "gross"):
+        assert float(quote[label]) in nums, "%s drifted" % label
+
+
+def test_the_fixture_is_one_where_the_two_roundings_actually_differ():
+    """Without this, the test above would pass on any tender whose discount happens to be a whole
+    number — which is most of them, and is why the drift survived."""
+    doc, quote = _drifting_doc(6)
+    tot = doc["totals"]
+    naive = round(tot["subtotal"] * tot["discountPct"] / 100.0)
+    assert naive != quote["discount"], \
+        "this fixture cannot detect the drift; pick rates that land on a half"

@@ -94,16 +94,56 @@ def test_the_line_movements_add_up_to_the_price_movement():
 
 # --- the movement no line explains -------------------------------------------------------------------
 
-def test_a_document_level_discount_is_surfaced_as_unexplained():
-    """A price that moved without a line moving came from somewhere else. Rounding it into the line
-    list would lose the one difference actually worth looking at."""
+def test_a_document_level_discount_is_named_rather_than_left_unexplained():
+    """A price that moved without a line moving came from somewhere else — and where that somewhere
+    is the discount, the diff can SAY so. `unexplained` means "we cannot account for this"; a
+    discount is accounted for. Filing it under the same heading as a mark-up somebody quietly
+    altered loses the distinction that makes either worth reading."""
     before = _rev(REV_B)
     after = _rev(REV_B, discountPct=5)
     c = tender.compare_revisions(before, after)
     assert c["changed"] == 0, "no line was touched"
     assert c["delta"] < 0
     assert c["explainedByLines"] == 0
-    assert c["unexplained"] == c["delta"]
+    assert c["discountMoved"] > 0, "more was given away and the diff did not say so"
+    assert c["discountEffect"] == c["delta"], "the discount does not account for the whole move"
+    assert c["unexplained"] == 0
+
+
+def test_re_pricing_a_line_does_not_invent_an_unexplained_residual():
+    """Lines are frozen PRE-discount and the header net is post-discount, so on any discounted
+    tender the two moved by different amounts and the difference — the discount's own share, moving
+    in step, entirely explainable — was reported as `unexplained` on every ordinary re-price. A
+    phantom residual does not merely mislead: it drowns the real signal it competes with."""
+    before = _rev(REV_A, discountPct=6)
+    after = _rev(REV_B, discountPct=6)
+    c = tender.compare_revisions(before, after)
+    assert c["changed"], "the fixture must move some lines or it proves nothing"
+    assert c["discountMoved"] != 0, "the discount moved with the subtotal; that is the whole case"
+    assert c["unexplained"] == 0, \
+        "the discount moving in step with the lines was reported as unaccounted for"
+    assert c["explainedByLines"] + c["discountEffect"] == c["delta"]
+
+
+def test_a_revision_taken_before_this_says_the_attribution_is_unavailable():
+    """Old revisions carry no subtotal, and there is no honest way to recover the discount from
+    what they do carry. Saying "unknown" is different from implying zero."""
+    old = {"net": 100, "grossMarginPct": 10,
+           "lines": [{"id": "L1", "desc": "X", "qty": 1, "unitCost": 100, "net": 100}]}
+    c = tender.compare_revisions(old, _rev(REV_A, discountPct=6))
+    assert c["discountKnown"] is False
+    assert c["discountMoved"] is None
+    assert c["discountEffect"] is None
+
+
+def test_a_mark_up_change_is_still_unexplained_because_nothing_records_it():
+    """What `unexplained` is FOR. Whatever else gets attributed, a movement with no line and no
+    discount behind it must keep surfacing — that is the one nobody would otherwise find."""
+    before = _rev(REV_B)
+    after = dict(_rev(REV_B))
+    after["net"] = after["net"] + 500_000_000        # a price nothing on record accounts for
+    c = tender.compare_revisions(before, after)
+    assert c["unexplained"] == 500_000_000
 
 
 def test_margin_movement_is_reported_beside_the_price():
