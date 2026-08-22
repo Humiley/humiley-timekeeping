@@ -22658,6 +22658,7 @@ function _pdLabW() {
   // It scales with the window now, between the old 404 and 620; the plot beside it is horizontally
   // scrollable, so giving the names room costs the chart nothing it cannot scroll to.
   try {
+    if (_pdSlim) return 300;                 // name + status only; see _pdSlim
     if (window.matchMedia('(max-width:700px)').matches) return 176;
     // The floor is RAISED, not just scaled: at the old 404 the five fixed sub-columns took ~230 and
     // the name got ~150px — about eighteen characters — which is why names truncated on a wide
@@ -22668,6 +22669,13 @@ function _pdLabW() {
   } catch (e) { return _PD_LABW; }
 }                     // label gutter, px — shared by header, rows and gridlines
 let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
+/* The label gutter carries name · who · start · finish · duration · status, and every pixel of it is
+   a pixel the chart does not get. On a long programme the chart is the thing being read and the
+   dates are already ON it, so this collapses the gutter to the name and the status and gives the
+   rest back. Off by default: the columns are useful when you are reading the table rather than the
+   bars. Not persisted — it is a per-session way of looking, not a setting. */
+let _pdSlim = false;
+function pdSlim() { _pdSlim = !_pdSlim; _pmReload(); }
 function pdWide() { _pdWide = !_pdWide; _pmReload(); }
 
 /* ══ SHARED SCHEDULE KIT ═════════════════════════════════════════════════════════════════════════
@@ -22777,7 +22785,7 @@ function _schWho(who) {
 }
 
 function _schTimeline(rows, o) {
-  const LABW = _pdLabW(), NARROW = LABW < 300;   // one decision; every offset below reads it
+  const LABW = _pdLabW(), NARROW = _pdSlim || LABW < 340;   // one decision; every offset below reads it
   o = o || {};
   const day = o.day || _pmToday();
   const ns = o.ns || 'd', total = rows.length;
@@ -22793,7 +22801,11 @@ function _schTimeline(rows, o) {
   // day AFTER the last one, or every bar is drawn one day short and a same-day item — which is what
   // a milestone is — comes out 0% wide and renders as nothing at all. The Dur column three lines
   // below has always counted inclusively ("+1"); the bar did not, and the two disagreed on screen.
-  const axEnd = _pmDateAdd(max, 1);
+  // A MONTH past the last finish, not merely one day past it. Two reasons: a bar that ends on the
+  // final day of the axis sits flush against the edge and cannot be read, and a schedule is looked
+  // at for what is coming — the runway is where the next activity will appear. Still strictly past
+  // `max` either way, which is what keeps a same-day bar from having zero width.
+  const axEnd = _pmDateAdd(max, 31);
   const span = Math.max(1, _pmDateDiff(min, axEnd) || 1);
   const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
   // The end of the day `d` covers, for anything drawn as a span rather than a point.
@@ -22937,6 +22949,8 @@ function _schTimeline(rows, o) {
         '<div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(min) + ' → ' + tkFmtDate(max) +
         (o.sub ? ' · ' + o.sub : '') + '</div></div>' +
       '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Hide the date columns and give the width to the chart')) + '" onclick="pdSlim()">' +
+          (_pdSlim ? _t('Show columns') : _t('More chart')) + '</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
     _schFilterBar(ns, rows.length, total) +
