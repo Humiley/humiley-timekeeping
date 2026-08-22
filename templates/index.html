@@ -3580,13 +3580,25 @@ function tkRenderZones() {
   if (kp && typeof _kpiTile === 'function') {
     const today = _today();
     const todayAtt = (_DEMO_ATTENDANCE || []).filter(r => r.date === today);
-    const anomalies = todayAtt.filter(r => r.loc === 'Out of Zone').length;
-    const inZone = todayAtt.filter(r => r.loc && r.loc !== 'Out of Zone').length;
+    /* Read the stamp through _attGpsState, like every other screen. These two lines tested
+       `r.loc === 'Out of Zone'` — a literal ONLY db.py's generate_attendance writes — so on live
+       data, where check-in stamps '<zone> (away from site)', "Anomalies Today" read 0 forever and
+       "In-Zone Rate" read 100%: a green card headed GPS that was measuring nothing. The same defect
+       was diagnosed and fixed in _attIsAnomaly / _mgrIsAnomaly today; these two were missed because
+       nothing pointed a test at them.
+       'GPS unverified' counts as neither: it is not an anomaly, and it is not evidence of being in
+       zone either, so the rate is taken over punches the app could actually place. */
+    const _st = r => (typeof _attGpsState === 'function') ? _attGpsState(r) : 'none';
+    const anomalies = todayAtt.filter(r => _st(r) === 'out').length;
+    const placed = todayAtt.filter(r => { const k = _st(r); return k === 'in' || k === 'out'; });
+    const inZone = placed.filter(r => _st(r) === 'in').length;
     const tracked = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').length;
-    const rate = todayAtt.length ? Math.round(inZone / todayAtt.length * 1000) / 10 : 100;
+    // Denominator is punches the app could PLACE, not every punch. Dividing by rows whose location
+    // was never confirmed reports a rate about data that does not exist — and 100% when there is none.
+    const rate = placed.length ? Math.round(inZone / placed.length * 1000) / 10 : null;
     kp.innerHTML = [
       _kpiTile('Active Zones', zones.length, '#205090', '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'),
-      _kpiTile('In-Zone Rate', rate + '%', '#00B060', '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>'),
+      _kpiTile('In-Zone Rate', rate === null ? '\u2014' : rate + '%', '#00B060', '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>'),
       _kpiTile('Anomalies Today', anomalies, '#EF4444', '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
       _kpiTile('Employees Tracked', tracked, '#8B5CF6', TK_ICON.users)
     ].join('');
