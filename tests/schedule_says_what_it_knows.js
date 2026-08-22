@@ -188,5 +188,60 @@ ok('and a revision that DOUBLES the scope makes the resolved reading fall below 
    pd._pdReadPct(halved, halved.log[0]) === 50,
    'if these are equal the two readings never differ and the fix changes nothing');
 
+/* ══ 5. the client's contract sections, and what a weight is measured in ═════════════════════ */
+const sec = {};
+new Function(
+  take('function _pmSectionOf(', '_pmSectionOf') +
+  take('function _pmSectionFor(', '_pmSectionFor') +
+  take('function _pmSections(', '_pmSections') +
+  '\nObject.assign(this, { _pmSectionOf, _pmSectionFor, _pmSections });'
+).call(sec);
+
+// The shape the client's own schedule actually uses.
+const TASKS = [
+  { id: 'a',  wbs: '1.1',     name: 'A. PRE-CONSTRUCTION' },
+  { id: 'a1', wbs: '1.1.1',   name: 'Site handover' },
+  { id: 'b',  wbs: '1.2',     name: 'B. DESIGN – LEGAL SCHEDULE' },
+  { id: 'b2', wbs: '1.2.3',   name: '2. Design Schedule' },
+  { id: 'b3', wbs: '1.2.3.1', name: 'Master Plan 1/500 + Concept design' },
+  { id: 'c',  wbs: '1.3',     name: 'C. CONSTRUCTION' },
+  { id: 'c1', wbs: '1.3.4.2', name: 'Ductwork level 3' },
+  { id: 'x',  wbs: '2.1',     name: 'Uncategorised follow-up work' },
+];
+const S = sec._pmSections(TASKS);
+ok('the sections are read off the schedule, not invented',
+   S.sections.map(x => x.letter).join('') === 'ABC');
+ok('and they carry the client\u2019s own wording',
+   S.sections[1].title === 'DESIGN – LEGAL SCHEDULE');
+ok('a deep activity resolves to its section through its WBS ancestor',
+   (sec._pmSectionFor(TASKS[4], TASKS) || {}).letter === 'B',
+   '1.2.3.1 belongs to B via 1.2 — its own name says nothing about a section');
+ok('so does a deeper one', (sec._pmSectionFor(TASKS[6], TASKS) || {}).letter === 'C');
+ok('a NUMBERED sub-heading is not mistaken for a section',
+   sec._pmSectionOf({ name: '2. Design Schedule' }) === null,
+   'the client letters sections; numbers are the internal WBS and mean something else');
+ok('work under no section is named, not dropped',
+   S.unsectioned.length === 1 && S.unsectioned[0].wbs === '2.1',
+   'a report that silently omits unsectioned work understates the job');
+ok('every task is accounted for exactly once',
+   S.sections.reduce((n, x) => n + x.tasks.length, 0) + S.unsectioned.length === TASKS.length);
+
+const wb = {};
+new Function(take('function _pdWeightBasis(', '_pdWeightBasis') +
+             '\nObject.assign(this, { _pdWeightBasis });').call(wb);
+ok('a package priced entirely in ₫ says so',
+   wb._pdWeightBasis([{ weight: 5e8 }, { weight: 2e8 }]).mode === 'value');
+ok('one with no values falls back to duration',
+   wb._pdWeightBasis([{ start: '2026-08-01', finish: '2026-08-30' }]).mode === 'duration');
+ok('and one holding BOTH is flagged as mixed',
+   wb._pdWeightBasis([{ weight: 5e8 }, { start: '2026-08-01', finish: '2026-08-30' }]).mode === 'mixed',
+   '₫ and days are not the same unit; summing them makes the day-weighted lines worth ~nothing');
+ok('the KPI row warns about it where somebody reads the number',
+   /Mixed weighting/.test(src));
+// the size of the distortion, so the warning is not arguing with itself
+const _big = 5e8, _small = 30;
+ok('a day-weighted line beside a ₫ line is under a millionth of the package',
+   (_small / (_big + _small)) * 100 < 0.0001);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

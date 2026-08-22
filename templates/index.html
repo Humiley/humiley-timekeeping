@@ -15890,7 +15890,7 @@ const _QA_SPECS = {
     // While this is blank the deliverable keeps its typed percentage, exactly as before.
     { k: 'delivId', label: 'Delivers WBS package (optional — links progress to the project total)',
       type: 'ref', src: 'pm_deliverables', blank: '— not linked to a WBS package —' },
-    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
+    { k: 'weight', label: 'Value (₫) — what this line is worth. Blank = weighted by duration.', type: 'money' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee (type any name — staff or others)', type: 'combo', dyn: 'pm_assignees' },
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
@@ -15911,7 +15911,7 @@ const _QA_SPECS = {
     { k: 'unit', label: 'Unit of work (m, m², m³, no., set, lot…)', type: 'combo', dyn: 'pm_units' },
     // Blank is the right default: duration in days is a defensible weight and the alternative is
     // making somebody invent a number. Set it when a short item carries disproportionate value.
-    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
+    { k: 'weight', label: 'Value (₫) — what this line is worth. Blank = weighted by duration.', type: 'money' },
     { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
     { k: 'item', label: 'Cost item' },
@@ -20875,8 +20875,11 @@ function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
   const so = _pmSort[coll] || {};
-  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
-  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
+  // Per-column sizing. A column that knows how much it needs (`w`) and refuses to wrap (`nowrap`)
+  // hands the slack to the one column that can actually use it — the name.
+  const _cw = c => (c.w ? 'width:' + c.w + ';' : '') + (c.nowrap ? 'white-space:nowrap;' : '');
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + ((c.align || c.w || c.nowrap) ? ' style="' + _cw(c) + (c.align ? 'text-align:' + c.align + ';' : '') + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap;width:1%">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table' + (opts.minw ? ' style="min-width:' + opts.minw + 'px"' : ' style="min-width:820px"') + '>' + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
 
@@ -21930,11 +21933,31 @@ function _pdPlanned(r, day) {
   return _pmPct(done * 100 / total);
 }
 /* Weight for the roll-up. Duration in days unless the user gave a value (contract ₫ or man-hours). */
+/* What this line is WORTH, for the weighted roll-up. ₫ when somebody has said so, otherwise its
+   duration in days.
+
+   Those two are not the same unit, and a package holding both weights the ₫ lines as though the
+   day-weighted ones were free: a ₫500,000,000 line beside a 30-day line makes the 30-day line
+   0.000006% of the package. Blank is still the right DEFAULT — the alternative is making somebody
+   invent a number — but a package that mixes the bases has to say so, which is what _pdWeightBasis
+   below is for. */
 function _pdWeight(r) {
   const w = +(r && r.weight) || 0;
   if (w > 0) return w;
   if (r && r.start && r.finish) return Math.max(1, (_pmDateDiff(r.start, r.finish) || 0) + 1);
   return 1;
+}
+/* Is this set of rows weighted by value, by duration, or — the problem case — by both?
+   Returns { mode: 'value'|'duration'|'mixed', valued, total, valueShare }. */
+function _pdWeightBasis(rows) {
+  let valued = 0;
+  const total = (rows || []).length;
+  (rows || []).forEach(r => { if (+(r && r.weight) > 0) valued++; });
+  return {
+    mode: !valued ? 'duration' : (valued === total ? 'value' : 'mixed'),
+    valued: valued, total: total,
+    valueShare: total ? valued / total * 100 : 0,
+  };
 }
 /* Weighted roll-up over a set of rows → {acc, planned, variance, weight}. */
 function _pdRollup(rows, day) {
@@ -21970,6 +21993,56 @@ function _pdRollup(rows, day) {
 }
 /* The master activity's % when detail lines exist beneath it — derived, never typed. */
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
+/* The direct children of a WBS node: one level deeper, and prefixed by it. `1.2` owns `1.2.1` and
+   `1.2.3`, but not `1.2.3.1` — that belongs to `1.2.3`, so the roll-up recurses instead of
+   double-counting a grandchild against its parent AND its grandparent. */
+function _pmWbsChildren(task, allTasks) {
+  const w = String((task && task.wbs) || '').trim();
+  if (!w) return [];
+  const depth = w.split('.').length;
+  return (allTasks || []).filter(t => {
+    const c = String(t.wbs || '').trim();
+    return c && c !== w && c.indexOf(w + '.') === 0 && c.split('.').length === depth + 1;
+  });
+}
+/* What an activity is ACTUALLY at, and where that number came from.
+
+   Three sources, in order of authority:
+     children — a parent is the weighted roll-up of the activities beneath it. Typing a percentage
+                on a summary line that disagrees with its own sub-tasks is the thing this exists to
+                stop, so children win.
+     detail   — otherwise, the site's own daily report (_pdTaskPct), same reasoning one level down.
+     typed    — a leaf with neither is whatever somebody entered.
+
+   Weighted by _pdWeight, so a ₫-valued child counts for what it is worth rather than one-third of a
+   three-child parent. The depth guard is belt-and-braces: WBS is a prefix tree and cannot cycle. */
+function _pmTaskRollup(task, allTasks, pid, _depth) {
+  _depth = _depth || 0;
+  const typed = { pct: _pmPct(task && task.pctComplete), from: 'typed', n: 0 };
+  if (_depth > 12) return typed;
+  const kids = _pmWbsChildren(task, allTasks);
+  if (kids.length) {
+    let w = 0, sum = 0;
+    kids.forEach(k => {
+      const kw = _pdWeight(k);
+      w += kw;
+      sum += kw * _pmTaskRollup(k, allTasks, pid, _depth + 1).pct;
+    });
+    return { pct: w ? _pmPct(sum / w) : 0, from: 'children', n: kids.length };
+  }
+  const d = (typeof _pdTaskPct === 'function' && pid) ? _pdTaskPct(task, pid) : null;
+  if (d) return { pct: _pmPct(d.pct), from: 'detail', n: d.n };
+  return typed;
+}
+/* 100% means done. It was possible to report an activity at 100% and leave its status at
+   "In progress", because the two were independent fields and somebody had to remember to change
+   the second. Derived rather than written: nothing writes to the record on a render, and the
+   status a person sees can never disagree with the percentage printed beside it.
+   One direction only — reaching 100 completes an activity; nothing here un-completes one. */
+function _pmTaskStatus(task, pct) {
+  if (pct >= 100) return 'Completed';
+  return (task && task.status) || 'Not started';
+}
 function _pdTaskPct(task, pid) {
   const ref = _pdTaskRef(task); if (!ref) return null;
   // _pdAllRows, NOT _pdRows. _pdRows narrows to the detail schedule the user last clicked, so an
@@ -22235,12 +22308,21 @@ function _pdKpis(pid, rows, day) {
   // Variance is measured on the SCHEDULED part of the package. When part of it has no dates, say so
   // under the row — a variance over 40% of the weight, presented as the package's variance with
   // nothing qualifying it, is the same confident-about-nothing number this pass exists to remove.
-  const note = !all.measured
-    ? _t('No item in this package has both a start and a finish, so there is nothing to measure progress against yet.')
-    : (all.undatedPct >= 0.5
-        ? _t('Planned and Variance are measured on') + ' ' + Math.round(100 - all.undatedPct) + '% ' +
-          _t('of the package by weight — the rest has no dates.')
-        : '');
+  const notes = [];
+  if (!all.measured) {
+    notes.push(_t('No item in this package has both a start and a finish, so there is nothing to measure progress against yet.'));
+  } else if (all.undatedPct >= 0.5) {
+    notes.push(_t('Planned and Variance are measured on') + ' ' + Math.round(100 - all.undatedPct) + '% ' +
+               _t('of the package by weight — the rest has no dates.'));
+  }
+  // A package weighted partly in ₫ and partly in days is not weighted in anything. Say it plainly:
+  // the day-weighted lines are being treated as worth almost nothing next to the valued ones.
+  const wb = _pdWeightBasis(rows);
+  if (wb.mode === 'mixed') {
+    notes.push('<b>' + _t('Mixed weighting') + '</b> — ' + wb.valued + ' ' + _t('of') + ' ' + wb.total + ' ' +
+               _t('items carry a value in ₫; the rest fall back to duration in days. Those two are not the same unit, so the day-weighted items count for almost nothing in these figures. Give every item a value, or none.'));
+  }
+  const note = notes.join('<br>');
   return _hrKpiRow([
     _hrKpi('Report items', rows.length),
     _hrKpi('Accumulated', Math.round(all.acc) + '%', 'var(--emerald)'),
@@ -22329,7 +22411,11 @@ function _pdRegister(pid, rows, cats, day) {
           ' onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'"></td>' +
         '<td style="text-align:right;white-space:nowrap">' +
           '<button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="pdProgress(\'' + r.id + '\')">' + _t('Report') + '</button> ' +
-          '<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="tkQuickAdd(\'' + _PD_COLL + '\',\'' + r.id + '\')">' + _t('Edit') + '</button>' +
+          '<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="tkQuickAdd(\'' + _PD_COLL + '\',\'' + r.id + '\')">' + _t('Edit') + '</button> ' +
+          // A row could be added and edited but never removed — a mis-typed import line stayed in
+          // the register and in every roll-up above it for good. tkCollDelete is the shared path:
+          // it confirms, calls the API, and re-renders through _HR_RELOAD (pm_detail → _pmReload).
+          '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Delete')) + '" aria-label="' + _tkEscA(_t('Delete')) + '" style="padding:2px 7px;font-size:11px;color:#C00000" onclick="tkCollDelete(\'' + _PD_COLL + '\',\'' + r.id + '\',\'' + _PD_COLL + '\')">' + _t('Delete') + '</button>' +
         '</td></tr>';
     });
   });
@@ -22450,8 +22536,20 @@ const _PD_LABW = 404;   // gutter: name · who · start · finish · duration
    positioned absolutely at left:_PD_LABW, so shrinking the gutter in CSS alone would leave them
    228px out of register with the bars they annotate. */
 function _pdLabW() {
-  try { return window.matchMedia('(max-width:700px)').matches ? 176 : _PD_LABW; }
-  catch (e) { return _PD_LABW; }
+  // The gutter carries name · who · start · finish · duration · status. At a fixed 404px the five
+  // fixed columns take ~230 of it and the NAME got what was left — about eighteen characters, so
+  // "1.4.4.3 · Level 2 (…" and "Thi công MEP â…" were the normal case rather than the exception.
+  // It scales with the window now, between the old 404 and 620; the plot beside it is horizontally
+  // scrollable, so giving the names room costs the chart nothing it cannot scroll to.
+  try {
+    if (window.matchMedia('(max-width:700px)').matches) return 176;
+    // The floor is RAISED, not just scaled: at the old 404 the five fixed sub-columns took ~230 and
+    // the name got ~150px — about eighteen characters — which is why names truncated on a wide
+    // monitor too. Measured, not guessed: 0.32 × 1232 is 394, so a pure ratio would have changed
+    // nothing on a 1232px viewport, which is where this was first checked.
+    const vw = window.innerWidth || 1280;
+    return Math.min(680, Math.max(470, Math.round(vw * 0.34)));
+  } catch (e) { return _PD_LABW; }
 }                     // label gutter, px — shared by header, rows and gridlines
 let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
 function pdWide() { _pdWide = !_pdWide; _pmReload(); }
@@ -22784,8 +22882,16 @@ function pmPhToggle(g) { g = decodeURIComponent(g); _pmPhCol[g] = !_pmPhCol[g]; 
 /* Master activities. Progress is the detail roll-up where detail lines exist — one source of truth,
    the same rule the Activities table already shows as "rolled up". */
 function _pmTaskNorm(pid, day) {
-  return _pmScopeFor('pm_tasks', pid).filter(t => t.start || t.finish).map(t => {
+  // SORTED. This mapped in whatever order the collection came back in, so the Gantt listed 1.2.4.4
+  // above 1.3.2 above 1.4.4.1.2 above 1.2.1 — a schedule nobody can read down. _pmWbsCmp compares
+  // WBS numerically segment by segment, so 1.10 sorts after 1.9 rather than before it.
+  const _all = _pmScopeFor('pm_tasks', pid);
+  return _all.filter(t => t.start || t.finish)
+    .slice()
+    .sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || String(a.start || '').localeCompare(String(b.start || '')))
+    .map(t => {
     const d = _pdTaskPct(t, pid);
+    const roll = _pmTaskRollup(t, _all, pid);
     const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
     return { id: t.id, group: t.phase || _t('Activities'),
              name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || '') +
@@ -22794,7 +22900,8 @@ function _pmTaskNorm(pid, day) {
              doneOn: t.actualFinish || '',
              // Name it plainly: this activity's percentage is not typed, it is what the site reported.
              _fed: d ? d.n : 0,
-             acc: d ? d.pct : _pmPct(t.pctComplete),
+             // A parent's percentage is its children's, weighted. See _pmTaskRollup.
+             acc: roll.pct,
              planned: _pdPlanned({ start: t.start, finish: t.finish }, day),
              click: "tkQuickAdd('pm_tasks','" + t.id + "')" };
   });
@@ -22808,6 +22915,44 @@ function _pdMasterOf(pid, r) {
   const ref = String((r && r.taskRef) || '').trim();
   if (!ref) return null;
   return _pmScopeFor('pm_tasks', pid).find(t => _pdTaskRef(t) === ref) || null;
+}
+/* The CLIENT's contract section for a master activity.
+
+   The client reads a contract lettered A, B, C… and the top-level activities are already named for
+   them — "B. DESIGN – LEGAL SCHEDULE" at WBS 1.2. So the section is derived from the data that is
+   there rather than invented as a second taxonomy somebody would have to maintain in step with the
+   first. A top-level activity whose name does not start with a letter and a stop has no section,
+   and says so instead of being filed under a guess. */
+function _pmSectionOf(t) {
+  const m = /^\s*([A-Z])[.)]\s+(.+)$/.exec(String((t && t.name) || ''));
+  return m ? { letter: m[1], title: m[2].trim() } : null;
+}
+/* The section a task belongs to: its own if it is a top-level heading, otherwise its WBS ancestor's.
+   `1.2.3.1` looks up `1.2`, the shallowest ancestor that names a section. */
+function _pmSectionFor(task, allTasks) {
+  const own = _pmSectionOf(task);
+  if (own) return own;
+  const wbs = String((task && task.wbs) || '').trim();
+  if (!wbs) return null;
+  const parts = wbs.split('.');
+  for (let n = parts.length - 1; n >= 1; n--) {
+    const anc = parts.slice(0, n).join('.');
+    const t = (allTasks || []).find(x => String(x.wbs || '').trim() === anc);
+    const sec = t && _pmSectionOf(t);
+    if (sec) return sec;
+  }
+  return null;
+}
+/* Every section present in a project, in letter order, each with the tasks under it and the ones
+   that belong to no section — named, not dropped. */
+function _pmSections(allTasks) {
+  const by = {}, orphan = [];
+  (allTasks || []).forEach(t => {
+    const sec = _pmSectionFor(t, allTasks);
+    if (!sec) { orphan.push(t); return; }
+    (by[sec.letter] = by[sec.letter] || { letter: sec.letter, title: sec.title, tasks: [] }).tasks.push(t);
+  });
+  return { sections: Object.keys(by).sort().map(k => by[k]), unsectioned: orphan };
 }
 function _pdGroupOf(pid, r) {
   const t = _pdMasterOf(pid, r);
@@ -23062,7 +23207,7 @@ function pmRenderSchedule(pid) {
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
   const tr = _pmTaskRollup(pid);
   const cpm = _pmCPM(allTasks);
-  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', tr.done, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
+  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', allTasks.filter(t => _pmTaskStatus(t, _pmTaskRollup(t, allTasks, pid).pct) === 'Completed').length, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
   // Build ONLY the pane being shown. All four used to be built on every Schedule render and three
   // inserted hidden — parsed, styled and laid out for nothing. These are thunks closing over this
   // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
@@ -23082,20 +23227,34 @@ function pmRenderSchedule(pid) {
   _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
   _pmSchedBuild['d-calendar'] = () => _pdView(pid, 'calendar');
   _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
-    { label: 'WBS', sk: 'wbs', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
-    { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
-    { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
-    { label: 'Float', align: 'right', tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
+    { label: 'WBS', sk: 'wbs', w: '1%', nowrap: true, render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
+    // The name is the column people read. Everything else takes a small fixed claim so this one
+    // gets the remainder instead of losing width to a date that wrapped.
+    { label: 'Task', sk: 'name', w: '46%', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
+    { label: 'Assignee', sk: 'assignee', w: '1%', nowrap: true, render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', w: '1%', nowrap: true, render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', w: '1%', nowrap: true, render: r => _pmFmt(r.finish) },
+    { label: 'Float', align: 'right', w: '1%', nowrap: true, tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
       render: r => (cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].inNet) ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
-    { label: '%', sk: 'pctComplete', align: 'right', render: r => {
-        // One source of truth: when detail lines report against this activity, its percentage is
-        // their weighted roll-up. A typed number that disagrees with the site's own daily report is
-        // the thing this whole level exists to stop.
-        const d = _pdTaskPct(r, pid);
-        return d ? ('<span title="Rolled up from ' + d.n + ' detail item' + (d.n === 1 ? '' : 's') + '" style="font-weight:700">' + d.pct + '%</span><span style="font-size:9.5px;color:var(--text-light);display:block;line-height:1">rolled up</span>')
-                 : (_pmPct(r.pctComplete) + '%');
+    { label: '%', sk: 'pctComplete', align: 'right', w: '1%', nowrap: true, render: r => {
+        // One source of truth, in order of authority: the activities BENEATH this one, then the
+        // site's own daily report, then a typed number. A summary line whose percentage disagrees
+        // with its own sub-tasks is the thing this level exists to stop, so children win — enter a
+        // percentage on the sub-tasks and the parent follows.
+        const ro = _pmTaskRollup(r, allTasks, pid);
+        if (ro.from === 'typed') return _pmPct(r.pctComplete) + '%';
+        const src = ro.from === 'children'
+          ? { tip: 'Rolled up from ' + ro.n + ' sub-task' + (ro.n === 1 ? '' : 's'), lbl: _t('from sub-tasks') }
+          : { tip: 'Rolled up from ' + ro.n + ' detail item' + (ro.n === 1 ? '' : 's'), lbl: _t('rolled up') };
+        return '<span title="' + _tkEscA(src.tip) + '" style="font-weight:700">' + ro.pct + '%</span>' +
+               '<span style="font-size:9.5px;color:var(--text-light);display:block;line-height:1">' + src.lbl + '</span>';
       } },
-    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
+    // Reaching 100% completes an activity. These were two independent fields, so a task could sit
+    // at 100% and still read "In progress" until somebody remembered to change the second one.
+    // Derived, never written: a render does not touch the record, and the badge can never disagree
+    // with the percentage printed next to it.
+    { label: 'Status', sk: 'status', w: '1%', nowrap: true, render: r => {
+        const st = _pmTaskStatus(r, _pmTaskRollup(r, allTasks, pid).pct);
+        return _pmBadge(st, _pmStatusColor(st));
+      } },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
