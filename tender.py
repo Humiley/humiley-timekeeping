@@ -839,6 +839,40 @@ def revision(tender, quote, elements=None, note=""):
     }
 
 
+def _diff_index(rev):
+    """Index a revision's lines for comparison, losing none of them.
+
+    Two faults this replaces, both of which produced a WRONG NUMBER rather than an error — which is
+    the only kind worth writing a helper for:
+
+    DUPLICATE IDS. `{l["id"]: l for l in lines}` keeps the last line with a given id and discards
+    the rest. Two rows sharing an id — an import run twice, a package copied — silently became one,
+    and the diff then compared the wrong pair while reporting a confident attribution. Duplicates
+    are now AGGREGATED: for the purpose of "what moved", two rows in the same position are one
+    position, and their money adds up instead of one of them evaporating.
+
+    MISSING IDS. `if l.get("id")` dropped them entirely, so a whole line could vanish between two
+    revisions with no row saying so. The movement then surfaced as `unexplained` — the signal
+    reserved for a discount or a changed mark-up — which is worse than silence: it is a specific
+    wrong answer. A line without an id falls back to its DESCRIPTION, and only then to its
+    position; description survives reordering and position does not.
+    """
+    out = {}
+    for i, l in enumerate(list((rev or {}).get("lines", []))):
+        key = str(l.get("id") or "").strip() or str(l.get("desc") or "").strip() or ("#%d" % i)
+        prev = out.get(key)
+        if prev is None:
+            out[key] = dict(l)
+            continue
+        # Same position, two rows: add the money, keep the first description, and mark the unit
+        # rate as no longer meaningful — an aggregate of two rates is not a rate anybody quoted.
+        prev["net"] = _num(prev.get("net")) + _num(l.get("net"))
+        prev["qty"] = _num(prev.get("qty")) + _num(l.get("qty"))
+        prev["unitCost"] = None
+        prev["aggregated"] = True
+    return out
+
+
 def compare_revisions(before, after):
     """What moved between two revisions, biggest mover first.
 
@@ -846,8 +880,7 @@ def compare_revisions(before, after):
     asked is "why did the price change" and the answer is almost always two or three lines. An
     alphabetical list of forty rows, thirty-seven of them unchanged, buries it.
     """
-    a = {l["id"]: l for l in (before or {}).get("lines", []) if l.get("id")}
-    b = {l["id"]: l for l in (after or {}).get("lines", []) if l.get("id")}
+    a, b = _diff_index(before), _diff_index(after)
     rows = []
     for key in sorted(set(a) | set(b)):
         was, now = a.get(key), b.get(key)
