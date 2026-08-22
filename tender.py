@@ -38,6 +38,10 @@ that the achieved margin is always reported.
 
 import estimating
 from estimating import vnd, MARKUP, MARGIN, apply_profit, achieved_margin
+# The cost-element vocabulary, taken from `estimating` rather than restated. A tender priced
+# as a BoQ and one priced as a bill of materials must answer "what is our labour exposure"
+# in the same words, or the answers cannot be added up across a portfolio.
+from estimating import MATERIAL, LABOUR, PLANT, SUBCONTRACT
 # The same largest-remainder splitter the estimate distributes preliminaries with. A cash
 # flow that loses a few dong per month to rounding stops reconciling with its own cost.
 from labour_cost import apportion
@@ -109,6 +113,9 @@ ASSUMPTIONS = [
     ("citPct", "Tax", "Corporate income tax", 20.0, "%", "Vietnam standard CIT rate."),
 
     ("markupPct", "Pricing", "Default mark-up on landed cost", 25.0, "%", "Override per line on the quotation."),
+    ("benchmarkQty", "Pricing", "Benchmark quantity", 0, "unit",
+     "What this job is measured in — floor area, airflow, number of units. Turns a total into a "
+     "rate that can be compared with the last three jobs."),
     ("discountCapPct", "Pricing", "Discount cap", 10.0, "%", "Maximum discount sales may offer without approval."),
 
     # A consultancy sells time. These four turn "two consultants, three visits, four nights" into
@@ -349,6 +356,10 @@ def bom_line(line, a, scale=1.0):
         "spec": str(line.get("spec") or "").strip(),
         "unit": str(line.get("unit") or "").strip(),
         "origin": str(line.get("origin") or "").strip(),
+        # Carried through, not dropped. cost_elements() reads the PRICED rows, so an element that
+        # only exists on the stored row is an element nobody can roll up — the line falls back to
+        # its cost centre's default and the exposure is quietly reported as something else.
+        "element": line_element(line, centre),
         "qty": round(qty, 4), "unitCostUsd": unit,
         "costUsd": round(cost, 2), "markupPct": round(_num(mk), 4),
         "sellUsd": round(sell, 2), "marginUsd": round(sell - cost, 2),
@@ -778,6 +789,135 @@ def pnl(quote, tender):
         "cit": cit, "netProfit": net_profit, "netMarginPct": share(net_profit),
         "vatRecoverable": (quote.get("vatRecoverable") or 0),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   4a. COST ELEMENTS — what the money is spent ON, across the whole tender
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A tender could say what each LINE costs and what each COST CENTRE costs, and could not answer the
+# question a commercial manager actually asks: how much of this job is labour? Labour is the
+# exposure that moves when a programme slips; imported material is the exposure that moves when the
+# dong does; subcontract is the exposure somebody else is carrying. Those are three different
+# risks wearing the same total, and nothing here could separate them.
+#
+# The vocabulary is `estimating`'s — material, labour, plant, subcontract — deliberately not a
+# second one. A tender priced as a BoQ and a tender priced as a bill of materials should answer
+# "what is our labour exposure" in the same words, or the answer cannot be added up across a
+# portfolio.
+#
+# DERIVED WHERE THE ENGINE ALREADY KNOWS. Only the EPC bill of materials needs a field: a services
+# engagement is days times a rate plus travel, and a trading deal is goods plus a customs chain, so
+# asking somebody to re-type what the model already contains would be a data-entry tax on a fact
+# already in the system — and a second place for it to be wrong.
+
+ELEMENTS = (MATERIAL, LABOUR, PLANT, SUBCONTRACT)
+ELEMENT_LABEL = {
+    MATERIAL: "Material & equipment",
+    LABOUR: "Labour",
+    PLANT: "Plant & tools",
+    SUBCONTRACT: "Subcontract",
+}
+# Everything a customs chain adds on top of the goods, and everything a consultancy spends that is
+# not somebody's time. Kept OUT of the four so a portfolio roll-up cannot double-count them into
+# "material" and then report an equipment exposure that is really freight.
+DUTY = "duty"
+LOGISTICS = "logistics"
+EXPENSES = "expenses"
+ELEMENT_EXTRA_LABEL = {
+    DUTY: "Duty & tax",
+    LOGISTICS: "Freight, clearance & handling",
+    EXPENSES: "Travel & expenses",
+}
+
+# What a cost centre is made of, when its lines do not say. A cleanroom is bought as a system and a
+# civil package is subcontracted, and defaulting everything to "material" would report a plant with
+# no labour and no subcontract in it — which is not a cautious guess, it is a wrong answer.
+CENTRE_ELEMENT = {
+    "CIV": SUBCONTRACT, "MEP": SUBCONTRACT, "BUT": MATERIAL, "CUT": MATERIAL,
+    "CLR": SUBCONTRACT, "OSD": MATERIAL, "PFI": MATERIAL, "LVP": MATERIAL,
+    "SVP": MATERIAL, "QCL": MATERIAL, "WHS": MATERIAL, "CON": LABOUR,
+}
+
+
+def line_element(line, centre=None):
+    """The cost element a BOM line belongs to. Explicit beats the cost centre's default."""
+    e = str(line.get("element") or "").strip().lower()
+    if e in ELEMENTS:
+        return e
+    return CENTRE_ELEMENT.get(str(centre or line.get("costCentre") or "").upper(), MATERIAL)
+
+
+def cost_elements(tender, master=None, rollup=None):
+    """What this tender spends its money ON, whichever engine priced it.
+
+    Percentages are OF THE COST BASE, not of the selling price: this answers "where does the cost
+    sit", and a percentage that moves when the mark-up moves would answer a different question
+    every time somebody edited the margin.
+    """
+    ctype = str(tender.get("costingType") or TRADING).strip().lower()
+    pot = {}
+
+    def add(key, amount):
+        if amount:
+            pot[key] = pot.get(key, 0) + amount
+
+    if ctype == EPC:
+        for ln in (rollup or {}).get("lines", []):
+            add(line_element(ln), ln.get("costVnd", 0))
+    elif ctype == SERVICES:
+        for p in (rollup or {}).get("packages", []):
+            add(LABOUR, p.get("labour", 0))
+            add(EXPENSES, p.get("expenses", 0))
+    else:
+        for r in (master or {}).get("rows", []):
+            if r.get("source") == LOCAL:
+                add(MATERIAL, r.get("landed", 0))
+                continue
+            charges = r.get("charges") or {}
+            exw = vnd(_num(r.get("exwTotal")) * _num(r.get("fx")))
+            add(MATERIAL, exw)
+            add(LOGISTICS, r.get("cif", 0) - exw + sum(charges.values()))
+            add(DUTY, r.get("duty", 0) + r.get("sct", 0))
+
+    total = sum(pot.values())
+    order = list(ELEMENTS) + [DUTY, LOGISTICS, EXPENSES]
+    rows = [{"key": k,
+             "label": ELEMENT_LABEL.get(k) or ELEMENT_EXTRA_LABEL.get(k, k),
+             "amount": pot[k],
+             "pct": round(pot[k] / total * 100, 2) if total else 0.0}
+            for k in order if pot.get(k)]
+    return {
+        "rows": rows,
+        "total": total,
+        # The two a commercial manager asks for by name, lifted out so no screen has to hunt.
+        "labourPct": round(pot.get(LABOUR, 0) / total * 100, 2) if total else 0.0,
+        "subcontractPct": round(pot.get(SUBCONTRACT, 0) / total * 100, 2) if total else 0.0,
+    }
+
+
+# ── Benchmarks ────────────────────────────────────────────────────────────────
+#
+# The check an estimator actually applies: not "does the total look right" — a billion-dong total
+# looks like any other billion-dong total — but "is this the right price PER SQUARE METRE", against
+# the last three jobs. A tender with no unit rate cannot be compared with anything, so it can only
+# be sanity-checked by whoever remembers the last one.
+
+def benchmarks(tender, quote, elements=None):
+    """Cost and price per unit of whatever this job is measured in."""
+    qty = _num(tender.get("benchmarkQty"))
+    unit = str(tender.get("benchmarkUnit") or "").strip()
+    if qty <= 0 or not unit:
+        return {"available": False, "unit": unit, "qty": qty, "rows": []}
+    cost = _num((quote or {}).get("cogs"))
+    net = _num((quote or {}).get("net"))
+    rows = [
+        {"label": "Cost per " + unit, "value": vnd(cost / qty)},
+        {"label": "Price per " + unit, "value": vnd(net / qty)},
+    ]
+    for r in (elements or {}).get("rows", []):
+        rows.append({"label": r["label"] + " per " + unit, "value": vnd(r["amount"] / qty)})
+    return {"available": True, "unit": unit, "qty": qty, "rows": rows}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
