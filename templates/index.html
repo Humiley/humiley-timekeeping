@@ -35172,6 +35172,8 @@ const _VI = {
   'Improvement actions': 'Hành động cải thiện',
   'In Zone': 'Trong vùng',
   'Out of Zone': 'Ngoài vùng',
+  'Away from site': 'Ở ngoài công trường',
+  'GPS unverified': 'Chưa xác minh GPS',
   'In/Out Log': 'Nhật ký vào/ra',
   'Timesheet': 'Bảng chấm công',
   'Individual': 'Cá nhân',
@@ -38406,7 +38408,26 @@ function _attMinutes(r) {
    '<zone> (away from site)' or '<zone> (GPS unverified)' — never the literal 'Out of Zone', which is
    produced by exactly one line in the repo and that line is seed data. So the KPI counting
    `r.loc === 'Out of Zone'` read 0 forever, on live data, in a card headed GPS Anomalies.
-   The geometric test is preferred where the row carries a fix; the label is the fallback. */
+   The label IS the record, not a fallback: it is the decision the check-in screen made, showed the
+   worker, and stamped. Both screens read it through _attGpsState below — there is no geometric
+   re-test anywhere. */
+function _attGpsState(r) {
+  /* The three states tkCheckIn can stamp (see the locLabel expression in the check-in path), read
+     back out of the label it wrote:
+       'out'        '<zone> (away from site)'  — and the seed-only literal 'Out of Zone' (db.py)
+       'unverified' '<zone> (GPS unverified)'  — we could not tell. NOT a finding about a person.
+       'in'         a bare zone name
+       'none'       nothing recorded
+     Deriving this from lat/lon instead is not merely a different rule, it is IMPOSSIBLE to do
+     faithfully: the accuracy the check-in decision turned on is never stored (the attendance INSERT
+     is emp_id,name,dept,date,clock_in,status,loc,lat,lon,project — no accuracy column), and neither
+     is which zone the worker selected. */
+  const t = String((r && r.loc) || '');
+  if (!t) return 'none';
+  if (/away from site|out of zone/i.test(t)) return 'out';
+  if (/gps unverified/i.test(t)) return 'unverified';
+  return 'in';
+}
 function _attIsAnomaly(r) {
   // The LABEL, and only the label. It is not a fallback — it is the record.
   //
@@ -38426,7 +38447,7 @@ function _attIsAnomaly(r) {
   // made and showed the worker. That stamp is what an anomaly report is about. "GPS unverified" is
   // deliberately NOT an anomaly: "we could not tell" and "they were somewhere else" are different
   // findings, and only one of them is a finding.
-  return /away from site|out of zone/i.test(String((r && r.loc) || ''));
+  return _attGpsState(r) === 'out';
 }
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
@@ -41403,11 +41424,21 @@ function _mgrNearestZone(lat, lon) {
   (_DEMO_ZONES || []).forEach(z => { if (z.lat == null || z.lon == null) return; const d = _haversineMetres(+lat, +lon, +z.lat, +z.lon); if (!best || d < best.dist) best = { zone: z, dist: Math.round(d) }; });
   return best;
 }
+/* ONE verdict, from the stamp — the same one Reports reads and the same one the worker was shown.
+   The geometric re-test that used to live here measured to the NEAREST zone and ignored GPS
+   accuracy, so it answered a question nobody was ever judged by: it CLEARED punches stamped
+   'away from site' when the worker happened to stand inside some other zone, and it FLAGGED punches
+   the app had told the worker were fine (a 250m-out fix with +/-300m accuracy reads as inside at
+   check-in and as 250m outside here).
+   Why nobody noticed: the two branches partitioned the data backwards. db.py's generate_attendance
+   is the only writer of the literal 'Out of Zone' and its INSERT carries no lat/lon, so the label
+   branch fired only on SEEDED rows and the geometry branch only on REAL ones — which is why the two
+   functions agree in every demo and every test, and disagree only in production.
+   `near` is still computed and still returned: the alert card uses it for distance, nearest-zone
+   name and the map pin. It is CONTEXT on an alert the label raised, never the thing that raises it. */
 function _mgrIsAnomaly(rec) {
-  if (/out of zone/i.test(String(rec.loc || ''))) return { near: _mgrNearestZone(rec.lat, rec.lon), bad: true };
-  const nz = _mgrNearestZone(rec.lat, rec.lon); const rad = nz ? Number(nz.zone.radius) || 0 : 0;
-  if (nz && rad > 0 && nz.dist > rad) return { near: nz, bad: true };
-  return { near: nz, bad: false };
+  const state = _attGpsState(rec);
+  return { near: _mgrNearestZone(rec && rec.lat, rec && rec.lon), state: state, bad: state === 'out' };
 }
 /* On APPROVED leave covering `day` (YYYY-MM-DD)? → the leave row or null. */
 function _mgrLeaveOn(empId, name, day) {
@@ -41441,7 +41472,14 @@ function _mgrRenderLate(list, dateLbl) {
     const e = x.emp, r = x.rec, mins = x.mins;
     const lateBadge = (mins == null) ? '<span class="badge b-warn">' + _t('Late') + '</span>' : '<span class="badge ' + (mins >= 60 ? 'b-danger' : 'b-warn') + '">' + mins + ' ' + _t('min') + '</span>';
     const anom = _mgrIsAnomaly(r);
-    const zoneBadge = anom.bad ? '<span class="badge b-danger">' + _t('Out of Zone') + '</span>' : (anom.near ? '<span class="badge b-ok">' + _t('In Zone') + '</span>' : (r.loc ? '<span class="badge b-navy">' + _crmEsc(r.loc) + '</span>' : '—'));
+    /* Three states, from the stamp. This used to read `anom.near` as a TRUTHINESS test — and near is
+       the nearest zone, which is set whenever the row has coordinates at all — so a punch stamped
+       'away from site' that the old geometric test had cleared rendered a green In Zone badge: the
+       exact opposite of what the record says, on the screen a manager acts from. */
+    const zoneBadge = anom.state === 'out' ? '<span class="badge b-danger">' + _t('Away from site') + '</span>'
+      : anom.state === 'unverified' ? '<span class="badge b-warn">' + _t('GPS unverified') + '</span>'
+      : anom.state === 'in' ? '<span class="badge b-ok">' + _t('In Zone') + '</span>'
+      : (r.loc ? '<span class="badge b-navy">' + _crmEsc(r.loc) + '</span>' : '\u2014');
     const ci = r.in || r.clock_in || '—';
     return '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _mgrAva(e.name) + '<span style="font-weight:600">' + _crmEsc(e.name) + '</span></div></td>'
       + '<td>' + _crmEsc(e.dept || '—') + '</td>'
@@ -41468,7 +41506,7 @@ function _mgrRenderGps(list, dateLbl) {
     const legit = _crmEsc(e.name + ' — ' + _t('marked as a legitimate site visit'));
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:16px">'
       + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">' + _mgrAva(e.name, 'md')
-      + '<div><div style="font-size:14px;font-weight:700">' + _crmEsc(e.name) + ' — ' + _t('Out of Zone') + '</div><div style="font-size:12px;color:var(--text-light)">' + _crmEsc(e.dept || '') + ' · ' + _t('Check-in') + ' ' + _crmEsc(ci) + '</div></div>'
+      + '<div><div style="font-size:14px;font-weight:700">' + _crmEsc(e.name) + ' — ' + _t('Away from site') + '</div><div style="font-size:12px;color:var(--text-light)">' + _crmEsc(e.dept || '') + ' · ' + _t('Check-in') + ' ' + _crmEsc(ci) + '</div></div>'
       + '<span class="badge b-danger" style="margin-left:auto">' + km + ' ' + _t('from') + ' ' + _crmEsc(nz ? _mgrZoneShort(nz.zone.name) : 'zone') + '</span></div>'
       + '<div style="background:var(--soft-bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
       + '<div><span style="color:var(--text-light)">' + _t('GPS Coordinates') + '</span><br><strong>' + _crmEsc(coords) + '</strong></div>'
@@ -41490,13 +41528,17 @@ function _mgrRenderTeam(team, attByEmp, onLeaveIds, today) {
     else if (r) {
       ci = r.in || r.clock_in || '—';
       hrs = (r.out || r.clock_out) ? (r.hrs || '—') : _t('In progress');
+      /* Punctuality and location are two different facts about one punch. The GPS badge used to sit
+         FIRST in this chain and REPLACE the punctuality one, so somebody who was both late and away
+         from site showed only 'GPS Anomaly' and their late minutes vanished from the summary. Decide
+         punctuality on its own, then append the location flag beside it. */
       const anom = _mgrIsAnomaly(r).bad;
       const lb = _mgrLateBy(r, e);
-      if (anom) statusBadge = '<span class="badge b-warn">' + _t('GPS Anomaly') + '</span>';
-      else if (r.status === 'absent') statusBadge = '<span class="badge b-danger">' + _t('Absent') + '</span>';
+      if (r.status === 'absent') statusBadge = '<span class="badge b-danger">' + _t('Absent') + '</span>';
       else if (r.status === 'late') statusBadge = '<span class="badge b-warn">' + _t('Late') + (lb != null ? ' ' + lb + 'm' : '') + '</span>';
       else if (r.in || r.clock_in) statusBadge = '<span class="badge b-ok">' + _t('On Time') + '</span>';
       else statusBadge = '<span class="badge" style="background:#eef1f4;color:#64748b">' + _t('Not checked in') + '</span>';
+      if (anom) statusBadge += ' <span class="badge b-warn">' + _t('Away from site') + '</span>';
     } else { statusBadge = '<span class="badge" style="background:#eef1f4;color:#64748b">' + _t('Not checked in') + '</span>'; }
     const bal = (e.annualTotal != null) ? (Number(e.annualTotal) - Number(e.annualUsed || 0)) : null;
     const balHtml = (bal == null) ? '—' : '<span style="font-size:12px">' + _t('Annual') + ': <strong>' + bal + 'd</strong></span>';
