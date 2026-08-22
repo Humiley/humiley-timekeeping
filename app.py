@@ -13238,10 +13238,18 @@ class Handler(BaseHTTPRequestHandler):
             claims = ({str(k): float(v or 0) for k, v in (body.get("claims") or {}).items()}
                       if "claims" in (body or {})
                       else {str(k): float(v or 0) for k, v in ((cur or {}).get("claims") or {}).items()})
-            preview = self._application_compute(c, claims)
+            # The amount this claim recovers off the advance. Taken from the request when the
+            # user names one, otherwise from the draft as it stands — editing a claim's lines must
+            # not silently drop a recovery figure already agreed on it.
+            _rn = (body or {}).get("recoverNow", None)
+            if _rn is None:
+                _rn = (cur or {}).get("recoverNow", None)
+            preview = self._application_compute(c, claims, _rn)
             if not preview["ok"]:
                 return self._err(preview["why"], 400)
             doc = dict(cur or {})
+            if _rn is not None:
+                doc["recoverNow"] = round(float(_rn or 0), 2)
             doc.update({"contractId": c.get("id"), "contractNo": c.get("contractNo"),
                         # Copied onto the claim, not looked up later: the invoice raised from this
                         # claim must quote the PO the customer ordered against, and their accounts
@@ -13316,7 +13324,9 @@ class Handler(BaseHTTPRequestHandler):
             if c.get("status") != sales_doc.ACTIVE:
                 return None, "The contract is no longer active.", 400
             rev0 = c.get("_rev")
-            out = self._application_compute(c, claims)
+            # From the claim being certified — never re-asked at signing time. What the signer sees
+            # on screen is what gets certified.
+            out = self._application_compute(c, claims, cur.get("recoverNow", None))
             if not out["ok"]:
                 return None, out["why"], 400
             c["lines"] = out["lines"]
@@ -13349,18 +13359,30 @@ class Handler(BaseHTTPRequestHandler):
         return saved, None, 200
 
 
-    def _application_compute(self, c, claims):
+    def _application_compute(self, c, claims, recover_now=None):
         """What this claim comes to, against the contract as it stands right now.
 
         Both guards run: the per-LINE open balance and the CONTRACT-level advance and retention. A
         claim can be fine on every line and still be wrong for the contract, and vice versa.
+
+        `recover_now` is how much of the advance THIS claim recovers, and it only means anything on
+        a contract whose rule is "decided per claim". It travels from the claim document, because
+        that is where the decision was made and where an auditor will look for it — sales_contract
+        read it out of the state dict and _contract_state never put it there, so the rule recovered
+        ₫0 on every claim ever raised under it.
         """
         applied = sales_doc.apply(c.get("lines") or [], claims, counter="certifiedAmt")
         if not applied["ok"]:
             first = (applied.get("problems") or [{}])[0]
             return {"ok": False, "why": first.get("why") or applied["why"], "problems": applied.get("problems")}
         total = round(sum(float(v or 0) for v in (claims or {}).values()), 2)
-        res = sales_contract.application(c, total, self._contract_state(c))
+        st = self._contract_state(c)
+        # Only set the key when an amount was actually named. sales_contract distinguishes "nobody
+        # said" (None -> refuse) from an explicit 0 ("recover nothing this claim" -> honoured), so
+        # writing a default here would put the silence back.
+        if recover_now is not None:
+            st["recoverNow"] = round(float(recover_now or 0), 2)
+        res = sales_contract.application(c, total, st)
         if not res["ok"]:
             return res
         res["lines"] = applied["lines"]
