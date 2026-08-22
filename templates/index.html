@@ -16079,7 +16079,11 @@ const _QA_SPECS = {
     { k: 'name', label: 'Deliverable name' }, { k: 'wbsCode', label: 'WBS code (e.g. 1.2.3)' },
     { k: 'owner', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' }, { k: 'supervisor', label: 'Supervisor (project member)', type: 'select', options: 'pm_members' }, { k: 'due', label: 'Due', type: 'date' },
     { k: 'weight', label: 'Weight', type: 'number' }, { k: 'percentComplete', label: '% complete', type: 'number' },
-    { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Submitted', 'Accepted'] },
+    // 'Completed' sits between the work and the paperwork, and it is the value the schedule derives
+    // when every linked activity is finished — _pmStatusFromPct returns it. Without it here the
+    // register could display a status this form could not store, and editing a package would
+    // silently demote it to whatever the dropdown happened to show first.
+    { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'Submitted', 'Accepted'] },
     { k: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
   pm_tasks: { title: 'Task / Milestone', coll: 'pm_tasks', reload: 'pm_tasks', fields: [
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
@@ -20705,25 +20709,57 @@ function _pmDelivBuckets(tasks) {
        answer different questions and overwriting one with the other loses the variance.
      · 'Accepted' is a signature, not a measurement. A schedule can complete a package; only a
        person accepts one, and nothing here may un-accept it. */
-function _pmDelivRoll(d, mine, pid) {
+/* 'Submitted' and 'Accepted' are ACTS OF A PERSON, not measurements. A schedule can finish the work
+   in a package; only somebody can submit it for acceptance, and only somebody can accept it. The
+   first version protected 'Accepted' alone, so a package a contractor had submitted read back as
+   plain 'Completed' the moment the register recomputed — a governance step erased by a render. */
+const _PM_DELIV_SIGNED = ['Submitted', 'Accepted'];
+function _pmDelivRoll(d, mine, pid, allTasks) {
   const committed = (d && d.due) || '';
   const typedSt = (d && d.status) || 'Not started';
   mine = mine || [];
   if (!mine.length) {
-    return { n: 0, from: 'typed', pct: _pmPct(d && d.percentComplete), due: committed,
+    return { n: 0, from: 'typed', pct: _pmPct(d && d.percentComplete), due: committed, dueFrom: 'typed',
              committed: committed, status: typedSt, slip: 0, done: 0 };
   }
+  /* A summary activity ALREADY contains its children. Link '1.4' and '1.4.1' to the same package and
+     the same work is counted twice; link only '1.4' and — because _pmActivityPct has no children
+     step — it contributes the 0 nobody typed on it while the Activities tab beside it reads 100%.
+     Both are fixed by the same two lines: drop any linked activity that is a WBS descendant of
+     another linked activity, and ask _pmTaskPctRoll — the ladder every other screen uses, whose
+     first rule is that children win. */
+  const codes = mine.map(t => String(t.wbs || '').trim()).filter(Boolean);
+  const top = mine.filter(t => {
+    const w = String(t.wbs || '').trim();
+    return !w || !codes.some(c => c !== w && w.indexOf(c + '.') === 0);
+  });
+  /* Both ladders, composed — neither one alone is right for a package.
+     _pmTaskPctRoll knows that CHILDREN WIN and is what the Activities tab and the Gantt bar print;
+     it stops at the typed number. _pmActivityPct knows that an activity carrying an actual finish,
+     or status Completed, is done however it was typed; it has no children step. Take the roll-up,
+     and where it bottomed out at 'typed' let the stronger evidence speak. */
+  const roll = t => {
+    const r = _pmTaskPctRoll(t, allTasks || [], pid);
+    return r.from === 'typed' ? _pmActivityPct(t, pid).pct : r.pct;
+  };
   let aw = 0, ap = 0, fin = '', done = 0;
-  mine.forEach(t => {
-    const tw = _pmTaskWeight(t), a = _pmActivityPct(t, pid).pct;
+  top.forEach(t => {
+    const tw = _pmTaskWeight(t), a = roll(t);
     aw += tw; ap += tw * a;
-    const f = t.finish || t.start || '';
+    // An ACTUAL finish outranks the planned one: a package handed over three weeks late was
+    // delivered on the day it was delivered, and reporting 0d slip against the plan hides exactly
+    // the number this column exists to show.
+    const f = t.actualFinish || t.finish || t.start || '';
     if (f && f > fin) fin = f;
     if (a >= 100) done++;
   });
   const pct = aw ? (ap / aw) : 0;
-  return { n: mine.length, from: 'activities', pct: pct, due: fin || committed, committed: committed,
-           status: typedSt === 'Accepted' ? 'Accepted' : _pmStatusFromPct(pct),
+  // `fin` is empty when every linked activity is undated. Falling back to the typed date is right;
+  // going on to LABEL it "from the schedule" is not — that is the same false provenance this whole
+  // change exists to remove.
+  return { n: top.length, from: 'activities', pct: pct, due: fin || committed,
+           dueFrom: fin ? 'activities' : 'typed', committed: committed,
+           status: _PM_DELIV_SIGNED.indexOf(typedSt) >= 0 ? typedSt : _pmStatusFromPct(pct),
            slip: (committed && fin && fin > committed) ? (_pmDateDiff(committed, fin) || 0) : 0,
            done: done };
 }
@@ -20751,7 +20787,7 @@ function pmWbsRollup(pid) {
     // prevents that by never populating byDeliv[''], removing either one alone changes nothing,
     // which a mutation test confirmed by surviving. Both must fail together to open the hole —
     // cheap enough to keep, and stated honestly rather than claimed as the fix.
-    const roll = _pmDelivRoll(d, (d.id ? byDeliv[d.id] : null) || [], pid);
+    const roll = _pmDelivRoll(d, (d.id ? byDeliv[d.id] : null) || [], pid, ts);
     if (roll.from === 'activities') derived++;
     wsum += w; wpct += w * roll.pct;
     if ((d.status || '') === 'Accepted') acc++;
@@ -21672,6 +21708,14 @@ function _pmWbsLevel(wbs) {
 }
 /* px of indent for that level. Level 1 pays nothing: the top of a tree is not indented. */
 function _pmWbsIndent(lvl) { return (Math.max(1, +lvl || 1) - 1) * 12; }
+/* The same indent, priced against the gutter it is spent from. On a phone _pdLabW returns 176px
+   total, of which the status cell takes 62 and the padding another 32 — measured, a level-4 row at
+   the full 12px step plus the connector glyph left the name about EIGHTEEN pixels, one character
+   and an ellipsis. Depth is still legible there because the WBS code is the first thing in the
+   name, so a narrow gutter gets a token step and no connector rather than an unreadable tree. */
+function _pmWbsIndentFor(lvl, narrow) {
+  return narrow ? Math.min(15, (Math.max(1, +lvl || 1) - 1) * 5) : _pmWbsIndent(lvl);
+}
 function _pmSet(html) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = html; }
 
 /* ---------- 2. Scope / WBS ---------- */
@@ -21682,9 +21726,9 @@ function pmRenderScope(pid) {
      values ride on a COPY: nothing is written back, so the register cannot drift from the schedule
      and re-linking an activity re-answers it on the next render. The flat _pct/_due/_status keys
      exist so the column headers sort what is on screen rather than the typed field underneath. */
-  const _bk = _pmDelivBuckets(_pmScopeFor('pm_tasks', pid));
+  const _bkAll = _pmScopeFor('pm_tasks', pid), _bk = _pmDelivBuckets(_bkAll);
   const ds = _pmScope(_HR.pm_deliverables).slice().sort((a, b) => _pmWbsCmp(a.wbsCode, b.wbsCode))
-    .map(d => { const ro = _pmDelivRoll(d, _bk[d.id] || [], pid);
+    .map(d => { const ro = _pmDelivRoll(d, _bk[d.id] || [], pid, _bkAll);
                 return Object.assign({}, d, { _ro: ro, _pct: ro.pct, _due: ro.due, _status: ro.status, _n: ro.n }); });
   const anyLinked = ds.some(d => d._n > 0);
   const actCount = _pmScopeFor('pm_tasks', pid).length;
@@ -21712,7 +21756,7 @@ function pmRenderScope(pid) {
        the last finish among the linked activities is what the schedule now FORECASTS. Print the
        forecast, keep the commitment underneath when they disagree, and colour the gap. */
     { label: 'Due', sk: '_due', nowrap: true, render: r => {
-        if (r._ro.from !== 'activities') return _pmFmt(r.due);
+        if (r._ro.dueFrom !== 'activities') return _pmFmt(r.due);
         return '<div><div style="font-variant-numeric:tabular-nums">' + _pmFmt(r._due) + '</div>' +
           (r._ro.slip > 0
             ? '<div style="font-size:10px;color:#F59E0B;white-space:nowrap">' +
@@ -21749,7 +21793,17 @@ function pmRenderScope(pid) {
    The list is the project's activities in WBS order, already ticked where they point here, and
    marked where they point somewhere else — reassigning is a legitimate move, but it must be
    visible, because it silently takes progress off another package. */
-let _pmLinkFor = '';
+/* The overlay is held BY REFERENCE and carries no id, and both of those are load-bearing.
+   The first version gave it id="pm-link-ov" and class "modal-overlay open". The global Escape
+   handler picks up any `.modal-overlay[id]` and calls closeModal(id) — which removes the `open`
+   class and sets display:none, and does NOT remove the node. So: open Link on package A, tick three
+   activities, press Escape, open Link on package D, tick one, Save. Two elements now share the id;
+   getElementById returns the FIRST — the hidden, stale one — and querySelectorAll('#pm-link-list
+   .pm-link-t') matches BOTH lists. A's three ticks were written to D. Silent, and wrong in the one
+   direction a link table must never be wrong.
+   So this follows _tkDialog's documented convention instead: no id, own Escape, own focus trap,
+   every query scoped to the element itself. */
+let _pmLinkFor = '', _pmLinkOv = null, _pmLinkKey = null;
 function pmDelivLink(delivId) {
   const pid = _pmPid();
   const d = (_HR.pm_deliverables || []).find(x => x.id === delivId);
@@ -21770,50 +21824,73 @@ function pmDelivLink(delivId) {
           _tkEscA(_t('Currently delivering') + ': ' + nameOf(cur)) + '">\u2192 ' + _pmEsc(nameOf(cur)) + '</span>' : '') +
       '</label>';
   }).join('');
+  pmDelivLinkClose();                       // never two of these, whatever left the last one open
   const ov = document.createElement('div');
-  ov.id = 'pm-link-ov';
   ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2000';
   ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-label="' + _tkEscA(_t('Link activities')) + '" style="width:620px;max-width:94vw">' +
     '<div style="font-size:17px;font-weight:800;color:var(--navy)">' + _t('Which activities deliver this package?') + '</div>' +
     '<div style="font-size:12.5px;color:var(--text-light);margin:4px 0 12px">' +
       _pmEsc((d.wbsCode ? d.wbsCode + ' · ' : '') + (d.name || '')) + '</div>' +
     (ts.length
-      ? '<input class="form-control" id="pm-link-q" placeholder="' + _tkEscA(_t('Search activities')) + '" oninput="pmDelivLinkFilter()" style="margin-bottom:10px">' +
+      ? '<input class="form-control" data-role="q" placeholder="' + _tkEscA(_t('Search activities')) + '" oninput="pmDelivLinkFilter()" style="margin-bottom:10px">' +
         '<div style="display:flex;gap:10px;margin-bottom:8px">' +
           '<button type="button" class="btn btn-ghost btn-sm" onclick="pmDelivLinkAll(1)">' + _t('Select all shown') + '</button>' +
           '<button type="button" class="btn btn-ghost btn-sm" onclick="pmDelivLinkAll(0)">' + _t('Clear all shown') + '</button></div>' +
-        '<div id="pm-link-list" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px">' + rows + '</div>'
+        '<div data-role="list" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px">' + rows + '</div>'
       : '<div style="font-size:13px;color:var(--text-light);padding:14px 0">' + _t('This project has no master-schedule activities yet.') + '</div>') +
     '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
       '<button type="button" class="btn btn-outline" onclick="pmDelivLinkClose()">' + _t('Cancel') + '</button>' +
-      (ts.length ? '<button type="button" class="btn btn-primary" id="pm-link-save" onclick="pmDelivLinkSave()">' + _t('Save links') + '</button>' : '') +
+      (ts.length ? '<button type="button" class="btn btn-primary" data-role="save" onclick="pmDelivLinkSave()">' + _t('Save links') + '</button>' : '') +
     '</div></div>';
   ov.addEventListener('click', ev => { if (ev.target === ov) pmDelivLinkClose(); });
+  // Escape REMOVES it. Tab stays inside it. Both are ours because the overlay carries no id, so the
+  // global handlers that only know how to hide a static modal never see it.
+  _pmLinkKey = ev => {
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); pmDelivLinkClose(); return; }
+    if (ev.key !== 'Tab') return;
+    const f = ov.querySelectorAll('button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])');
+    const vis = Array.prototype.filter.call(f, el => el.offsetParent !== null);
+    if (!vis.length) return;
+    const first = vis[0], last = vis[vis.length - 1];
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', _pmLinkKey, true);
+  ov._prevFocus = document.activeElement;
   document.body.appendChild(ov);
-  const q = document.getElementById('pm-link-q'); if (q) q.focus();
+  _pmLinkOv = ov;
+  const q = ov.querySelector('[data-role="q"]'); if (q) q.focus();
 }
-function pmDelivLinkClose() { const o = document.getElementById('pm-link-ov'); if (o) o.remove(); _pmLinkFor = ''; }
+function pmDelivLinkClose() {
+  if (_pmLinkKey) { document.removeEventListener('keydown', _pmLinkKey, true); _pmLinkKey = null; }
+  const prev = _pmLinkOv && _pmLinkOv._prevFocus;
+  if (_pmLinkOv) _pmLinkOv.remove();
+  _pmLinkOv = null; _pmLinkFor = '';
+  try { if (prev && prev.focus) prev.focus(); } catch (e) {}
+}
 function pmDelivLinkFilter() {
-  const q = String((document.getElementById('pm-link-q') || {}).value || '').trim().toLowerCase();
-  document.querySelectorAll('#pm-link-list label').forEach(l => {
+  const ov = _pmLinkOv; if (!ov) return;
+  const q = String((ov.querySelector('[data-role="q"]') || {}).value || '').trim().toLowerCase();
+  ov.querySelectorAll('[data-role="list"] label').forEach(l => {
     l.style.display = (!q || (l.dataset.n || '').indexOf(q) >= 0) ? 'flex' : 'none';
   });
 }
 /* "Shown", not "all" — a filtered list that ticks rows you cannot see is how people link the wrong
    half of a programme and never find out. */
 function pmDelivLinkAll(on) {
-  document.querySelectorAll('#pm-link-list label').forEach(l => {
+  const ov = _pmLinkOv; if (!ov) return;
+  ov.querySelectorAll('[data-role="list"] label').forEach(l => {
     if (l.style.display === 'none') return;
     const b = l.querySelector('input'); if (b) b.checked = !!on;
   });
 }
 async function pmDelivLinkSave() {
-  const id = _pmLinkFor; if (!id) return;
-  const btn = document.getElementById('pm-link-save');
+  const ov = _pmLinkOv, id = _pmLinkFor; if (!ov || !id) return;
+  const btn = ov.querySelector('[data-role="save"]');
   // Only what CHANGED. Sending every activity would rewrite records nobody touched — and a PATCH
   // here replaces the whole item, so an untouched row is a whole document rewritten for nothing.
   const changes = [];
-  document.querySelectorAll('#pm-link-list .pm-link-t').forEach(b => {
+  ov.querySelectorAll('[data-role="list"] .pm-link-t').forEach(b => {
     const was = b.dataset.was === '1', now = !!b.checked;
     if (was !== now) changes.push({ id: b.value, deliv: now ? id : '' });
   });
@@ -23281,13 +23358,13 @@ function _schTimeline(rows, o) {
       body += '<div style="display:flex;height:27px;background:var(--card,#fff);' + (r.click ? 'cursor:pointer;' : '') +
           'border-bottom:1px solid var(--line)"' + (r.click ? ' onclick="' + r.click + '"' : '') +
           ' title="' + _tkEscA(o.rowHint || '') + '">' +
-        lab((lv > 1 ? '<span aria-hidden="true" style="flex:none;color:var(--text-light);opacity:.5;font-size:11px;' +
+        lab((lv > 1 && !NARROW ? '<span aria-hidden="true" style="flex:none;color:var(--text-light);opacity:.5;font-size:11px;' +
                           'line-height:1;margin-right:-2px">\u2514</span>' : '') +
             '<span style="width:5px;height:5px;border-radius:50%;background:' + _pdVarColor(v) + ';flex:none"></span>' +
             '<span title="' + _tkEscA(r.name || '') + '" style="font-size:12px;color:var(--text);' +
               'overflow:hidden;text-overflow:ellipsis">' + _pmEsc(r.name || '') + '</span>' +
             (r.note ? '<span title="' + _tkEscA(r.note) + '" style="flex:none;font-size:10px;color:var(--navy);cursor:help">\u270e</span>' : ''),
-            22 + _pmWbsIndent(lv), r) +
+            22 + _pmWbsIndentFor(lv, NARROW), r) +
         '<div style="flex:1;position:relative">' + bar(r, color, Math.round(+r.acc || 0) + '%', false) + '</div></div>';
     });
   });
@@ -23648,7 +23725,7 @@ function _pmGanttHtml(pid) {
       const dur = (t.start && t.finish) ? ((_pmDateDiff(t.start, t.finish) || 0) + 1) : (mile ? 0 : '');
       leftRows += '<div style="height:' + ROW + 'px;display:flex;align-items:center;gap:6px;padding:0 6px;border-bottom:1px solid var(--soft-bg)">' +
         '<span style="width:20px;text-align:center;flex:0 0 auto;font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + n + '</span>' +
-        '<span style="flex:1;min-width:0;display:flex;align-items:center;gap:5px' + (_pmWbsIndent(_pmWbsLevel(t.wbs)) ? ';padding-left:' + _pmWbsIndent(_pmWbsLevel(t.wbs)) + 'px' : '') + '">' + (t.wbs ? '<span style="font-family:Poppins,system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--text-light);font-size:9.5px;flex:0 0 auto">' + _pmEsc(t.wbs) + '</span>' : '') + '<span style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(t.name || '') + '</span>' + (mile ? '<span title="Milestone" style="color:#8B5CF6;font-size:9px;flex:0 0 auto">◆</span>' : '') + (crit ? '<span title="Critical path" style="color:#EF4444;font-size:8px;font-weight:700;flex:0 0 auto">CP</span>' : '') + '</span>' +
+        '<span style="flex:1;min-width:0;display:flex;align-items:center;gap:5px' + (_pmWbsIndent(_pmWbsLevel(t.wbs)) ? ';padding-left:' + _pmWbsIndent(_pmWbsLevel(t.wbs)) + 'px' : '') + '">' + (t.wbs ? '<span style="font-family:Poppins,system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--text-light);font-size:9.5px;flex:0 0 auto">' + _pmEsc(t.wbs) + '</span>' : '') + /* the indent is spent out of a fixed 334px column, so an indented name truncates sooner — every surface that ellipsis-clips a name it just made narrower owes the reader the whole of it on hover */ '<span title="' + _tkEscA(t.name || '') + '" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(t.name || '') + '</span>' + (mile ? '<span title="Milestone" style="color:#8B5CF6;font-size:9px;flex:0 0 auto">◆</span>' : '') + (crit ? '<span title="Critical path" style="color:#EF4444;font-size:8px;font-weight:700;flex:0 0 auto">CP</span>' : '') + '</span>' +
         '<span style="width:24px;display:flex;justify-content:center;flex:0 0 auto">' + _pmMiniAvatar(t.assignee) + '</span>' +
         '<span style="width:50px;text-align:right;flex:0 0 auto;font-size:10px;color:var(--text-light);white-space:nowrap;font-variant-numeric:tabular-nums">' + _pmDShort(t.start) + '</span>' +
         '<span style="width:32px;text-align:right;flex:0 0 auto;font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + (dur !== '' ? dur + 'd' : '—') + '</span></div>';
@@ -23841,6 +23918,12 @@ function pmSchedTab(name) {
     // and put the Schedule back to looking like nothing else in the portal.
     const b = document.getElementById('pschtab-' + k); if (b) b.classList.toggle('active', k === name);
   });
+  /* A pane that was hidden measured ZERO, so _schFitPlot and _schXBar both stood down while it was
+     off screen — and re-showing it only flips style.display, which fires no childList mutation and
+     so never brings them back. Resize the window while you are on Activities, switch to Timeline,
+     and the gutter still carries the width the previous viewport chose. Nothing else re-runs the
+     pass here, so say it explicitly. */
+  try { _fitTablesSoon(); } catch (e) {}
 }
 
 /* ---------- 4. Cost / EVM ---------- */

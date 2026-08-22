@@ -46,6 +46,12 @@ new Function(PRELUDE +
   // _pmDelivRoll, so the project total and the row a PM reads can never disagree. Those two are
   // exercised on their own in tests/wbs_rollup.js — pulled in here because the chain runs through
   // them for real, not against a stub.
+  // The REAL ladder, not a stub and not a fallback: _pmDelivRoll calls _pmTaskPctRoll now, and a
+  // harness that left it undefined would run the composed path's other half and report success
+  // about code it never executed.
+  take('function _pdWeight(', '_pdWeight') +
+  take('function _pmWbsChildren(', '_pmWbsChildren') +
+  take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
   take('function _pmDelivBuckets(', '_pmDelivBuckets') +
   take('function _pmDelivRoll(', '_pmDelivRoll') +
   take('function _pmStatusFromPct(', '_pmStatusFromPct') +
@@ -106,7 +112,7 @@ ok('pmScopeRollup delegates to pmWbsRollup rather than duplicating it',
 // WBS register printed the typed fields — two answers to one question, and the register's was the
 // stale one. Both go through _pmDelivRoll now; assert it, or they can quietly diverge again.
 ok('the project total is summed from the same per-package function the register shows',
-   /_pmDelivRoll\(d, \(d\.id \? byDeliv\[d\.id\] : null\) \|\| \[\], pid\)/.test(rollupSrc),
+   /_pmDelivRoll\(d, \(d\.id \? byDeliv\[d\.id\] : null\) \|\| \[\], pid, ts\)/.test(rollupSrc),
    'a KPI that disagrees with the rows under it is worse than either number alone');
 {
   const callers = (src.match(/pmScopeRollup\(/g) || []).length;

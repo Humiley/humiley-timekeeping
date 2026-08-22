@@ -34,13 +34,23 @@ const take = (mark, what) => {
   return src.slice(i, j);
 };
 
+/* The floors come OUT OF THE SHIPPING FILE. The first version of this harness declared its own
+   `const _SCH_LAB_MIN = 300, _SCH_PLOT_MIN = 300` and every assertion below then tested the test's
+   arithmetic: change the real constants to 400/200 and all thirteen still passed. That is the exact
+   defect shape this repo keeps hitting — a check that reports success about something it never
+   looked at — committed inside the check written to prevent it. */
+const CONSTS = (src.match(/const _SCH_LAB_MIN = \d+, _SCH_PLOT_MIN = \d+;/) || [])[0];
+if (!CONSTS) { console.error('Could not find the _SCH_LAB_MIN/_SCH_PLOT_MIN declaration.'); process.exit(2); }
+
 const F = new Function(
-  'const _SCH_LAB_MIN = 300, _SCH_PLOT_MIN = 300;\n' +
+  CONSTS + '\n' +
   take('function _schFitLab(', '_schFitLab') +
   take('function _schFitMin(', '_schFitMin') +
   take('function _pmWbsLevel(', '_pmWbsLevel') +
   take('function _pmWbsIndent(', '_pmWbsIndent') +
-  '\nreturn { _schFitLab, _schFitMin, _pmWbsLevel, _pmWbsIndent };')();
+  take('function _pmWbsIndentFor(', '_pmWbsIndentFor') +
+  '\nreturn { _schFitLab, _schFitMin, _pmWbsLevel, _pmWbsIndent, _pmWbsIndentFor,' +
+  '  LAB_MIN: _SCH_LAB_MIN, PLOT_MIN: _SCH_PLOT_MIN };')();
 
 console.log('\nFit fits, and the gutter is spent out of the pane\n');
 
@@ -54,7 +64,11 @@ console.log('\nFit fits, and the gutter is spent out of the pane\n');
      'a 914px pane can afford it - got ' + lab);
   ok('and Fit no longer overflows it', F._schFitMin(lab, 520, true) <= 914,
      'demanded ' + F._schFitMin(lab, 520, true) + 'px of a 914px pane');
-  ok('which leaves the chart more room than the old 520 floor allowed', 914 - lab === 444);
+  /* NOT "the chart got wider" — it did not. flex:1 gave the plot 914-470=444 under the old code
+     too; what it could not do was FIT, so the 76px it overflowed slid under the frozen gutter. The
+     honest statement of the fix is the one above: demand <= pane. */
+  ok('the floors are the shipping ones, not this file\'s', F.LAB_MIN === 300 && F.PLOT_MIN === 300,
+     'if these change in index.html this test must be re-reasoned, not silently re-based');
 }
 
 // -- it only ever gives width BACK ----------------------------------------------------------------
@@ -122,9 +136,29 @@ ok('each level steps in by the same amount',
 ok('the indent is bounded', F._pmWbsIndent(F._pmWbsLevel('1.2.3.4.5.6.7.8.9')) <= 70,
    'past a point the indent costs more name than the depth is worth');
 
+/* The indent is spent out of the gutter, and the phone gutter is 176px of which the status cell
+   takes 62. At the full 12px step a level-4 row left the name ~18px — one character and an
+   ellipsis, measured in the browser. */
+{
+  const deep = F._pmWbsLevel('1.4.4.3');            // level 4
+  ok('a narrow gutter pays a token indent, not the full one',
+     F._pmWbsIndentFor(deep, true) < F._pmWbsIndentFor(deep, false),
+     'got ' + F._pmWbsIndentFor(deep, true) + ' narrow vs ' + F._pmWbsIndentFor(deep, false) + ' wide');
+  ok('and it is capped hard enough to leave a readable name',
+     F._pmWbsIndentFor(F._pmWbsLevel('1.2.3.4.5.6'), true) <= 15,
+     'the phone name budget is ~76px before the indent');
+  ok('a wide gutter is unaffected', F._pmWbsIndentFor(deep, false) === F._pmWbsIndent(deep));
+  ok('level 1 is never indented either way',
+     F._pmWbsIndentFor(1, true) === 0 && F._pmWbsIndentFor(1, false) === 0);
+}
+
 {
   const tl = take('function _schTimeline(', '_schTimeline');
-  ok('the timeline row indents by its level', /22 \+ _pmWbsIndent\(lv\)/.test(tl));
+  ok('the timeline row indents by its level, priced against the gutter it spends',
+     /22 \+ _pmWbsIndentFor\(lv, NARROW\)/.test(tl));
+  ok('and the connector is dropped when the gutter is narrow',
+     /lv > 1 && !NARROW \? '<span aria-hidden/.test(tl),
+     'the glyph plus its gap costs ~11px of a 176px gutter');
   ok('and the normaliser supplies one', /level: _pmWbsLevel\(t\.wbs\)/.test(src));
   const act = src.slice(src.indexOf("{ label: 'Task', sk: 'name', w: '46%'"),
                         src.indexOf("{ label: 'Assignee', sk: 'assignee'"));
@@ -132,6 +166,23 @@ ok('the indent is bounded', F._pmWbsIndent(F._pmWbsLevel('1.2.3.4.5.6.7.8.9')) <
   ok('but only draws the connector while the table is in WBS order',
      /!sk \|\| sk === 'wbs'/.test(act),
      'sorted by finish date the row above is not the parent');
+  /* Every surface that indents a name also ellipsis-clips it, so every one of them owes the reader
+     the whole name on hover. The Gantt's left column is a FIXED 334px, so the indent comes straight
+     out of the only column that can absorb it. */
+  const gStart = src.indexOf("let leftRows = '<div style=\"height:' + HDR");
+  if (gStart < 0) { console.error('Could not find the Gantt left column builder.'); process.exit(2); }
+  const gantt = src.slice(gStart, src.indexOf('class="pm-gantt-left"'));
+  ok('the Gantt column indents by level', /padding-left:' \+ _pmWbsIndent\(_pmWbsLevel\(t\.wbs\)\)/.test(gantt));
+  ok('and gives the truncated name a tooltip',
+     /<span title="' \+ _tkEscA\(t\.name \|\| ''\) \+ '" style="font-size:11\.5px;overflow:hidden;text-overflow:ellipsis/.test(gantt),
+     'it was indented without one — an indent that hides a name and offers no way to read it');
+}
+/* Re-showing a hidden pane fires no childList mutation, so nothing re-ran the sizing pass: resize
+   the window on Activities, switch to Timeline, and the gutter kept the old viewport's width. */
+{
+  const tab = take('function pmSchedTab(', 'pmSchedTab');
+  ok('switching schedule panes re-runs the sizing pass', /_fitTablesSoon\(\)/.test(tab),
+     'a hidden pane measures zero, so _schFitPlot and _schXBar both stood down while it was off screen');
 }
 
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
