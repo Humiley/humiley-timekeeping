@@ -15890,7 +15890,7 @@ const _QA_SPECS = {
     // While this is blank the deliverable keeps its typed percentage, exactly as before.
     { k: 'delivId', label: 'Delivers WBS package (optional — links progress to the project total)',
       type: 'ref', src: 'pm_deliverables', blank: '— not linked to a WBS package —' },
-    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
+    { k: 'weight', label: 'Value (₫) — what this line is worth. Blank = weighted by duration.', type: 'money' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee (type any name — staff or others)', type: 'combo', dyn: 'pm_assignees' },
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
@@ -15911,7 +15911,7 @@ const _QA_SPECS = {
     { k: 'unit', label: 'Unit of work (m, m², m³, no., set, lot…)', type: 'combo', dyn: 'pm_units' },
     // Blank is the right default: duration in days is a defensible weight and the alternative is
     // making somebody invent a number. Set it when a short item carries disproportionate value.
-    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
+    { k: 'weight', label: 'Value (₫) — what this line is worth. Blank = weighted by duration.', type: 'money' },
     { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
     { k: 'item', label: 'Cost item' },
@@ -21933,11 +21933,31 @@ function _pdPlanned(r, day) {
   return _pmPct(done * 100 / total);
 }
 /* Weight for the roll-up. Duration in days unless the user gave a value (contract ₫ or man-hours). */
+/* What this line is WORTH, for the weighted roll-up. ₫ when somebody has said so, otherwise its
+   duration in days.
+
+   Those two are not the same unit, and a package holding both weights the ₫ lines as though the
+   day-weighted ones were free: a ₫500,000,000 line beside a 30-day line makes the 30-day line
+   0.000006% of the package. Blank is still the right DEFAULT — the alternative is making somebody
+   invent a number — but a package that mixes the bases has to say so, which is what _pdWeightBasis
+   below is for. */
 function _pdWeight(r) {
   const w = +(r && r.weight) || 0;
   if (w > 0) return w;
   if (r && r.start && r.finish) return Math.max(1, (_pmDateDiff(r.start, r.finish) || 0) + 1);
   return 1;
+}
+/* Is this set of rows weighted by value, by duration, or — the problem case — by both?
+   Returns { mode: 'value'|'duration'|'mixed', valued, total, valueShare }. */
+function _pdWeightBasis(rows) {
+  let valued = 0;
+  const total = (rows || []).length;
+  (rows || []).forEach(r => { if (+(r && r.weight) > 0) valued++; });
+  return {
+    mode: !valued ? 'duration' : (valued === total ? 'value' : 'mixed'),
+    valued: valued, total: total,
+    valueShare: total ? valued / total * 100 : 0,
+  };
 }
 /* Weighted roll-up over a set of rows → {acc, planned, variance, weight}. */
 function _pdRollup(rows, day) {
@@ -22238,12 +22258,21 @@ function _pdKpis(pid, rows, day) {
   // Variance is measured on the SCHEDULED part of the package. When part of it has no dates, say so
   // under the row — a variance over 40% of the weight, presented as the package's variance with
   // nothing qualifying it, is the same confident-about-nothing number this pass exists to remove.
-  const note = !all.measured
-    ? _t('No item in this package has both a start and a finish, so there is nothing to measure progress against yet.')
-    : (all.undatedPct >= 0.5
-        ? _t('Planned and Variance are measured on') + ' ' + Math.round(100 - all.undatedPct) + '% ' +
-          _t('of the package by weight — the rest has no dates.')
-        : '');
+  const notes = [];
+  if (!all.measured) {
+    notes.push(_t('No item in this package has both a start and a finish, so there is nothing to measure progress against yet.'));
+  } else if (all.undatedPct >= 0.5) {
+    notes.push(_t('Planned and Variance are measured on') + ' ' + Math.round(100 - all.undatedPct) + '% ' +
+               _t('of the package by weight — the rest has no dates.'));
+  }
+  // A package weighted partly in ₫ and partly in days is not weighted in anything. Say it plainly:
+  // the day-weighted lines are being treated as worth almost nothing next to the valued ones.
+  const wb = _pdWeightBasis(rows);
+  if (wb.mode === 'mixed') {
+    notes.push('<b>' + _t('Mixed weighting') + '</b> — ' + wb.valued + ' ' + _t('of') + ' ' + wb.total + ' ' +
+               _t('items carry a value in ₫; the rest fall back to duration in days. Those two are not the same unit, so the day-weighted items count for almost nothing in these figures. Give every item a value, or none.'));
+  }
+  const note = notes.join('<br>');
   return _hrKpiRow([
     _hrKpi('Report items', rows.length),
     _hrKpi('Accumulated', Math.round(all.acc) + '%', 'var(--emerald)'),
@@ -22811,6 +22840,44 @@ function _pdMasterOf(pid, r) {
   const ref = String((r && r.taskRef) || '').trim();
   if (!ref) return null;
   return _pmScopeFor('pm_tasks', pid).find(t => _pdTaskRef(t) === ref) || null;
+}
+/* The CLIENT's contract section for a master activity.
+
+   The client reads a contract lettered A, B, C… and the top-level activities are already named for
+   them — "B. DESIGN – LEGAL SCHEDULE" at WBS 1.2. So the section is derived from the data that is
+   there rather than invented as a second taxonomy somebody would have to maintain in step with the
+   first. A top-level activity whose name does not start with a letter and a stop has no section,
+   and says so instead of being filed under a guess. */
+function _pmSectionOf(t) {
+  const m = /^\s*([A-Z])[.)]\s+(.+)$/.exec(String((t && t.name) || ''));
+  return m ? { letter: m[1], title: m[2].trim() } : null;
+}
+/* The section a task belongs to: its own if it is a top-level heading, otherwise its WBS ancestor's.
+   `1.2.3.1` looks up `1.2`, the shallowest ancestor that names a section. */
+function _pmSectionFor(task, allTasks) {
+  const own = _pmSectionOf(task);
+  if (own) return own;
+  const wbs = String((task && task.wbs) || '').trim();
+  if (!wbs) return null;
+  const parts = wbs.split('.');
+  for (let n = parts.length - 1; n >= 1; n--) {
+    const anc = parts.slice(0, n).join('.');
+    const t = (allTasks || []).find(x => String(x.wbs || '').trim() === anc);
+    const sec = t && _pmSectionOf(t);
+    if (sec) return sec;
+  }
+  return null;
+}
+/* Every section present in a project, in letter order, each with the tasks under it and the ones
+   that belong to no section — named, not dropped. */
+function _pmSections(allTasks) {
+  const by = {}, orphan = [];
+  (allTasks || []).forEach(t => {
+    const sec = _pmSectionFor(t, allTasks);
+    if (!sec) { orphan.push(t); return; }
+    (by[sec.letter] = by[sec.letter] || { letter: sec.letter, title: sec.title, tasks: [] }).tasks.push(t);
+  });
+  return { sections: Object.keys(by).sort().map(k => by[k]), unsectioned: orphan };
 }
 function _pdGroupOf(pid, r) {
   const t = _pdMasterOf(pid, r);
