@@ -28228,8 +28228,13 @@ const _EST_TABS = [
 async function estRenderWorkspace() {
   const root = document.getElementById('est-estimate-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
+  // est_revs and pm_projects feed the Revisions and Cost Control tabs. Loaded HERE, in the list
+  // the workspace actually runs on open — adding them only to tndReload's list left the Revisions
+  // tab reading an empty _HR.est_revs and reporting "no revisions yet" for a tender that had four.
+  // An empty collection and an unloaded one look identical on screen, which is the whole problem.
   await _estNeed(['est_projects', 'est_items', 'est_resources', 'est_rates',
-                  'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote']);
+                  'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote',
+                  'est_revs', 'pm_projects']);
   const e = _estById(_estCur);
   if (!e) { root.innerHTML = '<div class="card" style="padding:20px">' + _t('Estimate not found.') + ' <a href="#" onclick="showView(\'est-projects\',null,\'Estimates\');return false">' + _t('Back to Estimates') + '</a></div>'; return; }
   // Which engine priced this tender decides which summary it reads. A build-up reads
@@ -28823,7 +28828,8 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' },
+    { k: 'revs', label: 'Revisions', fn: 'tndTabRevs' }
   ];
   if (t === 'services') return [
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
@@ -28832,7 +28838,8 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' },
+    { k: 'revs', label: 'Revisions', fn: 'tndTabRevs' }
   ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
@@ -28843,7 +28850,8 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' },
+    { k: 'revs', label: 'Revisions', fn: 'tndTabRevs' }
   ];
   return _EST_TABS;
 }
@@ -28915,7 +28923,7 @@ async function tndReload() {
   // whether it is already in _HR depends on which view the user happened to open first,
   // and an empty dropdown reads as 'there are no projects' rather than 'not loaded yet'.
   await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote',
-                  'pm_projects']);
+                  'pm_projects', 'est_revs']);
   await estRenderWorkspace();
 }
 
@@ -29166,6 +29174,162 @@ async function tndSaveBasis(el) {
     toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 6000);
     el.textContent = orig;
   }
+}
+
+/* WHAT MOVED BETWEEN ONE PRICE AND THE NEXT. A tender gets priced three or four times before it is
+   won, and the only record of the previous price used to be the previous price — a number in an
+   email, with no way to say which lines produced it. "It went up 8%" is not something anybody can
+   check, argue with, or explain to a client. */
+function tndTabRevs() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const revs = (_HR.est_revs || []).filter(function (r) { return r.estId === e.id; })
+    .sort(function (a, b) { return (b.rev || 0) - (a.rev || 0); });
+  const can = _estCanPrice() && !_estFrozen(e);
+  const cmp = _tndRevCmp;
+
+  const take = can
+    ? '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<input id="tnd-rev-note" class="form-control" style="max-width:340px" placeholder="' +
+        _tkEscA(_t('Why this revision — e.g. after the scope meeting')) + '">' +
+      '<button class="btn btn-primary btn-sm" onclick="tndTakeRevision()">' + tkIcon('plus') +
+        _t('Take a revision') + '</button>' +
+      '<span style="font-size:11.5px;color:var(--text-light)">' +
+        _t('Freezes what this tender says now. A revision cannot be edited afterwards — that is what makes it a record.') +
+      '</span></div>'
+    : '';
+
+  const list = revs.length ? '<div class="table-wrap"><table style="min-width:720px"><thead><tr>' +
+    ['Rev', 'Taken', 'By', 'Why', 'Class', 'Price (excl VAT)', 'Margin', ''].map(function (h, i) {
+      return '<th style="font-size:10.5px' + (i >= 5 && i <= 6 ? ';text-align:right' : '') + '">' + _t(h) + '</th>';
+    }).join('') + '</tr></thead><tbody>' +
+    revs.map(function (r, i) {
+      const prev = revs[i + 1];
+      return '<tr>' +
+        '<td style="font-weight:800;color:var(--navy)">' + _t('Rev') + ' ' + (r.rev || '?') + '</td>' +
+        '<td style="white-space:nowrap">' + _estEsc(String(r.takenAt || '').slice(0, 16).replace('T', ' ')) + '</td>' +
+        '<td>' + _estEsc(r.takenBy || '') + '</td>' +
+        '<td>' + _estEsc(r.note || '—') + '</td>' +
+        '<td style="white-space:nowrap">' + _estEsc(r.accuracyLabel || '—') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(r.net) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndPct(r.grossMarginPct) + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+          (prev ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tndCompareRevs(\'' +
+            _tkEscA(prev.id) + '\',\'' + _tkEscA(r.id) + '\')">' + _t('What moved') + '</button>' : '') +
+        '</td></tr>';
+    }).join('') + '</tbody></table></div>'
+    : '<div style="text-align:center;color:var(--text-light);padding:22px">' +
+      _t('No revisions yet. Take one before you send a price, and the next change explains itself.') + '</div>';
+
+  let diff = '';
+  if (cmp) {
+    const c = cmp.data;
+    const sign = c.delta > 0 ? '+' : '';
+    diff = '<div class="card" style="margin-top:14px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-size:12.5px;font-weight:800;color:var(--navy)">' +
+        _t('Rev') + ' ' + cmp.fromRev + ' → ' + _t('Rev') + ' ' + cmp.toRev + '</div>' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_tndRevCmp=null;tndTabRevs()">' +
+        _t('Close') + '</button></div>' +
+      '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:8px">' +
+      [[_t('Was'), _tndMoney(c.wasNet)], [_t('Now'), _tndMoney(c.nowNet)],
+       [_t('Moved'), sign + _tndMoney(c.delta) + '  (' + sign + _tndNum(c.deltaPct, 2) + '%)'],
+       [_t('Margin'), (c.marginMoved > 0 ? '+' : '') + _tndNum(c.marginMoved, 2) + ' ' + _t('pts')]]
+        .map(function (kv) {
+          return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' +
+            kv[0] + '</div><div style="font-size:14px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+            kv[1] + '</div></div>';
+        }).join('') + '</div>' +
+      (c.rows.length
+        ? '<div class="table-wrap" style="margin-top:10px"><table style="min-width:660px"><thead><tr>' +
+          ['', 'Line', 'Was', 'Now', 'Moved'].map(function (h, i) {
+            return '<th style="font-size:10.5px' + (i >= 2 ? ';text-align:right' : '') + '">' + _t(h) + '</th>';
+          }).join('') + '</tr></thead><tbody>' +
+          c.rows.map(function (r) {
+            const tone = r.delta > 0 ? 'var(--warning)' : 'var(--emerald-deep)';
+            const why = r.status === 'changed'
+              ? [r.qtyMoved ? _t('quantity') : '', r.rateMoved ? _t('rate') : ''].filter(Boolean).join(' + ')
+              : _t(r.status);
+            return '<tr>' +
+              '<td style="font-size:11px;color:var(--text-light);white-space:nowrap">' + _estEsc(why) + '</td>' +
+              '<td>' + _estEsc(r.desc || r.id) + '</td>' +
+              '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">' + _tndMoney(r.was) + '</td>' +
+              '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(r.now) + '</td>' +
+              '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:' + tone + '">' +
+                (r.delta > 0 ? '+' : '') + _tndMoney(r.delta) + '</td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : '<div style="font-size:12px;color:var(--text-light);margin-top:10px">' +
+          _t('No line changed.') + '</div>') +
+      /* A movement no line explains came from somewhere else — a discount, a mark-up, a fee.
+         Surfaced rather than absorbed: it is the difference actually worth looking at. */
+      (Math.abs(c.unexplained) > 0
+        ? '<div style="margin-top:10px;padding:9px 11px;border-left:3px solid var(--warning);background:var(--soft-bg);font-size:12px">' +
+          '<b>' + _tndMoney(c.unexplained) + '</b> ' +
+          _t('of the movement is not explained by any line — a discount, a changed mark-up or a project fee.') +
+          '</div>'
+        : '') +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' +
+        c.changed + ' ' + _t('line(s) moved') + ' · ' + c.unchanged + ' ' + _t('unchanged') + '</div>' +
+      '</div>';
+  }
+
+  _estSet('<div class="card" style="margin-bottom:14px">' +
+    '<div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:2px">' + _t('Revisions') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' +
+      _t('Every price this tender has carried, and what moved between them.') + '</div>' +
+    take + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden">' + list + '</div>' + diff);
+}
+
+let _tndRevCmp = null;
+
+async function tndTakeRevision() {
+  const e = _estById(_estCur); if (!e) return;
+  const note = ((document.getElementById('tnd-rev-note') || {}).value || '').trim();
+  try {
+    const r = await tkApi('/api/tender/revise', { method: 'POST', body: { estId: e.id, note: note } });
+    tkCollInvalidate('est_revs');
+    toast(_t('Rev') + ' ' + r.rev + ' ' + _t('recorded') + ' — ' + _tndMoney(r.net), 'success', 4500);
+    await tndReload();
+  } catch (x) { toast(_t('Could not take a revision') + ': ' + _errMsg(x), 'error', 6000); }
+}
+
+function tndCompareRevs(fromId, toId) {
+  const all = _HR.est_revs || [];
+  const a = all.find(function (r) { return r.id === fromId; });
+  const b = all.find(function (r) { return r.id === toId; });
+  if (!a || !b) return;
+  _tndRevCmp = { fromRev: a.rev, toRev: b.rev, data: _tndDiff(a, b) };
+  tndTabRevs();
+}
+
+/* The same rule the server applies, so the screen and the record cannot disagree about what moved.
+   Kept deliberately small: anything more here would be a second implementation of pricing. */
+function _tndDiff(before, after) {
+  const A = {}, B = {};
+  (before.lines || []).forEach(function (l) { if (l.id) A[l.id] = l; });
+  (after.lines || []).forEach(function (l) { if (l.id) B[l.id] = l; });
+  const rows = [];
+  Object.keys(A).concat(Object.keys(B)).filter(function (k, i, arr) { return arr.indexOf(k) === i; })
+    .forEach(function (k) {
+      const was = A[k], now = B[k];
+      if (was && !now) rows.push({ id: k, desc: was.desc, status: 'removed', was: was.net, now: 0, delta: -was.net });
+      else if (now && !was) rows.push({ id: k, desc: now.desc, status: 'added', was: 0, now: now.net, delta: now.net });
+      else if (was && now && was.net !== now.net) rows.push({
+        id: k, desc: now.desc, status: 'changed', was: was.net, now: now.net, delta: now.net - was.net,
+        qtyMoved: was.qty !== now.qty, rateMoved: was.unitCost !== now.unitCost
+      });
+    });
+  rows.sort(function (x, y) { return Math.abs(y.delta) - Math.abs(x.delta); });
+  const explained = rows.reduce(function (t, r) { return t + r.delta; }, 0);
+  const shared = Object.keys(A).filter(function (k) { return B[k]; }).length;
+  return {
+    rows: rows, changed: rows.length,
+    unchanged: shared - rows.filter(function (r) { return r.status === 'changed'; }).length,
+    wasNet: before.net, nowNet: after.net, delta: after.net - before.net,
+    deltaPct: before.net ? ((after.net - before.net) / before.net * 100) : 0,
+    explainedByLines: explained, unexplained: (after.net - before.net) - explained,
+    marginMoved: (after.grossMarginPct || 0) - (before.grossMarginPct || 0)
+  };
 }
 
 function tndTabBudget() {
