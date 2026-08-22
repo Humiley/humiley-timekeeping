@@ -305,6 +305,18 @@ def init_db():
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
             pass  # column already exists
+    # A geofence zone has had an "Active" toggle and a "Department" select on screen since the
+    # register was written, and neither had anywhere to be stored: the toggle's whole handler was
+    # two classList calls, and saveLocation read `dept` and `notes` out of the form and then posted
+    # {name, lat, lon, radius}. An administrator could retire a decommissioned site, watch it grey
+    # out, and have it go on authorising check-ins.
+    #   active: 1 by default, so every existing zone keeps authorising exactly what it did.
+    #   dept:   'All' by default, same reason — scoping is opt-in, never retroactive.
+    for col in ("active INTEGER DEFAULT 1", "dept TEXT", "notes TEXT"):
+        try:
+            conn.execute("ALTER TABLE zones ADD COLUMN " + col)
+        except sqlite3.OperationalError:
+            pass
     try:
         conn.execute("ALTER TABLE leave ADD COLUMN token TEXT")  # approval-link token
     except sqlite3.OperationalError:
@@ -1595,8 +1607,14 @@ def list_zones():
 
 def create_zone(data):
     conn = get_conn()
-    cur = conn.execute("INSERT INTO zones (name,lat,lon,radius) VALUES (?,?,?,?)",
-                       (data.get("name"), data.get("lat"), data.get("lon"), data.get("radius")))
+    # active defaults to 1 and dept to 'All' when the caller says nothing, so a zone created by any
+    # older client still authorises everybody rather than silently authorising nobody.
+    act = data.get("active")
+    cur = conn.execute(
+        "INSERT INTO zones (name,lat,lon,radius,active,dept,notes) VALUES (?,?,?,?,?,?,?)",
+        (data.get("name"), data.get("lat"), data.get("lon"), data.get("radius"),
+         0 if act in (0, "0", False, "false") else 1,
+         (data.get("dept") or "All"), (data.get("notes") or "")))
     conn.commit()
     rid = cur.lastrowid
     conn.close()
@@ -1605,7 +1623,7 @@ def create_zone(data):
 
 def update_zone(zone_id, data):
     sets, params = [], []
-    for f in ("name", "lat", "lon", "radius"):
+    for f in ("name", "lat", "lon", "radius", "active", "dept", "notes"):
         if f in data:
             sets.append("%s = ?" % f); params.append(_scalar(data[f]))
     if not sets:
