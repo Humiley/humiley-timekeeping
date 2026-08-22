@@ -50,6 +50,9 @@ import ahu_kpi          # SOP section 1.4's KPI table, computed from signed prod
 import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
 import ahu_notify       # who to tell when a step fails, a gate is held or an NCR ages (pure)
 import ahu_eurovent     # Eurovent 6/18-2022: what the industry recommends, as reference (pure)
+import ahu_calibration  # what measured the number, and whether it was fit to (pure)
+import ahu_recall       # which units got this component — the recall question (pure)
+import ahu_competence   # was the person who signed it qualified to (pure)
 import qr               # ISO/IEC 18004 byte-mode QR symbols, for the traveller card (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
@@ -4165,6 +4168,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._ahu_capacity_ep(u, qs))
         if path == "/api/ahu/settings":
             return self._guard(lambda u: self._ahu_settings_get(u))
+        if path == "/api/ahu/instruments":
+            return self._guard(lambda u: self._ahu_instruments_ep(u, qs))
+        if path == "/api/ahu/recall":
+            return self._guard(lambda u: self._ahu_recall_ep(u, qs))
+        if path.startswith("/api/ahu/instrument/") and path.endswith("/affected"):
+            _iid = path[len("/api/ahu/instrument/"):-len("/affected")]
+            return self._guard(lambda u: self._ahu_affected_ep(u, urllib.parse.unquote(_iid)))
         if path == "/api/ahu/changes":
             return self._guard(lambda u: self._ahu_changes_ep(u, qs))
         if path.startswith("/api/ahu/unit/") and path.endswith("/card"):
@@ -5167,6 +5177,21 @@ class Handler(BaseHTTPRequestHandler):
             # the thing that matters; the alert is a courtesy on top of it.
             return None
 
+    @staticmethod
+    def _flag(key, default=False):
+        """A stored on/off switch. Anything unset reads as `default`.
+
+        Written out rather than `bool(get_setting(...))` because get_setting already decodes, so a
+        stored `false` comes back as the boolean False while a stored `"0"` comes back as a
+        non-empty string that is truthy — and the second one would silently turn a rule ON.
+        """
+        v = db.get_setting(key)
+        if v is None or v == "":
+            return default
+        if isinstance(v, bool):
+            return v
+        return str(v).strip().lower() in ("1", "true", "yes", "on")
+
     def _ahu_notify_step_fail(self, before_readings, step):
         """Alert on a step that has JUST gone from not-failing to failing.
 
@@ -5279,6 +5304,33 @@ class Handler(BaseHTTPRequestHandler):
             o = v["open"][0]
             return ("%s cannot be judged — %s. Declare it on the unit before signing, rather than "
                     "signing a test nothing was measured against." % (code, o["message"].rstrip(".")))
+
+        # 2b. What measured it, and whether that was fit to measure. A test carries a Part 11
+        #     signature attesting to a number; an instrument known to be out of calibration makes
+        #     that signature assert something the company cannot stand behind. This is not a
+        #     specification choice about what passes — it is whether the evidence is evidence.
+        #
+        #     Graduated deliberately: a NAMED instrument that is expired or unregistered always
+        #     refuses; naming none refuses only once ahu_require_instrument is switched on, so a
+        #     factory can populate its register before the rule bites. The gap is reported either
+        #     way by /api/ahu/instruments.
+        if spec["kind"] in ("test", "ipqc"):
+            _cal = ahu_calibration.check_step(
+                rec, ahu_calibration.index(db.list_collection("ahu_instruments")),
+                time.strftime("%Y-%m-%d"),
+                require_named=self._flag("ahu_require_instrument"))
+            if _cal:
+                return _cal
+            # And whether the hands were qualified. Authority (checked below) is whether you are the
+            # person named on this unit; competence is whether you are trained and currently
+            # certified for the thing you just signed. ISO 9001 clause 7.2 exists because those two
+            # get conflated. Off by default, for the same reason calibration is.
+            _q = ahu_competence.check_step(
+                u.get("name"), spec, db.list_collection("ahu_quals"),
+                time.strftime("%Y-%m-%d"),
+                require=self._flag("ahu_require_qualification"))
+            if _q:
+                return _q
 
         # 3. A gate additionally has to satisfy the stage's exit criteria (SOP section 5).
         if spec["kind"] == "gate":
@@ -5612,6 +5664,103 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"rev": _AHU_REV["n"], "waited": round(time.time() - started, 1),
                            "changed": _AHU_REV["n"] != since})
 
+    def _ahu_instruments_ep(self, u, qs):
+        """The calibration register, plus the three things it is worth being told about it.
+
+        `gaps` separates expired from due-soon from NO DUE DATE RECORDED. That third group is the
+        point: an instrument with no due date never appears in a list sorted by due date, so the one
+        nobody is looking after is precisely the one that is invisible.
+
+        `untraced` names signed tests that recorded no instrument at all — by unit and step code
+        rather than as a count, because "12 tests are untraced" is a statistic and "T3 on
+        PIN-2026-0417-01" is something a person can go and fix.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        today = (qs.get("today") or [""])[0].strip() or time.strftime("%Y-%m-%d")
+        reg = db.list_collection("ahu_instruments")
+        steps = db.list_collection("ahu_steps")
+        test_codes = {t["code"] for t in ahu_route.TESTS} | {i["code"] for i in ahu_route.IPQC}
+        measured = [x for x in steps if x.get("code") in test_codes]
+        return self._json(self._ahu_json_safe({
+            "today": today,
+            "instruments": [dict(i, calStatus=ahu_calibration.status(i, today)) for i in reg],
+            "gaps": ahu_calibration.register_gaps(reg, today),
+            "dueSoon": ahu_calibration.next_due(reg, today),
+            "untraced": ahu_calibration.untraced_tests(measured),
+            "measuredSteps": len(measured),
+            "requireInstrument": self._flag("ahu_require_instrument"),
+            "requireQualification": self._flag("ahu_require_qualification"),
+            "qualGaps": ahu_competence.gaps(db.list_collection("ahu_quals"), today),
+            "unqualifiedSignatures": ahu_competence.unqualified_signatures(
+                measured, db.list_collection("ahu_quals"),
+                lambda c: next((x["kind"] for x in (
+                    [dict(t, kind="test") for t in ahu_route.TESTS] +
+                    [dict(i, kind="ipqc") for i in ahu_route.IPQC]) if x["code"] == c), None)),
+        }))
+
+    def _ahu_affected_ep(self, u, instrument_id):
+        """Every measurement this instrument produced, and which of them are suspect.
+
+        The question a failed calibration asks. Without it the only defensible answer to "this
+        manometer was out by 4%" is to re-test everything it might have touched.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        inst = db.get_collection_item("ahu_instruments", instrument_id)
+        if not inst:
+            return self._err("Unknown instrument.", 404)
+        rows = ahu_calibration.affected_steps(inst, db.list_collection("ahu_steps"))
+        pins = {}
+        for r in rows:
+            unit = db.get_collection_item("ahu_units", r.get("unitId")) or {}
+            r["pin"] = unit.get("pin") or r.get("unitId")
+            if r.get("suspect"):
+                pins.setdefault(r["pin"], 0)
+                pins[r["pin"]] += 1
+        return self._json(self._ahu_json_safe({
+            "instrument": inst,
+            "calStatus": ahu_calibration.status(inst, time.strftime("%Y-%m-%d")),
+            "steps": rows,
+            "suspect": [r for r in rows if r.get("suspect")],
+            "unitsAffected": sorted(pins.items()),
+        }))
+
+    def _ahu_recall_ep(self, u, qs):
+        """Which units received this serial, batch or make — and whether they have shipped.
+
+        Traceability could always say what is inside a unit. This is the reverse, and the reverse is
+        the only direction that matters when a supplier reports a fault: without it the defensible
+        answer is "every unit we built that quarter".
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        q = (qs.get("q") or [""])[0].strip()
+        if not q:
+            # Deliberately not "everything". A blank search box that selects the whole register is
+            # how somebody recalls a factory.
+            return self._json({"query": "", "matches": [], "units": [], "summary": None,
+                               "note": "Enter a serial number, batch or make to search."})
+        units = {str(x.get("id")): x for x in db.list_collection("ahu_units")}
+        orders = {}
+        for uid, unit in units.items():
+            if unit.get("orderId"):
+                orders[uid] = db.get_collection_item("ahu_orders", unit["orderId"]) or {}
+        dispatch = db.list_collection("ahu_dispatch")
+        matches = ahu_recall.search(db.list_collection("ahu_trace"), q, units)
+        grouped = ahu_recall.group_by_unit(matches, orders)
+        for g in grouped:
+            g["dispatch"] = ahu_recall.dispatch_state(g["unitId"], dispatch)
+        return self._json(self._ahu_json_safe({
+            "query": q,
+            "matches": matches,
+            "units": grouped,
+            "summary": ahu_recall.summarise(matches, dispatch),
+        }))
+
     def _ahu_kpi_ep(self, u, qs):
         """SOP section 1.4's KPI table, computed from signed production data.
 
@@ -5640,7 +5789,8 @@ class Handler(BaseHTTPRequestHandler):
             hours = float(db.get_setting("ahu_worked_hours") or 0) or None
         except (TypeError, ValueError):
             hours = None
-        out = ahu_kpi.summary(rows, incidents=incidents, worked_hours=hours)
+        out = ahu_kpi.summary(rows, incidents=incidents, worked_hours=hours,
+                              complaints=db.list_collection("ahu_complaints"))
         out["units"] = len(rows)
         out["since"] = since or None
         return self._json(self._ahu_json_safe(out))
@@ -8266,9 +8416,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in

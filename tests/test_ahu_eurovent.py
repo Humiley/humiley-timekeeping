@@ -100,13 +100,19 @@ def test_assessing_a_unit_that_declares_nothing_does_not_raise():
 
 # ── the document list ────────────────────────────────────────────────────────────────────────────
 
-def test_the_sop_dossier_is_missing_the_documents_eurovent_names():
-    """Reported, not added. Whether the SOP adopts them is the SOP owner's decision, and quietly
-    inserting a gate criterion is the mistake this module was written to avoid."""
+def test_the_remaining_gap_is_reported_against_the_live_dossier():
+    """The spare parts list and the name plate were on this list until the dossier gained them —
+    as CONDITIONAL entries, so they appear on the checklist without changing what G6 refuses.
+    Computed against the live DOSSIER rather than a copy, so it stays true as the SOP list moves.
+
+    What is left is the CE mark, which is not a document at all but a mark applied to the unit, and
+    whether it applies depends on whether the unit ships as machinery or as partly completed
+    machinery. That is a decision about the product, not a checklist item to tick."""
     gaps = E.document_gaps(R.DOSSIER)
     labels = " | ".join(g["label"] for g in gaps)
-    assert "Spare parts list" in labels
-    assert "name plate" in labels
+    assert "CE mark" in labels
+    assert "Spare parts list" not in labels, "the dossier now carries this — the gap should close"
+    assert "name plate" not in labels
     for g in gaps:
         assert g["where"].startswith("Eurovent 6/18 section 12.2")
 

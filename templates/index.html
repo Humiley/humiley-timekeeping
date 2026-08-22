@@ -1118,6 +1118,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="13" y="5" width="3" height="13"/></svg></span>
     <span class="nav-label">Capacity &amp; Load</span>
   </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-evidence',this,'Quality Evidence')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+    <span class="nav-label">Quality Evidence</span>
+  </div>
   <div class="nav-item" data-app="ahu" onclick="showView('ahu-standard',this,'Production Standard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
     <span class="nav-label">Production Standard</span>
@@ -1509,6 +1513,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-ahu-units" class="view"><div class="page-header"><div><h1>AHU Register</h1><p>Every unit by its Production Identification Number, from order to dispatch</p></div></div><div id="ahu-units-root"></div></div>
 <div id="view-ahu-orders" class="view"><div class="page-header"><div><h1>Orders &amp; Contracts</h1><p>Customer purchase orders and contracts, and the units built against each</p></div></div><div id="ahu-orders-root"></div></div>
 <div id="view-ahu-standard" class="view"><div class="page-header"><div><h1>Production Standard</h1><p>AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix</p></div></div><div id="ahu-standard-root"></div></div>
+<div id="view-ahu-evidence" class="view"><div class="page-header"><div><h1>Quality Evidence</h1><p>Whether the measurements this factory has signed can be defended &mdash; the instruments, the people, and which units got a given part</p></div></div><div id="ahu-evidence-root"></div></div>
 <div id="view-ahu-capacity" class="view"><div class="page-header"><div><h1>Capacity &amp; Load</h1><p>The rolling load chart AHU-SOP-MASTER-001 &sect;6.7 calls for &mdash; hours of committed work against the weeks they fall in</p></div></div><div id="ahu-capacity-root"></div></div>
 <div id="view-ahu-unit" class="view"><div id="ahu-unit-root"></div></div>
 
@@ -16035,6 +16040,12 @@ const _QA_SPECS = {
     { k: 'classF', label: 'EN 1886 filter bypass (blank = family default)', type: 'select', options: ['', 'F8', 'F9'] },
     { k: 'classT', label: 'EN 1886 transmittance (blank = family default)', type: 'select', options: ['', 'T1', 'T2', 'T3', 'T4', 'T5'] },
     { k: 'classTB', label: 'EN 1886 thermal bridging (blank = family default)', type: 'select', options: ['', 'TB1', 'TB2', 'TB3', 'TB4', 'TB5'] },
+    // EN ISO 12944 corrosivity decides the casing material. Eurovent 6/18 section 1.1.3 gives a
+    // material table per category and a default where nothing is specified: C3 for indoor and
+    // outdoor units, C4 in a corrosive atmosphere. Left blank the portal records nothing rather
+    // than assuming C3 — a coastal pharmaceutical site is C5, and assuming its way down to C3
+    // specifies galvanised steel for somewhere that will eat it.
+    { k: 'corrosivity', label: 'EN ISO 12944 corrosivity category', type: 'select', options: ['', 'C1', 'C2', 'C3', 'C4', 'C5', 'CX'] },
     { k: 'voltage', label: 'Supply voltage (V) — sets the hi-pot test voltage', type: 'number' },
     { k: 'coilDesignBar', label: 'Coil design pressure (bar)', type: 'number' },
     { k: 'cleanroom', label: 'ISO 14644-1 class (hygienic units)', type: 'select', options: ['', 'ISO5', 'ISO6', 'ISO7', 'ISO8'] },
@@ -16068,6 +16079,36 @@ const _QA_SPECS = {
     // with no source is exactly what a link would have to reconcile.
     { k: 'poRef', label: 'Purchase order / receipt' },
     { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_instruments: { title: 'Test Instrument', coll: 'ahu_instruments', reload: 'ahu_instruments', fields: [
+    { k: 'name', label: 'Instrument' },
+    { k: 'type', label: 'Type', type: 'select', options: ['', 'Manometer', 'Pressure gauge', 'Flow meter', 'Anemometer', 'Thermometer / data logger', 'Hi-pot tester', 'Insulation tester', 'Multimeter / clamp meter', 'Vibration meter', 'Sound level meter', 'Particle counter', 'Aerosol photometer', 'Tape / laser measure', 'Torque wrench', 'Other'] },
+    { k: 'serial', label: 'Serial number' }, { k: 'maker', label: 'Make / model' },
+    { k: 'calDate', label: 'Last calibrated', type: 'date' },
+    // The due date is what every verdict here turns on. Left blank the instrument reads as UNKNOWN,
+    // never as valid — "we have no record" and "it is in calibration" are opposite claims.
+    { k: 'calDue', label: 'Calibration due', type: 'date' },
+    { k: 'certNo', label: 'Certificate number' }, { k: 'calBy', label: 'Calibrated by' },
+    { k: 'location', label: 'Kept at' }, { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_quals: { title: 'Qualification', coll: 'ahu_quals', reload: 'ahu_quals', fields: [
+    { k: 'person', label: 'Person' },
+    // Either a step code (T7) or a whole kind (test, ipqc). A kind is how a factory says "signed
+    // off for hold points" without listing five codes; several may be separated by commas.
+    { k: 'scope', label: 'Qualified for (code or kind)' },
+    { k: 'qualifiedOn', label: 'Qualified on', type: 'date' },
+    { k: 'expiresOn', label: 'Expires', type: 'date' },
+    { k: 'certRef', label: 'Certificate reference' }, { k: 'issuedBy', label: 'Issued by' },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_complaints: { title: 'Customer Complaint', coll: 'ahu_complaints', reload: 'ahu_complaints', fields: [
+    { k: 'unitId', label: 'AHU (unit id)' }, { k: 'ref', label: 'Reference' },
+    { k: 'raisedOn', label: 'Raised on', type: 'date' },
+    { k: 'customer', label: 'Customer' },
+    { k: 'category', label: 'Category', type: 'select', options: ['', 'Performance', 'Noise / vibration', 'Leakage', 'Finish / damage', 'Documentation', 'Component failure', 'Delivery', 'Other'] },
+    { k: 'severity', label: 'Severity', type: 'select', options: ['', 'Minor', 'Major', 'Critical'] },
+    { k: 'description', label: 'What the customer reported', type: 'textarea' },
+    { k: 'rootCause', label: 'Root cause', type: 'textarea' },
+    { k: 'action', label: 'Action taken', type: 'textarea' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Under review', 'In progress', 'Resolved', 'Closed', 'Rejected'] },
+    { k: 'closedOn', label: 'Closed on', type: 'date' }] },
   ahu_trace: { title: 'Component Serial', coll: 'ahu_trace', reload: 'ahu_trace', fields: [
     { k: 'component', label: 'Component', type: 'select', options: ['Fan', 'Motor', 'Coil', 'Filter', 'Controller', 'Damper', 'Heat recovery', 'Other'] },
     { k: 'maker', label: 'Make' }, { k: 'serial', label: 'Serial number' }, { k: 'batch', label: 'Batch / lot' },
@@ -29819,6 +29860,18 @@ const _AHU_TABS = [
   { k: 'dossier', label: 'As-built dossier' }
 ];
 
+/* The calibration register, loaded once per traveller view so every step panel can name an
+   instrument and show its status without a request each. */
+async function _ahuLoadInstruments() {
+  try {
+    const d = await tkApi('/api/ahu/instruments');
+    _AHU.instruments = d.instruments || [];
+    _AHU.calGaps = d.gaps || {};
+    _AHU.calUntraced = d.untraced || [];
+    _AHU.requireInstrument = !!d.requireInstrument;
+  } catch (e) { _AHU.instruments = _AHU.instruments || []; }
+}
+
 async function ahuRenderTraveller() {
   const root = document.getElementById('ahu-unit-root'); if (!root) return;
   const id = _AHU.unitId || (function () { try { return sessionStorage.getItem('ahu_unit'); } catch (e) { return null; } })();
@@ -29834,6 +29887,7 @@ async function ahuRenderTraveller() {
   }
   _AHU.unit = d;
   await _ahuProcess();
+  await _ahuLoadInstruments();
   const u = d.unit || {}, s = d.state || {};
   const fam = (d.declaration && u.family) ? String(u.family) : '';
   const tone = (s.failed || []).length ? '#DC2626' : (s.progress >= 100 ? '#00B060' : 'var(--emerald)');
@@ -29980,6 +30034,35 @@ function _ahuStepRow(s, gateBlk) {
     '</div>' + right + '</div>' + detail + '</div>';
 }
 
+/* Which instrument took the reading. Shown on tests and hold points only — the steps that MEASURE
+   something. An operation that fits a panel has no instrument to name, and asking for one there
+   would train people to pick anything to get past the field. */
+function _ahuInstrumentRow(s) {
+  if (s.kind !== 'test' && s.kind !== 'ipqc') return '';
+  const list = _AHU.instruments || [];
+  const cur = s.instrumentId || '';
+  const opts = ['<option value="">— not recorded —</option>'].concat(list.map(i => {
+    const st = (i.calStatus || {}).status;
+    const tag = st === 'EXPIRED' ? ' · OUT OF CALIBRATION'
+      : st === 'DUE_SOON' ? ' · due ' + ((i.calStatus || {}).dueOn || '')
+      : st === 'UNKNOWN' ? ' · no due date' : '';
+    return '<option value="' + _ahuA(i.id) + '"' + (i.id === cur ? ' selected' : '') + '>' +
+      _ahuEsc((i.name || i.id) + (i.serial ? ' (' + i.serial + ')' : '') + tag) + '</option>';
+  })).join('');
+  const chosen = list.find(i => i.id === cur);
+  const st = chosen ? (chosen.calStatus || {}) : null;
+  const tone = !st ? '#94A3B8' : st.status === 'EXPIRED' ? '#DC2626'
+    : st.status === 'VALID' ? '#00B060' : '#A16207';
+  return '<div style="display:grid;grid-template-columns:1fr 220px;gap:8px;align-items:center;' +
+    'padding:6px 0;border-bottom:1px solid var(--line)">' +
+    '<div><div style="font-size:12.5px;font-weight:600">Measured with</div>' +
+    '<div style="font-size:11px;color:' + tone + '">' +
+    _ahuEsc(st ? st.why : 'A measurement with no traceable instrument cannot be defended in an audit.') +
+    '</div></div>' +
+    '<div><select class="form-input" data-instr="1" style="font-size:12.5px">' + opts +
+    '</select></div></div>';
+}
+
 function _ahuStepPanel(s, gateBlockers) {
   const checks = s.checks || [];
   const inputs = checks.map(c => {
@@ -30016,6 +30099,7 @@ function _ahuStepPanel(s, gateBlockers) {
   return '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)" data-step="' + _ahuA(s.code) + '">' +
     (s.activity ? '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">' + _ahuEsc(s.activity) + '</div>' : '') +
     (s.sampling ? '<div style="font-size:11.5px;color:#A16207;margin-bottom:8px">' + _ahuEsc(s.sampling) + '</div>' : '') +
+    _ahuInstrumentRow(s) +
     (checks.length ? inputs : '<div style="font-size:12px;color:var(--text-light)">No measured check on this step — signing it records that it was done.</div>') +
     held +
     '<div style="display:flex;gap:7px;margin-top:11px;flex-wrap:wrap">' +
@@ -30031,6 +30115,15 @@ function _ahuStepPanel(s, gateBlockers) {
 }
 
 function ahuStepOpen(code) { _AHU.openStep = (_AHU.openStep === code) ? null : code; ahuTab('route'); }
+
+/* The instrument chosen on a step panel. Returns null when the panel has no picker (an operation),
+   so the caller can tell "not applicable" from "cleared to none" — writing '' for a workstation
+   would put an empty provenance field on every step that never had one. */
+function _ahuInstrumentOf(code) {
+  const panel = document.querySelector('#ahu-tab-body [data-step="' + code + '"]');
+  const el = panel && panel.querySelector('[data-instr]');
+  return el ? (el.value || '') : null;
+}
 
 function _ahuCollect(code) {
   const panel = document.querySelector('#ahu-tab-body [data-step="' + code + '"]');
@@ -30050,6 +30143,11 @@ async function ahuSaveReadings(code, quiet) {
   const body = {};
   Object.keys(s).forEach(k => { if (['verdict', 'checks', 'blockedBy', 'spec'].indexOf(k) < 0) body[k] = s[k]; });
   body.readings = Object.assign({}, s.readings || {}, _ahuCollect(code));
+  // Which instrument took the reading travels with the reading. Saved BEFORE the signature,
+  // because a signed step is frozen — recording provenance afterwards would mean editing a signed
+  // record, which is the one thing this module will not do.
+  const instr = _ahuInstrumentOf(code);
+  if (instr !== null) body.instrumentId = instr;
   try {
     await tkApi('/api/coll/ahu_steps/' + encodeURIComponent(s.id), { method: 'PATCH', body: body });
     if (!quiet) toast('Readings saved.');
@@ -30059,7 +30157,11 @@ async function ahuSaveReadings(code, quiet) {
 
 async function ahuSignStep(code) {
   const s = _ahuStep(code); if (!s) return;
-  if ((s.checks || []).length && !await ahuSaveReadings(code, true)) return;
+  // Save when there are readings OR when an instrument was picked. A test with a single yes/no
+  // check still names the instrument that confirmed it, and without this that choice would be
+  // discarded at the moment it is needed.
+  const needsSave = (s.checks || []).length || _ahuInstrumentOf(code) !== null;
+  if (needsSave && !await ahuSaveReadings(code, true)) return;
   const status = s.kind === 'op' ? 'Complete' : 'Passed';
   tkESign({
     coll: 'ahu_steps', id: s.id, setStatus: status,
@@ -30554,6 +30656,200 @@ async function ahuSaveSettings() {
   }
 }
 
+/* ───────────────────────── Quality evidence ─────────────────────────
+   One screen for the question an auditor asks and the question a supplier's recall notice asks.
+
+   Every test in this module carries a Part 11 signature attesting to a number. Two things decide
+   whether that signature is worth anything: what took the reading, and who signed it. Both were
+   unrecorded until now, which meant the module's whole evidential purpose rested on an assumption.
+
+   The third panel is the reverse of traceability. `ahu_trace` could always say what is inside a
+   unit; it could not say which units got a batch. That is the only direction that matters when a
+   fan supplier reports a bearing fault. */
+function _ahuEvRow(label, rows, tone, fmt) {
+  if (!rows || !rows.length) return '';
+  return '<div style="margin-top:9px;padding:8px 10px;border-radius:8px;background:' + tone +
+    '10;border:1px solid ' + tone + '30">' +
+    '<div style="font-weight:700;color:' + tone + ';font-size:12px;margin-bottom:3px">' +
+    _ahuEsc(label) + ' (' + rows.length + ')</div>' +
+    rows.slice(0, 12).map(fmt).join('') +
+    (rows.length > 12 ? '<div style="font-size:11px;color:var(--text-light)">…and ' +
+      (rows.length - 12) + ' more</div>' : '') + '</div>';
+}
+
+async function ahuRenderEvidence() {
+  const root = document.getElementById('ahu-evidence-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  let d;
+  try { d = await tkApi('/api/ahu/instruments'); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000">Could not load the registers: ' +
+      _ahuEsc(e.message) + '</div>');
+    return;
+  }
+  const g = d.gaps || {}, qg = d.qualGaps || {};
+
+  const instruments = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Test instruments</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' + _ahuEsc((d.instruments || []).length) +
+    ' registered. A test signed against an instrument recorded as out of calibration is refused.</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'ahu_instruments\')">' +
+    tkIcon('plus', 12) + ' Register an instrument</button></div>' +
+    _ahuEvRow('Out of calibration', g.EXPIRED, '#DC2626', r =>
+      '<div style="font-size:11.5px"><a href="#" onclick="ahuAffected(\'' + _ahuA(r.id) +
+      '\');return false" style="font-weight:600">' + _ahuEsc(r.name || r.id) + '</a> — ' +
+      _ahuEsc(r.why) + '</div>') +
+    _ahuEvRow('No calibration due date recorded', g.UNKNOWN, '#A16207', r =>
+      '<div style="font-size:11.5px">' + _ahuEsc(r.name || r.id) +
+      ' — never appears in a report sorted by due date</div>') +
+    _ahuEvRow('Calibration due soon', g.DUE_SOON, '#A16207', r =>
+      '<div style="font-size:11.5px">' + _ahuEsc(r.name || r.id) + ' — due ' + _ahuEsc(r.dueOn) +
+      ' (' + _ahuEsc(r.daysLeft) + ' days)</div>') +
+    _ahuEvRow('Signed tests naming no instrument', d.untraced, '#A16207', r =>
+      '<div style="font-size:11.5px;font-variant-numeric:tabular-nums">' + _ahuEsc(r.code) +
+      ' on ' + _ahuEsc(r.unitId) + (r.signedBy ? ' · ' + _ahuEsc(r.signedBy) : '') + '</div>') +
+    ((g.EXPIRED || []).length || (g.UNKNOWN || []).length || (d.untraced || []).length ? '' :
+      '<div style="font-size:12px;color:var(--emerald);margin-top:6px">' +
+      'Every registered instrument is in calibration, and every signed test names one.</div>'));
+
+  const quals = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Who is qualified</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">Authority is whether you are named on the ' +
+    'unit. This is whether you are trained and currently certified for what you signed.</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'ahu_quals\')">' +
+    tkIcon('plus', 12) + ' Record a qualification</button></div>' +
+    _ahuEvRow('Expired', qg.EXPIRED, '#DC2626', r =>
+      '<div style="font-size:11.5px">' + _ahuEsc(r.person) + ' — ' + _ahuEsc(r.scope) +
+      ', expired ' + _ahuEsc(r.expiresOn) + '</div>') +
+    _ahuEvRow('No expiry date recorded', qg.NO_EXPIRY, '#A16207', r =>
+      '<div style="font-size:11.5px">' + _ahuEsc(r.person) + ' — ' + _ahuEsc(r.scope) + '</div>') +
+    _ahuEvRow('Signed by somebody with no current qualification', d.unqualifiedSignatures,
+      '#DC2626', r =>
+      '<div style="font-size:11.5px;font-variant-numeric:tabular-nums">' + _ahuEsc(r.code) +
+      ' on ' + _ahuEsc(r.unitId) + ' — ' + _ahuEsc(r.signedBy) + ' · ' + _ahuEsc(r.why) + '</div>') +
+    ((qg.EXPIRED || []).length || (d.unqualifiedSignatures || []).length ? '' :
+      '<div style="font-size:12px;color:var(--emerald);margin-top:6px">' +
+      'No expired qualification, and nothing signed by somebody without one.</div>'));
+
+  const recall = _ahuCard(
+    '<div style="font-weight:800;color:var(--navy)">Which units got this part</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+    'A serial number, a batch or a make. Traceability can always say what is inside a unit — this is ' +
+    'the reverse, which is the direction that matters when a supplier reports a fault.</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    '<input id="ahu-recall-q" class="form-control" style="max-width:320px" ' +
+    'placeholder="e.g. B-2026-14, EB-2026-0091, ebm-papst" ' +
+    'onkeydown="if(event.key===\'Enter\')ahuRecall()">' +
+    '<button class="btn btn-primary btn-sm" onclick="ahuRecall()">Search</button></div>' +
+    '<div id="ahu-recall-out" style="margin-top:10px"></div>');
+
+  const settings = d.requireInstrument === undefined ? '' : _ahuCard(
+    '<div style="font-size:11.5px;color:var(--text-light)">' +
+    'Both rules are OFF by default so the registers can be filled in before they bite. An instrument ' +
+    'already recorded as out of calibration is refused either way — that one is not a policy choice. ' +
+    'Require an instrument on every test: <b>' + (d.requireInstrument ? 'on' : 'off') +
+    '</b> (setting <code>ahu_require_instrument</code>). Require a current qualification: <b>' +
+    (d.requireQualification ? 'on' : 'off') +
+    '</b> (setting <code>ahu_require_qualification</code>).</div>');
+
+  root.innerHTML = instruments + '<div style="height:12px"></div>' + quals +
+    '<div style="height:12px"></div>' + recall + '<div style="height:12px"></div>' + settings;
+}
+
+async function ahuRecall() {
+  const q = (document.getElementById('ahu-recall-q') || {}).value || '';
+  const out = document.getElementById('ahu-recall-out'); if (!out) return;
+  if (!q.trim()) { out.innerHTML = '<div style="font-size:12px;color:var(--text-light)">' +
+    'Enter something to search for. A blank search deliberately matches nothing.</div>'; return; }
+  out.innerHTML = tkSkeleton();
+  let d;
+  try { d = await tkApi('/api/ahu/recall?q=' + encodeURIComponent(q.trim())); }
+  catch (e) { out.innerHTML = '<div style="color:#C00000;font-size:12px">' + _ahuEsc(e.message) +
+    '</div>'; return; }
+  if (!(d.units || []).length) {
+    out.innerHTML = '<div style="font-size:12px;color:var(--text-light)">No unit records that.</div>';
+    return;
+  }
+  const s = d.summary || {};
+  out.innerHTML =
+    '<div style="font-size:12px;margin-bottom:8px">' +
+    '<b>' + _ahuEsc(s.units) + '</b> unit(s) — ' +
+    '<span style="color:#DC2626">' + _ahuEsc((s.shipped || []).length) + ' already dispatched</span>, ' +
+    _ahuEsc((s.inFactory || []).length) + ' still in the factory.</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:760px"><thead><tr>' +
+    '<th>PIN</th><th>Tag</th><th>Component</th><th>Order / customer</th><th>Where it is</th>' +
+    '</tr></thead><tbody>' +
+    d.units.map(u =>
+      '<tr><td style="font-variant-numeric:tabular-nums"><a href="#" onclick="ahuOpenUnit(\'' +
+      _ahuA(u.unitId) + '\');return false">' + _ahuEsc(u.pin) + '</a></td>' +
+      '<td>' + _ahuEsc(u.tag || '') + '</td>' +
+      '<td style="font-size:11.5px">' + _ahuEsc((u.components || []).join(', ')) + '</td>' +
+      '<td style="font-size:11.5px">' + _ahuEsc([u.poNumber, u.customer].filter(Boolean).join(' · ')) + '</td>' +
+      '<td style="font-size:11.5px;color:' + ((u.dispatch || {}).shipped ? '#DC2626' : 'inherit') +
+      '">' + _ahuEsc((u.dispatch || {}).where || '') + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
+/* A plain overlay. There is no generic modal helper in this file — openModal() drives static
+   markup that already exists in the page — so this builds its own, the same way the shop-floor card
+   does. Kept local rather than added to the shared vocabulary: one more half-general helper is how
+   a 40,000-line template becomes unnavigable. */
+function _ahuOverlay(title, html) {
+  let ov = document.getElementById('ahuEvOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'ahuEvOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;' +
+      'overflow:auto;padding:24px';
+    ov.addEventListener('click', e => { if (e.target === ov) _ahuOverlayClose(); });
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = '<div style="max-width:900px;margin:0 auto;background:var(--card);' +
+    'border-radius:10px;padding:20px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">' +
+    '<span style="font-weight:800;color:var(--navy);font-size:16px">' + _ahuEsc(title) + '</span>' +
+    '<button class="btn btn-ghost btn-sm" onclick="_ahuOverlayClose()">Close</button></div>' +
+    html + '</div>';
+  ov.style.display = 'block';
+}
+
+function _ahuOverlayClose() {
+  const ov = document.getElementById('ahuEvOverlay');
+  if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
+}
+
+/* Every measurement one instrument produced, and which of them were taken after its calibration
+   was due. The question a failed calibration asks, and the reason the register exists. */
+async function ahuAffected(id) {
+  let d;
+  try { d = await tkApi('/api/ahu/instrument/' + encodeURIComponent(id) + '/affected'); }
+  catch (e) { toast('Could not load: ' + e.message, 'warn'); return; }
+  const rows = d.steps || [], bad = d.suspect || [];
+  _ahuOverlay('Measurements by ' + ((d.instrument || {}).name || id),
+    '<div style="font-size:12px;margin-bottom:8px">' + _ahuEsc((d.calStatus || {}).why || '') +
+    '</div>' +
+    (bad.length
+      ? '<div style="padding:9px 11px;border-radius:8px;background:#DC262610;border:1px solid #DC262630;' +
+        'font-size:12px;margin-bottom:9px"><b style="color:#DC2626">' + bad.length +
+        ' measurement(s) taken after calibration was due</b>, across ' +
+        _ahuEsc((d.unitsAffected || []).length) + ' unit(s). These are the ones to re-test.</div>'
+      : '<div style="font-size:12px;color:var(--emerald);margin-bottom:9px">' +
+        'No measurement was taken after this instrument\'s calibration was due.</div>') +
+    (rows.length
+      ? '<div style="max-height:340px;overflow:auto"><table class="table" style="width:100%"><thead><tr>' +
+        '<th>Unit</th><th>Step</th><th>Signed</th><th>By</th><th></th></tr></thead><tbody>' +
+        rows.map(r => '<tr' + (r.suspect ? ' style="background:#DC262608"' : '') +
+          '><td style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.pin || r.unitId) + '</td>' +
+          '<td>' + _ahuEsc(r.code) + '</td><td>' + _ahuEsc(r.signedOn || '') + '</td>' +
+          '<td>' + _ahuEsc(r.signedBy || '') + '</td>' +
+          '<td style="font-size:11px;color:' + (r.suspect ? '#DC2626' : 'var(--text-light)') + '">' +
+          _ahuEsc(r.why) + '</td></tr>').join('') + '</tbody></table></div>'
+      : '<div style="font-size:12px;color:var(--text-light)">This instrument has not been recorded ' +
+        'against any signed measurement.</div>'));
+}
+
 /* ───────────────────────── Capacity & load (SOP §6.7) ─────────────────────────
    The SOP names a rolling 8-week load chart as the CONTROL against the risk "delivery date shorter
    than feasible", and nothing computed it. Every unit's route already carries the SOP tact per
@@ -31041,6 +31337,7 @@ function showView(id, navEl, title) {
   if (id === 'ahu-unit') { try { ahuRenderTraveller(); } catch (e) { console.warn('ahu-unit:', e.message); } }
   if (id === 'ahu-standard') { try { ahuRenderStandard(); } catch (e) { console.warn('ahu-standard:', e.message); } }
   if (id === 'ahu-capacity') { try { ahuRenderCapacity(); } catch (e) { console.warn('ahu-capacity:', e.message); } }
+  if (id === 'ahu-evidence') { try { ahuRenderEvidence(); } catch (e) { console.warn('ahu-evidence:', e.message); } }
   if (id === 'est-projects') { try { estRenderProjects(); } catch (e) { console.warn('est-projects:', e.message); } }
   if (id === 'est-rates') { try { estRenderRates(); } catch (e) { console.warn('est-rates:', e.message); } }
   if (id === 'est-estimate') { try { estRenderWorkspace(); } catch (e) { console.warn('est-estimate:', e.message); } }
@@ -31542,6 +31839,16 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Quality Evidence': 'Bằng chứng chất lượng',
+  'Test instruments': 'Thiết bị đo kiểm',
+  'Who is qualified': 'Ai đủ năng lực',
+  'Which units got this part': 'Sản phẩm nào đã lắp linh kiện này',
+  'Out of calibration': 'Hết hạn hiệu chuẩn',
+  'No calibration due date recorded': 'Chưa ghi ngày hiệu chuẩn kế tiếp',
+  'Calibration due soon': 'Sắp đến hạn hiệu chuẩn',
+  'Signed tests naming no instrument': 'Phép thử đã ký nhưng không ghi thiết bị',
+  'Register an instrument': 'Đăng ký thiết bị',
+  'Record a qualification': 'Ghi nhận năng lực',
   'Against the industry recommendation': 'So với khuyến nghị của ngành',
   "Eurovent 6/18-2022, the European AHU industry's own quality criteria. Advisory — the SOP is what a gate refuses on.": 'Eurovent 6/18-2022, tiêu chí chất lượng do chính ngành AHU châu Âu đặt ra. Mang tính tham khảo — cổng công đoạn vẫn chỉ từ chối theo SOP.',
   'Basis not stated': 'Chưa nêu cơ sở đo',
