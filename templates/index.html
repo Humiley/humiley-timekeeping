@@ -1127,7 +1127,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-label">Production Standard</span>
   </div>
 
-  <div class="sidebar-section-label" data-appgrp="est" data-roles="manager" data-app="est">Estimating</div>
+  <div class="sidebar-section-label" data-appgrp="est" data-roles="manager" data-app="est">Tender / Estimator</div>
   <div class="nav-item" data-roles="manager" data-app="est" onclick="showView('est-projects',this,'Estimates')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="12" y2="15"/></svg></span>
     <span class="nav-label">Estimates</span>
@@ -14992,7 +14992,7 @@ function _permRowHtml(e) {
   const procOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('procurement') >= 0;
   const isAdminRow = _deriveLevel(e) === 'admin';
   const _appChk = (on, app, label, dis) => '<label ' + (dis ? 'title="Admins always have every app" ' : '') + 'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:' + (dis ? 'not-allowed' : 'pointer') + ';margin-left:8px' + (dis ? ';opacity:.55' : '') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (dis ? ' disabled' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
-  const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(engOn, 'eng', 'Design') + _appChk(estOn, 'est', 'Estimating') + _appChk(ahuOn, 'ahu', 'AHU Production') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow) + _procRoleSelect(e, procOn);
+  const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(engOn, 'eng', 'Design') + _appChk(estOn, 'est', 'Tender / Estimator') + _appChk(ahuOn, 'ahu', 'AHU Production') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow) + _procRoleSelect(e, procOn);
   const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
   // Somebody with no app at all can still sign in, check in and use My Space — but every module is
   // shut to them. That is occasionally deliberate (factory floor staff who only clock in) and often
@@ -29418,7 +29418,7 @@ const _TK_APPS = [
     icon: '<path d="M2 20h20"/><path d="M4 20V8l8-5 8 5v12"/><path d="M9 20v-6h6v6"/>' },
   { key: 'ahu',         label: 'AHU Production',     tone: '#EA580C', desc: 'Order to dispatch — the shop floor, hold points, tests and the as-built record',
     icon: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M8 10v10"/><path d="M15 10v10"/>' },
-  { key: 'est',         label: 'Estimating',         tone: '#B45309', desc: 'Tender pricing built from material, labour, plant and subcontract',
+  { key: 'est',         label: 'Tender / Estimator', tone: '#B45309', desc: 'Price a tender from its parts — landed cost, bill of materials or consultant days — and keep the margin visible',
     icon: '<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="12" y2="15"/>' },
   { key: 'hr',          label: 'Human Resource',     tone: '#DB4C8C', desc: 'People, contracts, assets and HR reporting',
     icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
@@ -31845,6 +31845,7 @@ const _VI = {
   'All Apps': 'Tất cả ứng dụng',
   /* Estimating (2026-08-20) */
   'Estimating': 'Dự toán',
+  'Tender / Estimator': 'Đấu thầu / Dự toán',
   'Estimates': 'Dự toán',
   'Rate Library': 'Thư viện đơn giá',
   'Tender pricing built from material, labour, plant and subcontract': 'Giá dự thầu được xây dựng từ vật liệu, nhân công, máy và thầu phụ',
