@@ -25598,6 +25598,7 @@ Object.assign(_QA_SPECS, {
       { k: 'unitsSystem', label: 'Units', type: 'select', options: ['Metric (SI)', 'Imperial', 'Mixed'] },
       { k: 'designLife', label: 'Design life' },
       { k: 'statutoryRoute', label: 'Statutory route', type: 'select', options: ['', 'Vietnam — NĐ 15/2021 (thẩm định & phê duyệt)', 'Vietnam — no appraisal required', 'Client internal approval only', 'Other jurisdiction'] },
+      { k: 'weightUnit', label: 'Deliverable weights are in — a cost index needs manhours', type: 'select', options: ['', 'Manhours', 'Points (relative size)'] },
       { k: 'pmProjectId', label: 'Linked PMC project (optional)', type: 'ref', src: 'pm_projects' },
       { k: 'sharepointUrl', label: 'SharePoint design folder', type: 'url' },
       { k: 'objectives', label: 'Design objectives', type: 'textarea' },
@@ -25867,6 +25868,16 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Attachment (PDF / image)', type: 'file' }
     ]
   },
+  eng_timelogs: {
+    title: 'Design hours', coll: 'eng_timelogs', reload: 'eng_timelogs', fields: [
+      { k: 'date', label: 'Date', type: 'date' },
+      { k: 'person', label: 'Who', type: 'combo', dyn: 'eng_people' },
+      { k: 'deliverableId', label: 'Against which deliverable', type: 'ref', src: 'eng_deliverables', blank: '— commission-wide (not earned against anything) —' },
+      { k: 'hours', label: 'Hours', type: 'number' },
+      { k: 'activity', label: 'Activity', type: 'select', options: ['Design', 'Drafting', 'Calculation', 'Checking', 'Coordination / IDC', 'Client meeting', 'Site visit', 'Rework', 'Admin'] },
+      { k: 'note', label: 'Note', type: 'textarea' }
+    ]
+  },
   eng_chases: {
     title: 'Chase', coll: 'eng_chases', reload: 'eng_chases', fields: [
       { k: 'transmittalId', label: 'Transmittal being chased', type: 'ref', src: 'eng_transmittals' },
@@ -25995,6 +26006,7 @@ const _ENG_TABS = [
   { k: 'deviations', label: 'Deviations', fn: 'engRenderDeviations', need: ['eng_projects', 'eng_deviations', 'eng_standards', 'eng_deliverables'] },
   { k: 'risks', label: 'Design Risk', fn: 'engRenderRisks', need: ['eng_projects', 'eng_risks', 'eng_deliverables'] },
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
+  { k: 'effort', label: 'Effort & Earned Value', fn: 'engRenderEffort', need: ['eng_projects', 'eng_deliverables', 'eng_timelogs'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
   { k: 'check', label: 'Register Check', fn: 'engRenderCheck', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
@@ -27156,6 +27168,136 @@ function _engDaysBetween(a, b) {
   const x = Date.parse(a), y = Date.parse(b);
   return (isNaN(x) || isNaN(y)) ? null : Math.round((y - x) / 86400000);
 }
+/* ── ENG EARNED VALUE ───────────────────────────────────────────────────────────────────────
+   Design effort against design progress.
+
+   The two halves already existed and had never met: the MDR carries a weight and a rule-of-credit
+   status per deliverable, which is earned value; nothing recorded the hours that bought it.
+
+   The unit trap is the whole reason this is a function rather than four lines in a renderer. A
+   weight of 40 might be forty manhours or forty points of relative size. EV/AC is a cost index only
+   in the first case; in the second it is a ratio of unlike things that renders as a confident 0.8
+   and means nothing. So CPI is computed ONLY when the commission says its weights are hours, and
+   otherwise reports why it cannot be — the same rule the SOP KPI table follows. SPI is a ratio of
+   weight to weight, so it survives either way. */
+function _engEV(project, delivs, logs, today) {
+  delivs = (delivs || []); logs = (logs || []);
+  const unit = String((project && project.weightUnit) || '').trim().toLowerCase();
+  const inHours = unit.indexOf('hour') >= 0 || unit.indexOf('manhour') >= 0;
+  const pctOf = d => {
+    const c = (typeof _ENG_CREDIT !== 'undefined' && _ENG_CREDIT) ? _ENG_CREDIT : [];
+    const hit = c.filter(x => x.k === d.creditStatus)[0];
+    return hit ? (+hit.pct || 0) : 0;
+  };
+  const w = d => { const n = +d.weight; return (isFinite(n) && n > 0) ? n : 1; };
+
+  let bac = 0, ev = 0, pv = 0;
+  delivs.forEach(d => {
+    const ww = w(d);
+    bac += ww;
+    ev += ww * pctOf(d) / 100;
+    // Planned value is a step at the planned issue date: a deliverable is meant to be finished by
+    // then. Nothing pretends to know the shape of the curve in between, and inventing one would be
+    // a number nobody could check.
+    if (d.plannedIssue && String(d.plannedIssue).slice(0, 10) <= today) pv += ww;
+  });
+  let ac = 0;
+  logs.forEach(l => { const h = +l.hours; if (isFinite(h) && h > 0) ac += h; });
+
+  const spi = pv > 0 ? ev / pv : null;
+  let cpi = null, whyNoCpi = '';
+  if (!inHours) {
+    whyNoCpi = 'The commission does not say its deliverable weights are manhours, so effort and ' +
+               'earned value are not in the same unit. Set the weight unit on the commission to ' +
+               'compute a cost index.';
+  } else if (ac <= 0) {
+    whyNoCpi = 'No hours have been booked to this commission yet.';
+  } else if (ev <= 0) {
+    whyNoCpi = 'Nothing has been earned yet — no deliverable has progressed past Not started.';
+  } else {
+    cpi = ev / ac;
+  }
+
+  const byDeliv = {};
+  logs.forEach(l => { const k = l.deliverableId || ''; byDeliv[k] = (byDeliv[k] || 0) + (+l.hours || 0); });
+  const over = inHours ? delivs.filter(d => {
+    const spent = byDeliv[d.id] || 0;
+    return spent > 0 && spent > w(d) * (pctOf(d) / 100) * 1.25 && pctOf(d) < 100;
+  }) : [];
+  const unbooked = logs.filter(l => !l.deliverableId).reduce((n, l) => n + (+l.hours || 0), 0);
+
+  return { bac: bac, ev: ev, pv: pv, ac: ac, spi: spi, cpi: cpi, whyNoCpi: whyNoCpi,
+           inHours: inHours, byDeliv: byDeliv, over: over, unbooked: unbooked };
+}
+/* ── END ENG EARNED VALUE ── */
+
+function engRenderEffort(pid) {
+  const proj = _engProj(pid), delivs = _engScopeFor('eng_deliverables', pid), logs = _engScopeFor('eng_timelogs', pid);
+  const ev = _engEV(proj, delivs, logs, _engToday());
+  const guide = _engGuide('effort', 'Effort and earned value — what the design cost against what it earned',
+    '<p>The MDR already carried a weight and a rule-of-credit status per deliverable, which is earned value. Nothing recorded the hours that bought it, so the two halves never met and the only answer to "are we over?" was somebody\'s feel for it.</p>' +
+    '<p><b>SPI</b> is earned over planned — a ratio of weight to weight, so it is honest whatever the weights mean. <b>CPI</b> is earned over hours spent, and that is a cost index only if the weights ARE hours. A weight of 40 might be forty manhours or forty points of relative size; dividing points by hours produces a confident number that means nothing, so the commission has to say which it uses and until it does this screen says the index is not measured rather than showing one.</p>' +
+    '<p>Planned value steps at the planned issue date. Nothing here pretends to know the shape of the curve in between — a smooth S nobody agreed to is a number nobody can check.</p>');
+  const f1 = n => n == null ? '—' : (Math.round(n * 100) / 100).toFixed(2);
+  const f0 = n => n == null ? '—' : Math.round(n).toLocaleString();
+  const idx = (label, v, good) => {
+    if (v == null) return '';
+    const hex = v >= good ? '#00B060' : (v >= good * 0.9 ? '#F59E0B' : '#EF4444');
+    return '<div style="flex:1;min-width:130px;border:1px solid var(--border);border-radius:9px;padding:11px 13px">' +
+      '<div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' + label + '</div>' +
+      '<div style="font-size:22px;font-weight:800;color:' + hex + ';font-variant-numeric:tabular-nums">' + f1(v) + '</div></div>';
+  };
+  const notMeasured = (label, why) =>
+    '<div style="flex:1;min-width:180px;border:1px dashed var(--border);border-radius:9px;padding:11px 13px;background:var(--bg-soft,#F8FAFC)">' +
+    '<div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' + label + '</div>' +
+    '<div style="font-size:15px;font-weight:800;color:#A16207;margin:2px 0">Not measured</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);line-height:1.45">' + _engEsc(why) + '</div></div>';
+  const kpis = _hrKpiRow([
+    _hrKpi('Budget at completion', f0(ev.bac) + (ev.inHours ? ' h' : '')),
+    _hrKpi('Earned', f0(ev.ev) + (ev.inHours ? ' h' : '')),
+    _hrKpi('Hours booked', f0(ev.ac) + ' h'),
+    _hrKpi('Planned by today', f0(ev.pv) + (ev.inHours ? ' h' : ''))
+  ]);
+  const indices = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px">' +
+    (ev.spi != null ? idx('SPI — schedule', ev.spi, 1) : notMeasured('SPI — schedule', 'No deliverable has a planned issue date on or before today, so nothing is due yet.')) +
+    (ev.cpi != null ? idx('CPI — cost', ev.cpi, 1) : notMeasured('CPI — cost', ev.whyNoCpi)) +
+    '</div>';
+  let warn = '';
+  if (ev.unbooked > 0) warn += '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEF3C7;border:1px solid #FDE68A;font-size:12px;color:#92400E">' +
+    '<b>' + f0(ev.unbooked) + ' hours are booked to the commission but not to any deliverable.</b> They count as cost and earn nothing, which drags the index down without telling you where.</div>';
+  if (ev.over.length) warn += '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEE2E2;border:1px solid #FCA5A5;font-size:12px;color:#7F1D1D">' +
+    '<b>' + ev.over.length + ' deliverable(s) have spent well past what they have earned</b> and are not finished: ' +
+    ev.over.slice(0, 6).map(d => _engEsc(d.docNo || d.title || '?')).join(', ') + '.</div>';
+  const byD = delivs.slice().sort((a, b) => (ev.byDeliv[b.id] || 0) - (ev.byDeliv[a.id] || 0));
+  const tbl = _engCard('Hours against deliverables', 'eng_timelogs', 'Book hours', _engTable('eng_deliverables', [
+    { label: 'Document', sk: 'docNo', render: r => '<div style="font-weight:600;font-variant-numeric:tabular-nums;font-size:11.5px">' + _engEsc(r.docNo || '—') + '</div><div style="font-size:10.5px;color:var(--text-light);max-width:230px">' + _engEsc(r.title || '') + '</div>' },
+    { label: 'Progress', sk: 'creditStatus', render: _engCreditCell },
+    { label: 'Weight', align: 'right', sk: 'weight', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11.5px">' + (+r.weight || 1) + '</span>' },
+    { label: 'Hours booked', align: 'right', render: r => { const h = ev.byDeliv[r.id] || 0;
+        return '<span style="font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:' + (h ? '700' : '400') + '">' + (h ? f0(h) : '—') + '</span>'; } },
+    { label: 'Against earned', align: 'right', render: r => {
+        if (!ev.inHours) return '<span style="color:var(--text-light);font-size:11px" title="the commission does not say its weights are hours">—</span>';
+        const h = ev.byDeliv[r.id] || 0; if (!h) return '<span style="color:var(--text-light);font-size:11px">—</span>';
+        const earned = (+r.weight || 1) * ((_ENG_CREDIT.filter(x => x.k === r.creditStatus)[0] || {}).pct || 0) / 100;
+        if (earned <= 0) return '<span style="color:#B91C1C;font-weight:700;font-size:11.5px">' + f0(h) + 'h, nothing earned</span>';
+        const ratio = earned / h;
+        const hex = ratio >= 1 ? '#00B060' : (ratio >= 0.8 ? '#F59E0B' : '#EF4444');
+        return '<span style="font-variant-numeric:tabular-nums;font-weight:700;color:' + hex + '">' + f1(ratio) + '</span>'; } }
+  ], byD, { empty: 'No deliverables yet.', minw: 900 }));
+  const recent = logs.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 40);
+  const log = logs.length ? _engCard('Recent hours', 'eng_timelogs', 'Book hours', _engTable('eng_timelogs', [
+    { label: 'Date', sk: 'date', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.date) + '</span>' },
+    { label: 'Who', k: 'person' },
+    { label: 'Against', render: r => { const d = delivs.filter(x => x.id === r.deliverableId)[0];
+        return d ? '<span style="font-size:11px;font-variant-numeric:tabular-nums">' + _engEsc(d.docNo || d.title || '') + '</span>'
+                 : '<span style="color:#B45309;font-size:11px">commission-wide</span>'; } },
+    { label: 'Activity', k: 'activity' },
+    { label: 'Hours', align: 'right', render: r => '<span style="font-variant-numeric:tabular-nums;font-weight:600">' + (+r.hours || 0) + '</span>' },
+    { label: 'Note', render: r => '<div style="max-width:280px;font-size:11.5px;color:var(--text-light)">' + _engEsc(r.note || '') + '</div>' }
+  ], recent, { minw: 820 })) : '';
+  return guide + kpis + indices + warn + tbl + log;
+}
+
 function engRenderAwaiting(pid) {
   const trns = _engScopeFor('eng_transmittals', pid), chases = _engScopeFor('eng_chases', pid);
   const today = _engToday();
@@ -32968,6 +33110,19 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Effort & Earned Value': 'Nhân công & Giá trị đạt được',
+  'Design hours': 'Giờ thiết kế',
+  'Book hours': 'Ghi nhận giờ',
+  'Budget at completion': 'Ngân sách khi hoàn thành',
+  'Hours booked': 'Giờ đã ghi nhận',
+  'Planned by today': 'Kế hoạch đến hôm nay',
+  'Hours against deliverables': 'Giờ theo từng tài liệu',
+  'Recent hours': 'Giờ ghi nhận gần đây',
+  'Against earned': 'So với giá trị đạt được',
+  'Against': 'Ghi cho',
+  'Drafting': 'Triển khai bản vẽ',
+  'Rework': 'Làm lại',
+  'Coordination / IDC': 'Phối hợp / kiểm tra liên bộ môn',
   'Awaiting Response': 'Đang chờ phản hồi',
   'Awaiting a response': 'Đang chờ phản hồi',
   'Past the date agreed': 'Quá hạn đã thống nhất',
