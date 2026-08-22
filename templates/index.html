@@ -28560,7 +28560,7 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
   ];
   if (t === 'services') return [
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
@@ -28569,7 +28569,7 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
   ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
@@ -28580,7 +28580,7 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
   ];
   return _EST_TABS;
 }
@@ -28801,6 +28801,53 @@ async function tndSetConfig(centre, field, v) {
 function tndTabBudget() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
   const b = _tndSum.budget || { lines: [], total: 0 };
+  const el = _tndSum.elements || { rows: [], total: 0 };
+  const bm = _tndSum.benchmarks || { available: false, rows: [] };
+
+  /* WHAT THE MONEY IS SPENT ON. The total says what a job costs; this says what it is exposed to.
+     Labour moves when a programme slips, imported material moves when the dong does, subcontract
+     is exposure somebody else is carrying — three different risks wearing the same total. */
+  const bar = el.total ? '<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin:10px 0 8px">' +
+    el.rows.map(function (r, i) {
+      const tones = ['var(--navy)', 'var(--emerald-deep)', '#B45309', '#6B7280', '#0E7490', '#7C3AED'];
+      return '<div title="' + _tkEscA(r.label + ' ' + _tndPct(r.pct)) + '" style="width:' + r.pct +
+        '%;background:' + tones[i % tones.length] + '"></div>';
+    }).join('') + '</div>' : '';
+
+  const elemPanel = el.rows.length ? '<div class="card" style="margin-bottom:14px">' +
+    '<div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:2px">' +
+      _t('What the money is spent on') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' +
+      _t('Of the cost base, not the selling price — so it does not move when somebody edits the margin.') +
+      '</div>' + bar +
+    '<div class="table-wrap"><table style="min-width:520px"><tbody>' +
+    el.rows.map(function (r) {
+      return '<tr><td style="font-weight:600">' + _estEsc(r.label) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(r.amount) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light);width:78px">' +
+        _tndPct(r.pct) + '</td></tr>';
+    }).join('') + '</tbody></table></div></div>' : '';
+
+  /* THE CHECK AN ESTIMATOR ACTUALLY APPLIES. Not "does the total look right" — a billion-dong
+     total looks like any other — but "is this the right price per square metre", against the last
+     three jobs. */
+  const bmPanel = bm.available
+    ? '<div class="card" style="margin-bottom:14px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:2px">' +
+        _t('Per') + ' ' + _estEsc(bm.unit) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+        _tndNum(bm.qty, 0) + ' ' + _estEsc(bm.unit) + ' — ' +
+        _t('a total cannot be compared with the last job; a rate can.') + '</div>' +
+      '<div style="display:flex;gap:24px;flex-wrap:wrap">' +
+      bm.rows.map(function (r) {
+        return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' +
+          _estEsc(r.label) + '</div><div style="font-size:14px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+          _tndMoney(r.value) + '</div></div>';
+      }).join('') + '</div></div>'
+    : '<div class="card" style="margin-bottom:14px;border-left:3px solid var(--line)">' +
+      '<div style="font-size:12px;color:var(--text-light)">' +
+      _t('No benchmark quantity set, so this tender cannot be compared with any other. Set one in Assumptions — floor area, airflow, units — and every figure here becomes a rate.') +
+      '</div></div>';
   const can = _estCanPrice() && !_estFrozen(e);
   const adopted = e.adoptedProjectId;
 
@@ -28854,7 +28901,7 @@ function tndTabBudget() {
         : '<div style="font-size:12px;color:var(--text-light)">' +
           _t('A tender becomes a budget once it is approved or won.') + '</div>');
 
-  _estSet(head +
+  _estSet(head + elemPanel + bmPanel +
     (catRow ? '<div class="card" style="margin-bottom:14px">' + catRow + '</div>' : '') +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="table-wrap"><table style="min-width:640px"><thead><tr>' +
     ['Category', 'What it funds', 'Budget'].map(function (h, i) {
