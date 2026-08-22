@@ -30108,11 +30108,32 @@ function tndCompareRevs(fromId, toId) {
 /* The same rule the server applies, so the screen and the record cannot disagree about what moved.
    Kept deliberately small: anything more here would be a second implementation of pricing. */
 function _tndDiff(before, after) {
-  const A = {}, B = {};
-  (before.lines || []).forEach(function (l) { if (l.id) A[l.id] = l; });
-  (after.lines || []).forEach(function (l) { if (l.id) B[l.id] = l; });
+  /* Same keying as tender._diff_index, or the screen and the record disagree about what moved.
+     Two faults it avoids, both of which produce a WRONG NUMBER rather than an error: keying on id
+     alone DISCARDS a duplicate (an import run twice silently became one row), and skipping
+     id-less lines drops them entirely, so a line could vanish between revisions and the movement
+     surface as "unexplained" — the signal reserved for a discount. Duplicates aggregate; a line
+     without an id falls back to its description, which survives reordering, and only then to its
+     position, which does not. */
+  const index = function (rev) {
+    const out = {};
+    (rev.lines || []).forEach(function (l, i) {
+      const key = String(l.id || '').trim() || String(l.desc || '').trim() || ('#' + i);
+      if (!out[key]) { out[key] = Object.assign({}, l); return; }
+      out[key].net = (+out[key].net || 0) + (+l.net || 0);
+      out[key].qty = (+out[key].qty || 0) + (+l.qty || 0);
+      out[key].unitCost = null;   // an aggregate of two rates is not a rate anybody quoted
+      out[key].aggregated = true;
+    });
+    return out;
+  };
+  const A = index(before), B = index(after);
   const rows = [];
+  /* Sorted before the delta sort, exactly as the server does it. Both sorts are stable, so this
+     list decides the order of rows whose movements are the same size — and without it the screen
+     and the record could show an identical set of rows in a different order. */
   Object.keys(A).concat(Object.keys(B)).filter(function (k, i, arr) { return arr.indexOf(k) === i; })
+    .sort()
     .forEach(function (k) {
       const was = A[k], now = B[k];
       if (was && !now) rows.push({ id: k, desc: was.desc, status: 'removed', was: was.net, now: 0, delta: -was.net });

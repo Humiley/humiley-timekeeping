@@ -194,6 +194,14 @@ jobs:
       - name: The stale-shell check can tell a stale PAGE from a stale worker
         run: node tests/stale_shell_verdict.js
 
+      # "Why did the price change" is answered twice — by tender.compare_revisions for the record,
+      # and by _tndDiff for the screen. Both used to key their lines on id alone, which dropped a
+      # duplicate row's money and dropped id-less lines entirely; fixing one and not the other would
+      # have left a tender whose stored explanation and on-screen explanation disagree. This runs
+      # both over the same fixtures and compares the answers, so neither can drift alone.
+      - name: The revision diff on screen matches the one in the record
+        run: node tests/tender_diff_cross_language.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the
