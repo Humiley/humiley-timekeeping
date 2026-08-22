@@ -3871,6 +3871,56 @@ class Handler(BaseHTTPRequestHandler):
     # structured log + optional webhook alert) and turned into a clean 500 instead of a reset
     # connection. The real routing lives in _do_get/_do_post/_do_patch/_do_delete.
     def do_GET(self):    self._serve_request("GET", self._do_get)
+
+    def do_HEAD(self):
+        """Same status and headers as GET, no body.
+
+        BaseHTTPRequestHandler answers 501 for any verb it has no do_* for, so every HEAD reached
+        this server as "Not Implemented" — including HEAD /api/health, which exists for exactly one
+        audience: uptime monitors. UptimeRobot, Pingdom and most others probe with HEAD by default
+        and would have reported portal.humiley.com down while it was serving every real request
+        perfectly. Nothing a browser does is affected, which is why it went unnoticed.
+
+        Implemented by running the ordinary GET and discarding the body rather than by duplicating
+        the routing: a second copy of "which path returns what" is a second thing to keep in step,
+        and the first time they disagree HEAD starts lying about a page it never rendered.
+
+        Content-Length is left as GET computed it. RFC 9110 §9.3.2 requires HEAD to carry the
+        header fields it WOULD have sent, so reporting the real body size is the correct answer,
+        not an inconsistency to tidy away.
+        """
+        real = self.wfile
+        state = {"headers_done": False}
+
+        class _BodySink:
+            """Lets the header block through, swallows whatever follows."""
+            def write(self, data):
+                if state["headers_done"]:
+                    return len(data)
+                return real.write(data)
+            def flush(self):
+                return real.flush()
+
+        end_headers = self.end_headers
+
+        def _end_headers():
+            end_headers()
+            state["headers_done"] = True
+
+        self.wfile = _BodySink()
+        self.end_headers = _end_headers
+        try:
+            self.do_GET()
+        finally:
+            self.wfile = real
+            # Remove the instance attribute so the class method is visible again; a handler is
+            # reused across keep-alive requests on the same connection, and leaving the override
+            # in place would silence the body of the NEXT GET on that socket.
+            self.__dict__.pop("end_headers", None)
+            try:
+                real.flush()
+            except Exception:
+                pass
     def do_POST(self):   self._serve_request("POST", self._do_post)
     def do_PATCH(self):  self._serve_request("PATCH", self._do_patch)
     def do_DELETE(self): self._serve_request("DELETE", self._do_delete)
