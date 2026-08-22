@@ -26700,6 +26700,69 @@ async function engStageStart(stageK) {
     tkQuickAdd('eng_stages', res.item.id);
   } catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error', 6000); }
 }
+/* What the registers say about a gate, before anybody ticks anything.
+
+   A gate criterion was a sentence. Several of them are now facts somebody else already recorded,
+   and the ones that are not stay marked as judgement rather than being quietly ticked — the same
+   rule the SOP KPI table follows for what it cannot compute. Facts are counted here; the server
+   independently refuses an unqualified pass over the three that carry liability, so this screen
+   informs and does not enforce. */
+function _engGateReadiness(pid) {
+  const holds = _engScopeFor('eng_holds', pid).filter(h => String(h.kind || 'Hold').toLowerCase() === 'hold'
+    && ['open', 'raised', ''].indexOf(String(h.status || 'Open').toLowerCase()) >= 0);
+  const devs = _engScopeFor('eng_deviations', pid).filter(d =>
+    ['approved', 'rejected', 'withdrawn', 'closed'].indexOf(String(d.decision || d.status || '').toLowerCase()) < 0);
+  const risks = _engScopeFor('eng_risks', pid).filter(r =>
+    String(r.status || '').toLowerCase() === 'transferred' && !String(r.informedBy || '').trim());
+  const comments = _engScopeFor('eng_comments', pid).filter(c =>
+    ['closed', 'resolved'].indexOf(String(c.status || 'Open').toLowerCase()) < 0);
+  const tqs = _engScopeFor('eng_tq', pid).filter(t => String(t.status || 'Open').toLowerCase() === 'open');
+  const stds = _engScopeFor('eng_standards', pid);
+  const adopted = stds.filter(x => ['adopted', 'current', 'in force'].indexOf(String(x.status || '').toLowerCase()) >= 0);
+  const trns = _engScopeFor('eng_transmittals', pid).filter(t =>
+    String(t.responseRequired || 'No').toLowerCase().indexOf('yes') === 0
+    && !String(t.responseDate || '').trim()
+    && ['closed', 'responded'].indexOf(String(t.status || '').toLowerCase()) < 0);
+  return [
+    { hard: true, ok: !holds.length, label: 'No open HOLDs', n: holds.length,
+      detail: holds.slice(0, 5).map(h => h.ref || h.title || '?').join(', ') },
+    { hard: true, ok: !devs.length, label: 'Every departure from a standard agreed', n: devs.length,
+      detail: devs.slice(0, 5).map(d => d.ref || d.title || '?').join(', ') },
+    { hard: true, ok: !risks.length, label: 'Every residual risk passed on has somebody told', n: risks.length,
+      detail: risks.slice(0, 5).map(r => r.ref || r.hazard || '?').join(', ') },
+    { hard: false, ok: !comments.length, label: 'Client comments closed or dispositioned', n: comments.length },
+    { hard: false, ok: !tqs.length, label: 'Technical queries answered', n: tqs.length },
+    { hard: false, ok: !trns.length, label: 'Responses received on everything that asked for one', n: trns.length },
+    { hard: false, ok: adopted.length > 0, label: 'Applicable codes fixed at an adopted edition',
+      n: adopted.length ? 0 : 1, detail: adopted.length ? adopted.length + ' adopted' : 'none adopted yet' }
+  ];
+}
+function _engGateReadinessPanel(pid) {
+  const rows = _engGateReadiness(pid);
+  const blocking = rows.filter(r => r.hard && !r.ok);
+  const soft = rows.filter(r => !r.hard && !r.ok);
+  const head = blocking.length
+    ? '<div style="font-size:12.5px;font-weight:700;color:#B91C1C">This gate cannot be passed clean — ' + blocking.length + ' register(s) say otherwise</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">Close them, or sign it as <b>Passed with actions</b> and record what is carried forward.</div>'
+    : (soft.length
+        ? '<div style="font-size:12.5px;font-weight:700;color:#B45309">Nothing blocks a clean pass, but ' + soft.length + ' thing(s) are still open</div>'
+        : '<div style="font-size:12.5px;font-weight:700;color:#047857">Every criterion the registers can answer is met</div>');
+  const line = r => {
+    const hex = r.ok ? '#047857' : (r.hard ? '#B91C1C' : '#B45309');
+    const mark = r.ok ? '&#10003;' : (r.hard ? '&#10007;' : '!');
+    return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;font-size:12px">' +
+      '<span style="color:' + hex + ';font-weight:800;width:12px">' + mark + '</span>' +
+      '<span style="flex:1">' + _engEsc(r.label) + (r.hard ? '' : ' <span style="font-size:9.5px;color:var(--text-light)">(judgement — not enforced)</span>') + '</span>' +
+      (r.n ? '<span style="font-weight:700;color:' + hex + ';font-variant-numeric:tabular-nums">' + r.n + '</span>' : '') +
+      (r.detail ? '<span style="font-size:10.5px;color:var(--text-light);max-width:260px">' + _engEsc(r.detail) + '</span>' : '') +
+      '</div>';
+  };
+  return '<div class="card" style="padding:14px 16px;margin-bottom:12px">' + head +
+    '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">' +
+    rows.map(line).join('') + '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:7px">The first three are checked again by the server when the gate is signed; the rest are shown because somebody has to look at them, not because a screen can decide them.</div></div>';
+}
+
 function engRenderStages(pid) {
   const p = _engProj(pid); if (!p) return;
   const stages = _engScopeFor('eng_stages', pid), dels = _engScopeFor('eng_deliverables', pid);
@@ -26710,7 +26773,7 @@ function engRenderStages(pid) {
     '<p>The checklist under each stage is that evaluation. Tick each criterion as it is met; the gate can still be passed with items open, which records honestly as <b>Passed with actions</b> and carries those actions forward. A gate is signed through the portal\'s e-signature, so the record says who decided and when, and it freezes afterwards — the whole point of a gate is that it cannot be re-decided quietly.</p>' +
     '<p>Each stage shows the equivalent name in the RIBA Plan of Work, the FEL/IPA gates, the AIA phases and Vietnamese practice, so the same commission reads correctly to whichever client is asking. In Vietnam the Basic-design gate is normally where <i>thẩm định</i> and <i>phê duyệt</i> of the <i>thiết kế cơ sở</i> land under NĐ 15/2021 — record the reference on the stage.</p>');
   const cards = list.map(s => _engStageCard(p, s, stages.find(x => x.stage === s.k), dels)).join('');
-  _engSet(guide + cards);
+  _engSet(guide + _engGateReadinessPanel(pid) + cards);
 }
 /* A gate decision goes through /api/esign — the same Part 11 path as a payment certificate, for the
    same reason: it is a decision somebody has to own, not a status somebody typed. */
@@ -33638,6 +33701,11 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'No open HOLDs': 'Không còn điểm chờ nào mở',
+  'Every departure from a standard agreed': 'Mọi sai lệch đã được chấp thuận',
+  'Client comments closed or dispositioned': 'Ý kiến chủ đầu tư đã đóng hoặc xử lý',
+  'Technical queries answered': 'Câu hỏi kỹ thuật đã được trả lời',
+  'judgement — not enforced': 'đánh giá — không bắt buộc',
   'Sell-side variation that recovers it': 'Phụ lục bán hàng thu hồi chi phí này',
   'not linked yet': 'chưa liên kết',
   'Chargeable to client?': 'Tính phí cho chủ đầu tư?',
