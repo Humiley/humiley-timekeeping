@@ -173,11 +173,27 @@ def build(doc, lines=None):
                     [_cell("F%d" % r_disc, S_PCT, value=disc),
                      _cell("G%d" % r_disc, S_MONEY, value=round(sub * disc),
                            formula="G%d*F%d" % (r_sub, r_disc))]))
-    rows.append(_row(r_vat, H["tot"], [_cell(c + str(r_vat), S_TOT_LBL, text="Tax / VAT (if applicable)" if c == "C" else "")
+    # VAT AT ONE RATE, OR AT SEVERAL.
+    #
+    # The formula "(subtotal - discount) x rate" is right only while every line carries the same
+    # rate. A tender mixing a 10%-rated domestic sale with a zero-rated export used to write the
+    # server's correct per-line total into the cell and that formula beside it: the file agreed
+    # with the letter until Excel recalculated on open, and then overstated the tax by the whole
+    # of the exempt line — hundreds of millions on a real tender, in front of the customer.
+    #
+    # Where the rates differ there is no single-rate formula that could be correct, and inventing
+    # one out of hidden helper columns would put arithmetic in the workbook that the letter does
+    # not show. So the figure is written as a value with no formula behind it: nothing recalculates,
+    # nothing drifts, and the rate cell says why it is not a percentage.
+    line_rates = {round(_num(l.get("vatPct")), 4) for l in (doc.get("lines") or [])}
+    one_rate = len(line_rates) <= 1
+    vat_label = "Tax / VAT (if applicable)" if one_rate else "Tax / VAT (rates vary by line)"
+    rows.append(_row(r_vat, H["tot"], [_cell(c + str(r_vat), S_TOT_LBL, text=vat_label if c == "C" else "")
                                        for c in "CDE"] +
-                    [_cell("F%d" % r_vat, S_PCT, value=vat_pct),
+                    [_cell("F%d" % r_vat, S_PCT, value=vat_pct) if one_rate
+                     else _cell("F%d" % r_vat, S_TOT_LBL, text="per line"),
                      _cell("G%d" % r_vat, S_MONEY, value=_num(tot.get("vat")),
-                           formula="(G%d-G%d)*F%d" % (r_sub, r_disc, r_vat))]))
+                           formula=("(G%d-G%d)*F%d" % (r_sub, r_disc, r_vat)) if one_rate else None)]))
     rows.append(_row(r_gt, H["gt"], [_cell(c + str(r_gt), S_GT_LBL, text="GRAND TOTAL" if c == "C" else "")
                                      for c in "CDEF"] +
                     [_cell("G%d" % r_gt, S_GT_VAL, value=_num(tot.get("gross")),

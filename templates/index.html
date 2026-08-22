@@ -29697,6 +29697,19 @@ function _tndTabs() {
   return _EST_TABS;
 }
 
+/* WHAT RATE TO PRINT BESIDE THE TAX.
+   The amount is always the server's per-line total. The RATE is only a fact about the document
+   while every line carries the same one — a tender mixing a 10%-rated domestic sale with a
+   zero-rated export has no single rate, and printing the header's beside a blended amount gives
+   the customer a letter whose own arithmetic does not check out. The workbook had the sharper
+   version of this: it recomputed the tax from that one rate on open. See quote_xlsx.build(). */
+function _qtVatRow(d) {
+  const rates = new Set(((d || {}).lines || []).map(l => Math.round((+l.vatPct || 0) * 1e4)));
+  return rates.size > 1
+    ? { label: 'Tax / VAT (rates vary by line)', pct: null }
+    : { label: 'Tax / VAT (if applicable)', pct: (+(d || {}).vatPct || 0) };
+}
+
 /* The headline, per model. Trading and EPC both end in a price and a margin; what gets you
    there differs, so the four tiles differ with it. */
 function _tndHeadline() {
@@ -30590,6 +30603,15 @@ async function tndSaveField(el) {
   const e = _estById(_estCur); if (!e) return;
   const field = _QT_FIELD[key]; if (!field) return;
   const patch = Object.assign({}, e); patch[field] = val;
+  /* The amount in words is typed once and then never looked at again, while the figures move
+     underneath it: a discount, a re-priced line, a new revision. A letter whose words and figures
+     disagree is worse than one with no words at all — in a Vietnamese contract the written amount
+     is commonly the one that governs. Stamping the total it was written against is enough for
+     issue_check to notice; it cannot compare a sentence to a number, but it can compare two
+     numbers. */
+  if (field === 'amountInWords') {
+    patch.amountInWordsFor = ((_tndSum || {}).quote || {}).gross || 0;
+  }
   try {
     await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: patch });
     tkCollInvalidate('est_projects');
@@ -30690,7 +30712,7 @@ function _tndQuoteSheet(doc, q) {
        numbers and the distinction is the whole point of carrying both. */
     totRow('SUBTOTAL', null, tot.subtotal, {}) +
     totRow('Project Discount', tot.discountPct, tot.discount, { showPct: true }) +
-    totRow('Tax / VAT (if applicable)', doc.vatPct, tot.vat, { showPct: true }) +
+    totRow(_qtVatRow(doc).label, _qtVatRow(doc).pct, tot.vat, { showPct: _qtVatRow(doc).pct != null }) +
     totRow('GRAND TOTAL', null, tot.gross, { grand: true }) +
     '</tbody></table></div>' +
 
@@ -30978,7 +31000,7 @@ function tndQuotePDF() {
      up: subtotal, minus a discount, then a total equal to subtotal plus VAT. */
   totRow('SUBTOTAL', null, tot.subtotal, false);
   totRow('Project Discount', tot.discountPct, tot.discount, false);
-  totRow('Tax / VAT (if applicable)', +d.vatPct || 0, tot.vat, false);
+  totRow(_qtVatRow(d).label, _qtVatRow(d).pct, tot.vat, false);
   totRow('GRAND TOTAL', null, tot.gross, true);
   y += 6;
 
