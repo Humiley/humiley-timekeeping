@@ -30672,6 +30672,86 @@ async function _ahuProcess() {
   return _AHU.process;
 }
 
+/* ── The process, on the page somebody opens first ──────────────────────────────────────────────
+   The board used to open on four counters and a table of units. That answers "what is happening"
+   for somebody who already knows how an AHU gets built, and answers nothing at all for somebody who
+   does not — which is most people opening it, including everyone new to the line.
+
+   So the first thing on the page is now the process itself: seven stages, the gate that closes each
+   one, and how many units are sitting in each right now. The stages are read from
+   /api/ahu/process rather than retyped here, so the picture cannot drift from the route the gates
+   actually enforce.
+
+   Clicking a stage filters the table below it. That is the whole interaction: see the shape of the
+   process, see where the work has piled up, click to get to it. */
+const _AHU_STAGE_SHORT = {
+  1: 'Order', 2: 'Design', 3: 'Materials', 4: 'Procurement',
+  5: 'Production', 6: 'Testing', 7: 'Dispatch'
+};
+
+function _ahuFlowStrip(units, stages) {
+  if (!stages || !stages.length) return '';
+  const inStage = {}, heldIn = {};
+  units.forEach(u => {
+    const n = u.stage || 1;
+    inStage[n] = (inStage[n] || 0) + 1;
+    if ((u.failed || []).length || u.openNcr > 0) heldIn[n] = (heldIn[n] || 0) + 1;
+  });
+  const sel = _AHU.stageFilter || 0;
+
+  const boxes = stages.map((st, i) => {
+    const n = st.no || (i + 1);
+    const here = inStage[n] || 0, held = heldIn[n] || 0;
+    const on = sel === n;
+    const tone = held ? '#DC2626' : here ? 'var(--emerald)' : 'var(--line)';
+    const box =
+      '<button type="button" onclick="ahuFilterStage(' + n + ')" ' +
+      'title="' + _ahuA((st.title || '') + (st.owner ? ' — owned by ' + st.owner : '')) + '" ' +
+      'style="flex:1 1 96px;min-width:96px;text-align:left;cursor:pointer;font:inherit;' +
+      'border:1.5px solid ' + (on ? 'var(--emerald)' : 'var(--line)') + ';border-radius:9px;' +
+      'padding:8px 9px;background:' + (on ? '#00B06012' : 'var(--card)') + '">' +
+      '<div style="font-size:10px;color:var(--text-light);font-weight:700">STAGE ' + n + '</div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:var(--navy);line-height:1.3">' +
+      _ahuEsc(_AHU_STAGE_SHORT[n] || st.title) + '</div>' +
+      '<div style="display:flex;align-items:baseline;gap:5px;margin-top:4px">' +
+      '<span style="font-size:19px;font-weight:800;color:' + (here ? tone : 'var(--line)') +
+      ';font-variant-numeric:tabular-nums;line-height:1">' + here + '</span>' +
+      '<span style="font-size:10.5px;color:var(--text-light)">' +
+      (here === 1 ? 'unit' : 'units') + '</span></div>' +
+      (held ? '<div style="font-size:10px;color:#DC2626;font-weight:700;margin-top:2px">' +
+        held + ' held</div>' : '') +
+      '</button>';
+    // The gate that closes this stage. Stage 4 has none — Procurement runs alongside rather than
+    // gating — and drawing one there would invent a control the SOP does not have.
+    const gate = st.gate
+      ? '<div style="flex:0 0 auto;text-align:center;padding:0 2px;align-self:center">' +
+        '<div style="font-size:10.5px;font-weight:800;color:var(--navy);' +
+        'font-variant-numeric:tabular-nums">' + _ahuEsc(st.gate) + '</div>' +
+        '<div style="font-size:15px;color:var(--text-light);line-height:1">&rsaquo;</div></div>'
+      : '<div style="flex:0 0 auto;align-self:center;padding:0 4px;color:var(--line);' +
+        'font-size:15px">&rsaquo;</div>';
+    return box + (i < stages.length - 1 ? gate : '');
+  }).join('');
+
+  return _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;' +
+    'flex-wrap:wrap;margin-bottom:9px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">How an AHU gets built</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">Seven stages. Each ends at a gate that ' +
+    'will not pass until its conditions are met, so a unit can only move forward in order. Click a ' +
+    'stage to see the units in it.</div></div>' +
+    (sel ? '<button class="btn btn-ghost btn-sm" style="font-size:11.5px" ' +
+      'onclick="ahuFilterStage(0)">Show all stages</button>' : '') +
+    '</div>' +
+    '<div style="display:flex;gap:3px;overflow-x:auto;padding-bottom:4px;align-items:stretch">' +
+    boxes + '</div>');
+}
+
+function ahuFilterStage(n) {
+  _AHU.stageFilter = (_AHU.stageFilter === n) ? 0 : n;
+  ahuRenderBoard();
+}
+
 /* ───────────────────────── Production Board ───────────────────────── */
 async function ahuRenderBoard() {
   const root = document.getElementById('ahu-board-root'); if (!root) return;
@@ -30683,6 +30763,9 @@ async function ahuRenderBoard() {
       _ahuEsc(e.message) + '</div>'); return;
   }
   root.dataset.loaded = '1';
+  // The stage list comes from the server, not from a copy here, so the strip can never show a
+  // process different from the one the gates enforce. Cached after the first call.
+  try { await _ahuProcess(); } catch (e) { /* strip is skipped; the table still works */ }
   const units = (data && data.units) || [];
   _ahuBoardTick();
   if (!units.length) {
@@ -30690,6 +30773,11 @@ async function ahuRenderBoard() {
       'Register an AHU against a customer order to start its route.');
     return;
   }
+  // The strip and the counters read EVERY unit; only the table below is filtered. Counting just
+  // the filtered set would make the numbers change as you click them, which is the one thing a
+  // navigation control must never do.
+  const sel = _AHU.stageFilter || 0;
+  const shown = sel ? units.filter(u => (u.stage || 1) === sel) : units;
   const held = units.filter(u => (u.failed || []).length || u.openNcr > 0);
   const kpi = [
     ['In production', units.length, 'var(--navy)'],
@@ -30702,7 +30790,7 @@ async function ahuRenderBoard() {
       _ahuEsc(k[0]) + '</div><div style="font-size:23px;font-weight:800;color:' + k[2] + ';line-height:1.25">' +
       _ahuEsc(k[1]) + '</div>', '13px 15px')).join('') + '</div>';
 
-  const rows = units.map(u => {
+  const rows = shown.map(u => {
     const tone = (u.failed || []).length ? '#DC2626' : (u.progress >= 100 ? '#00B060' : 'var(--emerald)');
     const stg = 'Stage ' + (u.stage || 1) + ' · ' + _ahuEsc(u.stageTitle || '');
     const nxt = (u.failed || []).length
@@ -30722,13 +30810,23 @@ async function ahuRenderBoard() {
       ((u.running || []).length ? ' ' + _ahuBadge('Running: ' + u.running.join(', '), '#F59E0B') : '') + '</td></tr>';
   }).join('');
 
-  root.innerHTML = kpiHtml + '<div id="ahu-sop-kpi"></div>' + _ahuCard(
+  const stages = ((_AHU.process || {}).stages) || [];
+  const stageName = sel && stages.length
+    ? ((stages.find(x => (x.no || 0) === sel) || {}).title || ('Stage ' + sel)) : '';
+  root.innerHTML = _ahuFlowStrip(units, stages) + '<div style="height:12px"></div>' +
+    kpiHtml + '<div id="ahu-sop-kpi"></div>' + _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
-    '<div style="font-weight:800;color:var(--navy)">Units on the floor</div>' +
+    '<div style="font-weight:800;color:var(--navy)">' +
+    (sel ? 'Stage ' + sel + ' &mdash; ' + _ahuEsc(stageName) : 'Units on the floor') +
+    '<span style="font-weight:400;font-size:11.5px;color:var(--text-light)"> &middot; ' +
+    shown.length + ' of ' + units.length + '</span></div>' +
     '<div style="font-size:11.5px;color:var(--text-light)" id="ahu-board-stamp"></div></div>' +
     '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:760px"><thead><tr>' +
     '<th>PIN</th><th>Tag</th><th>Family</th><th>Production stage</th><th>Completion</th><th>State</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    (shown.length ? '' :
+      '<div style="font-size:12px;color:var(--text-light);padding:12px 2px">No unit is at this ' +
+      'stage right now. Click the stage again, or Show all stages, to see the rest.</div>'));
   _ahuBoardTick();
   ahuRenderSopKpi();
 }
@@ -33074,6 +33172,9 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'How an AHU gets built': 'Quy trình sản xuất một AHU',
+  'Seven stages. Each ends at a gate that will not pass until its conditions are met, so a unit can only move forward in order. Click a stage to see the units in it.': 'Bảy công đoạn. Mỗi công đoạn kết thúc bằng một cổng chỉ mở khi đủ điều kiện, nên sản phẩm chỉ tiến theo đúng thứ tự. Bấm vào một công đoạn để xem sản phẩm đang ở đó.',
+  'Show all stages': 'Xem tất cả công đoạn',
   'Quality Evidence': 'Bằng chứng chất lượng',
   'Test instruments': 'Thiết bị đo kiểm',
   'Who is qualified': 'Ai đủ năng lực',

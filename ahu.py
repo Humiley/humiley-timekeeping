@@ -468,10 +468,20 @@ def unit_state(ctx):
     nxt = R.next_steps(spec, done)
     running = [s for s in live if _norm(s.get("status")) in ("in progress", "started")]
     failed = [s for s in live if _norm(s.get("status")) == "failed"]
-    stage_no = 1
-    for s in spec:
-        if s["code"] in done:
-            stage_no = s["stage"]
+    # The stage a unit is IN is the stage of the work it is about to do — not the stage of the last
+    # thing it finished. Those differ at every gate: passing G1 CLOSES stage 1, so a unit whose next
+    # step is G2 is working in stage 2, and reporting it as stage 1 puts it on the board under the
+    # stage it has just left. On a board captioned "the step it is on", that is simply wrong, and it
+    # makes the process strip on the first page pile every unit into the stage behind it.
+    #
+    # A unit with nothing left to do keeps the stage of its last signed step: it finished there.
+    if nxt:
+        stage_no = nxt[0]["stage"]
+    else:
+        stage_no = 1
+        for s in spec:
+            if s["code"] in done:
+                stage_no = s["stage"]
     return {
         "unitId": unit.get("id"), "pin": unit.get("pin"), "tag": unit.get("tag"),
         "family": unit.get("family"), "orderId": unit.get("orderId"),

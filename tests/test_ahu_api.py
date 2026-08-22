@@ -718,3 +718,48 @@ def test_the_waiter_cap_refuses_politely_instead_of_exhausting_threads(api, toke
     monkeypatch.setattr(app, "AHU_WAIT_MAX", 0)
     st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
     assert st == 200 and r.get("busy") is True and r.get("note")
+
+
+# ── which stage a unit is IN ─────────────────────────────────────────────────────────────────────
+# The board is captioned "the step it is on", and the first page now draws the seven stages with a
+# count in each. Both are wrong if `stage` reports the stage a unit has just LEFT — which is what
+# it did until the flow strip made the error visible: every unit piled into the stage behind it.
+
+def test_a_unit_that_has_passed_its_gate_is_in_the_next_stage(api, tokens, unit):
+    """Passing G1 CLOSES stage 1. A unit whose next step is G2 is working in stage 2."""
+    steps = _steps(api, tokens["admin"], unit)
+    assert _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")[0] == 200
+    st, r = api("GET", "/api/ahu/board", tokens["admin"])
+    row = next(u for u in r["units"] if u["unitId"] == unit)
+    assert row["next"] == ["G2"]
+    assert row["stage"] == 2, "a unit awaiting G2 must not be shown under stage 1"
+    assert row["stageTitle"] == "Engineering & Design"
+
+
+def test_a_unit_with_nothing_signed_is_in_stage_one(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/board", tokens["admin"])
+    row = next(u for u in r["units"] if u["unitId"] == unit)
+    assert row["stage"] == 1 and row["next"] == ["G1"]
+
+
+def test_the_stage_moves_at_the_gate_not_after_the_next_step(api, tokens, unit):
+    """The discriminating case. G3 closes stage 3 (Raw Material) and the next step is WS-01, which
+    is stage 5 — so the moment G3 is signed the unit is a stage-5 unit. Reporting the stage of the
+    last SIGNED step would say 3 here and park it under Materials while the floor is building it."""
+    steps = _steps(api, tokens["admin"], unit)
+    _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    _mk(api, tokens["admin"], "ahu_docs",
+        {"unitId": unit, "kind": "GA drawing", "status": "Issued", "docNo": "GA-001"})
+    _mk(api, tokens["admin"], "ahu_bom",
+        {"unitId": unit, "partNo": "FRM-01", "qty": 4, "kittedQty": 4,
+         "receivedQty": 4, "iqcStatus": "Passed"})
+    api("PATCH", "/api/coll/%s/%s" % (UNIT, unit), tokens["admin"],
+        dict(_unit(api, tokens, unit), bomStatus="Released", selectionRef="AS-1234"))
+    steps = _steps(api, tokens["admin"], unit)
+    for g in ("G2", "G3"):
+        assert _sign(api, tokens["admin"], steps[g]["id"], "Passed")[0] == 200
+
+    st, r = api("GET", "/api/ahu/board", tokens["admin"])
+    row = next(u for u in r["units"] if u["unitId"] == unit)
+    assert row["next"] == ["WS-01"], row["next"]
+    assert row["stage"] == 5, "a unit whose next step is WS-01 belongs under Production, not Materials"
