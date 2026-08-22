@@ -8170,6 +8170,19 @@ class Handler(BaseHTTPRequestHandler):
             out["risk"] = tender.risk_register(
                 [r for r in db.list_collection("est_risks") if r.get("estId") == tid], e, quote)
             out["sensitivity"] = tender.sensitivity(quote, e)
+            # The cost base as project budget lines. Shown BEFORE anyone adopts it, so the
+            # baseline a job will be measured against is something somebody read and agreed
+            # to rather than a total that appeared after a button press.
+            try:
+                out["budget"] = tender.budget_lines(e, quote, master=master, rollup=rollup)
+            except AssertionError as ex:
+                # The handover reconciles or it is not offered. A budget that does not tie to the
+                # cost base is worse than no budget — somebody would adopt it and the project
+                # would be measured against a number that never matched the tender. But it is ONE
+                # panel: letting it 500 the whole summary takes the quotation, the P&L and the
+                # cash flow down with it, which is what happened when an excluded line first made
+                # the two sides disagree.
+                out["budget"] = {"lines": [], "total": 0, "error": str(ex)}
             out["milestones"] = (e.get("milestones") if isinstance(e.get("milestones"), list)
                                  and e.get("milestones") else tender.DEFAULT_MILESTONES)
             out["issue"] = tender.issue_check(e, quote)
@@ -8259,6 +8272,32 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return {}
 
+    def _tender_budget(self, e, ctype):
+        """The cost base of a tender-priced job, in the structure it was priced in.
+
+        Rebuilt from the stored rows rather than from anything cached on the estimate, so the
+        budget is what the tender says TODAY — adopting a baseline off a stale summary is how a
+        project gets funded for a price nobody is quoting any more.
+        """
+        tid = e.get("id")
+        a = tender.assumptions(e.get("assump"))
+        master = rollup = None
+        if ctype == tender.EPC:
+            rollup = tender.bom_rollup(
+                [r for r in db.list_collection("est_bom") if r.get("estId") == tid],
+                a, e.get("bomConfig") or {})
+        elif ctype == tender.SERVICES:
+            rollup = tender.services_rollup(
+                [r for r in db.list_collection("est_wbs") if r.get("estId") == tid],
+                a, e.get("wbsConfig") or {})
+        else:
+            master = tender.cost_master(
+                [r for r in db.list_collection("est_landed") if r.get("estId") == tid],
+                [r for r in db.list_collection("est_local") if r.get("estId") == tid], a)
+        overrides = [r for r in db.list_collection("est_quote") if r.get("estId") == tid]
+        quote = tender.quotation(e, master=master, rollup=rollup, overrides=overrides)
+        return tender.budget_lines(e, quote, master=master, rollup=rollup)
+
     def _est_adopt_ep(self, u, body):
         """Hand a won estimate to a project as its budget.
 
@@ -8288,9 +8327,20 @@ class Handler(BaseHTTPRequestHandler):
         proj = next((p for p in db.list_collection("pm_projects") if p.get("id") == proj_id), None)
         if not proj:
             return self._err("Project not found.", 404)
-        items, res = self._est_rows(est_id)
+        # WHICH ENGINE PRICED IT decides where the budget comes from — but the three refusals
+        # above apply identically, because "a baseline cannot be silently rewritten" is a rule
+        # about baselines, not about how the number was reached. A tender priced as a customs
+        # chain, a bill of materials or a set of work packages used to be able to be won and then
+        # spent against nothing at all: budget_lines existed only for the BoQ path, so two of the
+        # three engines produced a cost that was never once compared with what the job really
+        # cost.
+        ctype = str(e.get("costingType") or "").strip().lower()
         try:
-            budget = estimating.budget_lines(items, res, self._est_markups(e))
+            if ctype in (tender.TRADING, tender.EPC, tender.SERVICES):
+                budget = self._tender_budget(e, ctype)
+            else:
+                items, res = self._est_rows(est_id)
+                budget = estimating.budget_lines(items, res, self._est_markups(e))
         except (ValueError, AssertionError) as ex:
             return self._err(str(ex), 400)
         if not budget["lines"]:
