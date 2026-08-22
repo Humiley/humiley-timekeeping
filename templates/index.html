@@ -25621,6 +25621,22 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Supporting file (PDF / image)', type: 'file' }
     ]
   },
+  eng_standards: {
+    title: 'Code / Standard', coll: 'eng_standards', reload: 'eng_standards', fields: [
+      { k: 'code', label: 'Designation (TCVN 5687, ASHRAE 62.1, EN 1886, QCVN 06)' },
+      { k: 'title', label: 'Title' },
+      { k: 'issuer', label: 'Issuing body', type: 'combo', options: ['TCVN', 'QCVN', 'BXD (Bộ Xây dựng)', 'ISO', 'EN / CEN', 'ASHRAE', 'ASME', 'ASTM', 'IEC', 'IEEE', 'NFPA', 'BS', 'DIN', 'JIS', 'SMACNA', 'AMCA', 'Eurovent', 'Client standard'] },
+      { k: 'edition', label: 'Governing edition / year — the text this design is verified against' },
+      { k: 'obligation', label: 'Force', type: 'select', options: ['Statutory', 'Contractual', 'Client standard', 'Guidance / good practice'] },
+      { k: 'discipline', label: 'Discipline', type: 'select', options: _ENG_DISC_KEYS },
+      { k: 'appliesTo', label: 'What it governs on this commission', type: 'textarea' },
+      { k: 'clauses', label: 'Key clauses relied on' },
+      { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Adopted', 'Superseded', 'Withdrawn'] },
+      { k: 'newerEdition', label: 'A newer edition exists (which)' },
+      { k: 'changeRef', label: 'Change authority (ECN) — required to move the edition once adopted' },
+      { k: 'note', label: 'Notes', type: 'textarea' }
+    ]
+  },
   eng_holds: {
     title: 'Hold / Assumption', coll: 'eng_holds', reload: 'eng_holds', fields: [
       { k: 'kind', label: 'Kind — a HOLD stops an external issue, an ASSUMPTION is carried on the document', type: 'select', options: ['Hold', 'Assumption'] },
@@ -25784,6 +25800,7 @@ const _ENG_TABS = [
   { k: 'overview', label: 'Overview', fn: 'engRenderOverview', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_stages', 'eng_comments', 'eng_changes', 'eng_tq', 'eng_inputs'] },
   { k: 'stages', label: 'Stages & Gates', fn: 'engRenderStages', need: ['eng_projects', 'eng_stages', 'eng_deliverables'] },
   { k: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
+  { k: 'standards', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
@@ -26776,6 +26793,44 @@ function engChangeDecideSave(id) {
 }
 
 /* ============================ 9. Technical queries ============================ */
+function engRenderStandards(pid) {
+  const all = _engScopeFor('eng_standards', pid);
+  const guide = _engGuide('standards', 'Codes and standards — at which edition, and how you prove it',
+    '<p>The question an auditor asks is never "did you follow the code". It is <b>which code, at which edition, and show me the drawings were checked against that text</b>. A design basis that says "designed to TCVN 5687" answers none of it: the 2010 and the 2024 differ, and so does what a reviewer should have been looking for.</p>' +
+    '<p>Adopting an edition here fixes it for the commission. Everything on the MDR is then designed and checked against that text, and the register can say so a year later.</p>' +
+    '<p>A code reissued mid-project is not a typo to correct. Moving an adopted edition is a change to a design input — ISO 9001 8.3.6 — so it is refused unless it carries the change reference that says who looked at what it broke. That refusal is the point of the register.</p>');
+  const adopted = all.filter(x => ['adopted', 'current', 'in force'].indexOf(String(x.status || '').toLowerCase()) >= 0);
+  const statutory = all.filter(x => String(x.obligation || '') === 'Statutory');
+  const stale = adopted.filter(x => String(x.newerEdition || '').trim());
+  const unsigned = adopted.filter(x => !x.adoptedBy);
+  const kpis = _hrKpiRow([
+    _hrKpi('Codes on the commission', all.length),
+    _hrKpi('Adopted', adopted.length, adopted.length ? '#00B060' : '#F59E0B'),
+    _hrKpi('Statutory', statutory.length),
+    _hrKpi('A newer edition exists', stale.length, stale.length ? '#F59E0B' : '#00B060')
+  ]);
+  const specs = [{ k: 'issuer', label: 'Body' }, { k: 'discipline', label: 'Discipline' }, { k: 'obligation', label: 'Force' }, { k: 'status', label: 'Status' }];
+  const bar = _engFiltBar('eng_standards', all, specs), rows = _engFiltApply('eng_standards', all, specs);
+  const forceHex = o => o === 'Statutory' ? '#B91C1C' : (o === 'Contractual' ? '#7C3AED' : (o === 'Client standard' ? '#0369A1' : '#6B7280'));
+  const tbl = _engCard('Codes & Standards Register', 'eng_standards', 'Add a code', bar + _engTable('eng_standards', [
+    { label: 'Designation', sk: 'code', render: r => '<div style="font-weight:700;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--navy)">' + _engEsc(r.code || '—') + '</div><div style="font-size:10.5px;color:var(--text-light);max-width:240px">' + _engEsc(r.title || '') + '</div>' },
+    { label: 'Body', k: 'issuer' },
+    { label: 'Edition', sk: 'edition', render: r => '<span style="font-weight:700;font-variant-numeric:tabular-nums;font-size:12px">' + _engEsc(r.edition || '—') + '</span>' + (String(r.newerEdition || '').trim() ? '<div style="font-size:10px;color:#B45309" title="a newer edition has been published — moving to it needs a change">newer: ' + _engEsc(r.newerEdition) + '</div>' : '') },
+    { label: 'Force', render: r => r.obligation ? _engBadge(r.obligation, forceHex(r.obligation)) : '—' },
+    { label: 'Disc', k: 'discipline' },
+    { label: 'Governs', render: r => '<div style="max-width:250px;font-size:11.5px;color:var(--text-light)">' + _engEsc(String(r.appliesTo || '—').slice(0, 120)) + '</div>' },
+    { label: 'Status', render: r => _engStatusChip(r.status || 'Draft') },
+    { label: 'Adopted by', render: r => r.adoptedBy ? '<div style="font-size:11px">✍ ' + _engEsc(r.adoptedBy) + '</div><div style="font-size:10px;color:var(--text-light)">' + _engFmt(r.adoptedOn) + '</div>' : '<span style="color:var(--text-light);font-size:11px">not adopted</span>' },
+    { label: 'Change', k: 'changeRef' }
+  ], rows, { empty: 'No codes recorded. Until one is, "which edition governs?" is a question about a paragraph in the design basis.', minw: 1100 }));
+  let warn = '';
+  if (stale.length) warn += '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEF3C7;border:1px solid #FDE68A;font-size:12px;color:#92400E">' +
+    '<b>' + stale.length + ' adopted code(s) have a newer edition published.</b> That is not automatically a problem — a commission is designed to the edition in force when it was fixed — but it is a decision somebody should record, and moving to the new text needs a change reference.</div>';
+  if (unsigned.length) warn += '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#EFF6FF;border:1px solid #BFDBFE;font-size:12px;color:#1E3A8A">' +
+    '<b>' + unsigned.length + ' code(s) are marked adopted but nobody has signed the adoption.</b> Sign them from the row, so the register can say who fixed the edition.</div>';
+  return guide + kpis + warn + tbl;
+}
+
 function engRenderHolds(pid) {
   const all = _engScopeFor('eng_holds', pid), delivs = _engScopeFor('eng_deliverables', pid);
   const guide = _engGuide('holds', 'Holds and assumptions — the two things a design carries that nobody agreed to',
@@ -31801,6 +31856,26 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Codes & Standards': 'Quy chuẩn & Tiêu chuẩn',
+  'Codes & Standards Register': 'Sổ đăng ký quy chuẩn & tiêu chuẩn',
+  'Code / Standard': 'Quy chuẩn / Tiêu chuẩn',
+  'Add a code': 'Thêm một quy chuẩn',
+  'Codes on the commission': 'Quy chuẩn áp dụng cho hợp đồng',
+  'Adopted': 'Đã ban hành áp dụng',
+  'Statutory': 'Bắt buộc theo luật',
+  'A newer edition exists': 'Đã có phiên bản mới hơn',
+  'Issuing body': 'Cơ quan ban hành',
+  'Designation': 'Ký hiệu',
+  'Edition': 'Phiên bản / năm',
+  'Force': 'Hiệu lực',
+  'Governs': 'Phạm vi điều chỉnh',
+  'Adopted by': 'Người phê duyệt áp dụng',
+  'not adopted': 'chưa phê duyệt áp dụng',
+  'Key clauses relied on': 'Các điều khoản viện dẫn',
+  'Contractual': 'Theo hợp đồng',
+  'Client standard': 'Tiêu chuẩn của chủ đầu tư',
+  'Guidance / good practice': 'Hướng dẫn / thông lệ tốt',
+  'Withdrawn': 'Đã hủy bỏ',
   'IDC Matrix': 'Ma trận kiểm tra liên bộ môn',
   'Holds & Assumptions': 'Điểm chờ & Giả định',
   'Holds & Assumptions Register': 'Sổ đăng ký điểm chờ & giả định',

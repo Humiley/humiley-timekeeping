@@ -5045,6 +5045,18 @@ class Handler(BaseHTTPRequestHandler):
                         "check on it. Ask the other discipline to check their own interface.")
             return None
 
+        if coll == "eng_standards":
+            if t not in ("adopted", "superseded", "withdrawn"):
+                return None
+            # Which edition of a code governs is a DESIGN INPUT (ISO 9001 8.3.3): it decides what
+            # the output is verified against. Adopting one, or retiring it, is the design
+            # authority's act, not a line anybody can edit into the register.
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("The governing edition of a code is adopted by the Design Manager or Lead "
+                        "Engineer named on the commission — it decides what every deliverable is "
+                        "checked against.")
+            return None
+
         if coll == "eng_holds":
             if t not in ("closed", "confirmed", "superseded", "void"):
                 return None
@@ -6661,6 +6673,10 @@ class Handler(BaseHTTPRequestHandler):
             if coll == "eng_idc" and set_status in ("Clear", "Commented", "Rejected", "Checked"):
                 item["checkedBy"] = signer_name
                 item.setdefault("checkedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_standards" and set_status in ("Adopted", "Superseded", "Withdrawn"):
+                item["adoptedBy" if set_status == "Adopted" else "retiredBy"] = signer_name
+                item.setdefault("adoptedOn" if set_status == "Adopted" else "retiredOn",
+                                time.strftime("%Y-%m-%d"))
             # Closing a hold releases documents for issue, so it is a signed act, not a status edit.
             if coll == "eng_holds" and set_status in ("Closed", "Confirmed", "Superseded", "Void"):
                 item["closedBy"] = signer_name
@@ -8503,9 +8519,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -9691,6 +9707,9 @@ class Handler(BaseHTTPRequestHandler):
             # browser sign an interdisciplinary check nobody performed.
             if name == "eng_idc":
                 for _k in ("checkedBy", "checkedOn"):
+                    item.pop(_k, None)
+            if name == "eng_standards":
+                for _k in ("adoptedBy", "adoptedOn", "retiredBy", "retiredOn"):
                     item.pop(_k, None)
         # A chat message says who said it, so authorship is stamped from the SESSION and the client's
         # version is discarded — setdefault would let a browser claim to be somebody else. Same for the
@@ -15814,6 +15833,27 @@ class Handler(BaseHTTPRequestHandler):
             # appends a reversal rather than deleting, so testing the chain would leave a reversed
             # record frozen for ever. Each register keeps exactly one later fact editable, because
             # that fact is about the document rather than a change to it.
+            # A code revision is not a typo correction. Once an edition has been adopted, every
+            # deliverable on the commission has been designed and checked against THAT text; moving
+            # the register to a newer one silently re-bases the whole design and leaves the drawings
+            # claiming compliance with something nobody verified. ISO 9001 8.3.6 calls that a change
+            # to a design input, and it wants the review, the authorisation and the record. So the
+            # edition may still move — codes really are reissued mid-project — but only carrying the
+            # change reference that says who looked at what it broke.
+            if name == "eng_standards" and existing:
+                _was = str(existing.get("edition") or "").strip()
+                _now = str(item.get("edition") or "").strip()
+                _adopted = str(existing.get("status") or "").strip().lower() in (
+                    "adopted", "current", "in force")
+                if _was and _now and _was != _now and _adopted \
+                        and not str(item.get("changeRef") or "").strip():
+                    return self._err(
+                        "%s is adopted on this commission at %s, and every deliverable has been "
+                        "checked against that edition. Moving it to %s is a change to a design "
+                        "input: raise an engineering change and put its reference in "
+                        "'Change authority' on this record. The edition is not a field to correct "
+                        "quietly." % (existing.get("code") or "This standard", _was, _now), 409)
+
             _frozen_by = {"eng_revisions": "issuedBy", "eng_stages": "gateSignedBy",
                           "eng_changes": "decidedBy", "eng_transmittals": "issuedBy"}
             if name in _frozen_by and existing and existing.get(_frozen_by[name]) \
