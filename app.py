@@ -7108,12 +7108,26 @@ class Handler(BaseHTTPRequestHandler):
         # absent project never blocks a check-in, it just leaves the day unattributed in the cost
         # report. Somebody standing at a site gate at 06:00 must always be able to clock in.
         _proj = str((body or {}).get("project") or "").strip()[:64] or None
-        rid = db.clock_in(emp_id, date, t, loc=loc, lat=lat, lon=lon, status=status, project=_proj)
+        # A punch the app could see was NOT at the site the worker picked has to say why. The
+        # client blocks the plain Check In in that case and offers a reason box instead, but a
+        # client-side block is a courtesy, not a control — the rule lives here, where the row is
+        # actually written. The test is the STAMP, the same three-state label every other screen
+        # reads (see _attGpsState): if it says away-from-site, a reason is required.
+        # Deliberately NOT applied to "GPS unverified": that means the app could not tell, which
+        # is a fact about the signal and not about the person, and demanding an explanation for it
+        # would put the burden on whoever has the worst phone.
+        _away = str((body or {}).get("awayReason") or "").replace("<", "").replace(">", "").strip()[:300]
+        if re.search(r"away from site|out of zone", loc, re.I) and len(_away) < 4:
+            return self._err("You are not at the site you selected. Say briefly where you are "
+                             "working, and the check-in will be recorded with that note.")
+        rid = db.clock_in(emp_id, date, t, loc=loc, lat=lat, lon=lon, status=status, project=_proj,
+                          away_reason=(_away or None))
         if rid is None:
             return self._err("Already checked in today.")   # atomic double-tap guard (unique index)
         db.put_collection_item("audit", {"actor": u.get("name"), "actorId": emp_id,
             "action": "Check-in", "target": "attendance/" + str(rid),
-            "detail": date + " " + t + " · " + status, "ts": self._utc_now()})
+            "detail": date + " " + t + " · " + status
+                      + (" · away from site: " + _away if _away else ""), "ts": self._utc_now()})
         return self._json({"ok": True, "id": rid, "status": status})
 
     def _checkout(self, u, body):
