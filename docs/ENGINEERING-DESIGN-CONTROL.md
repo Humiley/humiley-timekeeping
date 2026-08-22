@@ -350,6 +350,29 @@ Two refusals keep the record honest:
 Transmittals issued for information ask for nothing and close freely — most do, and making those a
 fight would empty the register.
 
+## Effort and earned value
+
+The MDR already carried a weight and a rule-of-credit status per deliverable — that is earned
+value. Nothing recorded the hours that bought it, so the two halves never met and the only answer
+to "are we over?" was somebody's feel for it. `eng_timelogs` books design hours against a
+deliverable, and the **Effort & Earned Value** tab puts them together.
+
+**SPI** is earned over planned: a ratio of weight to weight, so it is honest whatever the weights
+mean.
+
+**CPI** is earned over hours spent — and that is a cost index *only if the weights are hours*. A
+weight of 40 might be forty manhours or forty points of relative size, and dividing points by hours
+produces a confident number that means nothing. So the commission declares its weight unit, and
+until it does the screen reports **Not measured** with the reason rather than showing an index. Same
+for a CPI that would be infinite (nothing booked) or zero (nothing earned).
+
+Planned value **steps** at the planned issue date. Nothing pretends to know the shape of the curve
+in between; a smooth S-curve nobody agreed to is a number nobody can check.
+
+Two things it surfaces that a total would hide: hours booked to the commission but to no
+deliverable — they count as cost and earn nothing — and deliverables that have spent well past what
+they have earned and are not finished yet.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value

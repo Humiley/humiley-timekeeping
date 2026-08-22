@@ -164,6 +164,10 @@ jobs:
       - name: Drawing register check
         run: node tests/eng_register_check.js
 
+      # Earned value, and the unit trap it refuses rather than obliges.
+      - name: Design earned value
+        run: node tests/eng_earned_value.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops
