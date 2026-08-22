@@ -161,6 +161,42 @@ one. Worth doing after the internal items, deliberately.
 | 6 | Live push for the board | **Built.** `/api/ahu/changes`, long poll; ~0.5 s to redraw |
 | 7 | Document reconciliation | **Open — not code.** Needs the SOP owner, see item 7 above |
 
+## Added after the roadmap: the evidence registers
+
+Three questions the module could not answer, found by checking the code rather than by working
+through this list. They are on the **Quality Evidence** screen.
+
+**What measured the number.** Every test carries a Part 11 signature attesting to a figure, and
+nothing recorded which instrument produced it — `grep -i calibrat` across the AHU modules returned
+two hits, both in comments. `ahu_calibration.py` + `ahu_instruments`. A test signed against a named
+instrument that is expired, or that matches nothing in the register, is **refused**: not a
+specification choice about what passes, but whether the evidence is evidence. Naming no instrument
+at all refuses only under `ahu_require_instrument` (default off). `affected_steps()` answers what a
+failed calibration actually asks — which measurements did this thing produce after it went out —
+instead of forcing a blanket re-test.
+
+**Who signed it.** `ahu_competence.py` + `ahu_quals`. Authority is whether you are the person named
+on the unit; competence is whether you are trained and currently certified for what you signed.
+ISO 9001 clause 7.2. Default off, same graduated switch.
+
+**Which units got a part.** `ahu_recall.py`. `ahu_trace` could always say what is inside a unit but
+not which units received batch B-2026-14, and that is the only direction that matters when a
+supplier reports a fault.
+
+Also: `ahu_complaints` gives the eighth SOP KPI a source (a rate over **delivered** units);
+EN ISO 12944 corrosivity on the unit; the spare parts list and name plate on the dossier as
+conditional entries.
+
+### Still open
+
+* Nobody has entered a real instrument or qualification yet. The screen is empty until they do, and
+  that data entry is what makes any of it real.
+* `ahu_weekly_capacity_h` is unset in production, so the load chart reports hours with no verdict.
+* Promoting the name plate to an unconditional G6 criterion, and switching on either evidence rule,
+  are the QA/QC Manager's decisions — one-line changes each.
+
+---
+
 ### Why item 5 stopped where it did
 
 The Procurement application is a separate git repository, `.gitignore`d from this one, with its own
