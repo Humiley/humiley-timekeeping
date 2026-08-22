@@ -7129,20 +7129,57 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
     @staticmethod
+    def _grace_for(schedule_name, default=15):
+        """The grace minutes the schedule ACTUALLY carries, instead of a constant.
+
+        The Work Schedules form has a "Late Grace Period (min)" field, saveSchedule persists it as
+        `grace` on the schedule record, the register prints it in its own column, and the seeded
+        office pattern ships 30. Nothing ever read it: the threshold below added a hardcoded 15, so
+        an administrator who set 30 minutes' grace still had somebody arriving 08:16 stamped `late`
+        in the attendance register — a wrong fact about a named person, in the record kept under
+        Decree 145/2020 and disciplined from on Manager -> Late Arrivals.
+
+        Resolved by NAME against the schedules collection, the same way _rest_weekdays_for does:
+        employee.schedule holds the pattern's NAME, never the pattern. Matching the name itself
+        against the field is the bug that function documents.
+
+        15 stays the fallback when no schedule matches or the value is unusable — that is what every
+        existing record was judged by, and moving it silently would rewrite what history means.
+        """
+        name = str(schedule_name or "").strip()
+        if not name:
+            return default
+        try:
+            for row in db.list_collection("schedules"):
+                if str(row.get("name") or "").strip().lower() == name.lower():
+                    g = row.get("grace")
+                    if g is None or str(g).strip() == "":
+                        return default
+                    g = int(float(g))
+                    # Negative grace would make people late before their shift begins; an absurd one
+                    # would make lateness unreportable. Both are input errors, not policies.
+                    return g if 0 <= g <= 240 else default
+        except Exception:
+            pass
+        return default
+
+    @staticmethod
     def _late_threshold(schedule):
-        """Work schedules are ADVISORY: they set the lateness expectation (shift start
-        + 15 min grace) and NEVER block a check-in. Flexible/WFH staff are never late;
-        employees without an assigned schedule fall back to the standard 08:00 + grace."""
+        """Work schedules are ADVISORY: they set the lateness expectation (shift start + the grace
+        that schedule carries) and NEVER block a check-in. Flexible/WFH staff are never late;
+        employees without an assigned schedule fall back to the standard 08:00 + default grace."""
         s = (schedule or "").strip()
-        if not s:
-            return "08:15"
+        grace = Handler._grace_for(s)
+        if not s or ("flex" not in s.lower() and "wfh" not in s.lower() and not re.search(r"(\d{1,2}):(\d{2})", s)):
+            hh, mm = 8, grace
+            while mm >= 60:
+                hh, mm = hh + 1, mm - 60
+            return "%02d:%02d" % (hh % 24, mm)
         if "flex" in s.lower() or "wfh" in s.lower():
             return None
         m = re.search(r"(\d{1,2}):(\d{2})", s)
-        if not m:
-            return "08:15"
-        hh, mm = int(m.group(1)), int(m.group(2)) + 15
-        if mm >= 60:
+        hh, mm = int(m.group(1)), int(m.group(2)) + grace
+        while mm >= 60:
             hh, mm = hh + 1, mm - 60
         return "%02d:%02d" % (hh % 24, mm)
 
