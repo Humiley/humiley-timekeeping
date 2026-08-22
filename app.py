@@ -5207,6 +5207,45 @@ class Handler(BaseHTTPRequestHandler):
             if not (is_mgr or self._eng_is_lead(u, proj)):
                 return ("A stage gate is decided by the Design Manager or Lead Engineer named on "
                         "the commission.")
+            # A gate criterion used to be a sentence somebody ticked. Every register added since
+            # can answer some of them as fact, and a clean PASS asserts those facts are true. Where
+            # the register says otherwise the gate is not clean — but "Passed with actions" exists
+            # precisely for a gate that goes through carrying known work, so this refuses only the
+            # unqualified pass and names what is in the way. A gate that cannot be passed at all
+            # would be worked around by not recording the gate.
+            if t == "passed":
+                _blockers = []
+                _holds = [h for h in db.list_collection("eng_holds")
+                          if self._eng_project_of(h) == proj
+                          and str(h.get("kind") or "hold").strip().lower() == "hold"
+                          and str(h.get("status") or "open").strip().lower() in ("open", "raised")]
+                if _holds:
+                    _blockers.append("%d open HOLD(s): %s" % (
+                        len(_holds), ", ".join(str(h.get("ref") or h.get("title") or "?")
+                                               for h in _holds[:4])))
+                _devs = [d for d in db.list_collection("eng_deviations")
+                         if self._eng_project_of(d) == proj
+                         and str(d.get("decision") or "").strip().lower() not in
+                             ("approved", "rejected", "withdrawn", "closed")]
+                if _devs:
+                    _blockers.append("%d departure(s) from an adopted standard still to be agreed: %s" % (
+                        len(_devs), ", ".join(str(d.get("ref") or d.get("title") or "?")
+                                              for d in _devs[:4])))
+                _risks = [r for r in db.list_collection("eng_risks")
+                          if self._eng_project_of(r) == proj
+                          and str(r.get("status") or "").strip().lower() in
+                              ("transferred", "transfer to others", "residual")
+                          and not str(r.get("informedBy") or "").strip()]
+                if _risks:
+                    _blockers.append("%d residual risk(s) passed on with no record of who was told: %s" % (
+                        len(_risks), ", ".join(str(r.get("ref") or r.get("hazard") or "?")
+                                               for r in _risks[:4])))
+                if _blockers:
+                    return ("This gate cannot be passed clean while the registers say otherwise — "
+                            + "; ".join(_blockers) + ". Close them, or sign the gate as 'Passed "
+                            "with actions' and record what is being carried forward. A gate that "
+                            "says everything is done when the register says it is not is the "
+                            "document nobody can rely on afterwards.")
             return None
 
         if coll == "eng_changes":

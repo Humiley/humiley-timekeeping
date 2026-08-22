@@ -395,6 +395,27 @@ why the refusal offers both exits.
 The Change Control tab totals what is unrecovered: each change looks handled on its own row, and
 the sum is the only place the money shows.
 
+## Gate readiness — the criteria the registers can answer
+
+Gate criteria were sentences somebody ticked. Every register added since can answer some of them as
+fact, and a clean **Passed** asserts those facts are true.
+
+Three are checked by the server when the gate is signed, because they carry liability:
+
+- no open **HOLDs** on the commission,
+- every **departure** from an adopted standard agreed,
+- every **residual risk** passed on has a record of who was told.
+
+An unqualified pass over any of those is refused, and the refusal names them. **Passed with
+actions** stays open — that status exists precisely for a gate that goes through carrying known
+work, and a gate that could not be passed at all would be worked around by not recording the gate.
+Held and Failed are never blocked.
+
+The Stages tab shows the fuller picture before anybody signs: those three, plus open client
+comments, unanswered technical queries, transmittals still waiting on a response, and whether any
+code has been adopted at all. The ones a screen cannot decide are marked **judgement — not
+enforced** rather than quietly ticked.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value
