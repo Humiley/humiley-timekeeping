@@ -25932,6 +25932,7 @@ const _ENG_TABS = [
   { k: 'risks', label: 'Design Risk', fn: 'engRenderRisks', need: ['eng_projects', 'eng_risks', 'eng_deliverables'] },
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
+  { k: 'check', label: 'Register Check', fn: 'engRenderCheck', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
   { k: 'idc', label: 'IDC Matrix', fn: 'engRenderIdc', need: ['eng_projects', 'eng_idc', 'eng_deliverables'] },
   { k: 'holds', label: 'Holds & Assumptions', fn: 'engRenderHolds', need: ['eng_projects', 'eng_holds', 'eng_deliverables'] },
@@ -26929,6 +26930,199 @@ function _engRiskChip(n) {
   const bg = n >= 15 ? '#FEE2E2' : (n >= 8 ? '#FEF3C7' : (n >= 4 ? '#E0F2FE' : '#D1FAE5'));
   return '<span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:' + bg + ';color:' + hex + ';font-variant-numeric:tabular-nums">' + n + '</span>';
 }
+/* ── ENG REGISTER CHECK ─────────────────────────────────────────────────────────────────────
+   Auto-checking the register the auto-numbering produced.
+
+   Numbers and revision codes are generated for you, but only when somebody uses the generator. A
+   register accumulates drawings typed in by hand, imported from a client, renumbered mid-project
+   and superseded out of sequence — and none of that announces itself. A drawing office finds out
+   when two drawings share a number on site, or when the revision on the wall is not the revision
+   in the register.
+
+   Pure function, no DOM, no globals beyond the code tables: give it a commission and its rows and
+   it returns findings. That is what makes it testable — tests/eng_register_check.js runs the same
+   code that ships. */
+const _ENG_CHK_SEV = { error: { hex: '#B91C1C', bg: '#FEE2E2', label: 'Must fix' },
+                       warn: { hex: '#B45309', bg: '#FEF3C7', label: 'Should look at' },
+                       info: { hex: '#0369A1', bg: '#E0F2FE', label: 'For information' } };
+
+function _engCheckRegister(project, delivs, revs) {
+  const out = [];
+  const add = (sev, code, subject, msg, fix) => out.push({ sev: sev, code: code, subject: subject, msg: msg, fix: fix || '' });
+  delivs = (delivs || []).slice();
+  revs = (revs || []).slice();
+  const fmt = _engNumFmt(project);
+  const prj = _engPrjCode(project);
+  const scheme = (project && project.revScheme) || 'ISO 19650 (P01 / C01)';
+  const sepCount = (fmt.match(/-/g) || []).length;
+
+  /* ---- the numbers ---- */
+  const seen = {};
+  delivs.forEach(d => {
+    const no = String(d.docNo || '').trim();
+    const who = no || ('"' + (d.title || 'untitled') + '"');
+    if (!no) {
+      add('error', 'NO-NUMBER', who, 'This deliverable has no document number.',
+          'Open it and leave the number blank to have one generated, or type the client\'s.');
+      return;
+    }
+    (seen[no.toUpperCase()] = seen[no.toUpperCase()] || []).push(d);
+
+    const parts = no.split('-');
+    if (parts.length !== sepCount + 1) {
+      add('error', 'SHAPE', who,
+          'The number has ' + parts.length + ' parts; the commission\'s format ' + fmt + ' has ' + (sepCount + 1) + '.',
+          'Either renumber it, or record on the commission that this register uses another format.');
+    }
+    if (parts.length > 1 && parts[0].toUpperCase() !== prj.toUpperCase()) {
+      add('warn', 'PRJ-CODE', who,
+          'Starts with "' + parts[0] + '" but the commission code is "' + prj + '".',
+          'Client-supplied drawings often keep their own prefix — confirm that is what this is.');
+    }
+    const dc = _engDiscCode(d.discipline);
+    if (dc && parts.length > 2 && parts.indexOf(dc) < 0) {
+      add('warn', 'DISC-CODE', who,
+          'Recorded as ' + d.discipline + ' (' + dc + ') but the number does not contain "' + dc + '".',
+          'One of the two is wrong: the number, or the discipline on the record.');
+    }
+    const tc = _engTypeCode(d.docType);
+    if (tc && parts.length > 2 && parts.indexOf(tc) < 0) {
+      add('warn', 'TYPE-CODE', who,
+          'Recorded as ' + d.docType + ' (' + tc + ') but the number does not contain "' + tc + '".',
+          'A P&ID numbered as a general arrangement is found by nobody.');
+    }
+  });
+  Object.keys(seen).forEach(k => {
+    if (seen[k].length > 1) {
+      add('error', 'DUPLICATE', k,
+          seen[k].length + ' deliverables share this number: ' + seen[k].map(d => '"' + (d.title || '?') + '"').join(', ') + '.',
+          'Two drawings with one number is the failure this register exists to prevent. Renumber all but one.');
+    }
+  });
+
+  /* ---- the revisions ---- */
+  const byDeliv = {};
+  revs.forEach(r => { (byDeliv[r.deliverableId] = byDeliv[r.deliverableId] || []).push(r); });
+  const isoRev = /^([PC])(\d{2,})$/i;
+  const numRev = /^(\d+)$/;
+  const alphaRev = /^([A-Z])$/i;
+  const external = ['IFA', 'IFC', 'IFT', 'IFP', 'AB'];
+
+  delivs.forEach(d => {
+    const rs = (byDeliv[d.id] || []).slice();
+    const who = String(d.docNo || d.title || '?');
+    if (!rs.length) {
+      add('info', 'NO-REV', who, 'No revision has been raised against this deliverable.',
+          'Until one is, the register cannot say what was issued or when.');
+      return;
+    }
+    const codes = {};
+    rs.forEach(r => {
+      const code = String(r.rev || '').trim();
+      if (!code) {
+        add('error', 'REV-BLANK', who, 'A revision row has no revision code.', 'Give it one, or delete the row.');
+        return;
+      }
+      (codes[code.toUpperCase()] = codes[code.toUpperCase()] || []).push(r);
+      const okIso = isoRev.test(code), okNum = numRev.test(code), okAlpha = alphaRev.test(code);
+      const fits = scheme.indexOf('ISO') === 0 ? okIso : (scheme.indexOf('Numeric') === 0 ? okNum : okAlpha);
+      if (!fits) {
+        add('warn', 'REV-SCHEME', who + ' rev ' + code,
+            'Does not fit the commission\'s scheme (' + scheme + ').',
+            'Client drawings often arrive on their own scheme — confirm, then leave it.');
+      }
+      const iss = String(r.issueStatus || '').toUpperCase();
+      const isExternal = external.indexOf(iss) >= 0;
+      const m = code.match(isoRev);
+      if (scheme.indexOf('ISO') === 0 && m) {
+        if (isExternal && m[1].toUpperCase() === 'P') {
+          add('error', 'REV-PRELIM-EXTERNAL', who + ' rev ' + code,
+              'Issued as ' + iss + ' on a preliminary code. ISO 19650 runs P__ while a container is preliminary and C__ once it is contractual.',
+              'Reissue as the next C revision — an IFC on a P code tells the site it is not the real thing.');
+        }
+        if (!isExternal && iss && m[1].toUpperCase() === 'C') {
+          add('warn', 'REV-CONTRACTUAL-INTERNAL', who + ' rev ' + code,
+              'A contractual code (' + code + ') used for an internal issue (' + iss + ').',
+              'Not wrong, but it spends a contractual number on a check print.');
+        }
+      }
+      if (String(r.status || '').toLowerCase() === 'issued' || r.issuedBy) {
+        if (!String(r.reasonForIssue || '').trim()) {
+          add('warn', 'NO-REASON', who + ' rev ' + code,
+              'Issued with no reason for issue recorded.',
+              'ASME Y14.35 makes the description of change non-optional — it is the field a reader needs a year later.');
+        }
+        if (!r.attachment && !r.file && !r.fileName) {
+          add('warn', 'NO-FILE', who + ' rev ' + code,
+              'Issued, but no file is attached to the revision.',
+              'The register says this went out; it cannot show what went out.');
+        }
+      }
+    });
+    Object.keys(codes).forEach(c => {
+      if (codes[c].length > 1) {
+        add('error', 'REV-DUPLICATE', who + ' rev ' + c,
+            'The same revision code appears ' + codes[c].length + ' times on this deliverable.',
+            'A revision code identifies one issue. Renumber the later one.');
+      }
+    });
+    const live = rs.filter(r => (String(r.status || '').toLowerCase() === 'issued' || r.issuedBy)
+                             && String(r.status || '').toLowerCase() !== 'superseded'
+                             && String(r.status || '').toLowerCase() !== 'void');
+    if (live.length > 1) {
+      add('error', 'TWO-CURRENT', who,
+          live.length + ' revisions are issued and none of the earlier ones is marked superseded (' +
+          live.map(r => r.rev).join(', ') + ').',
+          'Only one revision of a drawing is current. Mark the earlier ones superseded.');
+    }
+  });
+
+  const orphan = revs.filter(r => !delivs.some(d => d.id === r.deliverableId));
+  if (orphan.length) {
+    add('error', 'ORPHAN-REV', orphan.length + ' revision(s)',
+        'These revisions point at a deliverable that is not in this register.',
+        'The deliverable was deleted, or they were filed against the wrong commission.');
+  }
+  return out;
+}
+/* ── END ENG REGISTER CHECK ── */
+
+function engRenderCheck(pid) {
+  const proj = _engProj(pid), delivs = _engScopeFor('eng_deliverables', pid), revs = _engScopeFor('eng_revisions', pid);
+  const guide = _engGuide('check', 'Register check — the numbers and revisions, audited against the scheme',
+    '<p>The numbers and revision codes are generated for you, but only when somebody uses the generator. Registers accumulate drawings typed in by hand, imported from a client, renumbered mid-project and superseded out of sequence — and none of that announces itself. A drawing office finds out when two drawings share a number on site, or when the revision on the wall is not the revision in the register.</p>' +
+    '<p>This reads the whole commission and says what does not line up: numbers that do not fit the format, two drawings on one number, a discipline that is not in its own number, an IFC issued on a preliminary code, the same revision twice, two revisions current at once, an issue with no reason or no file.</p>' +
+    '<p><b>Warnings are not failures.</b> A client\'s drawings keep the client\'s prefix, and a drawing with no revision yet is simply new. The list separates what must be fixed from what is worth a look.</p>');
+  const f = _engCheckRegister(proj, delivs, revs);
+  const bySev = { error: f.filter(x => x.sev === 'error'), warn: f.filter(x => x.sev === 'warn'), info: f.filter(x => x.sev === 'info') };
+  const kpis = _hrKpiRow([
+    _hrKpi('Deliverables checked', delivs.length),
+    _hrKpi('Revisions checked', revs.length),
+    _hrKpi('Must fix', bySev.error.length, bySev.error.length ? '#EF4444' : '#00B060'),
+    _hrKpi('Worth a look', bySev.warn.length, bySev.warn.length ? '#F59E0B' : '#00B060')
+  ]);
+  if (!f.length) {
+    return guide + kpis + '<div class="card" style="padding:26px;text-align:center">' +
+      '<div style="font-size:15px;font-weight:600;color:#047857">Every number and revision in this register fits the scheme.</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);margin-top:6px">' + delivs.length + ' deliverable(s), ' + revs.length + ' revision(s) checked against ' + _engEsc(_engNumFmt(proj)) + ' and ' + _engEsc((proj && proj.revScheme) || 'ISO 19650 (P01 / C01)') + '.</div></div>';
+  }
+  let body = '';
+  ['error', 'warn', 'info'].forEach(sev => {
+    const rows = bySev[sev]; if (!rows.length) return;
+    const st = _ENG_CHK_SEV[sev];
+    body += '<div style="margin:14px 0 6px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:' + st.hex + '">' + st.label + ' — ' + rows.length + '</div>';
+    body += '<div class="table-wrap"><table style="min-width:860px"><thead><tr>' +
+      ['Subject', 'What is wrong', 'What to do', ''].map(h => '<th style="text-align:left">' + h + '</th>').join('') + '</tr></thead><tbody>' +
+      rows.map(r => '<tr>' +
+        '<td style="white-space:nowrap;font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:600">' + _engEsc(r.subject) + '</td>' +
+        '<td style="font-size:12px;max-width:340px">' + _engEsc(r.msg) + '</td>' +
+        '<td style="font-size:11.5px;color:var(--text-light);max-width:320px">' + _engEsc(r.fix) + '</td>' +
+        '<td><span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:' + st.bg + ';color:' + st.hex + ';white-space:nowrap">' + _engEsc(r.code) + '</span></td>' +
+        '</tr>').join('') + '</tbody></table></div>';
+  });
+  return guide + kpis + '<div class="card" style="padding:16px">' + body + '</div>';
+}
+
 function engRenderRisks(pid) {
   const all = _engScopeFor('eng_risks', pid), delivs = _engScopeFor('eng_deliverables', pid);
   const guide = _engGuide('risks', 'Design risk and safety in design — what the design did, and who was told what it could not fix',
@@ -32377,6 +32571,14 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Register Check': 'Kiểm tra sổ đăng ký',
+  'Deliverables checked': 'Số tài liệu đã kiểm',
+  'Revisions checked': 'Số bản sửa đổi đã kiểm',
+  'Must fix': 'Phải sửa',
+  'Worth a look': 'Nên xem lại',
+  'For information': 'Để tham khảo',
+  'What is wrong': 'Vấn đề',
+  'What to do': 'Cần làm gì',
   'Design Risk': 'Rủi ro thiết kế',
   'Design Risk Register': 'Sổ đăng ký rủi ro thiết kế',
   'Design risk': 'Rủi ro thiết kế',

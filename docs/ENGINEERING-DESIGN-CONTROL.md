@@ -299,6 +299,35 @@ only if it records which of those actually happened.
 
 An open risk blocks nothing — it is still being worked. Only one being passed on needs the telling.
 
+## Register check — auditing the numbers and revisions
+
+Document numbers and revision codes are generated for you, but only when somebody uses the
+generator. A register accumulates drawings typed in by hand, imported from a client, renumbered
+mid-project and superseded out of sequence, and none of that announces itself. A drawing office
+finds out when two drawings share a number on site, or when the revision on the wall is not the
+revision in the register.
+
+The **Register Check** tab reads the whole commission and reports what does not line up:
+
+| | |
+|---|---|
+| `DUPLICATE` | two deliverables on one number |
+| `NO-NUMBER` / `SHAPE` | missing, or not the commission's format |
+| `DISC-CODE` / `TYPE-CODE` | the discipline or type is not in its own number |
+| `REV-PRELIM-EXTERNAL` | an IFC issued on a `P` code — ISO 19650 runs `P__` while preliminary, `C__` once contractual |
+| `REV-DUPLICATE` | the same revision code twice on one drawing |
+| `TWO-CURRENT` | two revisions issued with neither superseded |
+| `NO-REASON` / `NO-FILE` | issued with no description of change, or nothing attached |
+| `ORPHAN-REV` | a revision pointing at a deliverable that is not in the register |
+
+**Warnings are not failures.** A client's drawings keep the client's prefix; a drawing with no
+revision yet is simply new. The list separates what must be fixed from what is worth a look, and
+every finding says what to do about it.
+
+`_engCheckRegister` is a pure function — no DOM, no globals beyond the code tables — so
+`tests/eng_register_check.js` runs **the code that ships** rather than a copy that would keep
+passing after the real thing drifted. CI runs it on every PR.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value

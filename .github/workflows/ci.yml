@@ -160,6 +160,10 @@ jobs:
       - name: Vietnamese dictionary has no duplicate keys
         run: node tests/vi_duplicate_keys.js
 
+      # The drawing register's own self-check, run against the shipped code rather than a copy.
+      - name: Drawing register check
+        run: node tests/eng_register_check.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops
