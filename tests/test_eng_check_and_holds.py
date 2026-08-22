@@ -172,3 +172,18 @@ def test_an_idc_signature_cannot_be_forged_by_a_post(api, tokens, commission):
         "checkedOn": "2020-01-01", "signatures": [{"name": "Forged"}]})
     assert not entry.get("checkedBy"), "a browser must not be able to name the checker"
     assert not entry.get("signatures")
+
+
+def test_the_mdr_hold_flag_now_blocks_too(api, tokens, commission):
+    """The deliverable carried an `hold = Yes` flag that displayed a chip and blocked nothing.
+
+    Two places to record the same fact, one of which silently offered no protection, is worse than
+    either alone: whichever an engineer reaches for, they believe they are covered.
+    """
+    d = _deliv(api, tokens, commission, "CHK26-EL-DWG-012",
+               hold="Yes", holdReason="Awaiting client decision on the riser route")
+    rev = _rev(api, tokens, commission, d, checkedBy="Carol Checker")
+    st, b = _sign(api, tokens["staff"], "eng_revisions", rev["id"], "Issued")
+    assert st != 200, "a deliverable flagged On hold in the MDR was issued for construction"
+    assert "hold" in str(b).lower()
+    assert "riser route" in str(b), "the refusal should carry the reason already recorded"

@@ -25401,6 +25401,14 @@ function _engDerive(coll, data, editId) {
     // is always blank when a register is filled in in a hurry. Not enforced here — a save that
     // silently rewrites the user's input is worse — but derived so the register can show it missing.
     data.revDate = data.revDate || _engToday();
+    // The stage belongs to the ISSUE, not to the document. The same GA goes out at Basic and again
+    // at Detail, and "which of these did the client approve at Basic?" is a question about a
+    // revision — it cannot be answered from a single `stage` on the deliverable, which the next
+    // stage overwrites. Defaulted from the deliverable so nobody types it twice; overridable.
+    if (!String(data.stage || '').trim() && data.deliverableId) {
+      const _d = (_HR['eng_deliverables'] || []).filter(x => x.id === data.deliverableId)[0];
+      if (_d && _d.stage) data.stage = _d.stage;
+    }
   }
   if (coll === 'eng_comments') {
     const c = _engCCode(data.code);
@@ -25535,6 +25543,7 @@ Object.assign(_QA_SPECS, {
       { k: 'deliverableId', label: 'Deliverable', type: 'ref', src: 'eng_deliverables', blank: '— choose the document —' },
       { k: 'rev', label: 'Revision (blank = next in scheme)' },
       { k: 'revDate', label: 'Revision date', type: 'date' },
+      { k: 'stage', label: 'Stage this issue belongs to', type: 'select', options: _ENG_STAGE_KEYS },
       { k: 'issueStatus', label: 'Issue status', type: 'select', options: _ENG_ISSUE.map(x => x.k) },
       { k: 'suitability', label: 'Suitability (ISO 19650)', type: 'select', options: [''].concat(_ENG_SUIT.map(x => x.k)) },
       { k: 'reasonForIssue', label: 'Reason for issue / description of change', type: 'textarea' },
@@ -26313,6 +26322,7 @@ function _engRevRow(rev, deliv) {
   const void_ = String(rev.status || '') === 'Void';
   return '<tr style="' + (superseded || void_ ? 'opacity:.55;' : '') + '">' +
     '<td><b style="font-family:monospace;font-size:12px;color:' + (void_ ? '#EF4444' : iss.hex) + '">' + _engEsc(rev.rev || '—') + '</b>' + (superseded ? '<div style="font-size:9.5px;color:var(--text-light)">superseded</div>' : void_ ? '<div style="font-size:9.5px;color:#EF4444;font-weight:700">VOID</div>' : '') + '</td>' +
+    '<td style="white-space:nowrap">' + (function () { const _st = rev.stage || (deliv && deliv.stage); if (!_st) return '<span style="color:var(--text-light);font-size:11px">—</span>'; const _s = _engStage(_st); return _engBadge(_s.short, _s.hex) + (rev.stage ? '' : '<span title="taken from the deliverable — this issue predates per-revision stages" style="font-size:9px;color:var(--text-light)"> ~</span>'); })() + '</td>' +
     '<td style="white-space:nowrap;font-size:11.5px">' + _engFmt(rev.revDate) + '</td>' +
     '<td>' + _engBadge(rev.issueStatus || 'Draft', iss.hex) + (suit ? ' <span title="' + _tkEscA(suit.label) + '" style="font-size:9.5px;font-weight:700;color:' + suit.hex + '">' + _engEsc(suit.k) + '</span>' : '') + '</td>' +
     '<td style="max-width:280px"><div style="font-size:12px">' + _engEsc(rev.reasonForIssue || '<no reason recorded>') + '</div>' + (rev.changedAreas ? '<div style="font-size:10.5px;color:var(--text-light)">Changed: ' + _engEsc(rev.changedAreas) + '</div>' : '') + (rev.ecnRef ? '<div style="font-size:10.5px;color:#8B5CF6;font-weight:600">ECN ' + _engEsc(rev.ecnRef) + '</div>' : '') + '</td>' +
@@ -26323,9 +26333,9 @@ function _engRevRow(rev, deliv) {
 }
 function _engRevTable(deliv) {
   const revs = _engRevsOf(deliv.id);
-  const head = ['Rev', 'Date', 'Issue', 'Reason for issue / description of change', 'Prep / Chk', 'Issued by', 'File', ''].map(h => '<th style="text-align:left">' + h + '</th>').join('');
+  const head = ['Rev', 'Stage', 'Date', 'Issue', 'Reason for issue / description of change', 'Prep / Chk', 'Issued by', 'File', ''].map(h => '<th style="text-align:left">' + h + '</th>').join('');
   const body = revs.length ? revs.map(r => _engRevRow(r, deliv)).join('')
-    : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:14px">No revisions yet — add the first one to start the issue history.</td></tr>';
+    : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:14px">No revisions yet — add the first one to start the issue history.</td></tr>';
   return '<div class="table-wrap"><table style="min-width:900px"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
 }
 function engRevPanel(deliverableId) {

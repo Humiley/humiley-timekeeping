@@ -5005,6 +5005,17 @@ class Handler(BaseHTTPRequestHandler):
                 # document somebody will build from — that is the assumption-that-shipped, which is
                 # the classic way a design consultancy inherits a liability it never priced.
                 # Assumptions do NOT block: they are declared, listed and carried on the document.
+                # The MDR already had a hold flag on the deliverable — a chip in the register that
+                # displayed and blocked nothing. Leaving it beside a register that DOES block would
+                # be two places to record the same fact, one of which quietly offers no protection:
+                # whichever an engineer reaches for, they would believe they were covered. Both are
+                # honoured here, so the flag now means what its name always implied.
+                _dhold = str(deliv.get("hold") or "").strip().lower() in ("yes", "true", "on hold")
+                if _dhold:
+                    return ("This deliverable is flagged On hold in the register%s. Clear the hold "
+                            "or issue it internally (IFR)." %
+                            (" — " + str(deliv.get("holdReason")).strip()
+                             if str(deliv.get("holdReason") or "").strip() else ""))
                 _open = [h for h in db.list_collection("eng_holds")
                          if str(h.get("kind") or "hold").strip().lower() == "hold"
                          and str(h.get("status") or "open").strip().lower() in ("open", "raised")
