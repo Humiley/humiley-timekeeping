@@ -16272,6 +16272,25 @@ function tkQuickAdd(type, id, seed) {
     toast(_t('That record is still loading — please try again in a moment.'), 'warn');
     return;
   }
+  /* A summary activity's percentage and status are DERIVED — the weighted roll-up of its sub-tasks,
+     or failing that the site's own daily report — and the Activities table has printed that derived
+     number, labelled "from sub-tasks", since the roll-up landed. This form did not: it seeded from
+     the stored fields, so a line reading 100% / Completed in the table opened at 30% / In progress
+     here, and the two screens disagreed about the same activity in front of the person editing it.
+     Seed what the schedule actually reports. Display only — nothing is written unless they save, and
+     a save now stores the number they were shown instead of the one they could not see. Leaves with
+     a typed percentage are untouched: from === 'typed' means nothing is rolling up. */
+  let _qaSeed = ex;
+  if (type === 'pm_tasks' && ex && typeof _pmTaskPctRoll === 'function') {
+    try {
+      const _pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+      const _all = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_tasks', _pid) : [];
+      const _ro = _pmTaskPctRoll(ex, _all, _pid);
+      if (_ro && _ro.from !== 'typed') {
+        _qaSeed = Object.assign({}, ex, { pctComplete: _ro.pct, status: _pmTaskStatus(ex, _ro.pct) });
+      }
+    } catch (e) { }
+  }
   /* seed the multi-file store for type:'files' fields — keep existing files on edit
      (accepts the legacy single attachment/attachmentName shape too) */
   _qaFilesStore = {};
@@ -16286,7 +16305,7 @@ function tkQuickAdd(type, id, seed) {
   if (id) { _titleEl.innerHTML = '<span>Edit —</span> '; _titleEl.appendChild(document.createTextNode(spec.title)); }
   else { _titleEl.textContent = spec.title; }   // split so both prefix + title translate in VN
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
-    const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
+    const fid = 'qa-' + f.k; const val = _qaSeed ? (_qaSeed[f.k] == null ? '' : _qaSeed[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => { const _v = (o && typeof o === 'object') ? o.v : o, _l = (o && typeof o === 'object') ? o.l : o; return '<option value="' + _crmEsc(_v) + '"' + (String(val) === String(_v) ? ' selected' : '') + '>' + _crmEsc(_l) + '</option>'; }).join('') + '</select></div>'; }
     if (f.type === 'ref') {
@@ -19937,9 +19956,14 @@ function _qaDynOptions(src, ex) {
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
   if (src === 'pm_members') { const p = (typeof _pmProj === 'function') ? _pmProj() : null; const mm = p ? _pmMembers(p) : []; const res = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_resources', _pmPid()).map(r => r.name) : []; return [...new Set([].concat(mm, res).filter(Boolean))]; }
   if (src === 'pm_contractors') { const ven = (_HR.pm_procurement || []).map(v => v.vendor); const cos = (_HR.crm_companies || []).map(c => c.name); return [...new Set(['NTC', 'TVE', 'HML', 'COT', 'REE'].concat(ven, cos).filter(Boolean))]; }
-  if (src === 'pm_sched_opts') {   // value is the id; the label is the name, resolved at render
+  if (src === 'pm_sched_opts') {
+    // The VALUE stays the id — pm_detail rows are filed by scheduleId and changing it would
+    // unfile every existing line. Only the LABEL changes, and it has to: the picker was
+    // rendering bare ids like "pm_-d41082b6", so the one field that decides which schedule a
+    // report item belongs to was the one field nobody could read. Same {v,l} shape as
+    // pm_task_opts below, which already solved this for master activities.
     const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
-    return _pdScheds(pid).map(x => x.id);
+    return _pdScheds(pid).map(x => ({ v: x.id, l: String(x.name || '').trim() || x.id }));
   }
   if (src === 'pm_units') {
     const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
@@ -22174,7 +22198,7 @@ function _pmWbsChildren(task, allTasks) {
 
    Weighted by _pdWeight, so a ₫-valued child counts for what it is worth rather than one-third of a
    three-child parent. The depth guard is belt-and-braces: WBS is a prefix tree and cannot cycle. */
-function _pmTaskRollup(task, allTasks, pid, _depth) {
+function _pmTaskPctRoll(task, allTasks, pid, _depth) {
   _depth = _depth || 0;
   const typed = { pct: _pmPct(task && task.pctComplete), from: 'typed', n: 0 };
   if (_depth > 12) return typed;
@@ -22184,7 +22208,7 @@ function _pmTaskRollup(task, allTasks, pid, _depth) {
     kids.forEach(k => {
       const kw = _pdWeight(k);
       w += kw;
-      sum += kw * _pmTaskRollup(k, allTasks, pid, _depth + 1).pct;
+      sum += kw * _pmTaskPctRoll(k, allTasks, pid, _depth + 1).pct;
     });
     return { pct: w ? _pmPct(sum / w) : 0, from: 'children', n: kids.length };
   }
@@ -22415,11 +22439,18 @@ function pdImportPreview() {
 async function pdImportRun(pid) {
   const { rows } = _pdImportParse(document.getElementById('pd-imp').value);
   if (!rows.length) return;
+  const cur = (typeof _pdCurSched === 'function') ? _pdCurSched(pid) : null;
   const btn = document.getElementById('pd-imp-go'); if (btn) { btn.disabled = true; btn.textContent = _t('Importing…'); }
   let ok = 0; const failed = [];
   for (const r of rows) {
+    // File the row into the schedule that is OPEN. Without this every imported line was written
+    // with no scheduleId, which is precisely what _pdUnfiled() collects — so importing into a
+    // named schedule silently produced a pile in "Unfiled" that had to be re-filed one row at a
+    // time. Same rule the Add-report-item form already applies (see _qaType === 'pm_detail').
+    // Importing while "Unfiled" is selected still writes nothing: that is not a schedule.
     const body = { projectId: pid, category: r.category, name: r.name, start: r.start || '', finish: r.finish || '',
                    taskRef: r.taskRef || '', unit: r.unit || '', log: [] };
+    if (cur && cur.id !== '_unfiled') body.scheduleId = cur.id;
     if (+r.weight > 0) body.weight = +r.weight;
     try { const res = await tkApi('/api/coll/' + _PD_COLL, { method: 'POST', body: body }); (_HR[_PD_COLL] = _HR[_PD_COLL] || []).push(res.item); ok++; }
     catch (e) { failed.push(r.name + ': ' + _errMsg(e)); }
@@ -23075,7 +23106,7 @@ function _pmTaskNorm(pid, day) {
     .sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || String(a.start || '').localeCompare(String(b.start || '')))
     .map(t => {
     const d = _pdTaskPct(t, pid);
-    const roll = _pmTaskRollup(t, _all, pid);
+    const roll = _pmTaskPctRoll(t, _all, pid);
     const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
     return { id: t.id, group: t.phase || _t('Activities'),
              name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || '') +
@@ -23391,7 +23422,7 @@ function pmRenderSchedule(pid) {
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
   const tr = _pmTaskRollup(pid);
   const cpm = _pmCPM(allTasks);
-  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', allTasks.filter(t => _pmTaskStatus(t, _pmTaskRollup(t, allTasks, pid).pct) === 'Completed').length, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
+  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', allTasks.filter(t => _pmTaskStatus(t, _pmTaskPctRoll(t, allTasks, pid).pct) === 'Completed').length, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
   // Build ONLY the pane being shown. All four used to be built on every Schedule render and three
   // inserted hidden — parsed, styled and laid out for nothing. These are thunks closing over this
   // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
@@ -23423,7 +23454,7 @@ function pmRenderSchedule(pid) {
         // site's own daily report, then a typed number. A summary line whose percentage disagrees
         // with its own sub-tasks is the thing this level exists to stop, so children win — enter a
         // percentage on the sub-tasks and the parent follows.
-        const ro = _pmTaskRollup(r, allTasks, pid);
+        const ro = _pmTaskPctRoll(r, allTasks, pid);
         if (ro.from === 'typed') return _pmPct(r.pctComplete) + '%';
         const src = ro.from === 'children'
           ? { tip: 'Rolled up from ' + ro.n + ' sub-task' + (ro.n === 1 ? '' : 's'), lbl: _t('from sub-tasks') }
@@ -23436,7 +23467,7 @@ function pmRenderSchedule(pid) {
     // Derived, never written: a render does not touch the record, and the badge can never disagree
     // with the percentage printed next to it.
     { label: 'Status', sk: 'status', w: '1%', nowrap: true, render: r => {
-        const st = _pmTaskStatus(r, _pmTaskRollup(r, allTasks, pid).pct);
+        const st = _pmTaskStatus(r, _pmTaskPctRoll(r, allTasks, pid).pct);
         return _pmBadge(st, _pmStatusColor(st));
       } },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
