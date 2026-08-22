@@ -5020,6 +5020,20 @@ class Handler(BaseHTTPRequestHandler):
                 # with the code it claims to be designed to. It may circulate internally while the
                 # argument is had; issuing it externally publishes the non-compliance as though it
                 # were the design. Same shape as a hold, different reason.
+                # A residual risk somebody downstream has to manage, on a drawing they are
+                # about to build from, with no record of how they were told. The duty to inform is
+                # discharged by the issue itself, so this is the last moment it can be caught.
+                _risk = [r for r in db.list_collection("eng_risks")
+                         if r.get("deliverableId") == rec.get("deliverableId")
+                         and str(r.get("status") or "").strip().lower() in
+                             ("transferred", "transfer to others", "residual")
+                         and not str(r.get("informedBy") or "").strip()]
+                if _risk:
+                    _rrefs = ", ".join(str(r.get("ref") or r.get("hazard") or "?") for r in _risk[:4])
+                    return ("This deliverable carries %d residual risk(s) passed to somebody else "
+                            "with no record of how they were told — %s. Put the drawing note, H&S "
+                            "file entry or residual-risk schedule on the record before issuing it."
+                            % (len(_risk), _rrefs))
                 _dev = [d for d in db.list_collection("eng_deviations")
                         if d.get("deliverableId") == rec.get("deliverableId")
                         and str(d.get("decision") or "").strip().lower() not in
@@ -5056,6 +5070,29 @@ class Handler(BaseHTTPRequestHandler):
                           or str(_prep).strip().lower() == str(u.get("name") or "").strip().lower()):
                 return ("You prepared this deliverable, so you cannot sign the interdisciplinary "
                         "check on it. Ask the other discipline to check their own interface.")
+            return None
+
+        if coll == "eng_risks":
+            if t not in ("controlled", "transferred", "closed"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("A design risk is signed off by the Design Manager or Lead Engineer named "
+                        "on the commission.")
+            # "Controlled" is a claim about what the DESIGN did — eliminated the hazard, designed it
+            # out, sequenced around it. A risk register whose entries all read "controlled" with
+            # nothing in the action column is the document that gets produced after an accident and
+            # proves nothing, because it records an opinion rather than a decision.
+            if t in ("controlled", "closed") and not str(rec.get("action") or "").strip():
+                return ("Say what the design did about this risk before signing it off. "
+                        "'Controlled' with an empty action is an opinion, not a control.")
+            # If it could not be designed out, somebody downstream inherits it — and the duty that
+            # comes with that is to TELL them. A residual risk transferred to a contractor or an
+            # operator who was never informed is the designer's liability, not theirs.
+            if t == "transferred" and not str(rec.get("informedBy") or "").strip():
+                return ("This risk is being carried by somebody else — the contractor, the "
+                        "operator, whoever maintains it. Record how they were told (drawing note, "
+                        "H&S file, residual-risk schedule issued with a transmittal). A risk "
+                        "transferred to somebody who was never informed stays ours.")
             return None
 
         if coll == "eng_deviations":
@@ -6715,6 +6752,9 @@ class Handler(BaseHTTPRequestHandler):
             if coll == "eng_idc" and set_status in ("Clear", "Commented", "Rejected", "Checked"):
                 item["checkedBy"] = signer_name
                 item.setdefault("checkedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_risks" and set_status in ("Controlled", "Transferred", "Closed"):
+                item["signedOffBy"] = signer_name
+                item.setdefault("signedOffOn", time.strftime("%Y-%m-%d"))
             if coll == "eng_deviations" and set_status in ("Approved", "Rejected", "Closed"):
                 item["decision"] = set_status
                 item["decidedBy"] = signer_name
@@ -8630,9 +8670,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -9824,6 +9864,9 @@ class Handler(BaseHTTPRequestHandler):
                     item.pop(_k, None)
             if name == "eng_deviations":
                 for _k in ("decision", "decidedBy", "decidedOn"):
+                    item.pop(_k, None)
+            if name == "eng_risks":
+                for _k in ("signedOffBy", "signedOffOn"):
                     item.pop(_k, None)
         # A chat message says who said it, so authorship is stamped from the SESSION and the client's
         # version is discarded — setdefault would let a browser claim to be somebody else. Same for the
