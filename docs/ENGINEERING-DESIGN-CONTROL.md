@@ -328,6 +328,28 @@ every finding says what to do about it.
 `tests/eng_register_check.js` runs **the code that ships** rather than a copy that would keep
 passing after the real thing drifted. CI runs it on every PR.
 
+## Awaiting response — the clock on everybody else
+
+A design programme slips because approvals arrive late far more often than because drawings do, and
+the evidence for that is contemporaneous or it is nothing. At the time it is one line; a year later
+it is inbox archaeology, and by then the claim is a matter of opinion.
+
+Every transmittal that asked for something carries a clock. The **Awaiting Response** tab shows what
+is still running, how long it has been running, how often it has been chased and by whom — because
+"we chased them three times" is worth exactly what its record is worth, which is why a chase is
+e-signed and the server names the chaser.
+
+Two refusals keep the record honest:
+
+- **Responded** requires the date the answer actually arrived. Without it the register cannot say
+  how long anything took.
+- **Closed**, on a transmittal that asked for a response and never got one, requires somebody to
+  write what happened. Closing it silently deletes the single fact an extension-of-time claim rests
+  on: that we asked, on a date, and waited.
+
+Transmittals issued for information ask for nothing and close freely — most do, and making those a
+fight would empty the register.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value
