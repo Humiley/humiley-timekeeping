@@ -25287,7 +25287,7 @@ const _ENG_NUMSPEC = {
   eng_inputs: { f: 'reqNo', tag: 'DI' }, eng_reviews: { f: 'reviewNo', tag: 'DR' },
   eng_comments: { f: 'commentNo', tag: 'CMT' }, eng_changes: { f: 'ecnNo', tag: 'ECN' },
   eng_tq: { f: 'tqNo', tag: 'TQ' }, eng_transmittals: { f: 'trnNo', tag: 'TRN' },
-  eng_holds: { f: 'ref', tag: 'HLD' }
+  eng_holds: { f: 'ref', tag: 'HLD' }, eng_deviations: { f: 'ref', tag: 'DEV' }
 };
 function _engAutoNumber(coll, data) {
   const sp = _ENG_NUMSPEC[coll]; if (!sp) return;
@@ -25621,6 +25621,24 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Supporting file (PDF / image)', type: 'file' }
     ]
   },
+  eng_deviations: {
+    title: 'Deviation / Concession', coll: 'eng_deviations', reload: 'eng_deviations', fields: [
+      { k: 'kind', label: 'Kind — a DEVIATION is asked for before, a CONCESSION accepts what was already built', type: 'select', options: ['Deviation', 'Concession'] },
+      { k: 'ref', label: 'Ref' },
+      { k: 'title', label: 'What departs from the standard' },
+      { k: 'standardId', label: 'Standard departed from', type: 'ref', src: 'eng_standards', blank: '— choose the code —' },
+      { k: 'clause', label: 'Clause' },
+      { k: 'deliverableId', label: 'Deliverable affected', type: 'ref', src: 'eng_deliverables', blank: '— commission-wide —' },
+      { k: 'description', label: 'What is proposed instead', type: 'textarea' },
+      { k: 'justification', label: 'Why it is acceptable — equivalence, compensating measures, analysis', type: 'textarea' },
+      { k: 'riskNote', label: 'Residual risk carried', type: 'textarea' },
+      { k: 'requestedBy', label: 'Requested by', type: 'combo', dyn: 'eng_people' },
+      { k: 'requestedOn', label: 'Date requested', type: 'date' },
+      { k: 'externalApprovalRef', label: "Authority's / client's written agreement (required for a statutory code)" },
+      { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Withdrawn', 'Closed'] },
+      { k: 'attachment', label: 'The agreement (PDF)', type: 'file' }
+    ]
+  },
   eng_standards: {
     title: 'Code / Standard', coll: 'eng_standards', reload: 'eng_standards', fields: [
       { k: 'code', label: 'Designation (TCVN 5687, ASHRAE 62.1, EN 1886, QCVN 06)' },
@@ -25801,6 +25819,7 @@ const _ENG_TABS = [
   { k: 'stages', label: 'Stages & Gates', fn: 'engRenderStages', need: ['eng_projects', 'eng_stages', 'eng_deliverables'] },
   { k: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
   { k: 'standards', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
+  { k: 'deviations', label: 'Deviations', fn: 'engRenderDeviations', need: ['eng_projects', 'eng_deviations', 'eng_standards', 'eng_deliverables'] },
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
@@ -26793,6 +26812,51 @@ function engChangeDecideSave(id) {
 }
 
 /* ============================ 9. Technical queries ============================ */
+function engRenderDeviations(pid) {
+  const all = _engScopeFor('eng_deviations', pid), stds = _engScopeFor('eng_standards', pid), delivs = _engScopeFor('eng_deliverables', pid);
+  const guide = _engGuide('deviations', 'Deviations and concessions — where the design does not follow the code, and who agreed',
+    '<p>A <b>deviation</b> is asked for before the fact: the design cannot meet a clause and proposes something else, with the reasoning that makes it acceptable. A <b>concession</b> is the same conversation after the fact — what was built does not match what was specified, and somebody has to decide whether to accept it.</p>' +
+    '<p>Neither is a failure. What fails an audit is a departure nobody wrote down, or one agreed by the same office that wanted it. A deviation is agreed by somebody other than the engineer who asked for it, and until it is agreed the deliverable it sits on will not issue externally — an unaccepted departure is a non-compliance until somebody accepts it.</p>' +
+    '<p>And a departure from a <b>statutory</b> code is not ours to grant. Internal agreement records that we find it acceptable; it cannot make a building lawful. The authority\'s or client\'s written agreement has to be on the record before it can be approved here.</p>');
+  const undecided = all.filter(x => ['approved', 'rejected', 'withdrawn', 'closed'].indexOf(String(x.decision || x.status || '').toLowerCase()) < 0);
+  const approved = all.filter(x => String(x.decision || '').toLowerCase() === 'approved');
+  const stdOf = id => stds.filter(x => x.id === id)[0] || {};
+  const statutoryOpen = undecided.filter(x => String(stdOf(x.standardId).obligation || '').toLowerCase().indexOf('statutor') === 0);
+  const blocked = {};
+  undecided.forEach(d => { if (d.deliverableId) blocked[d.deliverableId] = (blocked[d.deliverableId] || 0) + 1; });
+  const kpis = _hrKpiRow([
+    _hrKpi('Departures recorded', all.length),
+    _hrKpi('Still to be agreed', undecided.length, undecided.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Documents blocked', Object.keys(blocked).length, Object.keys(blocked).length ? '#EF4444' : '#00B060'),
+    _hrKpi('Against a statutory code', statutoryOpen.length, statutoryOpen.length ? '#EF4444' : '#00B060')
+  ]);
+  const specs = [{ k: 'kind', label: 'Kind' }, { k: 'clause', label: 'Clause' }, { k: 'status', label: 'Status' }, { k: 'requestedBy', label: 'Requested by' }];
+  const bar = _engFiltBar('eng_deviations', all, specs), rows = _engFiltApply('eng_deviations', all, specs);
+  const dname = id => { const d = delivs.filter(x => x.id === id)[0]; return d ? (d.docNo || d.title || '') : ''; };
+  const tbl = _engCard('Deviations & Concessions', 'eng_deviations', 'Record a departure', bar + _engTable('eng_deviations', [
+    { label: 'Ref', k: 'ref', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.ref || '—') + '</span>' },
+    { label: 'Kind', render: r => { const dv = String(r.kind || 'Deviation').toLowerCase() === 'deviation';
+        return '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap;background:' + (dv ? '#EDE9FE' : '#FEF3C7') + ';color:' + (dv ? '#5B21B6' : '#92400E') + '">' + (dv ? 'DEVIATION' : 'CONCESSION') + '</span>'; } },
+    { label: 'What departs', render: r => '<div style="font-weight:600;max-width:250px">' + _engEsc(r.title || '') + '</div>' + (r.justification ? '<div style="font-size:10.5px;color:var(--text-light);max-width:250px">' + _engEsc(String(r.justification).slice(0, 100)) + '</div>' : '') },
+    { label: 'Standard', render: r => { const st = stdOf(r.standardId); if (!st.code) return '<span style="color:var(--text-light);font-size:11px">—</span>';
+        const stat = String(st.obligation || '').toLowerCase().indexOf('statutor') === 0;
+        return '<div style="font-size:11px;font-weight:700;font-variant-numeric:tabular-nums">' + _engEsc(st.code) + (st.edition ? ' <span style="font-weight:400;color:var(--text-light)">' + _engEsc(st.edition) + '</span>' : '') + '</div>' +
+          (r.clause ? '<div style="font-size:10.5px;color:var(--text-light)">cl. ' + _engEsc(r.clause) + '</div>' : '') +
+          (stat ? '<div style="font-size:9.5px;font-weight:700;color:#B91C1C">STATUTORY</div>' : ''); } },
+    { label: 'On document', render: r => r.deliverableId ? '<span style="font-size:11px;font-variant-numeric:tabular-nums">' + _engEsc(dname(r.deliverableId)) + '</span>' : '<span style="color:var(--text-light);font-size:11px">commission-wide</span>' },
+    { label: 'Requested by', k: 'requestedBy' },
+    { label: 'External agreement', render: r => r.externalApprovalRef ? '<div style="font-size:10.5px;max-width:190px">' + _engEsc(r.externalApprovalRef) + '</div>' : '<span style="color:var(--text-light);font-size:11px">—</span>' },
+    { label: 'Decision', render: r => r.decidedBy ? '<div style="font-size:11px">' + _engStatusChip(r.decision || '') + '</div><div style="font-size:10px;color:var(--text-light)">✍ ' + _engEsc(r.decidedBy) + ' ' + _engFmt(r.decidedOn) + '</div>' : _engStatusChip(r.status || 'Draft') }
+  ], rows, { empty: 'No departures recorded. That is either a design that met every clause, or a register nobody is using.', minw: 1150 }));
+  let warn = '';
+  if (Object.keys(blocked).length) warn += '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEE2E2;border:1px solid #FCA5A5;font-size:12px;color:#7F1D1D">' +
+    '<b>' + Object.keys(blocked).length + ' deliverable(s) cannot be issued externally</b> while their departures are unagreed: ' +
+    Object.keys(blocked).map(id => _engEsc(dname(id))).join(', ') + '.</div>';
+  if (statutoryOpen.length) warn += '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEF3C7;border:1px solid #FDE68A;font-size:12px;color:#92400E">' +
+    '<b>' + statutoryOpen.length + ' open departure(s) are against a statutory code.</b> These cannot be agreed inside the office — the authority\'s or client\'s written agreement has to be on the record first.</div>';
+  return guide + kpis + warn + tbl;
+}
+
 function engRenderStandards(pid) {
   const all = _engScopeFor('eng_standards', pid);
   const guide = _engGuide('standards', 'Codes and standards — at which edition, and how you prove it',
@@ -31954,6 +32018,20 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Deviations': 'Sai lệch',
+  'Deviations & Concessions': 'Sai lệch & Chấp thuận ngoại lệ',
+  'Deviation / Concession': 'Sai lệch / Chấp thuận ngoại lệ',
+  'Record a departure': 'Ghi nhận một sai lệch',
+  'Departures recorded': 'Sai lệch đã ghi nhận',
+  'Still to be agreed': 'Chưa được chấp thuận',
+  'Against a statutory code': 'Trái quy chuẩn bắt buộc',
+  'What departs': 'Nội dung sai lệch',
+  'Standard departed from': 'Tiêu chuẩn bị sai lệch',
+  'Clause': 'Điều khoản',
+  'Deliverable affected': 'Tài liệu bị ảnh hưởng',
+  'What is proposed instead': 'Đề xuất thay thế',
+  'Residual risk carried': 'Rủi ro còn lại',
+  'External agreement': 'Văn bản chấp thuận bên ngoài',
   'Codes & Standards': 'Quy chuẩn & Tiêu chuẩn',
   'Codes & Standards Register': 'Sổ đăng ký quy chuẩn & tiêu chuẩn',
   'Code / Standard': 'Quy chuẩn / Tiêu chuẩn',
