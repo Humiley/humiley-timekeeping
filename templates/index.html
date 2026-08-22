@@ -2004,7 +2004,7 @@ window.addEventListener('orientationchange', _setLoginBg);
           <button id="btn-checkin" onclick="tkCheckIn()" disabled
             style="display:none;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--emerald),#00965a);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;align-items:center;justify-content:center;gap:8px">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            Check In
+            <span id="ci-btn-label">Check In</span>
           </button>
           <button id="btn-checkout" onclick="tkCheckOut()" disabled
             style="padding:14px;border-radius:10px;border:none;background:#e2e8f0;color:#94a3b8;font-size:15px;font-weight:700;cursor:not-allowed;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px">
@@ -3685,7 +3685,23 @@ function _tkSetCheckinAllowed(state) {
   // cannot clock in does not go home, they work unrecorded, and unrecorded hours are the
   // employer's legal exposure, not theirs. The punch is taken and the record says where they were.
   const allow = !_checkedIn && _tkSelectedZone;
-  if (allow) { btn.style.display = 'flex'; btn.disabled = false; btn.style.opacity = state === 'in' ? '1' : '.93'; }
+  if (allow) {
+    btn.style.display = 'flex'; btn.disabled = false; btn.style.opacity = state === 'in' ? '1' : '.93';
+    /* The control has to say what pressing it will RECORD. It read "Check In" in emerald whether the
+       app had confirmed you were on site, could not tell, or could see you were somewhere else —
+       three different records behind one identical-looking button, which is what "I am not there, so
+       why does it let me check in?" was actually about.
+       Away-from-site is still ALLOWED — refusing it is what makes people work unrecorded, and
+       unrecorded hours are the employer's exposure — but it is not a normal punch, it does not look
+       like one, and tkCheckIn asks why before anything is written. */
+    const lbl = document.getElementById('ci-btn-label');
+    const away = state === 'out';
+    btn.style.background = away ? 'linear-gradient(135deg,#F59E0B,#D97706)'
+                                : 'linear-gradient(135deg,var(--emerald),#00965a)';
+    if (lbl) lbl.textContent = away ? _t2('Working somewhere else', 'Đang làm ở nơi khác')
+      : state === 'in' ? _t2('Check In', 'Chấm công vào')
+      : _t2('Check in \u2014 GPS unverified', 'Chấm công vào \u2014 chưa xác minh GPS');
+  }
   else { btn.style.display = 'none'; btn.disabled = true; }
 }
 
@@ -3963,9 +3979,33 @@ async function tkCheckIn() {
   if (_tkCheckinBusy) return;   // in-flight guard: a stray button re-enable must never double-submit (issue #17)
   if (_checkedIn) { if (typeof toast === 'function') toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast(_t2('Please select your location first', 'Vui lòng chọn địa điểm trước'), 'warn'); return; }
-  // Not a refusal — a label. The record carries where they actually were, and the manager sees it.
-  if (_tkGpsState === 'out' && typeof toast === 'function') {
-    toast(_t2('Recorded as away from ', 'Ghi nhận là ở ngoài ') + _tkSelectedZone.name, 'warn', 5000);
+  /* The app can see this punch is NOT at the site they picked. That is not refused — refusing is
+     what makes somebody work unrecorded, and unrecorded hours are the employer's exposure, not the
+     worker's — but it is no longer waved through with a toast they cannot answer. Ask where they
+     ARE, and record that with the punch.
+     Cancelling writes NOTHING: a person who opened this by accident, or who realises they picked
+     the wrong site, must be able to back out and choose again rather than be forced to file a
+     reason for a punch they did not mean to make.
+     'GPS unverified' is deliberately NOT asked. That means the app could not tell — a fact about
+     the signal, not a finding about a person — and demanding an explanation would fall on whoever
+     has the worst phone or is standing in a cleanroom. The server enforces the same asymmetry. */
+  let _awayReason = '';
+  if (_tkGpsState === 'out') {
+    _awayReason = await tkPrompt({
+      title: _t2('You are not at ' + _tkSelectedZone.name, 'Bạn không ở ' + _tkSelectedZone.name),
+      body: _t2('You can still check in and it will be recorded — say briefly where you are working, so your manager sees the reason rather than only the flag.',
+                'Bạn vẫn có thể chấm công vào và hệ thống sẽ ghi nhận — hãy ghi ngắn gọn bạn đang làm ở đâu, để quản lý thấy lý do chứ không chỉ thấy cảnh báo.'),
+      placeholder: _t2('e.g. at the Mega Lifesciences gate — site not registered yet',
+                       'ví dụ: đang ở cổng Mega Lifesciences — công trường chưa được đăng ký'),
+      confirmText: _t2('Check in anyway', 'Vẫn chấm công vào')
+    });
+    if (!_awayReason || String(_awayReason).trim().length < 4) {
+      if (!_awayReason) return;                       // cancelled — nothing written, nothing lost
+      if (typeof toast === 'function') toast(_t2('Please say briefly where you are working.',
+                                                 'Vui lòng ghi ngắn gọn bạn đang làm ở đâu.'), 'warn');
+      return;
+    }
+    _awayReason = String(_awayReason).trim();
   }
   _tkCheckinBusy = true;
   try {
@@ -3978,7 +4018,7 @@ async function tkCheckIn() {
   const locLabel = _tkSelectedZone.name + (
     _tkGpsState === 'in' ? '' : _tkGpsState === 'out' ? ' (away from site)' : ' (GPS unverified)');
   const _proj = (document.getElementById('ci-project') || {}).value || '';
-  const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj });
+  const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj, awayReason: _awayReason });
   if (saved && saved.__biz) {
     // The SERVER refused it. Queueing would only replay a refusal.
     if (btn) btn.disabled = false;
@@ -3989,7 +4029,10 @@ async function tkCheckIn() {
   if (!saved) {
     // NO CONNECTION. The punch is kept on the device with the time it was pressed, and sent when
     // there is signal — it used to be discarded, and the day went unrecorded.
-    _tkQueueAdd('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj });
+    /* The reason rides with the queued punch too. Without it a no-signal away-from-site check-in
+       replays later and the SERVER refuses it for having no reason — the one case where the person
+       had already typed one. */
+    _tkQueueAdd('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj, awayReason: _awayReason });
     if (btn) btn.disabled = false;
     if (typeof toast === 'function') {
       toast(_t2('No connection — your check-in at ' + t + ' is saved on this device and will be sent automatically.',
