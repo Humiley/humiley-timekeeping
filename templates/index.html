@@ -8702,6 +8702,81 @@ async function tkRenderAudit() {
     '</div>';
   audFillTable();
   tkAuditChainCheck();
+  tkDemoDataPanel();
+}
+
+/* ===== The shipped sample, and what is left of it =====================================
+   Mounted under the Audit Log because that is where an administrator already goes to look at what
+   the system has done to itself, and because every removal lands in the log directly above.
+   Opens on the PREVIEW. Nothing here removes anything until somebody types the phrase. */
+async function tkDemoDataPanel() {
+  const host = document.getElementById('view-audit'); if (!host) return;
+  let box = document.getElementById('demo-data-panel');
+  if (!box) { box = document.createElement('div'); box.id = 'demo-data-panel';
+              box.style.marginTop = '18px'; host.appendChild(box); }
+  box.innerHTML = '<div class="card" style="padding:16px 18px;color:var(--text-light);font-size:13px">' +
+    _t('Checking for sample data…') + '</div>';
+  let r;
+  try { r = await tkApi('/api/admin/demo-data'); }
+  catch (e) { box.innerHTML = ''; return; }          // not an admin, or not available — say nothing
+  const p = r.plan || {}, t = p.totals || {};
+  const row = (label, n) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;' +
+    'border-bottom:1px solid var(--soft-bg);font-size:13px"><span>' + label + '</span>' +
+    '<b style="font-variant-numeric:tabular-nums">' + n + '</b></div>';
+  const names = (list) => list.slice(0, 20).map(x => _crmEsc(x.name || x.id || '')).join(', ') +
+    (list.length > 20 ? ' …' : '');
+
+  const nothing = !p.anything;
+  box.innerHTML = '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div class="card-hdr" style="padding:16px 18px"><div class="card-title">' +
+      _t('Sample data shipped with the portal') + '</div></div>' +
+    '<div style="padding:16px 18px">' +
+      (nothing
+        ? '<div style="font-size:13px;color:var(--text-light)">' +
+            _t('None of the shipped sample is still in this database. Nothing to remove.') + '</div>'
+        : '<div style="font-size:13px;color:var(--text-light);margin-bottom:12px;max-width:70ch">' +
+            _t('These rows match the sample org the portal ships with, on id AND name AND email. Removing them deletes their attendance and leave with them — every row is snapshotted into the audit entry first, so it can be recovered.') +
+          '</div>' +
+          row(_t('Employees'), t.employees) + row(_t('Attendance records'), t.attendance) +
+          row(_t('Leave requests'), t.leave) + row(_t('Zones'), t.zones) +
+          '<div style="font-size:12px;color:var(--text-light);margin-top:8px">' + names(p.employees.demo) + '</div>') +
+      ((p.notes || []).length
+        ? '<div style="margin-top:14px;background:' + _tintHex('var(--warning)') + '18;border-left:3px solid ' +
+          _tintHex('var(--warning)') + ';border-radius:6px;padding:10px 12px;font-size:12.5px;line-height:1.6">' +
+          '<b>' + _t('Left alone') + '</b><br>' + (p.notes || []).map(n => _crmEsc(n)).join('<br>') + '</div>'
+        : '') +
+      (nothing ? '' :
+        '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">' +
+          '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:8px;cursor:pointer">' +
+            '<input type="checkbox" id="demo-backup" style="width:15px;height:15px;accent-color:var(--navy)"> ' +
+            _t('I have a current backup of this database.') + '</label>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+            '<input id="demo-phrase" class="form-input" style="max-width:260px;font-size:13px" ' +
+              'placeholder="' + _tkEscA(r.confirmPhrase || '') + '" autocomplete="off">' +
+            '<button class="btn btn-outline btn-sm" style="color:#C00000;border-color:#C00000" ' +
+              'onclick="tkDemoDataRemove()">' + _t('Remove sample data') + '</button>' +
+          '</div>' +
+          '<div style="font-size:11.5px;color:var(--text-light);margin-top:6px">' +
+            _t('Type') + ' <b>' + _crmEsc(r.confirmPhrase || '') + '</b> ' + _t('to enable.') + '</div>' +
+        '</div>') +
+    '</div></div>';
+}
+
+async function tkDemoDataRemove() {
+  const phrase = (document.getElementById('demo-phrase') || {}).value || '';
+  const backup = !!(document.getElementById('demo-backup') || {}).checked;
+  if (!backup) { toast(_t('Confirm a current backup exists first.'), 'warn'); return; }
+  if (!(await tkConfirm(_t('Remove the shipped sample data? Every removed row is snapshotted into the audit log and can be recovered from there.')))) return;
+  try {
+    const r = await tkApi('/api/admin/demo-data/remove',
+                          { method: 'POST', body: { confirm: phrase, backupConfirmed: backup } });
+    const rm = r.removed || {};
+    toast(_t('Removed') + ': ' + rm.employees + ' ' + _t('employee(s)') + ', ' + rm.attendance + ' ' +
+          _t('attendance') + ', ' + rm.leave + ' ' + _t('leave') + ', ' + rm.zones + ' ' + _t('zone(s)'),
+          'success', 6000);
+    try { await tkLoadEmployees(); } catch (e) {}
+    tkRenderAudit();
+  } catch (e) { toast(_errMsg(e), 'error', 6000); }
 }
 /* Ask the backend to recompute the audit hash chain and show a tamper-evidence badge. Admin-only
    endpoint; a non-admin (or any error) just leaves the badge blank rather than surfacing a scary state. */
