@@ -18019,6 +18019,12 @@ function _crmBillable(c) {
    lived in a spreadsheet or somebody's head until now. */
 const _SCT_STATUS = { draft: ['Draft', 'Nháp', 'b-grey'], active: ['Active', 'Đang thực hiện', 'b-ok'],
                      closed: ['Closed', 'Đã đóng', 'b-navy'], cancelled: ['Cancelled', 'Đã huỷ', 'b-grey'] };
+/* Only the "from a set % complete" rule has a threshold, so only that rule shows the box. */
+function _ctRecoveryRuleShow() {
+  const sel = document.getElementById('ct-recoveryRule');
+  const wrap = document.getElementById('ct-fromPct-wrap');
+  if (sel && wrap) wrap.style.display = (sel.value === 'from_pct') ? '' : 'none';
+}
 const _SCT_RECOVERY = [['prorata', 'A fixed share of every claim'], ['from_pct', 'Nothing until a set % complete'], ['manual', 'Decided per claim']];
 const _SCT_RELEASE = [['warranty_end', 'All of it at the end of the warranty period'], ['half_at_completion', 'Half at completion, half at warranty end']];
 
@@ -18538,7 +18544,19 @@ async function crmOpenContract(id) {
       num('retentionPct', _t2('Retention', 'Giữ lại bảo hành'), c.retentionPct, '%') +
       num('warrantyMonths', _t2('Warranty', 'Bảo hành'), c.warrantyMonths, _t2('months', 'tháng')) +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('How the advance is recovered', 'Cách khấu trừ tạm ứng') + '</label>' +
-        '<select class="form-control" id="ct-recoveryRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RECOVERY, c.recoveryRule) + '</select></div>' +
+        '<select class="form-control" id="ct-recoveryRule"' + (draft ? '' : ' disabled') +
+          ' onchange="_ctRecoveryRuleShow()"><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RECOVERY, c.recoveryRule) + '</select></div>' +
+      /* The threshold the "from a % complete" rule is NAMED after, and which had no field at all —
+         so it was always 0 and the rule recovered from claim #1, behaving as the prorata rule while
+         the contract said the deposit was protected. Shown only for that rule: a number that means
+         nothing under the others is a number somebody fills in anyway. */
+      '<div class="form-group" id="ct-fromPct-wrap"' + (c.recoveryRule === 'from_pct' ? '' : ' style="display:none"') + '>' +
+        '<label class="form-label" style="font-size:11.5px">' + _t2('Recover nothing until the works reach', 'Chưa khấu trừ cho đến khi hoàn thành') + '</label>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<input type="number" class="form-control" id="ct-recoveryFromPct" min="0" max="100" step="0.01"' +
+            ' value="' + (c.recoveryFromPct != null && c.recoveryFromPct !== '' ? _tkEscA(String(c.recoveryFromPct)) : '') + '"' +
+            (draft ? '' : ' disabled') + ' style="max-width:120px">' +
+          '<span style="font-size:12px;color:var(--text-light)">' + _t2('% complete', '% hoàn thành') + '</span></div></div>' +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT rate for this contract', 'Thuế suất GTGT cho hợp đồng này') + '</label>' +
         '<select class="form-control" id="ct-vatRate"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— company default —', '— mặc định công ty —') + '</option>' +
           [0, 5, 8, 10].map(v => '<option value="' + v + '"' + (String(c.vatRate || '') === String(v) ? ' selected' : '') + '>' + v + '%</option>').join('') +
@@ -18588,7 +18606,10 @@ async function crmContractAct(id, action) {
   if (action === 'terms') body = Object.assign(body, { value: numv('value'),
       advanceSchedule: _ctDepositRead(), advancePct: 0,
       retentionPct: numv('retentionPct'), warrantyMonths: numv('warrantyMonths'),
-      recoveryRule: g('recoveryRule'), releaseRule: g('releaseRule'), vatRate: g('vatRate') });
+      // The threshold rides with the rule it belongs to. It was in the backend's save whitelist all
+      // along — there was simply never a field to fill it, so it saved 0 for ever.
+      recoveryRule: g('recoveryRule'), recoveryFromPct: numv('recoveryFromPct'),
+      releaseRule: g('releaseRule'), vatRate: g('vatRate') });
   if (action === 'opening') body = Object.assign(body, { certifiedToDate: numv('certifiedToDate'),
       advanceOutstanding: numv('advanceOutstanding'), retentionHeld: numv('retentionHeld') });
   try {
@@ -18770,8 +18791,24 @@ async function crmClaimForm(contractId, appId) {
     '<div class="modal-header"><div><div class="modal-title">' + _t2('Payment application', 'Đề nghị thanh toán') + '</div>' +
       '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc((c.contractNo || '') + ' · ' + (c.accountName || '')) + '</div></div>' +
       '<button class="modal-close" onclick="document.getElementById(\'sapOverlay\').remove()">&times;</button></div>' +
-    '<div class="form-group" style="max-width:220px"><label class="form-label" style="font-size:11.5px">' + _t2('Period', 'Kỳ') + '</label>' +
-      '<input class="form-control" id="sap-period" placeholder="2026-08" value="' + _tkEscA((a && a.period) || '') + '"></div>' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+      '<div class="form-group" style="max-width:220px"><label class="form-label" style="font-size:11.5px">' + _t2('Period', 'Kỳ') + '</label>' +
+        '<input class="form-control" id="sap-period" placeholder="2026-08" value="' + _tkEscA((a && a.period) || '') + '"></div>' +
+      /* Only for the rule that is literally called "decided per claim". Until this box existed the
+         rule recovered ₫0 every time, for the life of the job, while the contract page said the
+         advance balance must still reach zero — the backend read the figure out of a state dict
+         nothing ever put it into. Blank is refused rather than treated as zero: ₫0 is a legitimate
+         answer here ("recover nothing this time") and has to be a choice, not a silence. */
+      (c.recoveryRule === 'manual'
+        ? '<div class="form-group" style="max-width:260px"><label class="form-label" style="font-size:11.5px">' +
+            _t2('Advance recovered on this claim', 'Khấu trừ tạm ứng đợt này') + '</label>' +
+          '<input class="form-control" id="sap-recoverNow" inputmode="numeric" value="' +
+            _tkEscA(a && a.recoverNow != null ? String(a.recoverNow) : '') + '">' +
+          '<div style="font-size:10.5px;color:var(--text-light);margin-top:3px">' +
+            _t2('Still outstanding: ', 'Còn phải khấu trừ: ') + _crmMoney(c.advanceOutstanding || 0) + ' · ' +
+            _t2('enter 0 to recover nothing this time', 'nhập 0 nếu đợt này không khấu trừ') + '</div></div>'
+        : '') +
+    '</div>' +
     '<div class="table-wrap" style="margin-bottom:12px"><table style="min-width:640px"><thead><tr>' +
       '<th>' + _t2('Line', 'Hạng mục') + '</th><th style="text-align:right">' + _t2('Line value', 'Giá trị') + '</th>' +
       '<th style="text-align:right">' + _t2('Already certified', 'Đã nghiệm thu') + '</th>' +
@@ -18819,6 +18856,12 @@ async function crmClaimSave(contractId, appId) {
   const g = k => (document.getElementById('sap-' + k) || {}).value || '';
   const body = { action: 'draft', contractId: contractId, claims: claims,
                  period: g('period'), vatRate: g('vatRate'), vatBase: g('vatBase') };
+  /* Send it only when the box is on screen AND filled. Sending '' would post 0, which is a real
+     decision the user did not make; omitting the key lets the backend refuse and say why. */
+  const _rn = document.getElementById('sap-recoverNow');
+  if (_rn && String(_rn.value || '').trim() !== '') {
+    body.recoverNow = +String(_rn.value).replace(/[^0-9.]/g, '');
+  }
   if (appId) body.id = appId;
   try {
     const r = await tkApi('/api/sales/application', { method: 'POST', body: body });
@@ -21234,6 +21277,20 @@ function _pmSortRows(coll, cols, rows) {
   const allNum = vals.length > 0 && vals.every(v => v === '' || v == null || numify(v) !== null);
   return rows.slice().sort((a, b) => { const x = _pmCell(col, a), y = _pmCell(col, b); if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir; });
 }
+/* A cell for the long free-text these forms collect. Four of them were written and displayed
+   nowhere: the mitigation plan behind a risk's one-word strategy, a stakeholder's engagement
+   strategy, the situation half of a lesson, and — the one that matters most — the safety incidents
+   line on a site report. Somebody typing "scaffold collapse, 1 minor injury" into a field labelled
+   Safety incidents believes they have logged it against the project.
+   Truncated in the column with the whole of it on hover, because these are paragraphs and the
+   register is a list; the form remains where you read and edit the full text. */
+function _pmLongCell(v, n) {
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return '<span style="color:var(--text-light)">—</span>';
+  const cut = t.length > (n || 60);
+  return '<span title="' + _tkEscA(t) + '"' + (cut ? ' style="cursor:help"' : '') + '>' +
+    _pmEsc(cut ? t.slice(0, n || 60).trim() + '…' : t) + '</span>';
+}
 function _pmRowEditable(coll) { const sw = ['pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
@@ -21681,7 +21738,11 @@ function pmRenderOverview() {
     { label: 'Title', k: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Category', k: 'category' }, { label: 'Phase', k: 'phase' },
     { label: 'Type', render: r => _pmBadge(r.type || '—', r.type === 'Positive' ? '#00B060' : '#F59E0B') },
-    { label: 'Recommendation', render: r => _pmEsc(r.recommendation || '—') },
+    // A lesson is a PAIR — what happened, and what to do next time. The form asks for both and the
+    // register printed only the second, so a reader got advice with the circumstances that earned
+    // it missing.
+    { label: 'Situation', sk: 'situation', render: r => _pmLongCell(r.situation, 60) },
+    { label: 'Recommendation', render: r => _pmLongCell(r.recommendation, 60) },
     { label: 'File', render: r => _pmFileCell('pm_lessons', r) }
   ], ls));
   const _ovCharts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-bottom:14px">' +
@@ -25060,7 +25121,11 @@ function pmRenderRisks(pid) {
     { label: 'P', align: 'center', render: r => _pmEsc(r.probability || '—') }, { label: 'I', align: 'center', render: r => _pmEsc(r.impact || '—') },
     { label: 'Score', align: 'center', render: r => { const b = _pmRiskBand(+r.score || 0); return '<span style="display:inline-block;background:' + b.hex + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 7px">' + (r.score || 0) + ' ' + b.band + '</span>'; } },
     { label: 'EMV', align: 'right', render: r => (+r.costImpact ? '<span style="font-weight:600;color:' + (_pmIsOpp(r) ? '#00B060' : '#EF4444') + '">' + (_pmIsOpp(r) ? '+' : '−') + _pmMoneyShort(_pmEmv(r)) + '</span>' : '<span style="color:var(--text-light)">—</span>') },
-    { label: 'Response', k: 'responseStrategy' }, { label: 'Owner', k: 'owner' }, { label: 'Contractor / Sub', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
+    { label: 'Response', k: 'responseStrategy' },
+    // The plan itself, not just the word for it. Every screen and PDF reported "Mitigate" and no
+    // reader could see what mitigating meant here.
+    { label: 'Mitigation / actions', sk: 'mitigationActions', render: r => _pmLongCell(r.mitigationActions, 70) },
+    { label: 'Owner', k: 'owner' }, { label: 'Contractor / Sub', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_risks', r) }
   ], _rRows));
@@ -25126,7 +25191,10 @@ function pmRenderStakeholders(pid) {
     { label: 'Name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' }, { label: 'Organization', k: 'organization' }, { label: 'Role', k: 'role' },
     { label: 'Influence', render: r => _pmBadge(r.influence || '—', r.influence === 'High' ? '#205090' : '#94a3b8') }, { label: 'Interest', render: r => _pmBadge(r.interest || '—', r.interest === 'High' ? '#3168A8' : '#94a3b8') },
     { label: 'Quadrant', render: r => { const qd = r.quadrant || _pmQuadrant(r.influence, r.interest); return _pmBadge(_pmQuadLabel(qd), SK_QUAD_HEX[qd]); } },
-    { label: 'Attitude', k: 'attitude' }
+    { label: 'Attitude', k: 'attitude' },
+    // The matrix directly above this register counts the engagement gaps "to close", and the form
+    // invites the plan for closing each one. It was stored and shown on no screen.
+    { label: 'Engagement strategy', sk: 'engagementStrategy', render: r => _pmLongCell(r.engagementStrategy, 70) }
   ], _sRows));
   _pmSet(kpis + grid + _pmEngageMatrix(sk) + tbl);
 }
@@ -25454,13 +25522,24 @@ function pmRenderRfis(pid) {
   const sdr = _pmScope(_HR.pm_sitereports).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
   const sdrTbl = _pmCard('Site Daily Reports', 'pm_sitereports', 'Add report', _pmTable('pm_sitereports', [
     { label: 'Date', sk: 'reportDate', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
-    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }, { label: 'Files', render: r => _pmFileCell('pm_sitereports', r) }
+    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmLongCell(r.workPerformed, 60) }, { label: 'Delays', sk: 'delays', render: r => _pmLongCell(r.delays, 40) },
+    /* Amber when there is something in it. A safety line that reads like every other column is a
+       safety line nobody scans for — and this one was not printed at all, so an engineer reporting
+       an injury on the daily report had it stored and surfaced nowhere. It is still NOT an accident
+       register: osh_incident.py is, and the OSH module's statutory clock does not start from here. */
+    { label: 'Safety incidents', sk: 'safetyIncidents', render: r => (String(r.safetyIncidents || '').trim()
+        ? '<span style="color:#B45309;font-weight:600">' + _pmLongCell(r.safetyIncidents, 50) + '</span>'
+        : '<span style="color:var(--text-light)">—</span>') },
+    { label: 'Files', render: r => _pmFileCell('pm_sitereports', r) }
   ], sdr));
   const wkr = _pmScope(_HR.pm_weekreports).sort((a, b) => (b.weekEnding || '').localeCompare(a.weekEnding || ''));
   const wkrTbl = _pmCard('Site Weekly Reports', 'pm_weekreports', 'Add weekly report', _pmTable('pm_weekreports', [
     { label: 'Week ending', render: r => _pmFmt(r.weekEnding) }, { label: 'Contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '<span style="color:var(--text-light)">—</span>' },
     { label: 'Area', k: 'area' }, { label: 'Avg manpower', align: 'right', k: 'manpower' },
-    { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Next week', render: r => _pmEsc((r.nextWeekPlan || '').slice(0, 40)) },
+    { label: 'Work performed', render: r => _pmLongCell(r.workPerformed, 60) }, { label: 'Next week', render: r => _pmLongCell(r.nextWeekPlan, 40) },
+    { label: 'Safety incidents', sk: 'safetyIncidents', render: r => (String(r.safetyIncidents || '').trim()
+        ? '<span style="color:#B45309;font-weight:600">' + _pmLongCell(r.safetyIncidents, 50) + '</span>'
+        : '<span style="color:var(--text-light)">—</span>') },
     { label: 'Prepared by', k: 'preparedBy' }, { label: 'Files', render: r => _pmFileCell('pm_weekreports', r) }
   ], wkr));
   _pmSet(kpis + tbl + sdrTbl + wkrTbl);
@@ -38357,6 +38436,13 @@ const _VI = {
   "Zone switched on": "Đã bật khu vực",
   "Zone switched off — it no longer authorises check-in": "Đã tắt khu vực — không còn cho phép chấm công tại đây",
   "Zone updated": "Đã cập nhật khu vực",
+  // ── Fields the forms collected and no screen printed, now that a screen prints them ─────────────
+  "Mitigation / actions": "Biện pháp xử lý",
+  // ── Advance recovery: the two rules that had no input ───────────────────────────────────────────
+  "Recover nothing until the works reach": "Chưa khấu trừ cho đến khi hoàn thành",
+  // "% complete" is NOT repeated here — it is already defined once, and _VI is one object where a
+  // later duplicate silently wins. tests/vi_duplicate_keys.js caught this addition.
+  "Advance recovered on this claim": "Khấu trừ tạm ứng đợt này",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
