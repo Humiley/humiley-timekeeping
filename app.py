@@ -7203,19 +7203,126 @@ class Handler(BaseHTTPRequestHandler):
         return default
 
     @staticmethod
+    def _checkin_window_end(schedule_name):
+        """The END of the "Check-In Window" an administrator entered on this pattern, as HH:MM.
+
+        The Work Schedules form has had this field since the register was written and NOTHING read
+        it: saveSchedule persists `inwin`, the register prints it in its own column, and lateness was
+        decided by parsing a time out of the schedule's NAME. So a pattern named without one —
+        "Factory Shift A", with a window of 05:45 – 06:15 typed right there on the form — was judged
+        against a hardcoded 08:00, and a 06:40 arrival two hours into the shift recorded as on time.
+        Same class as the grace period, opposite direction: too lenient rather than too harsh, which
+        is why nobody complained.
+
+        The END, not the start. A window of 07:30 – 08:30 brackets an 08:00 shift; its start is when
+        the door opens, its end is the last acceptable arrival. On every seeded pattern that can be
+        late it already equals shift start + grace — Standard 08:30 = 08:00 + 30, Morning 06:15 =
+        06:00 + 15, Evening 14:15 = 14:00 + 15 — so honouring it changes no existing verdict and
+        makes the field mean what it says.
+        """
+        name = str(schedule_name or "").strip()
+        if not name:
+            return None
+        try:
+            for row in db.list_collection("schedules"):
+                if str(row.get("name") or "").strip().lower() == name.lower():
+                    times = re.findall(r"(\d{1,2}):(\d{2})", str(row.get("inwin") or ""))
+                    if len(times) < 2:
+                        return None                      # one time is not a window; refuse to guess
+                    hh, mm = int(times[-1][0]), int(times[-1][1])
+                    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                        return None
+                    return "%02d:%02d" % (hh, mm)
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _shift_start_for(schedule):
+        """When this pattern's door opens, HH:MM. The reference point lateness is measured FROM.
+
+        The check-in window's START when there is one — that is literally when arrivals begin being
+        accepted — otherwise a time in the pattern's name, otherwise the standard 08:00.
+        """
+        s = (schedule or "").strip()
+        if s:
+            try:
+                for row in db.list_collection("schedules"):
+                    if str(row.get("name") or "").strip().lower() == s.lower():
+                        times = re.findall(r"(\d{1,2}):(\d{2})", str(row.get("inwin") or ""))
+                        if len(times) >= 2:
+                            hh, mm = int(times[0][0]), int(times[0][1])
+                            if 0 <= hh <= 23 and 0 <= mm <= 59:
+                                return "%02d:%02d" % (hh, mm)
+                        break
+            except Exception:
+                pass
+            m = re.search(r"(\d{1,2}):(\d{2})", s)
+            if m and 0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59:
+                return "%02d:%02d" % (int(m.group(1)), int(m.group(2)))
+        return "08:00"
+
+    @staticmethod
+    def _is_late(punch, thr, start):
+        """Is this punch late — measured FORWARD from when the shift's door opened?
+
+        A plain same-day string compare cannot answer this, and the portal has been getting it
+        wrong for every night shift since the feature existed. "Night Shift 23:30 - 07:30" with 45
+        minutes' grace has a threshold of 00:15, which has wrapped past midnight; `'23:35' <=
+        '00:15'` is False, so somebody arriving FIVE MINUTES into their shift was written into the
+        attendance register as late — every night, for every night worker, with Manager → Late
+        Arrivals disciplining from it. The same compare stamped a night pattern named without a
+        time (falling back to an 08:00 threshold) late on arrival too.
+
+        Both are fixed by measuring elapsed minutes from the shift start instead of comparing clock
+        faces, and both directions are guarded:
+          · a punch BEFORE the door opens is early, never late — 07:00 against an 08:30 threshold
+            is not 22½ hours late, which is what a naive modular subtraction would make it.
+          · more than twelve hours after the door opened is a punch for a different shift, not a
+            late arrival, so it is not reported as one.
+        """
+        def mins(x):
+            hh, mm = str(x).split(":")
+            hh, mm = int(hh), int(mm)
+            # RANGE-CHECKED, not merely parseable. "25:99" splits and int()s without complaint and
+            # would then produce a confident, wrong elapsed time rather than an error — the exact
+            # shape of failure this module keeps being bitten by.
+            if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                raise ValueError(x)
+            return hh * 60 + mm
+        try:
+            dp = (mins(punch) - mins(start)) % 1440
+            dt = (mins(thr) - mins(start)) % 1440
+        except Exception:
+            return False        # an unparseable time is not evidence of lateness
+        return dt < dp <= 720
+
+    @staticmethod
     def _late_threshold(schedule):
-        """Work schedules are ADVISORY: they set the lateness expectation (shift start + the grace
-        that schedule carries) and NEVER block a check-in. Flexible/WFH staff are never late;
-        employees without an assigned schedule fall back to the standard 08:00 + default grace."""
+        """Work schedules are ADVISORY: they set the lateness expectation and NEVER block a check-in.
+        Flexible/WFH staff are never late; employees without an assigned schedule fall back to the
+        standard 08:00 + default grace.
+
+        Three sources, in order of authority:
+          window  — the Check-In Window typed on the pattern. An explicit statement by an
+                    administrator about this shift, so it outranks anything inferred.
+          name    — a time embedded in the pattern's name, + that pattern's grace.
+          default — 08:00 + grace, for an employee with no schedule at all.
+        """
         s = (schedule or "").strip()
         grace = Handler._grace_for(s)
-        if not s or ("flex" not in s.lower() and "wfh" not in s.lower() and not re.search(r"(\d{1,2}):(\d{2})", s)):
+        # Never-late staff stay never-late whatever their window says — the window is about when the
+        # door is open, and for these patterns lateness is not a concept.
+        if "flex" in s.lower() or "wfh" in s.lower():
+            return None
+        win = Handler._checkin_window_end(s)
+        if win:
+            return win
+        if not s or not re.search(r"(\d{1,2}):(\d{2})", s):
             hh, mm = 8, grace
             while mm >= 60:
                 hh, mm = hh + 1, mm - 60
             return "%02d:%02d" % (hh % 24, mm)
-        if "flex" in s.lower() or "wfh" in s.lower():
-            return None
         m = re.search(r"(\d{1,2}):(\d{2})", s)
         hh, mm = int(m.group(1)), int(m.group(2)) + grace
         while mm >= 60:
@@ -7242,7 +7349,11 @@ class Handler(BaseHTTPRequestHandler):
         if db.open_attendance(emp_id, date):
             return self._err("Already checked in today.")
         thr = self._late_threshold(u.get("schedule"))
-        status = "on-time" if (thr is None or t <= thr or not self._is_workday(date)) else "late"
+        # Measured from the shift start, not compared as clock faces — see _is_late. The old
+        # `t <= thr` stamped every night-shift arrival late because their threshold wraps midnight.
+        start = self._shift_start_for(u.get("schedule"))
+        status = "on-time" if (thr is None or not self._is_late(t, thr, start)
+                               or not self._is_workday(date)) else "late"
         # Strip angle brackets from the free-text location server-side (defense-in-depth): the In/Out
         # report escapes it on render, but attendance rows bypass the /api/coll _crm_sanitize path, so
         # neutralise HTML markup here too before it ever reaches storage.

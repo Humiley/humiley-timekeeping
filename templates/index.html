@@ -3446,17 +3446,39 @@ let _deptFillSig = '';
 /* Fill the employee Work-Schedule dropdown (+ any [data-sched-select]) from the PERSISTED schedule
    patterns, so a schedule created/edited in Work Schedules becomes assignable — not just 5 built-ins.
    Falls back to the standard seed names before the collection has loaded. */
+/* A retired pattern must stop being OFFERED, and must go on being HONOURED.
+   The Work Schedules register has an Active toggle that writes and re-renders, and nothing else in
+   the portal ever looked at it: a manager switching "WFH Schedule" off watched the row grey out and
+   the pattern went on appearing in every employee's Work Schedule dropdown.
+   Two halves, and only one of them is safe to change:
+     · STOP OFFERING it — a new assignment to a pattern somebody retired is the thing the toggle is
+       for. Filtered out here.
+     · KEEP HONOURING it for the people already on it. Their lateness, their rest days and their
+       break minutes are all resolved from this pattern BY NAME; dropping it would silently re-judge
+       live attendance for exactly the staff a manager was trying to leave alone. So _grace_for,
+       _late_threshold, _rest_weekdays_for and _break_minutes_for are deliberately untouched.
+   An already-assigned retired pattern therefore stays selected and visible on that employee's
+   record — see the `prev` re-insertion below — rather than silently reading as "no pattern". */
 function tkFillSchedSelects(root) {
-  let names = ((typeof _HR !== 'undefined' && _HR.schedules) || []).map(s => s && s.name).filter(Boolean);
-  if (!names.length && typeof _SCHED_SEED !== 'undefined') names = _SCHED_SEED.map(s => s.name);
+  const _all = ((typeof _HR !== 'undefined' && _HR.schedules) || []);
+  let names = _all.filter(s => s && s.name && s.active !== false).map(s => s.name);
+  if (!names.length && !_all.length && typeof _SCHED_SEED !== 'undefined') names = _SCHED_SEED.map(s => s.name);
   (root || document).querySelectorAll('#emp-schedule, select[data-sched-select]').forEach(sel => {
     const prev = sel.value;
     // A blank first option is not decoration: "no pattern recorded" and "Mon–Fri office" are
     // different statements, and only one of them is a decision somebody made.
     const blank = sel.hasAttribute('data-sched-select')
       ? '<option value="">— ' + (typeof _t === 'function' ? _t('Standard office (Mon–Fri)') : 'Standard office (Mon–Fri)') + ' —</option>' : '';
-    sel.innerHTML = blank + names.map(n => '<option value="' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '">' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '</option>').join('');
-    if (prev && names.indexOf(prev) >= 0) sel.value = prev;
+    /* An employee already on a retired pattern keeps it on screen, labelled. Dropping the option
+       would make the select fall back to its blank first entry, and saving that record would then
+       quietly clear a schedule nobody meant to clear. */
+      const _esc = v => (typeof _crmEsc === 'function' ? _crmEsc(v) : v);
+    const _opts = names.slice();
+    const _retired = prev && _opts.indexOf(prev) < 0 && _all.some(s => s && s.name === prev);
+    sel.innerHTML = blank + _opts.map(n => '<option value="' + _esc(n) + '">' + _esc(n) + '</option>').join('') +
+      (_retired ? '<option value="' + _esc(prev) + '" selected>' + _esc(prev) + ' — ' +
+        (typeof _t === 'function' ? _t('retired') : 'retired') + '</option>' : '');
+    if (prev && _opts.indexOf(prev) >= 0) sel.value = prev;
   });
 }
 function tkFillDeptSelects(root) {
@@ -3690,14 +3712,56 @@ function _tkShowStaleNotice(row) {
     _crmEsc(_t('It is too late to close it here — the hours would be a guess. Ask your manager to correct that day. You can still check in today as normal.'));
 }
 
+/* The SAME rule the server uses, because the two answers are shown side by side.
+   This read only the schedule's NAME and added a hardcoded 15 — no check-in window, no grace — so
+   Manager → Late Arrivals computed "Late By" against a threshold the server had never used. On a
+   pattern named without a time and a window of 05:45 – 06:15, the server stamped a 06:40 arrival
+   late (correctly) and this told the manager "0 min", sorting the row to the bottom of the list
+   they work down. Two rules for one question is how a screen contradicts its own badge.
+   Kept in step with app.py's _grace_for / _checkin_window_end / _late_threshold — the order of
+   authority is window end, then a time in the name plus that pattern's grace, then 08:00 + grace. */
+function _tkSchedRow(name) {
+  const n = String(name || '').trim().toLowerCase();
+  if (!n) return null;
+  return ((typeof _HR !== 'undefined' && _HR.schedules) || [])
+    .find(s => s && String(s.name || '').trim().toLowerCase() === n) || null;
+}
+function _tkSchedGrace(name, dflt) {
+  const row = _tkSchedRow(name);
+  if (!row || row.grace == null || String(row.grace).trim() === '') return dflt;
+  const g = parseInt(row.grace, 10);
+  return (isFinite(g) && g >= 0 && g <= 240) ? g : dflt;
+}
+/* Both times out of a window, or null. One time is not a window — see _checkin_window_end. */
+function _tkSchedWindow(name) {
+  const row = _tkSchedRow(name);
+  const hits = String((row && row.inwin) || '').match(/(\d{1,2}):(\d{2})/g) || [];
+  if (hits.length < 2) return null;
+  const ok = t => { const p = t.split(':'); return +p[0] >= 0 && +p[0] <= 23 && +p[1] >= 0 && +p[1] <= 59; };
+  const first = hits[0], last = hits[hits.length - 1];
+  if (!ok(first) || !ok(last)) return null;
+  const pad = t => { const p = t.split(':'); return String(+p[0]).padStart(2, '0') + ':' + String(+p[1]).padStart(2, '0'); };
+  return { start: pad(first), end: pad(last) };
+}
 function _tkLateThreshold(schedule) {
   const sch = String(schedule || (TK.user && TK.user.schedule) || '');
-  if (!sch) return '08:15';
   if (/flex|wfh/i.test(sch)) return null;
+  const win = _tkSchedWindow(sch);
+  if (win) return win.end;
+  const grace = _tkSchedGrace(sch, 15);
   const m = sch.match(/(\d{1,2}):(\d{2})/);
-  let hh = m ? parseInt(m[1], 10) : 8, mm = (m ? parseInt(m[2], 10) : 0) + 15;
-  if (mm >= 60) { hh += 1; mm -= 60; }
+  let hh = m ? parseInt(m[1], 10) : 8, mm = (m ? parseInt(m[2], 10) : 0) + grace;
+  while (mm >= 60) { hh += 1; mm -= 60; }
   return String(hh % 24).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+}
+/* Where the shift's door opens — the reference lateness is measured FROM. Mirrors _shift_start_for. */
+function _tkShiftStart(schedule) {
+  const sch = String(schedule || (TK.user && TK.user.schedule) || '');
+  const win = _tkSchedWindow(sch);
+  if (win) return win.start;
+  const m = sch.match(/(\d{1,2}):(\d{2})/);
+  if (m && +m[1] <= 23 && +m[2] <= 59) return String(+m[1]).padStart(2, '0') + ':' + String(+m[2]).padStart(2, '0');
+  return '08:00';
 }
 function _tkIsLate(t) {
   if (new Date().getDay() === 0) return false;                                   // Sunday
@@ -38443,6 +38507,8 @@ const _VI = {
   // "% complete" is NOT repeated here — it is already defined once, and _VI is one object where a
   // later duplicate silently wins. tests/vi_duplicate_keys.js caught this addition.
   "Advance recovered on this claim": "Khấu trừ tạm ứng đợt này",
+  // ── Work schedules: the Active toggle, now that retiring a pattern means something ──────────────
+  "retired": "đã ngừng",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -43247,7 +43313,20 @@ const _MGR_AVA = ['#205090', '#00B060', '#f59e0b', '#8b5cf6', '#3168A8', '#C0000
 function _mgrColor(name) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return _MGR_AVA[h % _MGR_AVA.length]; }
 function _mgrAva(name, sz) { const cls = sz === 'md' ? 'ava-md' : 'ava-sm'; return '<div class="' + cls + '" style="background:' + _mgrColor(name) + '">' + _crmEsc(_mgrIni(name)) + '</div>'; }
 function _mgrMins(t) { const m = /(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? (+m[1] * 60 + +m[2]) : null; }
-function _mgrLateBy(rec, emp) { const thr = (typeof _tkLateThreshold === 'function') ? _tkLateThreshold(emp && emp.schedule) : '08:15'; if (!thr) return null; const ci = _mgrMins(rec.in || rec.clock_in), th = _mgrMins(thr); if (ci == null || th == null) return null; return Math.max(0, ci - th); }
+/* Minutes late, measured FORWARD from the shift start like the server's verdict — a plain
+   subtraction reports a night worker as negative (clamped to 0) because their threshold has wrapped
+   past midnight, which is how a genuinely late arrival showed as "0 min". */
+function _mgrLateBy(rec, emp) {
+  const sch = emp && emp.schedule;
+  const thr = (typeof _tkLateThreshold === 'function') ? _tkLateThreshold(sch) : '08:15';
+  if (!thr) return null;
+  const ci = _mgrMins(rec.in || rec.clock_in), th = _mgrMins(thr);
+  if (ci == null || th == null) return null;
+  const st = _mgrMins((typeof _tkShiftStart === 'function') ? _tkShiftStart(sch) : '08:00');
+  if (st == null) return Math.max(0, ci - th);
+  const dp = ((ci - st) % 1440 + 1440) % 1440, dt = ((th - st) % 1440 + 1440) % 1440;
+  return (dt < dp && dp <= 720) ? dp - dt : 0;
+}
 function _mgrZoneShort(name) { return String(name || '').split(/\s[—-]\s/)[0].trim() || 'zone'; }
 /* Nearest geofence zone to a coordinate → {zone, dist(m)} or null when no coords/zones. */
 function _mgrNearestZone(lat, lon) {
@@ -44251,7 +44330,13 @@ function _tkRenderSchedRows() {
           ? '<span style="color:#B45309" title="' + _tkEscA(_t2('Not declared — working-time compliance cannot be measured exactly for this pattern.', 'Chưa khai báo — không thể tính chính xác giờ làm việc cho lịch này.')) + '">' + _t2('not set', 'chưa đặt') + '</span>'
           : _crmEsc(String(s.breakMin)) + ' min') + '</td>'
       + '<td>' + _crmEsc(s.ot || '') + '</td>'
-      + '<td><button class="toggle ' + (s.active === false ? 'off' : 'on') + '" onclick="tkToggleSchedActive(\'' + s.id + '\',this)"></button></td>'
+      + '<td><button class="toggle ' + (s.active === false ? 'off' : 'on') + '" role="switch" aria-checked="' +
+          (s.active === false ? 'false' : 'true') + '" title="' + _tkEscA(s.active === false
+            ? _t2('Retired — not offered for new assignments. Staff already on it keep it.',
+                  'Đã ngừng — không còn để gán mới. Nhân viên đang dùng vẫn giữ nguyên.')
+            : _t2('Active — offered when assigning a work schedule',
+                  'Đang dùng — có thể gán cho nhân viên')) +
+          '" onclick="tkToggleSchedActive(\'' + s.id + '\',this)"></button></td>'
       + '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(\'' + s.id + '\')">' + _t('Edit') + '</button> <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="tkDeleteSchedule(\'' + s.id + '\')">' + _t('Delete') + '</button></td>'
       + '</tr>';
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + _t('No schedules yet.') + '</td></tr>';
@@ -44309,8 +44394,15 @@ async function saveSchedule() {
 async function tkToggleSchedActive(id, btn) {
   const s = (_HR.schedules || []).find(x => x.id === id); if (!s) return;
   const nv = (s.active === false);
-  s.active = nv; if (btn) { btn.classList.toggle('on', nv); btn.classList.toggle('off', !nv); }
+  s.active = nv; if (btn) { btn.classList.toggle('on', nv); btn.classList.toggle('off', !nv); if (btn.setAttribute) btn.setAttribute('aria-checked', nv ? 'true' : 'false'); }
   try { await tkApi('/api/coll/schedules/' + id, { method: 'PATCH', body: Object.assign({}, s, { active: nv }) }); } catch (e) {}
+  // The dropdowns this now governs are already on screen. Without this the change is invisible
+  // until a reload, which is how a control gets believed to do nothing.
+  try { tkFillSchedSelects(); } catch (e) {}
+  try { _tkRenderSchedRows(); } catch (e) {}
+  toast(nv ? _t2('Schedule retired — it is no longer offered for new assignments',
+                 'Đã ngừng lịch — không còn để gán mới')
+           : _t2('Schedule active again', 'Đã bật lại lịch làm việc'));
 }
 async function tkDeleteSchedule(id) {
   const s = (_HR.schedules || []).find(x => x.id === id); if (!s) return;
