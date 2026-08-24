@@ -10638,7 +10638,7 @@ async function _hrJdSave(id, name, data) {
 }
 
 function _brandHeader(doc, opts) {
-  opts = opts || {}; const W = 210, M = 15;
+  opts = opts || {}; const W = +(opts.w || 210), M = 15;
   _lhCur = { title: opts.title || '', code: opts.docCode || '' };
   /* Track B letterhead — two-tone brand bar bled to the top-left page edge (emerald + navy) */
   doc.setFillColor.apply(doc, _LH_GREEN); doc.rect(0, 0, 40, 2.4, 'F');
@@ -10665,8 +10665,8 @@ function _brandHeader(doc, opts) {
   }
   return y;
 }
-function _brandFooter(doc, pageNo, total, docCode, footLabel) {
-  const W = 210, M = 15, fy = 285;
+function _brandFooter(doc, pageNo, total, docCode, footLabel, pageW, pageH) {
+  const W = +(pageW || 210), M = 15, fy = +(pageH || 297) - 12;
   const label = _pdfSafe(String(footLabel || _lhCur.title || 'DOCUMENT')).toUpperCase();
   const code = docCode || _lhCur.code || 'HML-DOC';
   doc.setDrawColor.apply(doc, _LH_HAIR); doc.setLineWidth(0.3); doc.line(M, fy, W - M, fy);
@@ -21272,6 +21272,99 @@ function pmMasterWipeBtn(pid) {
                 'Xoá mọi hạng mục trong Tiến độ tổng (cần mã PIN ký)')) + '">' +
     _t2('Clear all', 'Xoá tất cả') + '</button>';
 }
+/* One button, one dialog, four choices — rather than four buttons per level and eight on a screen
+   that already has Import, Add task and a view switcher. The dialog is also the only place there is
+   room to say what each file actually IS, which for the MS Project one is not optional: it produces
+   MSPDI XML, because .mpp is a closed binary format no browser can write. Offering "MS Project" and
+   quietly handing over something else would be the same lie the import side already refuses to tell.
+
+   No `id` on the overlay — the dynamic-overlay convention: the global Escape handler only HIDES a
+   modal that has one, so a second copy would share the id with a hidden first. */
+const _SCH_EXPORTS = [
+  { k: 'xlsx-all', icon: '', label: 'Excel workbook',
+    sub: 'Master Schedule, Detail Schedule, the full progress log and a Read me — one .xlsx. ' +
+         'The Master sheet imports straight back.' },
+  { k: 'pdf-master', icon: '', label: 'Master Schedule — PDF',
+    sub: 'Landscape, on the Humiley letterhead, indented by WBS. For issuing to the client.' },
+  { k: 'pdf-detail', icon: '', label: 'Detail Schedule — PDF',
+    sub: 'Landscape, grouped by master activity, with accumulated / planned / variance per line.' },
+  { k: 'mspdi', icon: '', label: 'MS Project (.xml)',
+    sub: 'MSPDI XML — open it in MS Project with File \u2192 Open. Detail lines come through as ' +
+         'sub-tasks of the activity they report against. (.mpp cannot be written by a browser.)' }
+];
+async function schExport(pid) {
+  pid = pid || _pmPid();
+  if (!pid) { toast(_t2('Open a project first.', 'Hãy mở một dự án trước.'), 'warn'); return; }
+  const nMaster = _pmScopeFor('pm_tasks', pid).length, nDetail = _pdAllRows(pid).length;
+  if (!nMaster && !nDetail) {
+    toast(_t2('There is nothing to export yet.', 'Chưa có gì để xuất.'), 'warn');
+    return;
+  }
+  const pick = await new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2000';
+    const row = e => '<button type="button" data-k="' + e.k + '" style="display:block;width:100%;text-align:left;' +
+      'border:1px solid var(--line);background:var(--card,#fff);border-radius:10px;padding:11px 13px;' +
+      'margin-bottom:8px;cursor:pointer;font-family:inherit;color:var(--text)">' +
+      '<div style="font-weight:700;font-size:13.5px;color:var(--navy)">' + _crmEsc(_t(e.label)) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.5;margin-top:2px">' +
+        _crmEsc(_t(e.sub)) + '</div></button>';
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="width:520px;max-width:94vw">' +
+      '<div style="font-size:17px;font-weight:800;color:var(--navy);margin-bottom:3px">' +
+        _crmEsc(_t2('Export the schedule', 'Xuất tiến độ')) + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-bottom:14px">' +
+        nMaster + ' ' + _crmEsc(_t2('activities', 'hạng mục')) + '   \u00b7   ' +
+        nDetail + ' ' + _crmEsc(_t2('detail line(s)', 'dòng chi tiết')) + '</div>' +
+      _SCH_EXPORTS.map(row).join('') +
+      '<div style="display:flex;justify-content:flex-end;margin-top:6px">' +
+        '<button type="button" class="btn btn-outline" data-act="cancel">' +
+          _crmEsc(_t2('Cancel', 'Huỷ')) + '</button></div></div>';
+    let done = false;
+    const finish = v => { if (done) return; done = true;
+      document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); finish(null); } };
+    ov.querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => finish(b.getAttribute('data-k'))));
+    ov.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(null));
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(null); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    setTimeout(() => { const b = ov.querySelector('[data-k]'); if (b) b.focus(); }, 30);
+  });
+  if (!pick) return;
+
+  /* The engines are ~2.5 MB and are NOT loaded on a metered connection until something needs them.
+     tkEnsureExportLibs resolves rather than rejects even when a script never arrives, so each
+     writer re-checks for the library it needs and says so — the alternative is a button that
+     appears to do nothing. */
+  if (pick !== 'mspdi') {
+    toast(_t2('Preparing the export\u2026', 'Đang chuẩn bị bản xuất\u2026'), 'info', 15000);
+    try { await tkEnsureExportLibs(); } catch (e) {}
+  }
+  let ok = false;
+  try {
+    if (pick === 'xlsx-all') ok = _schXlsx(pid);
+    else if (pick === 'pdf-master') ok = _schPdfMaster(pid);
+    else if (pick === 'pdf-detail') ok = _schPdfDetail(pid);
+    else if (pick === 'mspdi') ok = _schMspdi(pid);
+  } catch (e) {
+    toast(_t2('Could not build the export', 'Không thể tạo bản xuất') + ': ' + _errMsg(e), 'error', 9000);
+    return;
+  }
+  if (!ok) return;                      // the writer already said what was missing
+  const label = (_SCH_EXPORTS.find(e => e.k === pick) || {}).label || pick;
+  tkAudit('Schedule exported', (_pmProj(pid) || {}).name || pid,
+          label + ' \u00b7 ' + nMaster + ' activities, ' + nDetail + ' detail line(s)');
+  toast(_t2('Exported \u2014 ' + _t(label), 'Đã xuất \u2014 ' + _t(label)), 'success', 5000);
+}
+function schExportBtn(pid) {
+  return '<button class="btn btn-ghost btn-sm" onclick="schExport(\'' + pid + '\')" title="' +
+    _tkEscA(_t2('Export this project\'s schedule as Excel, PDF or MS Project XML',
+                'Xuất tiến độ dự án này ra Excel, PDF hoặc MS Project XML')) + '">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'style="vertical-align:-2px;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+      '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+    _t2('Export', 'Xuất') + '</button>';
+}
 function pmImportBtn() { return '<button class="btn btn-ghost btn-sm" onclick="pmImportTasks()" title="Import schedule from MS Project XML or Excel/CSV"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import</button>'; }
 function _pmXlDate(v) {
   if (v === '' || v == null) return '';
@@ -21281,6 +21374,563 @@ function _pmXlDate(v) {
   return '';
 }
 function _pmStatusFromPct(p) { p = +p || 0; return p >= 100 ? 'Completed' : p > 0 ? 'In progress' : 'Not started'; }
+/* ══ SCHEDULE EXPORT ═════════════════════════════════════════════════════════════════════════════
+   Excel, PDF and MS Project all read the SAME two row builders. That is the whole design: three
+   exports each assembling their own columns is three chances for the PDF to say 62% where the
+   workbook says 58%, and the person holding both is the client. The builders below decide what a
+   row IS; the three writers below them decide only how to draw it.
+
+   Everything derived is derived HERE by the same functions the screen uses — _pmTaskPctRoll,
+   _pdAcc, _pdPlanned, _pmCPM — so an exported figure is the figure on screen, not a second
+   calculation that agrees today. */
+
+/* One activity, as every export sees it. Ordered by WBS, because outline order is what makes an
+   indent (PDF), an OutlineLevel (MS Project) and a readable sheet (Excel) all mean the same thing. */
+function _schExportMaster(pid) {
+  const all = _pmScopeFor('pm_tasks', pid);
+  const cpm = _pmCPM(all);
+  const rows = all.slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || String(a.name || '').localeCompare(String(b.name || '')));
+  return rows.map(t => {
+    const ro = _pmTaskPctRoll(t, all, pid);
+    const c = cpm.map[t.id] || {};
+    return {
+      id: t.id,
+      wbs: String(t.wbs || '').trim(),
+      level: _pmWbsLevel(t.wbs),
+      name: String(t.name || '').trim(),
+      assignee: String(t.assignee || '').trim(),
+      start: String(t.start || '').slice(0, 10),
+      finish: String(t.finish || '').slice(0, 10),
+      // Inclusive, like the CPM and the Gantt: a task that starts and finishes on the same day is
+      // one day of work, not zero. _pmDateDiff counts the gap between two dates.
+      days: (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : '',
+      predecessors: String(t.predecessors || '').trim(),
+      pct: ro.pct,
+      pctFrom: ro.from,                       // 'typed' | 'children' | 'detail' — see _pmTaskPctRoll
+      status: _pmTaskStatus(t, ro.pct),
+      phase: String(t.phase || '').trim(),
+      milestone: String(t.isMilestone) === 'Yes',
+      // The CPM's verdict when the network can produce one, the typed flag otherwise — the same
+      // precedence the Activities table prints, so the export cannot claim a different critical path.
+      critical: cpm.hasDeps ? !!c.critical : String(t.critical) === 'Yes',
+      float: (cpm.hasDeps && c.inNet) ? c.float : '',
+      actualFinish: String(t.actualFinish || '').slice(0, 10),
+      value: +t.weight || 0,
+      note: String(t.note || '').trim()
+    };
+  });
+}
+
+/* One reporting line, as every export sees it. `group` is the master activity it rolls into — the
+   same _pdGroupOf the register groups by, so the export's sections are the screen's sections.
+
+   ALL detail schedules, not just the one the picker is showing, each row carrying its schedule
+   name. An export that silently dropped four of five schedules would be indistinguishable from a
+   project that only has one. The Read me sheet says so. */
+function _schExportDetail(pid, day) {
+  day = day || _pmToday();
+  const scheds = {}; _pdScheds(pid).forEach(x => { scheds[x.id] = x.name || ''; });
+  return _pdAllRows(pid).map(r => {
+    const acc = _pdAcc(r, day), pl = _pdPlanned(r, day), at = _pdQtyAt(r, day);
+    const log = _pdLog(r);
+    return {
+      id: r.id,
+      schedule: scheds[r.scheduleId] || (r.scheduleId ? '' : _t('Unfiled')),
+      group: _pdGroupOf(pid, r),
+      taskRef: String(r.taskRef || '').trim(),
+      category: String(r.category || '').trim(),
+      name: String(r.name || '').trim(),
+      start: String(r.start || '').slice(0, 10),
+      finish: String(r.finish || '').slice(0, 10),
+      unit: String(r.unit || '').trim(),
+      qtyPlan: _pdQtyPlan(r) || '',
+      qtyAt: at.q || '',
+      qtyInferred: !!at.inferred,
+      daily: _pdDaily(r, day),
+      acc: acc,
+      // A line with no dates has no plan, so it has no variance either — '' rather than a
+      // flattering 0.0, which is the same refusal _pdRegister makes on screen.
+      planned: _pdHasPlan(r) ? pl : '',
+      variance: _pdHasPlan(r) ? Math.round((acc - pl) * 10) / 10 : '',
+      weight: _pdWeight(r),
+      readings: log.length,
+      lastReading: log.length ? String(log[log.length - 1].d || '') : ''
+    };
+  }).sort((a, b) =>
+    String(a.schedule).localeCompare(String(b.schedule)) ||
+    _pmWbsCmp(a.taskRef, b.taskRef) ||
+    String(a.category).localeCompare(String(b.category)) ||
+    String(a.name).localeCompare(String(b.name)));
+}
+
+/* Every reading ever filed, flattened. This is the site's own record of what happened on what day
+   and it exists nowhere outside the row's JSON — no screen lists it, and nothing else exports it.
+   A progress claim argued six months later is argued from exactly this. */
+function _schExportLog(pid) {
+  const out = [];
+  _pdAllRows(pid).forEach(r => {
+    _pdLog(r).forEach(e => out.push({
+      date: String(e.d || ''),
+      item: String(r.name || ''),
+      category: String(r.category || ''),
+      taskRef: String(r.taskRef || ''),
+      pct: (e.pct === '' || e.pct == null) ? '' : +e.pct,
+      qty: (e.qty === '' || e.qty == null) ? '' : +e.qty,
+      unit: String(r.unit || ''),
+      by: String(e.by || ''),
+      note: String(e.note || e.reason || '')
+    }));
+  });
+  return out.sort((a, b) => String(a.date).localeCompare(String(b.date)) ||
+                            String(a.item).localeCompare(String(b.item)));
+}
+
+/* A paginated table on the Humiley letterhead. jsPDF has no table primitive and jspdf-autotable is
+   not one of the four vendored engines, so this draws one: measured column widths, wrapped cells,
+   a header row REPEATED on every page, and zebra banding.
+
+   Two things it must get right, because both fail silently:
+     · a row taller than the space left has to move whole to the next page, not be clipped at the
+       footer — a schedule line cut in half reads as a different task;
+     · the page count in the footer is not known until the last row is placed, so footers are
+       stamped in a second pass over doc.getNumberOfPages(). */
+function _pmPdfTable(doc, o) {
+  const land = !!o.landscape, W = land ? 297 : 210, H = land ? 210 : 297;
+  const M = 15, TOP = o.top || 44, BOT = H - 18;
+  const cols = o.cols, total = cols.reduce((a, c) => a + c.w, 0), avail = W - 2 * M;
+  const wOf = c => c.w / total * avail;
+  let y = TOP, band = 0;
+
+  const head = () => {
+    doc.setFillColor(32, 80, 144); doc.rect(M, y, avail, 7, 'F');
+    _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
+    let x = M;
+    cols.forEach(c => {
+      const w = wOf(c);
+      doc.text(_pdfSafe(c.label), c.align === 'right' ? x + w - 2 : x + 2, y + 4.7,
+               c.align === 'right' ? { align: 'right' } : undefined);
+      x += w;
+    });
+    y += 7; band = 0;
+  };
+  const page = () => {
+    doc.addPage(land ? 'a4' : undefined, land ? 'landscape' : undefined);
+    y = _brandHeader(doc, Object.assign({}, o.head, { w: W }));
+    if (o.head && o.head.title) y = Math.max(y, TOP - 6);
+    head();
+  };
+
+  head();
+  (o.rows || []).forEach(r => {
+    // Measure first. Deciding to break AFTER drawing is what clips a row.
+    _pdfFont(doc, r._bold ? 'bold' : 'normal'); doc.setFontSize(7);
+    const cells = cols.map(c => doc.splitTextToSize(_pdfSafe(r[c.k] == null ? '' : r[c.k]),
+                                                    wOf(c) - 4 - (c.k === o.indentKey ? (r._indent || 0) : 0)));
+    const h = Math.max(5.2, cells.reduce((m, L) => Math.max(m, L.length), 1) * 3.3 + 2.3);
+    if (y + h > BOT) page();
+    if (r._section) {
+      doc.setFillColor(226, 235, 246); doc.rect(M, y, avail, h, 'F');
+    } else if (band % 2) {
+      doc.setFillColor(247, 249, 252); doc.rect(M, y, avail, h, 'F');
+    }
+    let x = M;
+    cols.forEach((c, i) => {
+      const w = wOf(c);
+      _pdfFont(doc, (r._bold || r._section) ? 'bold' : 'normal');
+      doc.setFontSize(7);
+      const col = r._colors && r._colors[c.k];
+      doc.setTextColor.apply(doc, col || (r._section ? [32, 80, 144] : [35, 41, 50]));
+      const pad = (c.k === o.indentKey) ? (r._indent || 0) : 0;
+      doc.text(cells[i], c.align === 'right' ? x + w - 2 : x + 2 + pad, y + 3.9,
+               c.align === 'right' ? { align: 'right' } : undefined);
+      x += w;
+    });
+    doc.setDrawColor(232, 236, 242); doc.setLineWidth(0.1);
+    doc.line(M, y + h, W - M, y + h);
+    y += h; band++;
+  });
+  return y;
+}
+
+/* Stamp the footer on every page once the total is finally known. */
+function _pmPdfFooters(doc, docCode, label, landscape) {
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    _brandFooter(doc, i, n, docCode, label, landscape ? 297 : 210, landscape ? 210 : 297);
+  }
+}
+
+/* `part` distinguishes the two PDFs. Without it both save as HML-Schedule-<code>-<date>.pdf and the
+   second silently replaces the first in the Downloads folder — the master programme is gone and the
+   only clue is that the file you open is the detail one. */
+function _schFileName(pid, ext, part) {
+  const p = _pmProj(pid) || {};
+  const base = String(p.code || p.name || 'Project').replace(/[^A-Za-z0-9À-ỹ _-]/g, '').trim().replace(/\s+/g, '-');
+  return 'HML-Schedule-' + (base || 'Project') + (part ? '-' + part : '') + '-' + _pmToday() + '.' + ext;
+}
+function _schDownload(text, filename, mime) {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 20000);
+}
+
+/* ══ EXCEL ═══════════════════════════════════════════════════════════════════════════════════════
+   One workbook, four sheets. The Master sheet's HEADERS ARE THE ONES _pmParseTaskSheet ACCEPTS, so
+   the file this produces can be edited in Excel and imported straight back — the round trip is the
+   point of an Excel export and is asserted in tests/schedule_export.js. Change a header here and
+   you break re-import silently, which is why the mapping is written down beside it. */
+function _schXlsx(pid) {
+  if (!window.XLSX) { toast(_t2('The spreadsheet engine did not load — check your connection and try again.',
+                                'Chưa tải được thư viện bảng tính — kiểm tra kết nối và thử lại.'), 'error', 8000); return false; }
+  const p = _pmProj(pid) || {}, day = _pmToday();
+  const M = _schExportMaster(pid), D = _schExportDetail(pid, day), L = _schExportLog(pid);
+  const wb = XLSX.utils.book_new();
+
+  /* These header strings are the re-import contract: _pmParseTaskSheet matches WBS, Task name,
+     Assignee, Start, Finish, % complete and Milestone by name. Renaming any of them breaks the
+     round trip silently, so tests/schedule_export.js asserts each one lands on the right column.
+
+     'Progress source' rather than the more natural '% from': the importer matches the percentage
+     on a bare '%' SUBSTRING, so a second header containing % is read as the percentage whenever it
+     happens to come first — making the round trip depend on the order of this array, which is not
+     a property anybody would know to preserve. */
+  const mAoA = [['WBS', 'Task name', 'Assignee', 'Start', 'Finish', 'Duration (d)', 'Predecessors',
+                 '% complete', 'Progress source', 'Status', 'Phase', 'Milestone', 'Critical', 'Float (d)',
+                 'Actual finish', 'Value (VND)', 'Notes']]
+    .concat(M.map(t => [t.wbs, t.name, t.assignee, t.start, t.finish, t.days, t.predecessors,
+                        t.pct, t.pctFrom, t.status, t.phase, t.milestone ? 'Yes' : 'No',
+                        t.critical ? 'Yes' : 'No', t.float, t.actualFinish, t.value || '', t.note]));
+  const wsM = XLSX.utils.aoa_to_sheet(mAoA);
+  wsM['!cols'] = [{ wch: 12 }, { wch: 48 }, { wch: 18 }, { wch: 11 }, { wch: 11 }, { wch: 11 },
+                  { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 13 }, { wch: 22 }, { wch: 10 },
+                  { wch: 9 }, { wch: 9 }, { wch: 12 }, { wch: 14 }, { wch: 40 }];
+  wsM['!freeze'] = { xSplit: 0, ySplit: 1 };
+  XLSX.utils.book_append_sheet(wb, wsM, 'Master Schedule');
+
+  const dAoA = [['Detail schedule', 'Master activity', 'Category / trade', 'Report item',
+                 'Start', 'Finish', 'Unit', 'Qty planned', 'Qty to date', 'Daily %',
+                 'Accumulated %', 'Planned to date %', 'Variance %', 'Weight', 'Readings', 'Last reading']]
+    .concat(D.map(r => [r.schedule, r.group, r.category, r.name, r.start, r.finish, r.unit,
+                        r.qtyPlan, r.qtyAt, r.daily, r.acc, r.planned, r.variance, r.weight,
+                        r.readings, r.lastReading]));
+  const wsD = XLSX.utils.aoa_to_sheet(dAoA);
+  wsD['!cols'] = [{ wch: 24 }, { wch: 34 }, { wch: 18 }, { wch: 44 }, { wch: 11 }, { wch: 11 },
+                  { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 13 }, { wch: 16 },
+                  { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 13 }];
+  wsD['!freeze'] = { xSplit: 0, ySplit: 1 };
+  XLSX.utils.book_append_sheet(wb, wsD, 'Detail Schedule');
+
+  const lAoA = [['Date', 'Report item', 'Category', 'Master activity', '%', 'Quantity', 'Unit', 'Filed by', 'Note']]
+    .concat(L.length ? L.map(e => [e.date, e.item, e.category, e.taskRef, e.pct, e.qty, e.unit, e.by, e.note])
+                     : [['—', 'No progress has been reported yet', '', '', '', '', '', '', '']]);
+  const wsL = XLSX.utils.aoa_to_sheet(lAoA);
+  wsL['!cols'] = [{ wch: 12 }, { wch: 44 }, { wch: 18 }, { wch: 16 }, { wch: 8 }, { wch: 12 },
+                  { wch: 8 }, { wch: 20 }, { wch: 40 }];
+  XLSX.utils.book_append_sheet(wb, wsL, 'Progress log');
+
+  const readme = [
+    ['Humiley Portal — schedule export'],
+    [],
+    ['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')],
+    ['Client', p.account || p.client || ''],
+    ['Project Manager', p.manager || ''],
+    ['Exported', _pmToday()],
+    ['Exported by', (TK.user || {}).name || ''],
+    [],
+    ['Master Schedule', M.length + ' activity/activities. One row per contract activity, in WBS order.'],
+    ['Detail Schedule', D.length + ' line(s) — EVERY detail schedule on this project, not only the one ' +
+                        'on screen. The first column says which.'],
+    ['Progress log', L.length + ' reading(s). One row per daily report — the site record behind every ' +
+                     'percentage in the other two sheets.'],
+    [],
+    ['Re-importing', 'The Master Schedule sheet can be edited and imported back via Activities → Import. ' +
+                     'Keep the WBS, Task name, Assignee, Start, Finish, % complete and Milestone column ' +
+                     'headings — the importer matches on those names. Importing ADDS rows; it does not ' +
+                     'replace the schedule.'],
+    ['Progress source', '"typed" = entered on the activity. "children" = rolled up from its sub-tasks. ' +
+               '"detail" = rolled up from the site\'s daily reports. Children and detail win over a ' +
+               'typed number, which is why a parent may not show what was typed on it.'],
+    ['Planned to date', 'A straight line between Start and Finish. Blank where a line has no dates — ' +
+                        'there is nothing to be ahead of or behind.'],
+    ['Float', 'Blank where an activity has no predecessor and no successor: it is in no network, so ' +
+              'it has no float to report. It is not zero.']
+  ];
+  const wsR = XLSX.utils.aoa_to_sheet(readme);
+  wsR['!cols'] = [{ wch: 22 }, { wch: 110 }];
+  XLSX.utils.book_append_sheet(wb, wsR, 'Read me');
+
+  XLSX.writeFile(wb, _schFileName(pid, 'xlsx'));
+  return true;
+}
+
+/* ══ PDF ═════════════════════════════════════════════════════════════════════════════════════════
+   Landscape, on the letterhead. The master programme keeps its outline: rows are indented by WBS
+   depth, so a printed page carries the same structure as the screen rather than a flat list whose
+   hierarchy is only in the numbers. */
+function _schPdfMaster(pid) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast(_t2('The PDF engine did not load — check your connection and try again.',
+                      'Chưa tải được thư viện PDF — kiểm tra kết nối và thử lại.'), 'error', 8000); return false; }
+  const p = _pmProj(pid) || {}, M = _schExportMaster(pid);
+  const doc = new J('l', 'mm', 'a4');
+  const head = { title: 'Master Schedule', w: 297,
+                 subtitle: (p.code ? p.code + ' — ' : '') + (p.name || ''), docCode: 'HML-PMC-MS' };
+  let y = _brandHeader(doc, head);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(92, 100, 112);
+  /* "overall 0%" beside rows reading 100% is the silent-zero shape: pmScopeRollup weighs the WBS
+     WORK PACKAGES, and a project with none rolls up to zero — which is not a progress figure, it is
+     the absence of one. Say which, and say what the number measures, because this line sits at the
+     top of a document that goes to the client. */
+  const sr = (typeof pmScopeRollup === 'function') ? pmScopeRollup(pid) : { pct: 0, total: 0 };
+  const overall = sr.total
+    ? 'overall ' + sr.pct + '% of ' + sr.total + ' WBS package(s)'
+    : 'no WBS packages defined — see the % column for each activity';
+  doc.text(_pdfSafe(M.length + ' activities   ·   ' + overall + '   ·   ' +
+    (p.manager ? 'PM: ' + p.manager + '   ·   ' : '') + 'as at ' + _pmFmt(_pmToday())), 15, y);
+  y += 5;
+  _pmPdfTable(doc, {
+    landscape: true, top: y, head: head, indentKey: 'name',
+    cols: [{ k: 'wbs', label: 'WBS', w: 9 }, { k: 'name', label: 'Activity', w: 34 },
+           { k: 'assignee', label: 'Assignee', w: 12 }, { k: 'start', label: 'Start', w: 8 },
+           { k: 'finish', label: 'Finish', w: 8 }, { k: 'days', label: 'Days', w: 5, align: 'right' },
+           { k: 'pct', label: '%', w: 5, align: 'right' }, { k: 'status', label: 'Status', w: 10 },
+           { k: 'float', label: 'Float', w: 5, align: 'right' }, { k: 'flags', label: '', w: 6 }],
+    rows: M.map(t => ({
+      wbs: t.wbs, name: t.name, assignee: t.assignee,
+      start: _pmFmt(t.start), finish: _pmFmt(t.finish), days: t.days,
+      pct: t.pct + '%', status: t.status,
+      float: t.float === '' ? '—' : t.float + 'd',
+      flags: (t.critical ? 'CP ' : '') + (t.milestone ? '◆' : ''),
+      _indent: (t.level - 1) * 3,
+      _bold: t.level === 1,
+      _colors: t.critical ? { flags: [239, 68, 68] } : null
+    }))
+  });
+  _pmPdfFooters(doc, 'HML-PMC-MS', 'MASTER SCHEDULE', true);
+  doc.save(_schFileName(pid, 'pdf', 'Master'));
+  return true;
+}
+
+/* The detail programme, sectioned by the master activity its lines roll into — the same grouping
+   _pdRegister draws, so the printed sections are the sections on screen. */
+function _schPdfDetail(pid) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast(_t2('The PDF engine did not load — check your connection and try again.',
+                      'Chưa tải được thư viện PDF — kiểm tra kết nối và thử lại.'), 'error', 8000); return false; }
+  const p = _pmProj(pid) || {}, day = _pmToday(), D = _schExportDetail(pid, day);
+  const doc = new J('l', 'mm', 'a4');
+  const head = { title: 'Detail Schedule', w: 297,
+                 subtitle: (p.code ? p.code + ' — ' : '') + (p.name || ''), docCode: 'HML-PMC-DS' };
+  let y = _brandHeader(doc, head);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(92, 100, 112);
+  doc.text(_pdfSafe(D.length + ' reporting line(s)   ·   ' + _pdScheds(pid).length +
+    ' detail schedule(s)   ·   as at ' + _pmFmt(day)), 15, y);
+  y += 5;
+
+  // Section rows interleaved with their lines, in the order _schExportDetail already sorted them.
+  const rows = []; let lastKey = null;
+  D.forEach(r => {
+    const key = r.schedule + ' ' + r.group;
+    if (key !== lastKey) {
+      const n = D.filter(x => x.schedule === r.schedule && x.group === r.group).length;
+      rows.push({ name: r.group + '   (' + r.schedule + ')', qty: n + ' ' + _t('item(s)'), _section: true });
+      lastKey = key;
+    }
+    rows.push({
+      name: r.name, category: r.category,
+      start: _pmFmt(r.start), finish: _pmFmt(r.finish),
+      qty: r.qtyPlan ? (r.qtyAt || 0) + ' / ' + r.qtyPlan + (r.unit ? ' ' + r.unit : '') : '—',
+      acc: Math.round(r.acc) + '%',
+      planned: r.planned === '' ? '—' : Math.round(r.planned) + '%',
+      variance: r.variance === '' ? '—' : (r.variance >= 0 ? '+' : '') + r.variance.toFixed(1) + '%',
+      _indent: 3,
+      _colors: r.variance === '' ? null
+        : { variance: r.variance < -10 ? [239, 68, 68] : r.variance < -0.5 ? [217, 119, 6] : [0, 150, 82] }
+    });
+  });
+  _pmPdfTable(doc, {
+    landscape: true, top: y, head: head, indentKey: 'name',
+    cols: [{ k: 'name', label: 'Report item', w: 34 }, { k: 'category', label: 'Trade', w: 12 },
+           { k: 'start', label: 'Start', w: 9 }, { k: 'finish', label: 'Finish', w: 9 },
+           { k: 'qty', label: 'Qty at / plan', w: 14, align: 'right' },
+           { k: 'acc', label: 'Accum.', w: 7, align: 'right' },
+           { k: 'planned', label: 'Planned', w: 8, align: 'right' },
+           { k: 'variance', label: 'Variance', w: 8, align: 'right' }],
+    rows: rows
+  });
+  _pmPdfFooters(doc, 'HML-PMC-DS', 'DETAIL SCHEDULE', true);
+  doc.save(_schFileName(pid, 'pdf', 'Detail'));
+  return true;
+}
+
+/* ══ MS PROJECT ══════════════════════════════════════════════════════════════════════════════════
+   MSPDI — the XML schema MS Project reads natively (File → Open → the .xml). NOT .mpp: that is a
+   closed binary format no browser can write, which is the same thing the IMPORT side says when
+   somebody hands it one. Saying "MS Project" and producing XML is only honest if the UI says which,
+   so it does.
+
+   The two things MS Project is unforgiving about:
+     · OutlineLevel must come from the WBS depth AND the tasks must be in outline order. Out of
+       order, it builds a different hierarchy from the one exported — silently, and it looks like a
+       data-entry mistake rather than an export bug.
+     · Dates are local, unzoned: 2026-08-13T08:00:00. A trailing Z shifts every date by the
+       reader's offset.
+
+   The detail lines are emitted as children of the activity they report against, one level deeper,
+   so the planner opens ONE programme rather than two files to reconcile by hand. */
+function _mspEsc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+    /* XML 1.0 forbids most control characters outright, so ONE of them anywhere makes the whole
+       file unopenable — and a schedule pasted out of another tool is exactly where one arrives.
+       Written as \u escapes rather than the characters themselves: a literal control byte in
+       source does not survive being moved around, which is how this line was lost the first time.
+       \u0009 (tab), \u000A (newline) and \u000D (return) are legal and deliberately kept. */
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+function _mspDate(d, endOfDay) {
+  const t = String(d || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return '';
+  return t + (endOfDay ? 'T17:00:00' : 'T08:00:00');
+}
+function _mspDur(days) {
+  const d = Math.max(0, Math.round(+days || 0));
+  return 'PT' + (d * 8) + 'H0M0S';           // 8-hour working day, MS Project's default
+}
+function _schMspdi(pid) {
+  const p = _pmProj(pid) || {};
+  const M = _schExportMaster(pid), D = _schExportDetail(pid, _pmToday());
+  const uidOf = {};                          // WBS/name key -> UID, for predecessor links
+  const tasks = [];
+  let uid = 0;
+  M.forEach(t => {
+    uid++;
+    const key = t.wbs || t.name;
+    if (key && uidOf[key] === undefined) uidOf[key] = uid;
+    tasks.push({
+      uid: uid, name: t.name, outline: t.wbs || String(uid), level: t.level,
+      start: t.start, finish: t.finish, days: t.days, pct: t.pct,
+      milestone: t.milestone, critical: t.critical, assignee: t.assignee,
+      preds: t.predecessors ? t.predecessors.split(',').map(x => x.trim()).filter(Boolean) : []
+    });
+    // Its reporting lines, one level deeper. A detail line has no predecessors of its own.
+    D.filter(r => r.taskRef && r.taskRef === (t.wbs || t.name)).forEach(r => {
+      uid++;
+      tasks.push({
+        uid: uid, name: r.name + (r.category ? '  (' + r.category + ')' : ''),
+        outline: (t.wbs || String(uid)) + '.' + uid, level: t.level + 1,
+        start: r.start, finish: r.finish,
+        days: (r.start && r.finish) ? Math.max(1, (_pmDateDiff(r.start, r.finish) || 0) + 1) : 0,
+        pct: Math.round(r.acc), milestone: false, critical: false, assignee: '', preds: [], detail: true
+      });
+    });
+  });
+  // Lines that report against nothing keep their own top-level heading rather than being dropped.
+  const orphans = D.filter(r => !r.taskRef || uidOf[r.taskRef] === undefined);
+  if (orphans.length) {
+    uid++;
+    const hdrUid = uid;
+    tasks.push({ uid: hdrUid, name: 'Not linked to a master activity', outline: String(hdrUid),
+                 level: 1, start: '', finish: '', days: 0, pct: 0, milestone: false,
+                 critical: false, assignee: '', preds: [] });
+    orphans.forEach(r => {
+      uid++;
+      tasks.push({ uid: uid, name: r.name, outline: hdrUid + '.' + uid, level: 2,
+                   start: r.start, finish: r.finish,
+                   days: (r.start && r.finish) ? Math.max(1, (_pmDateDiff(r.start, r.finish) || 0) + 1) : 0,
+                   pct: Math.round(r.acc), milestone: false, critical: false, assignee: '',
+                   preds: [], detail: true });
+    });
+  }
+
+  const people = []; const pUid = {};
+  M.forEach(t => { if (t.assignee && pUid[t.assignee] === undefined) { pUid[t.assignee] = people.length + 1; people.push(t.assignee); } });
+
+  const starts = tasks.map(t => t.start).filter(Boolean).sort();
+  const finishes = tasks.map(t => t.finish).filter(Boolean).sort();
+  const projStart = starts[0] || _pmToday();
+
+  const xml = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Project xmlns="http://schemas.microsoft.com/project">',
+    '<SaveVersion>14</SaveVersion>',
+    '<Name>' + _mspEsc(_schFileName(pid, 'xml')) + '</Name>',
+    '<Title>' + _mspEsc((p.code ? p.code + ' - ' : '') + (p.name || 'Project')) + '</Title>',
+    '<Company>' + _mspEsc((typeof _LH !== 'undefined' && _LH.name) || 'Humiley Group Inc.') + '</Company>',
+    '<Manager>' + _mspEsc(p.manager || '') + '</Manager>',
+    '<ScheduleFromStart>1</ScheduleFromStart>',
+    '<StartDate>' + _mspDate(projStart) + '</StartDate>',
+    '<FinishDate>' + (_mspDate(finishes[finishes.length - 1], true) || _mspDate(projStart, true)) + '</FinishDate>',
+    '<CalendarUID>1</CalendarUID>',
+    '<DurationFormat>7</DurationFormat>',
+    '<Calendars><Calendar><UID>1</UID><Name>Standard</Name><IsBaseCalendar>1</IsBaseCalendar>',
+    '<WeekDays>'];
+  // 1 = Sunday … 7 = Saturday. Mon–Sat working, matching the six-day week these programmes are
+  // built on; Sunday off. Getting this wrong does not corrupt anything, but MS Project will
+  // recompute every finish date against ITS calendar and the dates stop matching the portal.
+  for (let dnum = 1; dnum <= 7; dnum++) {
+    const working = dnum !== 1;
+    xml.push('<WeekDay><DayType>' + dnum + '</DayType><DayWorking>' + (working ? 1 : 0) + '</DayWorking>' +
+      (working ? '<WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime>' +
+                 '<WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes>' : '') +
+      '</WeekDay>');
+  }
+  xml.push('</WeekDays></Calendar></Calendars>', '<Tasks>');
+  // UID 0 is the project summary row MS Project expects to own itself.
+  xml.push('<Task><UID>0</UID><ID>0</ID><Name>' + _mspEsc(p.name || 'Project') + '</Name>' +
+    '<Type>1</Type><OutlineLevel>0</OutlineLevel><Summary>1</Summary></Task>');
+  tasks.forEach((t, i) => {
+    const isSummary = tasks.some(x => x.level === t.level + 1 && x.outline.indexOf(t.outline + '.') === 0);
+    const parts = ['<Task>',
+      '<UID>' + t.uid + '</UID>', '<ID>' + (i + 1) + '</ID>',
+      '<Name>' + _mspEsc(t.name) + '</Name>',
+      '<Type>0</Type>',
+      '<OutlineNumber>' + _mspEsc(t.outline) + '</OutlineNumber>',
+      '<OutlineLevel>' + t.level + '</OutlineLevel>',
+      '<WBS>' + _mspEsc(t.outline) + '</WBS>',
+      '<Summary>' + (isSummary ? 1 : 0) + '</Summary>',
+      '<Milestone>' + (t.milestone ? 1 : 0) + '</Milestone>',
+      '<Critical>' + (t.critical ? 1 : 0) + '</Critical>',
+      '<PercentComplete>' + Math.max(0, Math.min(100, Math.round(+t.pct || 0))) + '</PercentComplete>',
+      '<Manual>0</Manual>'];
+    if (t.start) parts.push('<Start>' + _mspDate(t.start) + '</Start>');
+    if (t.finish) parts.push('<Finish>' + _mspDate(t.finish, true) + '</Finish>');
+    if (t.days) parts.push('<Duration>' + _mspDur(t.milestone ? 0 : t.days) + '</Duration>',
+                           '<DurationFormat>7</DurationFormat>');
+    t.preds.forEach(code => {
+      const u = uidOf[code];
+      // A predecessor naming an activity that is not in this export is dropped rather than
+      // guessed at. A wrong link re-sequences the whole programme on open.
+      if (u !== undefined && u !== t.uid) {
+        parts.push('<PredecessorLink><PredecessorUID>' + u + '</PredecessorUID><Type>1</Type></PredecessorLink>');
+      }
+    });
+    parts.push('</Task>');
+    xml.push(parts.join(''));
+  });
+  xml.push('</Tasks>');
+  if (people.length) {
+    xml.push('<Resources>');
+    people.forEach((nm, i) => xml.push('<Resource><UID>' + (i + 1) + '</UID><ID>' + (i + 1) +
+      '</ID><Name>' + _mspEsc(nm) + '</Name><Type>1</Type></Resource>'));
+    xml.push('</Resources>', '<Assignments>');
+    let aUid = 0;
+    tasks.forEach(t => {
+      if (!t.assignee || pUid[t.assignee] === undefined) return;
+      aUid++;
+      xml.push('<Assignment><UID>' + aUid + '</UID><TaskUID>' + t.uid + '</TaskUID><ResourceUID>' +
+        pUid[t.assignee] + '</ResourceUID><Units>1</Units></Assignment>');
+    });
+    xml.push('</Assignments>');
+  }
+  xml.push('</Project>');
+  _schDownload(xml.join('\n'), _schFileName(pid, 'xml'), 'application/xml;charset=utf-8');
+  return true;
+}
+
 function _pmParseMsProjectXml(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -21332,12 +21982,43 @@ async function pmImportTasks() {
       else if (nm.endsWith('.csv') || nm.endsWith('.xlsx') || nm.endsWith('.xls')) { rows = await _pmParseTaskSheet(f); }
       else { toast('Unsupported file. Use MS Project XML (.xml), Excel (.xlsx) or CSV.', 'warn', 7000); return; }
       if (!rows.length) { toast('No tasks found in the file. Check it has a Task Name column / <Task> entries.', 'warn', 7000); return; }
-      if (!(await tkConfirm('Import ' + rows.length + ' task(s) into this project? They are added to the existing schedule.'))) return;
-      let n = 0; const total = rows.length;
-      for (const t of rows) { try { const res = await tkApi('/api/coll/pm_tasks', { method: 'POST', body: Object.assign({ projectId: pid }, t) }); (_HR.pm_tasks = _HR.pm_tasks || []).push(res.item); n++; } catch (e) { } }
-      try { tkAudit('Schedule imported', _pmProj(pid) ? _pmProj(pid).name : '', n + ' tasks'); } catch (e) { }
+      const total = rows.length;
+      if (!(await tkConfirm(_t2(
+            'Import ' + total + ' task(s) into this project? They are added to the existing schedule.',
+            'Nhập ' + total + ' công việc vào dự án này? Chúng được thêm vào tiến độ hiện có.') +
+          (total > 200 ? '\n\n' + _t2(
+            'A file this size is written in paced batches to stay inside the server\'s write limit, ' +
+            'so it takes about ' + Math.ceil(total / 200) + ' minute(s). Leave this tab open.',
+            'Tệp lớn như vậy được ghi theo từng đợt để không vượt giới hạn ghi của máy chủ, mất ' +
+            'khoảng ' + Math.ceil(total / 200) + ' phút. Hãy giữ nguyên tab này.') : '')))) return;
+      toast(_t2('Importing ' + total + ' task(s)\u2026', 'Đang nhập ' + total + ' công việc\u2026'), 'info', 600000);
+      const res = await _pmBulkCreate('pm_tasks', rows, (done, tot, waiting) => {
+        toast(_t2('Imported ' + done + ' of ' + tot + (waiting ? ' \u2014 pausing for the server\u2026' : '\u2026'),
+                  'Đã nhập ' + done + '/' + tot + (waiting ? ' \u2014 đang chờ máy chủ\u2026' : '\u2026')),
+              'info', 600000);
+      }, { projectId: pid });
+      (_HR.pm_tasks = _HR.pm_tasks || []).push.apply(_HR.pm_tasks, res.created);
+      const n = res.created.length;
+      try { tkAudit('Schedule imported', _pmProj(pid) ? _pmProj(pid).name : '',
+                    n + ' of ' + total + ' tasks from ' + f.name +
+                    (res.failed.length ? ' \u00b7 ' + res.failed.length + ' refused' : '')); } catch (e) { }
       await tkLoadColl('pm_tasks'); pmTab('schedule');
-      toast('Imported ' + n + ' of ' + total + ' task(s) from ' + f.name, 'success', 7000);
+      if (res.failed.length) {
+        // NEVER a bare count. "Imported 239 of 275" with no reason is what made a rate limit look
+        // like a product limit for as long as it did.
+        await tkAlert({ title: _t2(n + ' of ' + total + ' task(s) imported',
+                                   'Đã nhập ' + n + '/' + total + ' công việc'),
+          body: _t2(res.failed.length + ' row(s) were refused by the server. The first reason was:',
+                    res.failed.length + ' dòng bị máy chủ từ chối. Lý do đầu tiên:') + '\n\n' +
+                '\u2022 ' + (res.failed[0].row.name || '?') + ' \u2014 ' + res.failed[0].why + '\n\n' +
+                _t2('Fix those rows in the file and import them again — importing adds rows, so the ' +
+                    Math.max(0, n) + ' already in are not duplicated by a second attempt of the rest.',
+                    'Hãy sửa các dòng đó trong tệp rồi nhập lại — nhập là thêm mới, nên ' + Math.max(0, n) +
+                    ' dòng đã vào sẽ không bị trùng khi bạn nhập phần còn lại.') });
+      } else {
+        toast(_t2('Imported all ' + n + ' task(s) from ' + f.name,
+                  'Đã nhập đủ ' + n + ' công việc từ ' + f.name), 'success', 8000);
+      }
     } catch (e) { toast('Import failed: ' + _errMsg(e), 'error', 8000); }
   };
   inp.click();
@@ -22785,6 +23466,7 @@ function _pdSchedBar(pid) {
         _tkEscA(_t2('Delete this schedule — its tasks are kept and move to Unfiled (asks for your signing PIN)',
                     'Xoá tiến độ này — các công việc được giữ lại và chuyển sang Chưa phân loại (cần mã PIN ký)')) + '">' +
         _t2('Delete', 'Xoá') + '</button>' : '') +
+    schExportBtn(pid) +
     (unf.length ? '<span style="font-size:11px;color:var(--warn,#B26A00)">' + unf.length + ' ' + _t('item(s) not assigned to a schedule') + '</span>' : '') +
     '</div>';
 }
@@ -23271,20 +23953,28 @@ async function pdImportRun(pid) {
   const cur = (typeof _pdCurSched === 'function') ? _pdCurSched(pid) : null;
   const bulkTask = (document.getElementById('pd-imp-task') || {}).value || '';
   const btn = document.getElementById('pd-imp-go'); if (btn) { btn.disabled = true; btn.textContent = _t('Importing…'); }
-  let ok = 0; const failed = [];
-  for (const r of rows) {
-    // File the row into the schedule that is OPEN. Without this every imported line was written
-    // with no scheduleId, which is precisely what _pdUnfiled() collects — so importing into a
-    // named schedule silently produced a pile in "Unfiled" that had to be re-filed one row at a
-    // time. Same rule the Add-report-item form already applies (see _qaType === 'pm_detail').
-    // Importing while "Unfiled" is selected still writes nothing: that is not a schedule.
+  // File the row into the schedule that is OPEN. Without this every imported line was written
+  // with no scheduleId, which is precisely what _pdUnfiled() collects — so importing into a
+  // named schedule silently produced a pile in "Unfiled" that had to be re-filed one row at a
+  // time. Same rule the Add-report-item form already applies (see _qaType === 'pm_detail').
+  // Importing while "Unfiled" is selected still writes nothing: that is not a schedule.
+  const bodies = rows.map(r => {
     const body = { projectId: pid, category: r.category, name: r.name, start: r.start || '', finish: r.finish || '',
                    taskRef: r.taskRef || bulkTask || '', unit: r.unit || '', log: [] };
     if (cur && cur.id !== '_unfiled') body.scheduleId = cur.id;
     if (+r.weight > 0) body.weight = +r.weight;
-    try { const res = await tkApi('/api/coll/' + _PD_COLL, { method: 'POST', body: body }); (_HR[_PD_COLL] = _HR[_PD_COLL] || []).push(res.item); ok++; }
-    catch (e) { failed.push(r.name + ': ' + _errMsg(e)); }
-  }
+    return body;
+  });
+  /* Through the paced writer, like the master import. Serially and at full speed a 400-line paste
+     hits the server's 240-writes-a-minute guard and everything past it is refused — reported, in
+     this one's case, but with "Too many requests" against 160 rows, which is a list nobody can act
+     on: the remedy is to wait, not to fix the row. */
+  const _res = await _pmBulkCreate(_PD_COLL, bodies, (done, tot, waiting) => {
+    if (btn) btn.textContent = _t('Importing…') + ' ' + done + '/' + tot + (waiting ? ' ⏸' : '');
+  });
+  (_HR[_PD_COLL] = _HR[_PD_COLL] || []).push.apply(_HR[_PD_COLL], _res.created);
+  const ok = _res.created.length;
+  const failed = _res.failed.map(f => (f.row.name || '?') + ': ' + f.why);
   document.getElementById('pdImpOverlay')?.remove();
   tkAudit('Detail schedule imported', ok + ' item(s)', failed.length ? failed.length + ' failed' : '');
   if (failed.length) tkAlert({ title: _t('Some rows were not imported'),
@@ -23363,6 +24053,60 @@ function _pdKpis(pid, rows, day) {
        stayed are now invisible: the count on screen went down and the register looks tidy.
 
    Returns { done, failed:[] }. The caller decides what to say; this decides nothing. */
+/* ══ WRITING MANY ROWS AT ONCE ═══════════════════════════════════════════════════════════════════
+   The server allows 240 writes a minute per IP (app.py `_rate_check("write", 240, 60)`) — a guard
+   against a write flood on a single-process server, and the right thing to have. A 500-line
+   programme is a legitimate 500 writes, so the importer has to live inside that budget rather than
+   sprint into it and lose the remainder.
+
+   Two behaviours, and the second is the one that was missing entirely:
+
+     · PACE. Small batches with a short gap, holding well under the limit, so most imports never
+       meet it at all.
+     · RETRY WHAT IS REFUSED. A 429 means "later", not "no". Waiting and re-sending turns the limit
+       into a delay instead of into lost rows. Only after several refusals is a row given up on —
+       and then it is REPORTED, with its reason.
+
+   What this replaces: `for (const t of rows) { try { ...POST... } catch (e) { } }`. Every failure
+   went into an empty catch, and the toast said "Imported 239 of 275" with no explanation. A count
+   with no reason reads as a product limit, and was reported as one.
+
+   Returns { created:[], failed:[{row, why}] }. The caller decides what to say. */
+async function _pmBulkCreate(coll, rows, onProgress, extra) {
+  const created = [], failed = [];
+  const BATCH = 6, GAP_MS = 900;        // ~400/min ceiling, comfortably inside the server's 240/min
+  const RETRIES = 6;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const chunk = rows.slice(i, i + BATCH);
+    await Promise.all(chunk.map(async row => {
+      let wait = 1500;
+      for (let attempt = 0; attempt <= RETRIES; attempt++) {
+        try {
+          const res = await tkApi('/api/coll/' + coll,
+            { method: 'POST', body: Object.assign({}, extra || {}, row) });
+          if (res && res.item) created.push(res.item);
+          return;
+        } catch (e) {
+          // 429 is the rate limiter saying "later". Anything else is a real refusal and retrying it
+          // would only produce the same answer more slowly.
+          if (e && e.status === 429 && attempt < RETRIES) {
+            if (onProgress) { try { onProgress(created.length, rows.length, true); } catch (_) {} }
+            await sleep(wait);
+            wait = Math.min(wait * 2, 20000);
+            continue;
+          }
+          failed.push({ row: row, why: _errMsg(e) });
+          return;
+        }
+      }
+    }));
+    if (onProgress) { try { onProgress(created.length, rows.length, false); } catch (e) {} }
+    if (i + BATCH < rows.length) await sleep(GAP_MS);
+  }
+  return { created: created, failed: failed };
+}
+
 async function _pmBulkDelete(coll, list, onProgress) {
   const failed = [];
   let done = 0;
@@ -24500,7 +25244,7 @@ function pmRenderSchedule(pid) {
         return _pmBadge(st, _pmStatusColor(st));
       } },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
-  ], allTasks), pmMasterWipeBtn(pid) + pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
+  ], allTasks), pmMasterWipeBtn(pid) + schExportBtn(pid) + pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
   _pmSchedBuild['m-calendar'] = () => _schCalendar(_pmTaskNorm(pid, _pmToday()), { day: _pmToday() });
   // LEVEL 1 picks the schedule; LEVEL 2 picks how to look at it. Both levels offer the same four
