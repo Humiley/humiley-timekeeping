@@ -21204,6 +21204,74 @@ function _pmFileCell(coll, r) {
   return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\'' + (one ? ',0' : '') + ')" title="' + _tkEscA((one ? r.attachments[0].name : r.attachmentName) || 'Show file') + '" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">' + _PM_EYE_SVG + 'Show</a>';
 }
 /* ---------- Import tasks from MS Project XML / Excel / CSV ---------- */
+/* ══ CLEARING THE WHOLE MASTER SCHEDULE ══════════════════════════════════════════════════════════
+   A client re-issues a programme and the old one has to go. Doing that one row at a time through
+   200 confirm dialogs is not a workflow, so this is one act — and it is the single most destructive
+   thing in the module, which is why it says exactly what it does before asking twice.
+
+   THE DETAIL SCHEDULE IS NOT DELETED. Its lines point at a master activity by taskRef, which is the
+   activity's WBS CODE (or its name) — a string, not an id. So the lines survive, show as "Not linked
+   to a master activity" in the meantime, and RE-LINK THEMSELVES the moment a schedule carrying the
+   same WBS codes is imported. That is the difference between this being a routine re-issue and
+   being a disaster, so the dialog states it rather than leaving people to find out.
+
+   Deliverables are the other dependant: a work package answered from its activities falls back to
+   its typed percentage while there are none. Nothing is lost there either — the link is delivId on
+   the ACTIVITY, so it does have to be set again on the new import. Counted and said out loud. */
+async function pmMasterWipe(pid) {
+  const list = _pmScopeFor('pm_tasks', pid);
+  if (!list.length) { toast(_t2('There are no activities to clear.', 'Không có hạng mục nào để xoá.'), 'warn'); return; }
+  const details = _pmScopeFor('pm_detail', pid);
+  const refs = {}; list.forEach(t => { const k = _pdTaskRef(t); if (k) refs[k] = 1; });
+  const linked = details.filter(r => refs[String(r.taskRef || '').trim()]).length;
+  const linkedDeliv = list.filter(t => t.delivId).length;
+  const signed = list.filter(t => t.signatures || t.baselineFinish).length;
+  const go = await tkConfirm({ danger: true,
+    title: _t2('Clear the entire Master Schedule?', 'Xoá toàn bộ Tiến độ tổng?'),
+    body: _t2(list.length + ' activities will be deleted. This cannot be undone.',
+              'Sẽ xoá ' + list.length + ' hạng mục. Không thể hoàn tác.') +
+      (linked ? '\n\n' + _t2(linked + ' detail line(s) report against them. Those lines are NOT ' +
+                              'deleted — they move to "Not linked to a master activity", and they ' +
+                              're-link on their own if you import a schedule using the same WBS codes.',
+                              linked + ' dòng chi tiết đang báo cáo theo các hạng mục này. Các dòng đó ' +
+                              'KHÔNG bị xoá — chúng chuyển sang "Chưa gắn hạng mục chính" và sẽ tự ' +
+                              'gắn lại nếu bạn nhập tiến độ dùng cùng mã WBS.') : '') +
+      (linkedDeliv ? '\n\n' + _t2(linkedDeliv + ' activity link(s) to WBS work packages will have to ' +
+                                   'be set again after the new import.',
+                                   linkedDeliv + ' liên kết tới gói công việc WBS sẽ phải gán lại sau ' +
+                                   'khi nhập tiến độ mới.') : '') +
+      (signed ? '\n\n' + _t2(signed + ' activity(ies) carry a baseline or a signature.',
+                              signed + ' hạng mục có đường cơ sở hoặc chữ ký.') : ''),
+    confirmText: _t2('Clear ' + list.length, 'Xoá ' + list.length),
+    cancelText: _t2('Keep the schedule', 'Giữ tiến độ') });
+  if (!go) return;
+  if (!await _pdPinGate(_t2('Delete all ' + list.length + ' master activities on this project.',
+                           'Xoá toàn bộ ' + list.length + ' hạng mục chính của dự án này.'))) return;
+  toast(_t2('Clearing ' + list.length + ' activities\u2026', 'Đang xoá ' + list.length + ' hạng mục\u2026'), 'info', 30000);
+  const res = await _pmBulkDelete('pm_tasks', list, (n, tot) => {
+    if (n % 20 === 0) toast(_t2(n + ' of ' + tot + '\u2026', n + '/' + tot + '\u2026'), 'info', 30000);
+  });
+  tkAudit('Master schedule cleared', (_pmProj(pid) || {}).name || pid,
+          res.done + ' of ' + list.length + ' activities deleted · ' + linked + ' detail line(s) unlinked');
+  if (res.failed.length) {
+    toast(_t2(res.done + ' deleted, ' + res.failed.length + ' could not be: ',
+              'Đã xoá ' + res.done + ', ' + res.failed.length + ' không thể: ') +
+          res.failed[0].why, 'error', 10000);
+  } else {
+    toast(_t2('Master Schedule cleared \u2014 ' + res.done + ' activities deleted',
+              'Đã xoá Tiến độ tổng \u2014 ' + res.done + ' hạng mục'), 'success', 6000);
+  }
+  _pmReload();
+}
+function pmMasterWipeBtn(pid) {
+  // Only where there is something to clear. A destructive control on an empty register is a button
+  // whose only possible outcome is a toast saying there was nothing to do.
+  if (!_pmScopeFor('pm_tasks', pid).length) return '';
+  return '<button class="btn btn-ghost btn-sm" style="color:var(--danger,#C62828)" onclick="pmMasterWipe(\'' + pid + '\')" title="' +
+    _tkEscA(_t2('Delete every activity in the Master Schedule (asks for your signing PIN)',
+                'Xoá mọi hạng mục trong Tiến độ tổng (cần mã PIN ký)')) + '">' +
+    _t2('Clear all', 'Xoá tất cả') + '</button>';
+}
 function pmImportBtn() { return '<button class="btn btn-ghost btn-sm" onclick="pmImportTasks()" title="Import schedule from MS Project XML or Excel/CSV"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import</button>'; }
 function _pmXlDate(v) {
   if (v === '' || v == null) return '';
@@ -23284,6 +23352,168 @@ function _pdKpis(pid, rows, day) {
   ]) + (note ? '<div style="font-size:12px;color:var(--text-light);margin:-12px 0 16px 2px">' + note + '</div>' : '');
 }
 /* The register — the daily-report table itself. */
+/* ══ DELETING MANY ROWS AT ONCE ══════════════════════════════════════════════════════════════════
+   /api/coll has no bulk endpoint, so N rows is N requests. Two things matter and neither is speed:
+
+     · a bounded number in flight. 400 concurrent DELETEs against a single-process stdlib server is
+       a self-inflicted outage, and the browser queues them anyway.
+     · NOTHING is swallowed. Each failure is kept with the row it belongs to, the toast reports how
+       many did not go, and the caller is told the real number — a bulk delete that reports success
+       having removed 380 of 400 is worse than one that fails outright, because the twenty that
+       stayed are now invisible: the count on screen went down and the register looks tidy.
+
+   Returns { done, failed:[] }. The caller decides what to say; this decides nothing. */
+async function _pmBulkDelete(coll, list, onProgress) {
+  const failed = [];
+  let done = 0;
+  for (let i = 0; i < list.length; i += 4) {
+    await Promise.all(list.slice(i, i + 4).map(async r => {
+      try { await tkApi('/api/coll/' + coll + '/' + r.id, { method: 'DELETE' }); done++; }
+      catch (e) { failed.push({ row: r, why: _errMsg(e) }); }
+    }));
+    if (onProgress) { try { onProgress(done + failed.length, list.length); } catch (e) {} }
+  }
+  // Drop only what actually went. A row that refused must stay in the local copy or it disappears
+  // from the screen while still existing on the server.
+  const gone = {}; list.forEach(r => { gone[r.id] = 1; });
+  failed.forEach(f => { delete gone[f.row.id]; });
+  _HR[coll] = (_HR[coll] || []).filter(x => !gone[x.id]);
+  return { done: done, failed: failed };
+}
+
+/* ══ THE DETAIL SCHEDULE'S GROUPS ════════════════════════════════════════════════════════════════
+   A group in this register is not r.category — it is the MASTER ACTIVITY the lines report against
+   (_pdGroupOf). So "delete this category" means "delete the site's reporting lines for activity
+   1.4.4.4.3", and "change this category's master activity" means re-pointing all of them at once.
+
+   Both act on exactly the rows the header row is counting, by asking _pdGroupOf the same question
+   the renderer asked. There is no second definition of which rows are in a group, so the number in
+   the dialog and the number on screen cannot disagree. */
+function _pdGroupRows(pid, cat) {
+  return _pdRows(pid).filter(r => _pdGroupOf(pid, r) === cat);
+}
+async function pdGroupRefile(pid, cat) {
+  const list = _pdGroupRows(pid, cat);
+  if (!list.length) { toast(_t2('That group is empty.', 'Nhóm này trống.'), 'warn'); return; }
+  const opts = _qaDynOptions('pm_task_opts');
+  if (!opts.length) {
+    await tkAlert({ title: _t2('No master activities yet', 'Chưa có hạng mục chính'),
+      body: _t2('This project has no master schedule to file these lines under. Add or import the ' +
+                'Master Schedule first.',
+                'Dự án này chưa có tiến độ tổng để xếp các dòng này vào. Hãy thêm hoặc nhập Tiến độ ' +
+                'tổng trước.') });
+    return;
+  }
+  /* Its own overlay rather than tkPrompt, because the answer is a choice from a 200-deep tree and
+     not a typed string. No `id` on it — see the dynamic-overlay convention in _tkDialog: the global
+     Escape handler only HIDES a modal that has one, and a second copy would then share the id. */
+  const pick = await new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2000';
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="width:520px;max-width:94vw">' +
+      '<div style="font-size:17px;font-weight:800;color:var(--navy);margin-bottom:6px">' +
+        _crmEsc(_t2('Move this group to another master activity',
+                    'Chuyển nhóm này sang hạng mục chính khác')) + '</div>' +
+      '<div style="font-size:13px;color:var(--text-dark);line-height:1.6;margin-bottom:14px">' +
+        _crmEsc(cat) + ' \u2014 <b>' + list.length + '</b> ' +
+        _crmEsc(_t2('line(s) will be re-filed together.', 'dòng sẽ được xếp lại cùng lúc.')) + '</div>' +
+      '<select class="form-control" data-role="pick" style="margin-bottom:18px">' +
+        '<option value="">' + _crmEsc(_t2('\u2014 leave unassigned \u2014', '\u2014 để trống \u2014')) + '</option>' +
+        opts.map(o => '<option value="' + _tkEscA(o.v) + '">' + _crmEsc(o.l) + '</option>').join('') +
+      '</select>' +
+      '<div style="display:flex;justify-content:flex-end;gap:10px">' +
+        '<button type="button" class="btn btn-outline" data-act="cancel">' + _crmEsc(_t2('Cancel', 'Huỷ')) + '</button>' +
+        '<button type="button" class="btn btn-primary" data-act="ok">' + _crmEsc(_t2('Move', 'Chuyển')) + '</button>' +
+      '</div></div>';
+    let done = false;
+    const finish = v => {
+      if (done) return; done = true;
+      document.removeEventListener('keydown', onKey, true);
+      ov.remove(); resolve(v);
+    };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); finish(null); } };
+    ov.querySelector('[data-act="ok"]').addEventListener('click',
+      () => finish(ov.querySelector('[data-role="pick"]').value));
+    ov.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(null));
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(null); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    setTimeout(() => { const p = ov.querySelector('[data-role="pick"]'); if (p) p.focus(); }, 30);
+  });
+  if (pick === null) return;                       // cancelled. '' is a real answer: unassign them.
+  const already = list.filter(r => String(r.taskRef || '').trim() === String(pick).trim());
+  const todo = list.filter(r => String(r.taskRef || '').trim() !== String(pick).trim());
+  if (!todo.length) {
+    toast(_t2('They are already filed there.', 'Các dòng này đã ở đó rồi.'), 'warn');
+    return;
+  }
+  const label = pick || _t2('unassigned', 'chưa gán');
+  const go = await tkConfirm({
+    title: _t2('Move ' + todo.length + ' line(s)?', 'Chuyển ' + todo.length + ' dòng?'),
+    body: _t2('From: ', 'Từ: ') + cat + '\n' + _t2('To: ', 'Sang: ') + label +
+      (already.length ? '\n\n' + _t2(already.length + ' line(s) are already there and will not be touched.',
+                                      already.length + ' dòng đã ở đó và sẽ không bị thay đổi.') : '') +
+      '\n\n' + _t2('No reported quantities or progress are changed — only which activity these ' +
+                    'lines roll up into.',
+                    'Không thay đổi khối lượng hay tiến độ đã báo cáo — chỉ thay đổi hạng mục mà các ' +
+                    'dòng này cộng vào.'),
+    confirmText: _t2('Move', 'Chuyển'), cancelText: _t2('Cancel', 'Huỷ') });
+  if (!go) return;
+  let ok = 0; const bad = [];
+  for (let i = 0; i < todo.length; i += 4) {
+    await Promise.all(todo.slice(i, i + 4).map(async r => {
+      try {
+        const res = await tkApi('/api/coll/' + _PD_COLL + '/' + r.id,
+          { method: 'PATCH', body: Object.assign({}, r, { taskRef: pick }) });
+        const j = (_HR[_PD_COLL] || []).findIndex(x => x.id === r.id);
+        if (j >= 0 && res && res.item) _HR[_PD_COLL][j] = res.item;
+        ok++;
+      } catch (e) { bad.push((r.name || r.id) + ': ' + _errMsg(e)); }
+    }));
+  }
+  if (ok) tkAudit('Detail lines re-filed', label, ok + ' line(s) moved from "' + cat + '" · project ' + pid);
+  if (!_pdGroupRows(pid, cat).length) delete _pdCol[cat];
+  if (bad.length) toast(_t2(ok + ' moved, ' + bad.length + ' could not be: ',
+                           'Đã chuyển ' + ok + ', ' + bad.length + ' không thể: ') + bad[0], 'warn', 9000);
+  else toast(_t2(ok + ' line(s) now under ' + label, ok + ' dòng nay thuộc ' + label), 'success', 5000);
+  _pmReload();
+}
+async function pdGroupDelete(pid, cat) {
+  const list = _pdGroupRows(pid, cat);
+  if (!list.length) { toast(_t2('That group is empty.', 'Nhóm này trống.'), 'warn'); return; }
+  // How much REPORTED work is about to go. A line nobody has reported against is a plan; a line with
+  // readings on it is a record of what happened on site, and the two should not be counted as one
+  // number in a dialog that cannot be undone.
+  const reported = list.filter(r => _pdLog(r).length).length;
+  const go = await tkConfirm({ danger: true,
+    title: _t2('Delete every line in this group?', 'Xoá toàn bộ dòng trong nhóm này?'),
+    body: cat + '\n\n' +
+      _t2(list.length + ' line(s) will be deleted.', 'Sẽ xoá ' + list.length + ' dòng.') +
+      (reported ? '\n' + _t2(reported + ' of them carry reported progress, which goes with them.',
+                             'Trong đó ' + reported + ' dòng có tiến độ đã báo cáo và sẽ mất theo.') : '') +
+      '\n\n' + _t2('The master activity itself is not touched.',
+                    'Hạng mục chính không bị ảnh hưởng.'),
+    confirmText: _t2('Delete ' + list.length, 'Xoá ' + list.length),
+    cancelText: _t2('Keep them', 'Giữ lại') });
+  if (!go) return;
+  // Same gate as renaming or deleting a whole schedule. See _pdPinGate for exactly what it is and,
+  // more importantly, what it is not.
+  if (!await _pdPinGate(_t2('Delete ' + list.length + ' line(s) under "' + cat + '".',
+                           'Xoá ' + list.length + ' dòng thuộc "' + cat + '".'))) return;
+  toast(_t2('Deleting ' + list.length + ' line(s)\u2026', 'Đang xoá ' + list.length + ' dòng\u2026'), 'info', 20000);
+  const res = await _pmBulkDelete(_PD_COLL, list);
+  if (!_pdGroupRows(pid, cat).length) delete _pdCol[cat];
+  tkAudit('Detail lines deleted', cat, res.done + ' of ' + list.length + ' line(s) · project ' + pid);
+  if (res.failed.length) {
+    toast(_t2(res.done + ' deleted, ' + res.failed.length + ' could not be: ',
+              'Đã xoá ' + res.done + ', ' + res.failed.length + ' không thể: ') +
+          res.failed[0].why, 'error', 10000);
+  } else {
+    toast(_t2(res.done + ' line(s) deleted', 'Đã xoá ' + res.done + ' dòng'), 'success', 5000);
+  }
+  _pmReload();
+}
+
 function _pdRegister(pid, rows, cats, day) {
   const bar = (pct, color) => '<span style="display:inline-block;width:52px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-right:6px;overflow:hidden">' +
     '<span style="display:block;height:100%;width:' + _pmPct(pct) + '%;background:' + color + '"></span></span>';
@@ -23313,7 +23543,21 @@ function _pdRegister(pid, rows, cats, day) {
       '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (roll.measured ? _pdVarColor(roll.variance) : 'var(--text-light)') + '">' +
         (roll.measured ? (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%' : '—') + '</td>' +
       '<td colspan="2"></td>' +
-      '<td colspan="3" style="' + EDGE + '"></td><td></td></tr>';
+      '<td colspan="3" style="' + EDGE + '"></td>' +
+      /* stopPropagation is load-bearing: the whole header row is the collapse toggle, so without it
+         every click here would also fold the group away underneath the dialog it just opened. */
+      '<td style="white-space:nowrap;text-align:right" onclick="event.stopPropagation()">' +
+        '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" ' +
+          'onclick="pdGroupRefile(\'' + pid + '\',' + _tkEscA(JSON.stringify(cat)) + ')" title="' +
+          _tkEscA(_t2('Move all ' + cr.length + ' line(s) to a different master activity',
+                      'Chuyển cả ' + cr.length + ' dòng sang hạng mục chính khác')) + '">' +
+          _t2('Move', 'Chuyển') + '</button> ' +
+        '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--danger,#C62828)" ' +
+          'onclick="pdGroupDelete(\'' + pid + '\',' + _tkEscA(JSON.stringify(cat)) + ')" title="' +
+          _tkEscA(_t2('Delete all ' + cr.length + ' line(s) in this group (asks for your signing PIN)',
+                      'Xoá cả ' + cr.length + ' dòng trong nhóm này (cần mã PIN ký)')) + '">' +
+          _t2('Delete', 'Xoá') + '</button>' +
+      '</td></tr>';
     if (!open) return;
     cr.forEach(r => {
       const acc = _pdAcc(r, day), dly = _pdDaily(r, day), pl = _pdPlanned(r, day), v = acc - pl;
@@ -24256,7 +24500,7 @@ function pmRenderSchedule(pid) {
         return _pmBadge(st, _pmStatusColor(st));
       } },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
-  ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
+  ], allTasks), pmMasterWipeBtn(pid) + pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
   _pmSchedBuild['m-calendar'] = () => _schCalendar(_pmTaskNorm(pid, _pmToday()), { day: _pmToday() });
   // LEVEL 1 picks the schedule; LEVEL 2 picks how to look at it. Both levels offer the same four

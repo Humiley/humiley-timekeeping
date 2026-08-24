@@ -16696,12 +16696,39 @@ class Handler(BaseHTTPRequestHandler):
             st = str(existing.get("status") or "").strip().lower()
             if st in ("approved", "paid", "reviewed") or existing.get("signatures"):
                 return self._err("This request has been signed/approved and cannot be deleted. Cancel or reverse it instead.", 403)
-        # Ownership: non-admins may only delete their OWN self-owned / crm / pm records.
+        # ── A PROJECT record is not a personal record ────────────────────────────────────────────
+        # Every pm_* row below the project — a schedule activity, a detail line, a risk, an RFI — is
+        # the PROJECT's data. The rule underneath was written for claims and travel ("you may delete
+        # what you own") and was being applied to these too, on a definition of "own" that could not
+        # work for them: `owner_nm` falls back to `name`, which on a pm_detail row is the name of the
+        # work item ("Cốp pha sàn"), so it was comparing a task name to a person's name and always
+        # deciding no. A programme imported by one engineer was undeletable by everyone else,
+        # including the project manager — 400 rows nobody could remove.
+        #
+        # It was also incoherent: _coll_update has NO ownership guard for pm_*, so any of those same
+        # people could already blank the row's name, dates and progress. Being able to destroy the
+        # content of a record but not the record was an obstacle, not a protection.
+        #
+        # The rule that actually fits: you may delete a project's records if the project is one of
+        # YOURS — you manage it, or you are on its Team — which is the same test _pm_visible_projects
+        # already applies to reading them. Manager level and above see the whole portfolio and so may
+        # delete across it, exactly as they may read across it. Nothing here weakens the guards
+        # ABOVE: a signed variation order, a certified payment certificate and a project that still
+        # holds records are all refused before this point, admin included.
+        if name.startswith("pm_") and name != "pm_projects" and not is_admin:
+            _vis = self._pm_visible_projects(u)
+            if _vis is not None:
+                _pid = str(existing.get("projectId") or "")
+                if not _pid or _pid not in _vis:
+                    return self._err("That record belongs to a project you are not on. Ask its "
+                                     "project manager, or have yourself added to the Team.", 403)
+        # Ownership: non-admins may only delete their OWN self-owned / crm / eng / ahu / sales / est
+        # records. pm_* is handled above, by project rather than by author.
         if not is_admin:
             owner_id = existing.get("empId") or existing.get("createdById")
             owner_nm = existing.get("owner") or existing.get("name")
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
-            if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")
+            if (name in self.SELF_OWNED or name.startswith("crm_") or name == "pm_projects"
                     or name.startswith("eng_") or name.startswith("ahu_")
                     or name.startswith("sales_") or name.startswith("est_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):

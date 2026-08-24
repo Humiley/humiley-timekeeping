@@ -49,13 +49,57 @@ def _guard_families(pattern):
     return set(re.findall(r'startswith\("([a-z]+_)"\)', m.group(1)))
 
 
-# hrdoc_ never reaches the ownership guard: hrdoc_acks is refused outright ("a signed
-# acknowledgement is a permanent record"), which is stricter, and hrdocs has its own HR-admin gate.
-# review_ is review_cycles, a manager-level configuration list with no per-user ownership.
+# An exemption must NAME THE THING THAT REPLACED THE GUARD, and that thing has to be findable in
+# _coll_delete. A bare prose reason would let this whole file be silenced one family at a time:
+# write a sentence, the tests go green, and nothing checks that the sentence is true — which is the
+# exact failure shape ("a check that examines nothing") these tests exist to prevent.
+#
+#   family -> (why it is exempt, a substring that must appear in _coll_delete as evidence)
+#
+# hrdoc_  — hrdoc_acks is refused outright ("a signed acknowledgement is a permanent record"), which
+#           is STRICTER than ownership; hrdocs has its own HR-admin gate.
+# review_ — review_cycles is a manager-level configuration list with no per-person ownership, so
+#           there is no owner to compare against. Nothing in _coll_delete names it; None means "this
+#           family genuinely has no replacement rule, and that is the decision".
+# pm_     — a pm_ row below the project is PROJECT data. Creator-ownership could not work for it at
+#           all (see tests/test_pm_delete_scope.py: the fallback compared a task NAME to a person's
+#           name), and it is replaced by the project-visibility scope — the same test the read path
+#           uses. That is looser than "only the creator" and much tighter than "any staff account",
+#           which is what the second test below is really asking about.
 EXEMPT_FROM_DELETE_OWNERSHIP = {
-    "hrdoc_": "refused outright earlier in _coll_delete — stricter than ownership",
-    "review_": "review_cycles is manager-level configuration, not a per-person record",
+    "hrdoc_": ("refused outright earlier in _coll_delete — stricter than ownership",
+               "A signed acknowledgement is a permanent record"),
+    "review_": ("review_cycles is manager-level configuration, not a per-person record", None),
+    "pm_": ("scoped by PROJECT instead — _pm_visible_projects, the same test the read path uses",
+            "_pm_visible_projects(u)"),
 }
+
+
+def _coll_delete_body():
+    """_coll_delete on its own. It is the LAST method in the class, so "up to the next `    def `"
+    finds nothing and slicing to EOF would swallow hundreds of lines of module-level code."""
+    src = _src()
+    i = src.index("def _coll_delete")
+    lines = src[i:].splitlines()
+    end = next((n for n in range(1, len(lines))
+                if lines[n].strip() and not lines[n].startswith("        ")), len(lines))
+    body = "\n".join(lines[:end])
+    assert body.rstrip().endswith('return self._json({"ok": True})'), \
+        "the _coll_delete slice is wrong (%d lines) — fix it before trusting what it says" % end
+    return body
+
+
+def test_every_exemption_points_at_something_that_exists():
+    """The exemption list is the one way to make the two tests below pass without a guard entry. So
+    the evidence it names has to be real, and has to be inside _coll_delete rather than anywhere in
+    app.py — a replacement rule living in some other function does not protect this endpoint."""
+    body = _coll_delete_body()
+    for fam, (why, evidence) in sorted(EXEMPT_FROM_DELETE_OWNERSHIP.items()):
+        assert why and len(why) > 20, "%s is exempt with no real reason" % fam
+        if evidence is not None:
+            assert evidence in body, (
+                "%s is exempt because of %r, but %r is not in _coll_delete — the exemption is "
+                "describing a rule that is not there." % (fam, why, evidence))
 
 
 def test_every_collection_family_is_in_the_delete_ownership_guard():
