@@ -198,8 +198,8 @@ ok('the button is absent when there is nothing to clear',
    /if \(!_pmScopeFor\('pm_tasks', pid\)\.length\) return '';/.test(BTN),
    'a destructive control whose only possible outcome is "there was nothing to do"');
 ok('and it is on the Activities card',
-   /pmMasterWipeBtn\(pid\) \+ pmImportBtn\(\)/.test(src),
-   'next to Import, which is what you press straight afterwards');
+   /pmMasterWipeBtn\(pid\) \+ schExportBtn\(pid\) \+ pmImportBtn\(\)/.test(src),
+   'next to Export and Import, which are what you press straight afterwards');
 
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

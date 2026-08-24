@@ -256,6 +256,7 @@ const doorStubs = `
   const _PD_COLL = 'pm_detail';
   function _t(s){ return s; }
   function _t2(en, vn){ return en; }
+  function schExportBtn(pid){ return '<button>Export</button>'; }
   function _tkEscA(s){ return String(s).replace(/"/g,'&quot;'); }
   function _pmEsc(s){ return String(s==null?'':s); }
   function _pdScheds(){ return EMPTY ? [] : [{id:'S1',name:'Block E — MEP'}]; }
