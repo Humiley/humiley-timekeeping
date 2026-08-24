@@ -23,14 +23,24 @@ const ok = (n, c, extra) => {
   else { fail++; console.log('  FAIL  ' + n + (extra ? '\n        ' + extra : '')); }
 };
 
-/* Lift a real function out of the file and run it, rather than asserting on its source text. The
- * end marker is the next top-level `function`, which is how every definition in this file ends. */
+/* Lift a real function out of the file and RUN it, rather than asserting on its source text.
+ *
+ * Slice ONE top-level function.
+ *
+ * The first version ended at the next `\nfunction `, which does not match `\nasync function ` — so
+ * lifting `pdGroupRefile` ran straight on through `pdGroupDelete` beneath it, and an assertion that
+ * re-filing does NOT ask for a PIN read the PIN gate belonging to the delete. It reported a defect
+ * that was not there; the same slice error in the other direction reports SAFETY that is not there.
+ * End at whichever comes first, and print the length so an over-wide slice is visible. */
 const take = (mark, what) => {
   const i = src.indexOf(mark);
   if (i < 0) { console.error('Could not find ' + what + ' — update the marker, do NOT delete this test.'); process.exit(2); }
-  const j = src.indexOf('\nfunction ', i + 10);
-  if (j < 0) { console.error('Could not find the end of ' + what + '.'); process.exit(2); }
-  return src.slice(i, j);
+  const ends = ['\nfunction ', '\nasync function ', '\nconst ', '\nlet ']
+    .map(e => src.indexOf(e, i + 10)).filter(x => x > 0);
+  if (!ends.length) { console.error('Could not find the end of ' + what + '.'); process.exit(2); }
+  const body = src.slice(i, Math.min.apply(null, ends));
+  if (process.env.TAKE_DEBUG) console.log('        [' + what + ': ' + body.length + ' chars]');
+  return body;
 };
 
 // ══ 14 · the master-activity picker reads as a tree ════════════════════════════════════════════
