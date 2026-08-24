@@ -4415,13 +4415,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/zones":
             return self._guard(lambda u: self._json({"id": db.create_zone(body)}), manager=True)
         if path.startswith("/api/coll/"):
-            name = path[len("/api/coll/"):].split("/")[0]
+            _parts = path[len("/api/coll/"):].split("/")
+            name = _parts[0]
             # `hrdocs` is exempt from the blunt role=="manager" door so it can reach _coll_add, where
             # _is_hr_admin is the real gate. Being NAMED as HR is the grant, and the HR officer who
             # writes the policies is often plain staff — this guard would refuse her at the route
             # before the grant was ever consulted. Same reason `devices` is exempt on PATCH.
-            return self._guard(lambda u: self._coll_add(u, name, body),
-                               manager=(name not in self.STAFF_WRITE and name != "hrdocs"))
+            _mgr = (name not in self.STAFF_WRITE and name != "hrdocs")
+            # /api/coll/<name>/bulk — many rows, one request. Deliberately the SAME route guard as
+            # the single-item POST beside it, and each row then goes through the same _coll_add:
+            # a bulk endpoint whose door is even slightly different from the one-at-a-time door is
+            # a second way in that no per-collection guard is watching.
+            if len(_parts) > 1 and _parts[1] == "bulk":
+                return self._guard(lambda u: self._coll_add_bulk(u, name, body), manager=_mgr)
+            return self._guard(lambda u: self._coll_add(u, name, body), manager=_mgr)
         return self._err("Not found.", 404)
 
     def _do_patch(self):
@@ -10072,6 +10079,69 @@ class Handler(BaseHTTPRequestHandler):
         n = db.next_doc_no(prefix, year, _floor)
         item[field] = doc_number.format_no(prefix, year, n)
         return item[field]
+
+    #: Most rows one request may carry. Not a limit on how big a schedule may be — the client
+    #: sends as many requests as it needs — but a bound on how much work one request can ask the
+    #: single-process server to do before anything else gets a turn.
+    BULK_MAX = 250
+
+    def _coll_add_bulk(self, u, name, body):
+        """Create many rows in one request. Each one through `_coll_add`, unchanged.
+
+        `_coll_add` writes its outcome to the socket, so it is called with `_json`/`_err` swapped for
+        collectors and restored in a `finally`. That is deliberately how this reuses it: the
+        alternative — a bulk path that re-implements the checks — is a second door into every
+        collection that no per-collection guard is watching. Read the loop as "N ordinary POSTs, one
+        connection".
+
+        Partial success is the normal outcome and is reported per item, with its index, so the
+        browser can name the rows that did not go. A bulk write that answers 200 having written some
+        of the rows and saying which is honest; one that answers 200 and says only a count is how a
+        rate limit came to look like a product limit.
+        """
+        items = body.get("items") if isinstance(body, dict) else None
+        if not isinstance(items, list):
+            return self._err("Send {items: [...]}.", 400)
+        if not items:
+            return self._json({"ok": True, "created": [], "failed": []})
+        if len(items) > self.BULK_MAX:
+            return self._err("At most %d rows per request — send the rest in another." % self.BULK_MAX, 413)
+        # Charge the limiter for the ROWS, not for the request. Without this a bulk endpoint hands
+        # back the flood it was added to prevent: 250 rows x 240 requests a minute.
+        if not self._rate_check("bulkwrite", 3000, 60):
+            return None
+
+        created, failed = [], []
+        cap = {}
+
+        def _cap_json(obj, status=200):
+            cap["r"] = ("ok", status, obj)
+
+        def _cap_err(msg, status=400):
+            cap["r"] = ("err", status, msg)
+
+        try:
+            self._json, self._err = _cap_json, _cap_err
+            for i, it in enumerate(items):
+                cap.clear()
+                try:
+                    self._coll_add(u, name, it)
+                except Exception as e:                      # one bad row must not take the batch down
+                    cap["r"] = ("err", 500, str(e) or "Could not save this row.")
+                kind, status, payload = cap.get("r", ("err", 500, "No response."))
+                if kind == "ok" and isinstance(payload, dict) and payload.get("item"):
+                    created.append(payload["item"])
+                else:
+                    failed.append({"index": i, "status": status,
+                                   "error": payload if isinstance(payload, str) else "Rejected."})
+        finally:
+            # Remove the INSTANCE attributes so the class methods are visible again. Assigning the
+            # bound methods back would leave a shadow on every later call in this request.
+            self.__dict__.pop("_json", None)
+            self.__dict__.pop("_err", None)
+
+        return self._json({"ok": True, "created": created, "failed": failed,
+                           "createdCount": len(created), "failedCount": len(failed)})
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
