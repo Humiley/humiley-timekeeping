@@ -475,5 +475,76 @@ ok('a detail line more than 10% behind is drawn red, like its variance cell',
    /_critical: r\.variance !== '' && r\.variance < -10/.test(src),
    'on a printed programme the eye finds the colour long before it reads the column');
 
+// ══ the Timeline is CAPTURED, not redrawn ══════════════════════════════════════════════════════
+console.log('\nThe Gantt export is the platform\'s own Timeline\n');
+
+const CAP = take('async function _schPdfTimeline(', '_schPdfTimeline');
+const PAG = take('function _brandPaginate(', '_brandPaginate');
+
+ok('it captures the live element rather than drawing a chart',
+   /html2canvas/.test(CAP) && /\.sch-cap/.test(CAP) && !/doc\.rect\(/.test(CAP),
+   'a second implementation of the same picture can only drift from the one on screen, and every ' +
+   'difference is invisible until a client is holding both');
+ok('it finds the chart by CLASS, not by id',
+   /querySelector\('\.sch-cap'\)/.test(CAP),
+   'the same builder renders the master and the detail timelines — two elements sharing an id is ' +
+   'the trap the dynamic-overlay convention exists to avoid');
+ok('and it looks inside the right pane, so a master export cannot capture the detail chart',
+   /getElementById\('psch-' \+ want\)/.test(CAP) && /\(level === 'd' \? 'd' : 'm'\) \+ '-timeline'/.test(CAP));
+ok('it opens the Timeline first when the user is on another view',
+   /if \(_pmSchedTab !== want\)/.test(CAP) && /pmSchedTab\(want\)/.test(CAP),
+   'the chart does not exist until its pane is built');
+ok('and refuses with a message if the chart still is not there',
+   /if \(!el\) \{[\s\S]{0,300}return false;/.test(CAP));
+
+/* The three un-caps. Without them html2canvas renders precisely the pixels a person can see — the
+   520px scroll window — and drops every row and every month outside it, silently. */
+ok('the capture un-caps the viewport HEIGHT',
+   /body\.exporting \.sch-vp\{max-height:none !important/.test(src));
+ok('and the viewport WIDTH',
+   /body\.exporting \.sch-vp\{[^}]*overflow:visible !important/.test(src));
+ok('and stops the card around it clipping',
+   /body\.exporting \.sch-cap,body\.exporting \.sch-cap \.card\{overflow:visible !important/.test(src),
+   'otherwise the chart is cut at the card edge instead of at the scroll box edge');
+ok('the class is removed again whatever happens',
+   /finally \{\s*document\.body\.classList\.remove\('exporting'\);/.test(CAP),
+   'leaving it on would un-cap every bounded table in the app for the rest of the session');
+ok('and the layout is allowed to settle before the capture measures it',
+   /requestAnimationFrame\(\(\) => requestAnimationFrame\(r\)\)/.test(CAP),
+   "html2canvas can otherwise read the element's OLD height and clip the bottom rows off");
+
+ok('it does NOT pass windowWidth to html2canvas',
+   // `windowWidth:` — the PROPERTY, not the word. The code comment beside it names the option to
+   // explain why it is absent, and matching the bare word convicted the explanation.
+   !/windowWidth\s*:/.test(CAP),
+   'that re-lays-out the ENTIRE document at a different width; on a single-page app this size it ' +
+   'took tens of seconds and hung outright — measured, not guessed');
+ok('nor a stale width/height',
+   !/width: el\.scrollWidth/.test(CAP),
+   'html2canvas reads them off the element; passing separately-measured numbers is how a capture ' +
+   'ends up cropped');
+
+ok('the page is landscape', /landscape: true/.test(CAP));
+ok('and the paginator knows what landscape means',
+   /const W = land \? 297 : 210, H = land \? 210 : 297/.test(PAG),
+   '_brandPaginate hardcoded A4 portrait, so a landscape page drew the logo, the title and the ' +
+   'footer against the wrong right edge');
+ok('every page of the capture carries the letterhead',
+   /_brandHeader\(doc, Object\.assign\(\{\}, opts, \{ w: W \}\)\)/.test(PAG));
+ok('and its footer is placed from the page height, not from 297',
+   /_brandFooter\(doc, page \+ 1, totalPages, opts\.docCode, opts\.footLabel, W, H\)/.test(PAG));
+
+ok('the two timeline PDFs are named apart from each other and from the table one',
+   /'Master-Timeline'/.test(src) && /'Detail-Timeline'/.test(src) && /'Master'\)/.test(src),
+   'three PDFs sharing a filename overwrite each other in the Downloads folder');
+ok('the dialog routes the two Gantt choices to the capture',
+   /pick === 'pdf-master'\) ok = await _schPdfTimeline\(pid, 'm'\)/.test(src) &&
+   /pick === 'pdf-detail'\) ok = await _schPdfTimeline\(pid, 'd'\)/.test(src));
+ok('and the drawn table survives as its own, separately labelled choice',
+   /pick === 'pdf-master-table'\) ok = _schPdfMaster\(pid\)/.test(src),
+   'it is still the better document for reading dates and float off a page');
+ok('the dialog says the export is what is on screen, filters included',
+   /exactly as it appears on screen/.test(src));
+
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

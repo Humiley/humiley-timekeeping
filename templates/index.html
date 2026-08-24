@@ -282,6 +282,14 @@ body.exporting #tw-xbar{display:none !important}
   .sch-vp::-webkit-scrollbar-thumb{background:rgba(32,80,144,.30);border:3px solid transparent;background-clip:padding-box;border-radius:9px}
 }
 body.exporting .sch-xrow{display:none !important}
+/* The timeline viewport is a scroll box — 520px tall and clipped to the pane's width — so an
+   html2canvas capture of it renders the visible WINDOW and silently drops every row and every month
+   outside it. Un-cap both axes for the duration of the capture, and let the card that wraps it stop
+   clipping, or the chart is cut off at the card's edge instead of the box's.
+   `.exporting` is set only while the capture runs; nothing here affects normal use. */
+body.exporting .sch-vp{max-height:none !important;overflow:visible !important}
+body.exporting .sch-vp,body.exporting .sch-vp *{scrollbar-width:none !important}
+body.exporting .sch-cap,body.exporting .sch-cap .card{overflow:visible !important;max-height:none !important}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid var(--line);background:var(--soft-bg)}
 td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -10680,20 +10688,24 @@ function _brandFooter(doc, pageNo, total, docCode, footLabel, pageW, pageH) {
 }
 /* Slice a tall source canvas onto A4 pages, each carrying the Humiley letterhead. */
 function _brandPaginate(doc, canvas, opts) {
-  opts = opts || {}; const W = 210, M = 15, footTop = 281;
+  // A Gantt is wide. On portrait A4 the whole chart scales down to fit 180 mm and the task names
+  // become unreadable; landscape gives it 267 mm and the same capture is legible.
+  opts = opts || {};
+  const land = !!opts.landscape;
+  const W = land ? 297 : 210, H = land ? 210 : 297, M = 15, footTop = H - 16;
   const top = opts.title ? 44 : 38;            // content-start Y (mm); matches _brandHeader output
   const iw = W - 2 * M, pxPerMm = canvas.width / iw;
   const pageContentPx = Math.max(1, Math.floor((footTop - top) * pxPerMm));
   const totalPages = Math.max(1, Math.ceil(canvas.height / pageContentPx));
   let sY = 0, page = 0;
   while (sY < canvas.height) {
-    if (page > 0) doc.addPage();
-    _brandHeader(doc, opts);
+    if (page > 0) doc.addPage(land ? 'a4' : undefined, land ? 'landscape' : undefined);
+    _brandHeader(doc, Object.assign({}, opts, { w: W }));
     const sliceH = Math.min(pageContentPx, canvas.height - sY);
     const cc = document.createElement('canvas'); cc.width = canvas.width; cc.height = sliceH;
     cc.getContext('2d').drawImage(canvas, 0, sY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
     doc.addImage(cc.toDataURL('image/jpeg', 0.93), 'JPEG', M, top, iw, sliceH / pxPerMm);
-    _brandFooter(doc, page + 1, totalPages, opts.docCode);
+    _brandFooter(doc, page + 1, totalPages, opts.docCode, opts.footLabel, W, H);
     sY += sliceH; page++;
   }
   return doc;
@@ -21284,10 +21296,14 @@ const _SCH_EXPORTS = [
   { k: 'xlsx-all', icon: '', label: 'Excel workbook',
     sub: 'Master Schedule, Detail Schedule, the full progress log and a Read me — one .xlsx. ' +
          'The Master sheet imports straight back.' },
-  { k: 'pdf-master', icon: '', label: 'Master Schedule — PDF',
-    sub: 'Landscape, on the Humiley letterhead, indented by WBS. For issuing to the client.' },
-  { k: 'pdf-detail', icon: '', label: 'Detail Schedule — PDF',
-    sub: 'Landscape, grouped by master activity, with accumulated / planned / variance per line.' },
+  { k: 'pdf-master', icon: '', label: 'Master Schedule — Gantt (PDF)',
+    sub: 'The Timeline exactly as it appears on screen — phases, status, the today line, your ' +
+         'current filters — on the Humiley letterhead, landscape.' },
+  { k: 'pdf-detail', icon: '', label: 'Detail Schedule — Gantt (PDF)',
+    sub: 'The detail Timeline exactly as it appears on screen, on the letterhead, landscape.' },
+  { k: 'pdf-master-table', icon: '', label: 'Master Schedule — table (PDF)',
+    sub: 'The activity list with dates, %, status and float. No chart — for reading, not for ' +
+         'looking at.' },
   { k: 'mspdi', icon: '', label: 'MS Project (.xml)',
     sub: 'MSPDI XML — open it in MS Project with File \u2192 Open. Detail lines come through as ' +
          'sub-tasks of the activity they report against. (.mpp cannot be written by a browser.)' }
@@ -21343,8 +21359,9 @@ async function schExport(pid) {
   let ok = false;
   try {
     if (pick === 'xlsx-all') ok = _schXlsx(pid);
-    else if (pick === 'pdf-master') ok = _schPdfMaster(pid);
-    else if (pick === 'pdf-detail') ok = _schPdfDetail(pid);
+    else if (pick === 'pdf-master') ok = await _schPdfTimeline(pid, 'm');
+    else if (pick === 'pdf-detail') ok = await _schPdfTimeline(pid, 'd');
+    else if (pick === 'pdf-master-table') ok = _schPdfMaster(pid);
     else if (pick === 'mspdi') ok = _schMspdi(pid);
   } catch (e) {
     toast(_t2('Could not build the export', 'Không thể tạo bản xuất') + ': ' + _errMsg(e), 'error', 9000);
@@ -21825,6 +21842,81 @@ function _schXlsx(pid) {
   XLSX.utils.book_append_sheet(wb, wsR, 'Read me');
 
   XLSX.writeFile(wb, _schFileName(pid, 'xlsx'));
+  return true;
+}
+
+/* ══ THE TIMELINE, EXACTLY AS THE PLATFORM DRAWS IT ══════════════════════════════════════════════
+   Captured, not re-drawn. A second implementation of the same picture can only ever drift from the
+   one on screen — a different bar rule, a different grouping, a status column that is not quite the
+   status column — and every one of those differences is invisible until a client holds both.
+
+   So this takes the LIVE element. Whatever the Timeline shows — the phase groups, the STATUS column
+   with its variance percentages, the quarter and month bands, the red TODAY line and its date pill,
+   the pale planned bar with its solid progress fill, the % at the end of each row — is what lands in
+   the PDF, because it IS that element. Fidelity stops being something the code has to maintain and
+   becomes a property of the method.
+
+   Three things have to be true for the capture to be the whole chart rather than the scroll window,
+   and all three are handled by `body.exporting` (see the CSS): the viewport un-caps its height, it
+   un-caps its width, and the card around it stops clipping. Without them html2canvas renders
+   precisely the pixels a person can see and drops the rest — silently, which is the worst way for
+   an export to be wrong.
+
+   What is deliberately NOT changed: the filters. If the user has narrowed the Timeline to "Behind",
+   the export is the Behind chart. Exporting something other than what is on screen would be a
+   second surprise on top of the first. */
+async function _schPdfTimeline(pid, level) {
+  const h2c = window.html2canvas, J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!h2c || !J) {
+    toast(_t2('The PDF engine did not load — check your connection and try again.',
+              'Chưa tải được thư viện PDF — kiểm tra kết nối và thử lại.'), 'error', 8000);
+    return false;
+  }
+  const want = (level === 'd' ? 'd' : 'm') + '-timeline';
+  // The chart only exists once its pane has been built. Switching there is not a side effect to
+  // apologise for — it is the only way to export "what is on screen" when it is not on screen yet,
+  // and it leaves the user looking at the thing they just exported.
+  if (_pmSchedTab !== want) {
+    pmSchedTab(want);
+    await new Promise(r => setTimeout(r, 260));
+  }
+  const pane = document.getElementById('psch-' + want);
+  const el = pane && pane.querySelector('.sch-cap');
+  if (!el) {
+    toast(_t2('The timeline has not been drawn yet — open it and try again.',
+              'Tiến độ chưa được vẽ — hãy mở rồi thử lại.'), 'warn', 7000);
+    return false;
+  }
+  const p = _pmProj(pid) || {};
+  const head = {
+    title: level === 'd' ? 'Detail Schedule — Timeline' : 'Master Schedule — Timeline',
+    subtitle: (p.code ? p.code + ' — ' : '') + (p.name || ''),
+    docCode: level === 'd' ? 'HML-PMC-DST' : 'HML-PMC-MST',
+    footLabel: level === 'd' ? 'DETAIL SCHEDULE — TIMELINE' : 'MASTER SCHEDULE — TIMELINE',
+    landscape: true
+  };
+  toast(_t2('Capturing the timeline\u2026', 'Đang chụp tiến độ\u2026'), 'info', 20000);
+  document.body.classList.add('exporting');
+  // One frame after the class lands, so the un-capped layout is what gets measured. Without it
+  // html2canvas can read the element's OLD height and clip the bottom rows off.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  let canvas;
+  try {
+    /* No `windowWidth`. It makes html2canvas re-lay-out the ENTIRE document at a different width,
+       which on a single-page app of this size takes tens of seconds and can hang outright — and it
+       is not needed: `body.exporting` has already un-clipped the element, so measuring the element
+       is measuring the whole chart. Nor `width`/`height`: html2canvas reads them off the element,
+       and passing stale numbers is how a capture ends up cropped.
+       scale 2 keeps the text crisp when the capture is scaled onto A4. */
+    canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+  } catch (e) {
+    toast(_t2('Could not capture the timeline', 'Không thể chụp tiến độ') + ': ' + _errMsg(e), 'error', 8000);
+    return false;
+  } finally {
+    document.body.classList.remove('exporting');
+  }
+  _brandPaginate(new J({ unit: 'mm', format: 'a4', orientation: 'landscape' }), canvas, head)
+    .save(_schFileName(pid, 'pdf', level === 'd' ? 'Detail-Timeline' : 'Master-Timeline'));
   return true;
 }
 
@@ -25019,6 +25111,10 @@ function _schTimeline(rows, o) {
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
     _schFilterBar(ns, rows.length, total) +
+    /* sch-cap marks the capturable chart. The export finds the element by this class rather than
+       by an id: the same builder renders both the master and the detail timelines, and two elements
+       sharing an id is the trap _tkDialog's convention exists to avoid. */
+    '<div class="sch-cap">' +
     '<div class="sch-vp" data-labw="' + LABW + '" data-plotw="' + plotW + '"' +
       ' data-fit="' + (_pdWide ? '0' : '1') + '" tabindex="0" role="group"' +
       ' aria-label="' + _tkEscA(_t('Scroll the timeline sideways')) + '"' +
@@ -25040,7 +25136,7 @@ function _schTimeline(rows, o) {
         '<div style="width:' + plotW + 'px"></div></div></div>' +
     '<div style="padding:8px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line)">' +
       _t('Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind') +
-    '</div></div>';
+    '</div></div></div>';
 }
 
 /* Calendar — what STARTS and what is DUE. Both are commitments; the middle of a bar is not. */
