@@ -1821,6 +1821,25 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">Releasing money is a <b>named</b> duty, not something everyone with an access level inherits. Only these people see <b>Mark paid</b>. Being listed is the grant, so a payer does not need Editor/Admin — but they do need access to the Finance page. Leave blank to fall back to “any Editor or Admin”. The rules above still apply on top: never your own request, and never one you approved.</div>
     </div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label">Speak-up handlers — who reads a confidential concern</label>
+      <input class="form-control" id="portal-speakupHandlers" placeholder="tran.doan@humiley.com, board.chair@humiley.com">
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">A <b>named</b> duty, never a level: “who may read a harassment report” is a decision about individuals, not something inherited by running a department. The Client Audit Pack asks for this explicitly and has been reporting it unanswered — the setting existed and there was no field to fill it, so every concern fell back to whoever happened to be an HR admin. List several, separated by commas. <b>Admin only.</b></div>
+    </div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label">Wage region — Decree 293/2025</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <select class="form-control" id="portal-wageRegion" style="max-width:320px">
+          <option value="">— not set —</option>
+          <option value="I">Region I — inner Hanoi / HCMC and listed districts</option>
+          <option value="II">Region II</option>
+          <option value="III">Region III</option>
+          <option value="IV">Region IV</option>
+        </select>
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;margin:0"><input type="checkbox" id="portal-trainedUplift" style="width:auto">Collective agreement pays trained workers +7%</label>
+      </div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">The region of the <b>workplace</b>, used as the default when an employee record does not name their own. Until this is set the Minimum-Wage Register can check nobody and reports every employee as <b>unchecked</b> — it says so rather than passing them silently. This is a statutory figure: set it to the region your site actually sits in. <b>Admin only.</b></div>
+    </div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-apprEmail" style="width:auto">Approval emails — branded, sent per department</label>
       <div style="font-size:11px;color:var(--text-light);margin:2px 0 10px">Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365 <b>Mail.Send</b> application consent on the Humiley app.</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
@@ -5476,7 +5495,9 @@ async function _esignGo() {
     // For PIN signings that CREATE or mutate a record first, verify the PIN up-front so a wrong
     // PIN can never leave an orphaned/duplicate record behind.
     if (signAuth.method === 'pin' && (opts.createColl || opts.createFn || opts.updateFn)) {
-      await tkApi('/api/esign/pin', { method: 'POST', body: { action: 'verify', pin: signAuth.pin } });
+      // _no401, or a mistyped PIN is read as an expired session: tkApi's default 401 handling fires
+      // a silent re-login and reports "Session refreshed" where the truth is "Incorrect PIN".
+      await tkApi('/api/esign/pin', { method: 'POST', body: { action: 'verify', pin: signAuth.pin }, _no401: true });
     }
     let coll = opts.coll, id = opts.id, created = null;
     if (opts.createColl) {
@@ -6591,6 +6612,10 @@ async function tkLoadIntegrations() {
   const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
   const _pp = document.getElementById('portal-apprPayers'); if (_pp) _pp.value = g('apprPayers', '');   // admin-only; blank for everyone else
   const _hra = document.getElementById('portal-hrAdmins'); if (_hra) _hra.value = g('hrAdmins', '');    // admin-only; blank for everyone else
+  const _sph = document.getElementById('portal-speakupHandlers'); if (_sph) _sph.value = g('speakupHandlers', '');   // admin-only; blank for everyone else
+  const _wr = document.getElementById('portal-wageRegion'); if (_wr) _wr.value = g('wageRegion', '') || '';
+  // === '1', not !!: the server returns the string "0" for off, and !!"0" is true.
+  const _tu = document.getElementById('portal-trainedUplift'); if (_tu) _tu.checked = String(g('trainedUplift', '0')) === '1';
   // What the server actually holds. These action buttons operate on SAVED settings while sitting
   // next to an editable box, so without this there is no way to tell "not configured" apart from
   // "configured but you have not pressed Save yet" — and the second one looks like a broken button.
@@ -6762,6 +6787,13 @@ async function tkSaveIntegrations() {
     payerSeparation: C('portal-payerSeparation') ? '1' : '0',
     apprPayers: V('portal-apprPayers'),   // the server ignores this key entirely unless the caller is an admin
     hrAdmins: V('portal-hrAdmins'),       // ditto — who is HR is an authorization list
+    // Both were in the server's whitelist from the day they were written; neither had a field.
+    speakupHandlers: V('portal-speakupHandlers'),
+    wageRegion: V('portal-wageRegion'),
+    // A STRING. _portal_update skips any value that is not one (`if not isinstance(v, str)`),
+    // so sending the boolean this checkbox naturally produces saved nothing at all — the box
+    // ticked, the toast said Saved, and the setting never moved.
+    trainedUplift: (document.getElementById('portal-trainedUplift') || {}).checked ? '1' : '0',
     otAnnualCap: String(parseInt(V('portal-otAnnualCap'), 10) || ''),   // blank = Art. 107's ordinary 200-hour ceiling
     digestEnabled: C('portal-digestEnabled') ? '1' : '0',
     digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
@@ -16751,8 +16783,12 @@ async function tkQuickAddSave() {
   }
   try {
     let item;
+    // Captured before the write, because the cascade below has to know whether the phase MOVED —
+    // after the PATCH the old value is gone from every copy we hold.
+    let _prevPhase = null, _wasEdit = _qaEditId;
     if (_qaEditId) {
       const ex = (_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {};
+      _prevPhase = ex.phase == null ? '' : ex.phase;
       const res = await tkApi('/api/coll/' + spec.coll + '/' + _qaEditId, { method: 'PATCH', body: { ...ex, ...data } });
       item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
     } else {
@@ -16782,6 +16818,12 @@ async function tkQuickAddSave() {
     closeModal('quickAddModal');
     toast(_qaEditId ? 'Updated' : 'Added successfully');
     if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload]();
+    /* After the form has closed and the table has redrawn — so the parent's new phase is on screen
+       behind the question, and the dialog is not stacked on the form it came from. */
+    if (_qaType === 'pm_tasks' && _wasEdit && item) {
+      try { if (await _pmPhaseCascade(item, _prevPhase)) { if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload](); } }
+      catch (e) { console.warn('phase cascade:', e && e.message); }
+    }
     if (_qaType === 'pm_projects' && item && item.sharepointUrl && item.sharepointUrl !== _prevSpUrl) {
       if (_msalApp && _account) { try { await pmSpCreateFoldersGraph(item.id); } catch (e) {} }
       else { toast('SharePoint link saved — open the project\'s Documents tab to create the folders.', 'success', 6000); }
@@ -20215,9 +20257,18 @@ function _qaDynOptions(src, ex) {
       if (!v || seen[v]) return;
       seen[v] = 1;
       const nm = String(t.name || '').trim();
-      out.push({ v: v, l: (nm && nm !== v) ? (v + ' \u2014 ' + nm) : v });
+      out.push({ v: v, lvl: _pmWbsLevel(t.wbs), l: (nm && nm !== v) ? (v + ' \u2014 ' + nm) : v });
     });
-    return out.sort((a, b) => _wbsCmp(a.v, b.v));
+    /* Sorted by WBS FIRST, then indented — an indent only reads as a tree when the rows are in
+       outline order, and this list runs 200 deep on a real programme.
+       Indented with NBSP, not CSS: a native <option> ignores padding in every browser this ships
+       to, so characters are the only way to show depth inside a select. The \u2514 marks a child so
+       the shape survives being read aloud. */
+    out.sort((a, b) => _wbsCmp(a.v, b.v));
+    return out.map(o => {
+      const d = Math.max(0, Math.min(5, (o.lvl || 1) - 1));
+      return { v: o.v, l: d ? ('\u00A0\u00A0\u00A0'.repeat(d) + '\u2514\u00A0' + o.l) : o.l };
+    });
   }
   if (src === 'pm_assignees') {   // task owner suggestions: project people first, then anyone already assigned, then all staff — but FREE TEXT is allowed (non-users welcome)
     const p = (typeof _pmProj === 'function') ? _pmProj() : null;
@@ -21879,6 +21930,83 @@ function _pmWbsIndent(lvl) { return (Math.max(1, +lvl || 1) - 1) * 12; }
 function _pmWbsIndentFor(lvl, narrow) {
   return narrow ? Math.min(15, (Math.max(1, +lvl || 1) - 1) * 5) : _pmWbsIndent(lvl);
 }
+/* Every activity strictly BELOW this one in the WBS, in the same project. Prefix + '.' is the whole
+   test: 1.2 owns 1.2.1 and 1.2.3.1 but not 1.20 — which a bare startsWith would have swept in, and
+   on a programme numbered past nine that is most of a level. An activity with no WBS code has no
+   descendants: a name is not a hierarchy, and guessing one from text would file work under a
+   heading nobody chose. */
+function _pmWbsKids(parent, tasks) {
+  const w = String((parent && parent.wbs) || '').trim();
+  if (!w) return [];
+  return (tasks || []).filter(t => t && t.id !== (parent && parent.id) &&
+    String(t.wbs || '').trim().indexOf(w + '.') === 0);
+}
+/* ══ PHASE IS A PROPERTY OF A BRANCH, NOT OF ONE LINE ════════════════════════════════════════════
+   Setting 1.2 to "Detailed Design" and then opening 1.2.1, 1.2.2, 1.2.3 and 1.2.3.1 to type the
+   same answer four more times is one fact entered five times. That is why most sub-tasks in a real
+   programme carried no phase at all, and why the phase filters and the phase column were close to
+   useless below level 2.
+
+   It ASKS before it writes, once, for the whole branch. The children are listed with the phase they
+   have now, because this overwrites a value somebody may have set deliberately — a silent bulk
+   overwrite of work already done is worse than one extra click, and one click for a branch is not
+   the thing the request was about. Children already on the new phase are neither written nor
+   counted, so the number in the dialog is the number that will actually change.
+
+   Only ever on an EDIT, and only when the phase itself moved: re-saving a parent to fix its dates
+   must not re-stamp a branch somebody has since refined. */
+async function _pmPhaseCascade(parent, prevPhase) {
+  const ph = String((parent && parent.phase) || '').trim();
+  if (!ph || ph === String(prevPhase == null ? '' : prevPhase).trim()) return 0;
+  const kids = _pmWbsKids(parent, _pmScopeFor('pm_tasks', parent.projectId || _pmPid()))
+    .filter(t => String(t.phase || '').trim() !== ph)
+    .sort((a, b) => _pmWbsCmp(a.wbs, b.wbs));
+  if (!kids.length) return 0;
+  const SHOW = 8;
+  const list = kids.slice(0, SHOW).map(t => '   ' + (t.wbs || '?') + '   ' + (t.name || '') +
+      (String(t.phase || '').trim() ? '   (' + t.phase + ')' : '   (' + _t2('no phase', 'chưa có giai đoạn') + ')')).join('\n');
+  const more = kids.length > SHOW
+    ? '\n   ' + _t2('… and ' + (kids.length - SHOW) + ' more', '… và ' + (kids.length - SHOW) + ' mục nữa') : '';
+  const go = await tkConfirm({
+    title: _t2('Apply this phase to the sub-tasks?', 'Áp dụng giai đoạn này cho các công việc con?'),
+    body: _t2('Activity ' + (parent.wbs || '') + ' is now "' + ph + '". ' + kids.length +
+                ' sub-task(s) below it are on a different phase:',
+              'Hạng mục ' + (parent.wbs || '') + ' hiện là "' + ph + '". ' + kids.length +
+                ' công việc con bên dưới đang ở giai đoạn khác:') +
+          '\n\n' + list + more + '\n\n' +
+          _t2('Set them all to "' + ph + '"?', 'Đặt tất cả thành "' + ph + '"?'),
+    confirmText: _t2('Update ' + kids.length, 'Cập nhật ' + kids.length),
+    cancelText: _t2('Leave them', 'Giữ nguyên') });
+  if (!go) return 0;
+  /* Small concurrent batches. tkApi sends the full document (a PATCH here REPLACES the item) and
+     echoes its _rev as If-Match, so a child somebody else edited since this page loaded comes back
+     409 and is reported rather than silently overwritten. */
+  let done = 0; const failed = [];
+  for (let i = 0; i < kids.length; i += 5) {
+    const chunk = kids.slice(i, i + 5);
+    await Promise.all(chunk.map(async t => {
+      try {
+        const res = await tkApi('/api/coll/pm_tasks/' + t.id,
+          { method: 'PATCH', body: Object.assign({}, t, { phase: ph }) });
+        const j = (_HR.pm_tasks || []).findIndex(x => x.id === t.id);
+        if (j >= 0 && res && res.item) _HR.pm_tasks[j] = res.item;
+        done++;
+      } catch (e) { failed.push((t.wbs || t.name || t.id) + ': ' + _errMsg(e)); }
+    }));
+  }
+  if (done) {
+    tkAudit('Task phase cascaded', (parent.wbs || parent.name || '') + ' → ' + ph,
+            done + ' sub-task(s) in project ' + (parent.projectId || ''));
+  }
+  if (failed.length) {
+    toast(_t2(done + ' updated, ' + failed.length + ' could not be: ',
+              'Đã cập nhật ' + done + ', ' + failed.length + ' không thể: ') + failed[0], 'warn', 9000);
+  } else {
+    toast(_t2(done + ' sub-task(s) set to "' + ph + '"',
+              'Đã đặt ' + done + ' công việc con thành "' + ph + '"'), 'success', 5000);
+  }
+  return done;
+}
 function _pmSet(html) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = html; }
 
 /* ---------- 2. Scope / WBS ---------- */
@@ -22454,6 +22582,100 @@ async function pdSchedNew(pid) {
     _pmReload();
   } catch (e) { toast(_t('Could not create the schedule') + ': ' + _errMsg(e), 'error', 6000); }
 }
+/* ══ RENAME / DELETE A DETAIL SCHEDULE ═══════════════════════════════════════════════════════════
+   A detail schedule is the heading a site team reports under, and it collects hundreds of lines. It
+   could be created and never corrected: a typo in "TIẾN ĐỘ THI CÔNG CHI TIẾT NHÀ A" stayed on every
+   report from then on, and a schedule opened by mistake sat in the chip bar for good.
+
+   Both acts go through the signing PIN. What that gate IS:
+     · the PIN is checked by the SERVER (/api/esign/pin, action "verify"), which locks it for 15
+       minutes after repeated wrong answers — not a comparison in this file, and not brute-forceable
+       from this screen;
+     · it stops the mis-click, and the change made at somebody's unattended unlocked screen — which
+       is the risk a rename and especially a delete button introduces.
+   What it is NOT: an authorization boundary. The verify and the write that follows it are two
+   separate requests, so anything that can call the API directly skips the prompt entirely; the real
+   boundary stays the backend's own ownership + app check on /api/coll. Written down here so nobody
+   later reads this prompt as access control and builds on it.
+
+   DELETING A SCHEDULE DELETES NO TASKS. Every pm_detail row keeps every field it had; the rows
+   simply stop matching a defined schedule and appear under "Unfiled", which this same bar already
+   shows with a count and a warning. The dialog states that number before anyone confirms and the
+   audit entry records it, so the filing can be put back. */
+async function _pdPinGate(what) {
+  if (_esignPinState === null) { try { await tkPinRefresh(); } catch (e) {} }
+  if (!_esignHasPin()) {
+    await tkAlert({ title: _t2('A signing PIN is needed', 'Cần mã PIN ký'),
+      body: _t2('This action is confirmed with your signing PIN, and your account does not have one yet.\n\n' +
+                'Set one under My Space \u2192 My Profile \u2192 Signing PIN, then try again.',
+                'Hành động này được xác nhận bằng mã PIN ký của bạn, và tài khoản của bạn chưa có.\n\n' +
+                'Hãy đặt mã PIN tại Không gian của tôi \u2192 Hồ sơ của tôi \u2192 Mã PIN ký, rồi thử lại.') });
+    return false;
+  }
+  const pin = await tkPrompt({ title: _t2('Confirm with your signing PIN', 'Xác nhận bằng mã PIN ký'),
+    body: what, type: 'password', placeholder: _t2('Signing PIN', 'Mã PIN ký'),
+    confirmText: _t2('Confirm', 'Xác nhận') });
+  if (!pin) return false;
+  try {
+    // _no401: a wrong PIN comes back 401, and tkApi's default 401 handling is "the session died" —
+    // it would fire a silent re-login and tell the user "Session refreshed" instead of "Incorrect
+    // PIN", burning a token exchange on every typo.
+    await tkApi('/api/esign/pin', { method: 'POST', body: { action: 'verify', pin: pin }, _no401: true });
+    return true;
+  } catch (e) {
+    toast((e && e.message) || _t2('Incorrect PIN.', 'Mã PIN không đúng.'), 'error', 6000);
+    return false;
+  }
+}
+async function pdSchedRename(pid, id) {
+  const sc = _pdScheds(pid).find(x => x.id === id);
+  if (!sc) { toast(_t2('That schedule is no longer there.', 'Tiến độ đó không còn nữa.'), 'warn'); return; }
+  const name = await tkPrompt({ title: _t2('Rename this detail schedule', 'Đổi tên tiến độ chi tiết này'),
+    value: sc.name || '', placeholder: _t2('Schedule name', 'Tên tiến độ'),
+    body: _t2('Every report and every chip shows this name.', 'Mọi báo cáo và mọi thẻ đều hiển thị tên này.') });
+  if (!name || name === (sc.name || '')) return;
+  if (!await _pdPinGate(_t2('Rename "' + (sc.name || '') + '" to "' + name + '".',
+                            'Đổi tên "' + (sc.name || '') + '" thành "' + name + '".'))) return;
+  try {
+    const res = await tkApi('/api/coll/pm_schedules/' + id,
+      { method: 'PATCH', body: Object.assign({}, sc, { name: name }) });
+    const i = (_HR.pm_schedules || []).findIndex(x => x.id === id);
+    if (i >= 0 && res && res.item) _HR.pm_schedules[i] = res.item;
+    tkAudit('Detail schedule renamed', name, 'was "' + (sc.name || '') + '" · project ' + pid);
+    toast(_t2('Renamed', 'Đã đổi tên') + ' \u2014 ' + name);
+    _pmReload();
+  } catch (e) { toast(_t2('Could not rename it', 'Không thể đổi tên') + ': ' + _errMsg(e), 'error', 6000); }
+}
+async function pdSchedDelete(pid, id) {
+  const sc = _pdScheds(pid).find(x => x.id === id);
+  if (!sc) { toast(_t2('That schedule is no longer there.', 'Tiến độ đó không còn nữa.'), 'warn'); return; }
+  const n = _pdAllRows(pid).filter(r => r.scheduleId === id).length;
+  const go = await tkConfirm({ danger: true,
+    title: _t2('Delete this detail schedule?', 'Xoá tiến độ chi tiết này?'),
+    body: '"' + (sc.name || '') + '"\n\n' + (n
+      ? _t2('Its ' + n + ' task(s) are NOT deleted. They keep everything they hold and move to ' +
+            '"Unfiled", where you can put them under another schedule.',
+            n + ' công việc trong đó KHÔNG bị xoá. Chúng giữ nguyên toàn bộ dữ liệu và chuyển sang ' +
+            '"Chưa phân loại", nơi bạn có thể xếp lại vào tiến độ khác.')
+      : _t2('It holds no tasks.', 'Tiến độ này không có công việc nào.')),
+    confirmText: _t2('Delete', 'Xoá'), cancelText: _t2('Keep it', 'Giữ lại') });
+  if (!go) return;
+  if (!await _pdPinGate(_t2('Delete the schedule "' + (sc.name || '') + '".',
+                            'Xoá tiến độ "' + (sc.name || '') + '".'))) return;
+  try {
+    await tkApi('/api/coll/pm_schedules/' + id, { method: 'DELETE' });
+    _HR.pm_schedules = (_HR.pm_schedules || []).filter(x => x.id !== id);
+    // The chip that was selected has gone; leaving _pdSchedId pointing at it would show the first
+    // schedule while the URL-ish state said otherwise.
+    if (_pdSchedId === id) _pdSchedId = '';
+    tkAudit('Detail schedule deleted', sc.name || id,
+            n + ' task(s) kept and moved to Unfiled · project ' + pid);
+    toast(_t2('Schedule deleted', 'Đã xoá tiến độ') + (n ? ' \u2014 ' +
+      _t2(n + ' task(s) are now under Unfiled', n + ' công việc hiện nằm ở Chưa phân loại') : ''),
+      'success', 6000);
+    _pmReload();
+  } catch (e) { toast(_t2('Could not delete it', 'Không thể xoá') + ': ' + _errMsg(e), 'error', 7000); }
+}
 /* The picker. Also the honest place to surface unfiled rows rather than dropping them. */
 function _pdSchedBar(pid) {
   const ss = _pdScheds(pid), unf = _pdUnfiled(pid), cur = _pdCurSched(pid);
@@ -22483,6 +22705,18 @@ function _pdSchedBar(pid) {
     '<span style="font-weight:600;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light)">' +
       _t('Schedule') + '</span>' + chips +
     '<button class="btn btn-ghost btn-sm" onclick="pdSchedNew(\'' + pid + '\')" title="' + _tkEscA(_t('Define another detail schedule for this project')) + '">+ ' + _t('New') + '</button>' +
+    /* Rename / Delete act on the schedule currently being LOOKED AT — one pair, not a pair on every
+       chip, which on a project with six schedules would be twelve buttons competing with the six
+       that select. "Unfiled" is not a schedule and has no id to rename or delete, so on that chip
+       neither appears. */
+    (cur && cur.id !== '_unfiled' ?
+      '<button class="btn btn-ghost btn-sm" onclick="pdSchedRename(\'' + pid + '\',\'' + cur.id + '\')" title="' +
+        _tkEscA(_t2('Rename this schedule (asks for your signing PIN)', 'Đổi tên tiến độ này (cần mã PIN ký)')) + '">' +
+        _t2('Rename', 'Đổi tên') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" style="color:var(--danger,#C62828)" onclick="pdSchedDelete(\'' + pid + '\',\'' + cur.id + '\')" title="' +
+        _tkEscA(_t2('Delete this schedule — its tasks are kept and move to Unfiled (asks for your signing PIN)',
+                    'Xoá tiến độ này — các công việc được giữ lại và chuyển sang Chưa phân loại (cần mã PIN ký)')) + '">' +
+        _t2('Delete', 'Xoá') + '</button>' : '') +
     (unf.length ? '<span style="font-size:11px;color:var(--warn,#B26A00)">' + unf.length + ' ' + _t('item(s) not assigned to a schedule') + '</span>' : '') +
     '</div>';
 }
@@ -22905,6 +23139,20 @@ function pdImport(pid) {
       _t('Dates as YYYY-MM-DD. The last three columns are optional. A header row is detected and skipped.') + '</div>' +
     '<textarea id="pd-imp" class="form-control" style="min-height:150px;font-family:monospace;font-size:12px" ' +
       'placeholder="HVAC Works&#9;Install ceiling support - Zone 1 1FL&#9;2026-08-11&#9;2026-08-25" oninput="pdImportPreview()"></textarea>' +
+    /* One picker for the whole paste. Without it every imported line arrived with no master
+       activity and had to be opened one at a time to be filed — hundreds of rows, one dropdown
+       each. A `taskRef` column in the pasted data still wins per row: a spreadsheet naming the
+       activity line by line is a more specific statement than one choice for the batch. */
+    '<div class="form-group" style="margin-top:10px;margin-bottom:0">' +
+      '<label class="form-label" style="font-size:11.5px">' +
+        _t('Part of master activity (WBS or name)') + ' \u2014 ' + _t('applied to every imported row') + '</label>' +
+      '<select class="form-control" id="pd-imp-task" onchange="pdImportPreview()">' +
+        '<option value="">' + _t('\u2014 leave unassigned \u2014') + '</option>' +
+        _qaDynOptions('pm_task_opts').map(o =>
+          '<option value="' + _tkEscA(o.v) + '">' + _crmEsc(o.l) + '</option>').join('') +
+      '</select>' +
+      '<div style="font-size:10.5px;color:var(--text-light);margin-top:4px">' +
+        _t('A taskRef column in the pasted rows overrides this for that row.') + '</div></div>' +
     '<div id="pd-imp-prev" style="margin-top:10px;overflow:auto;flex:1;min-height:0"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pdImpOverlay\').remove()">' + _t('Cancel') + '</button>' +
     '<button class="btn btn-emerald" id="pd-imp-go" disabled onclick="pdImportRun(\'' + pid + '\')">' + _t('Import') + '</button></div></div>';
@@ -22932,11 +23180,17 @@ function _pdImportParse(text) {
 }
 function pdImportPreview() {
   const { rows, bad } = _pdImportParse(document.getElementById('pd-imp').value);
+  const _bulk = (document.getElementById('pd-imp-task') || {}).value || '';
   const go = document.getElementById('pd-imp-go'); if (go) go.disabled = !rows.length;
   const head = '<div style="font-size:12.5px;margin-bottom:6px"><b>' + rows.length + '</b> ' + _t('to import') +
     (bad.length ? ' · <b style="color:#C00000">' + bad.length + '</b> ' + _t('rejected') : '') + '</div>';
   const good = rows.slice(0, 8).map(r => '<div style="font-size:11.5px;padding:2px 0;border-bottom:1px solid var(--line)">' +
-    '<b>' + _pmEsc(r.category) + '</b> · ' + _pmEsc(r.name) + (r.start ? ' · ' + _pmEsc(r.start) + ' → ' + _pmEsc(r.finish || '?') : '') + '</div>').join('') +
+    '<b>' + _pmEsc(r.category) + '</b> · ' + _pmEsc(r.name) + (r.start ? ' · ' + _pmEsc(r.start) + ' → ' + _pmEsc(r.finish || '?') : '') +
+    // Show the activity each row will ACTUALLY be filed under, so the batch choice and any per-row
+    // override are both visible before anything is written.
+    ((r.taskRef || _bulk) ? '<span style="color:var(--navy);font-weight:600"> · ' + _pmEsc(r.taskRef || _bulk) +
+      (r.taskRef ? ' <span style="font-weight:400;color:var(--text-light)">(' + _t('from the paste') + ')</span>' : '') + '</span>' : '') +
+    '</div>').join('') +
     (rows.length > 8 ? '<div style="font-size:11px;color:var(--text-light);padding-top:4px">…' + (rows.length - 8) + ' ' + _t('more') + '</div>' : '');
   const errs = bad.length ? '<div style="margin-top:8px;font-size:11.5px;color:#C00000">' +
     bad.slice(0, 6).map(b => '<div>' + _t('line') + ' ' + b.line + ': ' + _pmEsc(b.why) + '</div>').join('') +
@@ -22947,6 +23201,7 @@ async function pdImportRun(pid) {
   const { rows } = _pdImportParse(document.getElementById('pd-imp').value);
   if (!rows.length) return;
   const cur = (typeof _pdCurSched === 'function') ? _pdCurSched(pid) : null;
+  const bulkTask = (document.getElementById('pd-imp-task') || {}).value || '';
   const btn = document.getElementById('pd-imp-go'); if (btn) { btn.disabled = true; btn.textContent = _t('Importing…'); }
   let ok = 0; const failed = [];
   for (const r of rows) {
@@ -22956,7 +23211,7 @@ async function pdImportRun(pid) {
     // time. Same rule the Add-report-item form already applies (see _qaType === 'pm_detail').
     // Importing while "Unfiled" is selected still writes nothing: that is not a schedule.
     const body = { projectId: pid, category: r.category, name: r.name, start: r.start || '', finish: r.finish || '',
-                   taskRef: r.taskRef || '', unit: r.unit || '', log: [] };
+                   taskRef: r.taskRef || bulkTask || '', unit: r.unit || '', log: [] };
     if (cur && cur.id !== '_unfiled') body.scheduleId = cur.id;
     if (+r.weight > 0) body.weight = +r.weight;
     try { const res = await tkApi('/api/coll/' + _PD_COLL, { method: 'POST', body: body }); (_HR[_PD_COLL] = _HR[_PD_COLL] || []).push(res.item); ok++; }
@@ -26888,7 +27143,15 @@ async function engStageStart(stageK) {
    rule the SOP KPI table follows for what it cannot compute. Facts are counted here; the server
    independently refuses an unqualified pass over the three that carry liability, so this screen
    informs and does not enforce. */
-function _engGateReadiness(pid) {
+/* Renamed away from _engGateReadiness, which a DIFFERENT function 75 lines above already had.
+   index.html is one global scope, so the second declaration simply replaced the first — and the
+   first is the one _engStageCard, engGateOpen and the Gate Certificate PDF all call. They asked for
+   { done, total, pct, list, ticked } about ONE stage row and were handed this seven-element array
+   about a whole project: `rd.list.map(...)` threw TypeError and took the Stages & Gates tab with
+   it, while `rd.done + ' of ' + rd.total` printed "undefined of undefined" on the certificate.
+   Nothing failed loudly enough to be noticed, because a thrown render just leaves the panel blank.
+   tests/no_duplicate_functions.js now fails the build on any repeat. */
+function _engGateExitChecks(pid) {
   const holds = _engScopeFor('eng_holds', pid).filter(h => String(h.kind || 'Hold').toLowerCase() === 'hold'
     && ['open', 'raised', ''].indexOf(String(h.status || 'Open').toLowerCase()) >= 0);
   const devs = _engScopeFor('eng_deviations', pid).filter(d =>
@@ -26919,7 +27182,7 @@ function _engGateReadiness(pid) {
   ];
 }
 function _engGateReadinessPanel(pid) {
-  const rows = _engGateReadiness(pid);
+  const rows = _engGateExitChecks(pid);
   const blocking = rows.filter(r => r.hard && !r.ok);
   const soft = rows.filter(r => !r.hard && !r.ok);
   const head = blocking.length
@@ -37750,6 +38013,11 @@ const _VI = {
   "Delete this schedule?": "Xoá lịch làm việc này?",
   "Edit Work Schedule": "Sửa lịch làm việc",
   "Delete": "Xoá",
+  // "Delete" was here and "Rename" was not, so switching to Vietnamese translated one of a pair of
+  // adjacent buttons and left the other in English. _t2 decides at RENDER time; the language switch
+  // walks the DOM against this dictionary, so a label built with _t2 alone stays in whatever
+  // language it was drawn in until its view is redrawn.
+  "Rename": "Đổi tên",
   "Download invoice": "Tải hoá đơn",
   "Download": "Tải về",
   "Download real invoice": "Tải hoá đơn thật",

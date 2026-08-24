@@ -8333,6 +8333,15 @@ class Handler(BaseHTTPRequestHandler):
         out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
         out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
         out["payerSeparation"] = db.get_setting("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
+        # The company's Decree 293/2025 wage region and the trained-worker uplift. These were
+        # WRITEABLE (they are in _portal_update's whitelist) and never READ BACK, so the settings
+        # form had no way to show what was stored — and once a field existed, loading blank and
+        # saving would have silently cleared them. A write path without its matching read is how a
+        # setting quietly resets itself.
+        out["wageRegion"] = db.get_setting("portal_wageRegion", "") or ""
+        # "1"/"0" both ways. Handing the form a bare stored value would send it a boolean on one
+        # save and a string on the next, and `!!"0"` is true.
+        out["trainedUplift"] = "1" if self._flag("portal_trainedUplift") else "0"
         # Read back to an admin only — like the payer allow-list, it is an authorization list, and
         # publishing who reads concerns tells everyone who to avoid raising one about.
         if self._caller_level(u) == "admin":
@@ -11340,7 +11349,9 @@ class Handler(BaseHTTPRequestHandler):
                                    or str(db.get_setting("portal_wageRegion", "") or ""))
         if terms.get("trained") is None:
             terms["trained"] = bool(emp.get("trained"))
-        terms["applyTrainedUplift"] = bool(db.get_setting("portal_trainedUplift", False))
+        # _flag, not bool(get_setting(...)): a stored "0" is a non-empty string and would put the
+        # +7% trained-worker uplift into every contract check with the switch turned off.
+        terms["applyTrainedUplift"] = self._flag("portal_trainedUplift")
         blockers = contract_doc.blockers(settings, emp, terms)
         if any(blockers.values()):
             return self._json({"error": "This contract cannot be issued yet — something it must "
@@ -12290,7 +12301,7 @@ class Handler(BaseHTTPRequestHandler):
         # 3. Wages — the minimum-wage register.
         wage = min_wage.review(emps, as_of,
                                default_region=str(db.get_setting("portal_wageRegion", "") or ""),
-                               apply_trained_uplift=bool(db.get_setting("portal_trainedUplift", False)))
+                               apply_trained_uplift=self._flag("portal_trainedUplift"))
         # An UNCHECKED employee is a finding, not a silence. Without this the section rendered
         # "nothing outstanding" in green while its own statement said nobody could be checked —
         # exactly the reading-as-a-pass this pack exists to prevent, and the first thing an auditor
@@ -14384,7 +14395,7 @@ class Handler(BaseHTTPRequestHandler):
         emps = [e for e in db.list_employees()
                 if str(e.get("status") or "Active").strip().lower() != "inactive"]
         default_region = str(db.get_setting("portal_wageRegion", "") or "")
-        apply_uplift = bool(db.get_setting("portal_trainedUplift", False))
+        apply_uplift = self._flag("portal_trainedUplift")
         r = min_wage.review(emps, as_of, default_region=default_region,
                             apply_trained_uplift=apply_uplift)
         r.update({"ok": True, "headcount": len(emps),
