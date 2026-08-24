@@ -383,5 +383,97 @@ ok('and the .mpp limitation is stated where the choice is made',
 ok('the button is on the Master Schedule card', /pmMasterWipeBtn\(pid\) \+ schExportBtn\(pid\) \+ pmImportBtn\(\)/.test(src));
 ok('and on the Detail Schedule bar', /schExportBtn\(pid\) \+\n\s*\(unf\.length/.test(src));
 
+// ══ the Gantt ══════════════════════════════════════════════════════════════════════════════════
+console.log('\nThe exported PDF is a Gantt, not a table of dates\n');
+
+const AXIS = new Function('rows', 'w',
+  take('function _schGanttAxis(', '_schGanttAxis') + '\nreturn _schGanttAxis(rows, w);');
+
+{
+  const R = d => ({ start: d[0], finish: d[1] });
+  const wk = AXIS([R(['2026-08-01', '2026-09-01'])], 100);
+  ok('a six-week programme is scaled in WEEKS', wk.unit === 'week', wk.unit);
+  const mo = AXIS([R(['2025-10-28', '2027-03-15'])], 150);
+  ok('an eighteen-month programme is scaled in MONTHS', mo.unit === 'month', mo.unit);
+  const qt = AXIS([R(['2020-01-01', '2027-03-15'])], 150);
+  ok('a seven-year one is scaled in QUARTERS', qt.unit === 'quarter', qt.unit);
+
+  ok('the axis starts at the first date and ends at the last',
+     mo.min === '2025-10-28' && mo.max === '2027-03-15', mo.min + ' -> ' + mo.max);
+  ok('the start of the programme is at 0 mm', mo.mm('2025-10-28') === 0);
+  ok('the end is at the full width', Math.round(mo.mm('2027-03-15')) === 150);
+  ok('a date halfway through lands near halfway', Math.abs(mo.mm('2026-07-06') - 75) < 3,
+     'got ' + mo.mm('2026-07-06').toFixed(1) + 'mm of 150');
+
+  /* Real imported data contains a finish before the programme start. Un-clamped that is a negative
+     offset — the bar draws on top of the task-name column and nothing says the DATE was wrong. */
+  ok('a date before the axis is clamped to the left edge, not drawn off-chart',
+     mo.mm('2000-01-01') === 0);
+  ok('and one after it to the right edge', mo.mm('2099-01-01') === 150);
+  ok('an unparseable date returns null rather than NaN',
+     mo.mm('not a date') === null && mo.mm('') === null,
+     'NaN would place the bar at 0 and look like a real answer');
+
+  ok('ticks land on calendar boundaries a reader can name',
+     mo.ticks.length > 4 && /^[A-Z][a-z]{2}( \d\d)?$/.test(mo.ticks[1].label),
+     JSON.stringify(mo.ticks.slice(0, 3)));
+  ok('a project with no dates at all has no axis, rather than a broken one',
+     AXIS([{ start: '', finish: '' }], 150) === null);
+}
+
+const BAR = take('function _schGanttBar(', '_schGanttBar');
+ok('a task with no start draws nothing',
+   /if \(a === null\) return;/.test(BAR),
+   'a zero-width mark at the left edge reads as "starts on day one", which is a claim about a date ' +
+   'nobody entered');
+ok('a one-day task on a two-year axis still has a visible width',
+   /Math\.max\(0\.8,/.test(BAR),
+   'otherwise it rounds to nothing and the activity is simply absent from the chart');
+ok('progress is drawn inside the bar, not as a second bar',
+   /w \* pct \/ 100/.test(BAR));
+ok('and it is clamped to 0..100', /Math\.max\(0, Math\.min\(100, \+r\._pct \|\| 0\)\)/.test(BAR));
+ok('a milestone is a diamond, not a bar', /doc\.triangle\(/.test(BAR) && /_milestone/.test(BAR));
+ok('a summary line is a bracket, not a solid bar',
+   /_summary/.test(BAR) && /bracket|0\.7, bh/.test(BAR),
+   'drawing a roll-up like a task makes a programme look twice as loaded as it is');
+ok('the critical path is red', /_critical\) doc\.setFillColor\(239, 68, 68\)/.test(BAR));
+
+const GTBL = take('function _pmPdfTable(', '_pmPdfTable');
+ok('the text columns are sized against the space LEFT BY the chart',
+   /const avail = W - 2 \* M - chartW;/.test(GTBL),
+   'sizing them against the full width and then drawing the chart on top silently overprints the ' +
+   'last columns');
+/* Slice the `head` closure itself rather than pattern-matching across it: the axis code sits
+   behind a comment, and a {0,80} window that a comment outgrew would report the feature missing. */
+{
+  const hi = GTBL.indexOf('const head = () => {');
+  const hb = GTBL.slice(hi, GTBL.indexOf('const page = () => {', hi));
+  ok('the header closure is findable', hi >= 0 && hb.length > 200, hb.length + ' chars');
+  ok('every page carries its own scale',
+     /o\.chart\.axis/.test(hb) && /a\.ticks\.forEach/.test(hb),
+     'the axis must be drawn by head(), which page() calls — a second page with bars and no dates ' +
+     'is a picture, not a schedule');
+  ok('and page() calls head()', /const page = \(\) => \{[\s\S]{0,300}head\(\);/.test(GTBL));
+}
+ok('tick labels are skipped where there is no room for them',
+   /if \(t\.mm < lastLbl \+ 1\.2\) return;/.test(GTBL),
+   'on a long programme the months are millimetres apart and the labels overprint into a smear');
+ok('gridlines are drawn before the bar, not over it',
+   GTBL.indexOf('o.chart.axis.ticks.forEach') < GTBL.indexOf('o.chart.draw('));
+ok('the today line is drawn once per page over the whole band',
+   /if \(o\.chart && o\.chart\.today\)/.test(GTBL) && /chartTop/.test(GTBL),
+   'per row it is stitched from segments with a hairline gap at every boundary');
+
+ok('the master PDF passes the activities to the chart', /chart: axis \? \{ w: 150/.test(src));
+ok('the detail PDF has one too', /chart: dAxis \? \{ w: 118/.test(src));
+ok('a project with no dates still exports — the chart is simply absent',
+   /axis \? \{ w: 150[\s\S]{0,120}: null/.test(src),
+   'an export that refuses because it cannot draw a chart is worse than one without the chart');
+ok('the bars are explained by a legend', /function _schPdfLegend\(/.test(src) &&
+   /_schPdfLegend\(doc, 'HML-PMC-MS'\)/.test(src) && /_schPdfLegend\(doc, 'HML-PMC-DS'\)/.test(src));
+ok('a detail line more than 10% behind is drawn red, like its variance cell',
+   /_critical: r\.variance !== '' && r\.variance < -10/.test(src),
+   'on a printed programme the eye finds the colour long before it reads the column');
+
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

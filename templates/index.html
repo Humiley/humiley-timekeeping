@@ -21485,6 +21485,58 @@ function _schExportLog(pid) {
                             String(a.item).localeCompare(String(b.item)));
 }
 
+/* ══ THE TIME AXIS OF A PRINTED GANTT ════════════════════════════════════════════════════════════
+   The tick unit is chosen from the span, not fixed: a six-week fit-out wants weeks, an eighteen-month
+   programme wants months, a five-year one wants quarters. Fixing it produces either 400 unreadable
+   ticks or three, and both look like a broken chart rather than a scale decision.
+
+   `mm(date)` is clamped to the drawing area. A task whose finish precedes the programme start —
+   which real imported data contains — would otherwise be drawn at a negative offset, i.e. on top of
+   the task-name column, and nothing about the output would say the date was the problem. */
+function _schGanttAxis(rows, wMm) {
+  const ds = [];
+  (rows || []).forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
+  if (!ds.length) return null;
+  ds.sort();
+  const min = ds[0], max = ds[ds.length - 1];
+  const t0 = Date.parse(min + 'T00:00:00'), t1 = Date.parse(max + 'T00:00:00');
+  if (!isFinite(t0) || !isFinite(t1)) return null;
+  const days = Math.max(1, Math.round((t1 - t0) / 86400000));
+  const unit = days <= 84 ? 'week' : days <= 900 ? 'month' : 'quarter';
+  const span = Math.max(1, t1 - t0);
+  const mm = d => {
+    const t = Date.parse(String(d || '').slice(0, 10) + 'T00:00:00');
+    if (!isFinite(t)) return null;
+    return Math.max(0, Math.min(wMm, (t - t0) / span * wMm));
+  };
+  // Ticks land on real calendar boundaries — the 1st of a month, a Monday — so the gridlines mean
+  // something a reader can name, rather than being an even division of the span.
+  const ticks = [];
+  const d = new Date(t0);
+  if (unit === 'week') {
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    while (d.getTime() <= t1 + 86400000) {
+      const iso = d.toISOString().slice(0, 10);
+      ticks.push({ mm: mm(iso), label: String(d.getDate()).padStart(2, '0') + '/' + (d.getMonth() + 1) });
+      d.setDate(d.getDate() + 7);
+    }
+  } else {
+    const step = unit === 'month' ? 1 : 3;
+    d.setDate(1);
+    while (d.getTime() <= t1 + 31 * 86400000) {
+      const iso = d.toISOString().slice(0, 10);
+      const p = mm(iso);
+      if (p !== null) ticks.push({ mm: p,
+        label: unit === 'month'
+          ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] +
+            (d.getMonth() === 0 ? ' ' + String(d.getFullYear()).slice(2) : '')
+          : 'Q' + (Math.floor(d.getMonth() / 3) + 1) + ' ' + String(d.getFullYear()).slice(2) });
+      d.setMonth(d.getMonth() + step);
+    }
+  }
+  return { min: min, max: max, unit: unit, days: days, mm: mm, ticks: ticks, w: wMm };
+}
+
 /* A paginated table on the Humiley letterhead. jsPDF has no table primitive and jspdf-autotable is
    not one of the four vendored engines, so this draws one: measured column widths, wrapped cells,
    a header row REPEATED on every page, and zebra banding.
@@ -21497,12 +21549,18 @@ function _schExportLog(pid) {
 function _pmPdfTable(doc, o) {
   const land = !!o.landscape, W = land ? 297 : 210, H = land ? 210 : 297;
   const M = 15, TOP = o.top || 44, BOT = H - 18;
-  const cols = o.cols, total = cols.reduce((a, c) => a + c.w, 0), avail = W - 2 * M;
+  const cols = o.cols, total = cols.reduce((a, c) => a + c.w, 0);
+  /* The chart, when there is one, takes a fixed slice of the page and the text columns share what
+     is left. Sizing the columns against the FULL width and then drawing the chart on top of them is
+     the obvious mistake, and it silently overprints the last two columns. */
+  const chartW = o.chart ? o.chart.w : 0;
+  const avail = W - 2 * M - chartW;
+  const chartX = M + avail;
   const wOf = c => c.w / total * avail;
   let y = TOP, band = 0;
 
   const head = () => {
-    doc.setFillColor(32, 80, 144); doc.rect(M, y, avail, 7, 'F');
+    doc.setFillColor(32, 80, 144); doc.rect(M, y, avail + chartW, 7, 'F');
     _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
     let x = M;
     cols.forEach(c => {
@@ -21511,8 +21569,25 @@ function _pmPdfTable(doc, o) {
                c.align === 'right' ? { align: 'right' } : undefined);
       x += w;
     });
+    if (o.chart) {
+      // The scale is drawn INSIDE the header band, so every page carries its own axis. A Gantt whose
+      // second page has bars and no dates is a picture, not a schedule.
+      const a = o.chart.axis;
+      doc.setFontSize(7);
+      let lastLbl = -99;
+      a.ticks.forEach(t => {
+        if (t.mm === null) return;
+        const w = doc.getTextWidth(_pdfSafe(t.label));
+        if (t.mm < lastLbl + 1.2) return;          // no room since the last label — skip this one
+        if (t.mm + w > o.chart.w) return;          // would run off the right edge of the chart
+        doc.text(_pdfSafe(t.label), chartX + t.mm + 0.6, y + 4.7);
+        lastLbl = t.mm + w;
+      });
+    }
     y += 7; band = 0;
+    if (o.chart) chartTop = y;
   };
+  let chartTop = 0;
   const page = () => {
     doc.addPage(land ? 'a4' : undefined, land ? 'landscape' : undefined);
     y = _brandHeader(doc, Object.assign({}, o.head, { w: W }));
@@ -21529,9 +21604,18 @@ function _pmPdfTable(doc, o) {
     const h = Math.max(5.2, cells.reduce((m, L) => Math.max(m, L.length), 1) * 3.3 + 2.3);
     if (y + h > BOT) page();
     if (r._section) {
-      doc.setFillColor(226, 235, 246); doc.rect(M, y, avail, h, 'F');
+      doc.setFillColor(226, 235, 246); doc.rect(M, y, avail + chartW, h, 'F');
     } else if (band % 2) {
-      doc.setFillColor(247, 249, 252); doc.rect(M, y, avail, h, 'F');
+      doc.setFillColor(247, 249, 252); doc.rect(M, y, avail + chartW, h, 'F');
+    }
+    if (o.chart) {
+      // Gridlines first, so a bar is never cut in half by one drawn over it.
+      doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.1);
+      o.chart.axis.ticks.forEach(t => {
+        if (t.mm === null) return;
+        doc.line(chartX + t.mm, y, chartX + t.mm, y + h);
+      });
+      try { o.chart.draw(doc, r, chartX, y, h, o.chart.axis); } catch (e) {}
     }
     let x = M;
     cols.forEach((c, i) => {
@@ -21549,7 +21633,54 @@ function _pmPdfTable(doc, o) {
     doc.line(M, y + h, W - M, y + h);
     y += h; band++;
   });
+  /* TODAY, drawn last and once per page, over the whole band of rows that page carries. Drawing it
+     per row would stitch it out of h-tall segments with a hairline gap at every boundary. */
+  if (o.chart && o.chart.today) {
+    const tx = o.chart.axis.mm(o.chart.today);
+    if (tx !== null && chartTop && y > chartTop) {
+      doc.setDrawColor(239, 68, 68); doc.setLineWidth(0.4);
+      doc.line(chartX + tx, chartTop, chartX + tx, y);
+      _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(239, 68, 68);
+      doc.text('TODAY', chartX + tx + 0.7, chartTop + 2.4);
+    }
+  }
   return y;
+}
+
+/* One activity's bar. Everything here is a statement about the data and has to survive being wrong:
+   a task with no dates draws NOTHING rather than a zero-width mark at the left edge (which reads as
+   "starts on day one"), and a bar narrower than the pen gets a minimum width so a one-day task is
+   visible at all instead of vanishing on a two-year axis. */
+function _schGanttBar(doc, r, x0, y, h, axis) {
+  const a = axis.mm(r._start), b = axis.mm(r._finish || r._start);
+  if (a === null) return;
+  const cy = y + h / 2;
+  if (r._milestone) {
+    // A diamond, the convention every planner reads as a milestone.
+    const s = 1.5;
+    doc.setFillColor(139, 92, 246);
+    doc.triangle(x0 + a, cy - s, x0 + a + s, cy, x0 + a - s, cy, 'F');
+    doc.triangle(x0 + a, cy + s, x0 + a + s, cy, x0 + a - s, cy, 'F');
+    return;
+  }
+  const w = Math.max(0.8, (b === null ? a : b) - a);
+  const bh = r._summary ? 1.5 : 2.4;
+  if (r._summary) {
+    // A summary line is a bracket, not a solid bar: it is not work, it is the extent of the work
+    // beneath it, and drawing it like a task makes a programme look twice as loaded as it is.
+    doc.setFillColor(45, 55, 72);
+    doc.rect(x0 + a, cy - bh / 2, w, bh, 'F');
+    doc.rect(x0 + a, cy - bh / 2, 0.7, bh * 2.2, 'F');
+    doc.rect(x0 + a + w - 0.7, cy - bh / 2, 0.7, bh * 2.2, 'F');
+    return;
+  }
+  if (r._critical) doc.setFillColor(239, 68, 68); else doc.setFillColor(32, 80, 144);
+  doc.rect(x0 + a, cy - bh / 2, w, bh, 'F');
+  const pct = Math.max(0, Math.min(100, +r._pct || 0));
+  if (pct > 0) {
+    doc.setFillColor(0, 176, 96);
+    doc.rect(x0 + a, cy - bh / 2, w * pct / 100, bh, 'F');
+  }
 }
 
 /* Stamp the footer on every page once the total is finally known. */
@@ -21564,6 +21695,37 @@ function _pmPdfFooters(doc, docCode, label, landscape) {
 /* `part` distinguishes the two PDFs. Without it both save as HML-Schedule-<code>-<date>.pdf and the
    second silently replaces the first in the Downloads folder — the master programme is gone and the
    only clue is that the file you open is the detail one. */
+/* A key for the bars. Four conventions are in play — planned / done / critical / milestone, plus a
+   summary bracket and the today line — and a chart whose colours are not explained is a chart the
+   reader has to guess at. Drawn on the LAST page only, under the final row, where a reader looks
+   after they have seen the thing it explains. */
+function _schPdfLegend(doc, docCode) {
+  doc.setPage(doc.getNumberOfPages());
+  const M = 15, y = 210 - 22;
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
+  let x = M;
+  const swatch = (rgb, label, h) => {
+    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+    doc.rect(x, y - 1.4, 4, h || 2.2, 'F');
+    doc.setTextColor(92, 100, 112);
+    doc.text(_pdfSafe(label), x + 5.2, y + 0.6);
+    x += 5.2 + doc.getTextWidth(_pdfSafe(label)) + 7;
+  };
+  swatch([32, 80, 144], 'Planned duration');
+  swatch([0, 176, 96], 'Complete');
+  swatch([239, 68, 68], 'Critical path');
+  swatch([45, 55, 72], 'Summary (roll-up of the activities beneath it)', 1.5);
+  doc.setFillColor(139, 92, 246);
+  doc.triangle(x + 1.6, y - 1.6, x + 3.2, y, x, y, 'F');
+  doc.triangle(x + 1.6, y + 1.6, x + 3.2, y, x, y, 'F');
+  doc.setTextColor(92, 100, 112);
+  doc.text(_pdfSafe('Milestone'), x + 4.4, y + 0.6);
+  x += 4.4 + doc.getTextWidth('Milestone') + 7;
+  doc.setDrawColor(239, 68, 68); doc.setLineWidth(0.4);
+  doc.line(x + 1, y - 1.8, x + 1, y + 1.8);
+  doc.setTextColor(92, 100, 112);
+  doc.text(_pdfSafe('Today'), x + 3, y + 0.6);
+}
 function _schFileName(pid, ext, part) {
   const p = _pmProj(pid) || {};
   const base = String(p.code || p.name || 'Project').replace(/[^A-Za-z0-9À-ỹ _-]/g, '').trim().replace(/\s+/g, '-');
@@ -21688,27 +21850,39 @@ function _schPdfMaster(pid) {
   const overall = sr.total
     ? 'overall ' + sr.pct + '% of ' + sr.total + ' WBS package(s)'
     : 'no WBS packages defined — see the % column for each activity';
+  const _ax0 = _schGanttAxis(M, 150);
   doc.text(_pdfSafe(M.length + ' activities   ·   ' + overall + '   ·   ' +
-    (p.manager ? 'PM: ' + p.manager + '   ·   ' : '') + 'as at ' + _pmFmt(_pmToday())), 15, y);
+    (p.manager ? 'PM: ' + p.manager + '   ·   ' : '') +
+    (_ax0 ? _pmFmt(_ax0.min) + ' to ' + _pmFmt(_ax0.max) + '   ·   ' : '') +
+    'as at ' + _pmFmt(_pmToday())), 15, y);
   y += 5;
+  /* THE GANTT. A schedule handed to a client as a table of dates is a list; the bars are what makes
+     it a programme — the overlap, the sequence and the slip are in the shape, not in the numbers.
+     The chart takes a fixed 150 mm of the 267 mm drawing area and the text columns share the rest;
+     an activity's own row carries its bar, so the table and the chart cannot drift apart. */
+  const axis = _schGanttAxis(M, 150);
   _pmPdfTable(doc, {
     landscape: true, top: y, head: head, indentKey: 'name',
-    cols: [{ k: 'wbs', label: 'WBS', w: 9 }, { k: 'name', label: 'Activity', w: 34 },
-           { k: 'assignee', label: 'Assignee', w: 12 }, { k: 'start', label: 'Start', w: 8 },
-           { k: 'finish', label: 'Finish', w: 8 }, { k: 'days', label: 'Days', w: 5, align: 'right' },
-           { k: 'pct', label: '%', w: 5, align: 'right' }, { k: 'status', label: 'Status', w: 10 },
-           { k: 'float', label: 'Float', w: 5, align: 'right' }, { k: 'flags', label: '', w: 6 }],
+    chart: axis ? { w: 150, axis: axis, today: _pmToday(), draw: _schGanttBar } : null,
+    cols: [{ k: 'wbs', label: 'WBS', w: 12 }, { k: 'name', label: 'Activity', w: 46 },
+           { k: 'start', label: 'Start', w: 12 }, { k: 'finish', label: 'Finish', w: 12 },
+           // 10, not 7: '100%' wrapped to two lines at 7 and every completed activity was twice as
+           // tall as the rest of the programme.
+           { k: 'pct', label: '%', w: 10, align: 'right' }],
     rows: M.map(t => ({
-      wbs: t.wbs, name: t.name, assignee: t.assignee,
-      start: _pmFmt(t.start), finish: _pmFmt(t.finish), days: t.days,
-      pct: t.pct + '%', status: t.status,
-      float: t.float === '' ? '—' : t.float + 'd',
-      flags: (t.critical ? 'CP ' : '') + (t.milestone ? '◆' : ''),
+      wbs: t.wbs, name: t.name,
+      start: _pmFmt(t.start), finish: _pmFmt(t.finish),
+      pct: t.pct + '%',
       _indent: (t.level - 1) * 3,
       _bold: t.level === 1,
-      _colors: t.critical ? { flags: [239, 68, 68] } : null
+      // The bar reads these; the cells above are for the eye. Both come off the SAME row, so the
+      // date printed and the date drawn are one fact.
+      _start: t.start, _finish: t.finish, _pct: t.pct,
+      _milestone: t.milestone, _critical: t.critical,
+      _summary: M.some(x => x.wbs && t.wbs && x.wbs !== t.wbs && x.wbs.indexOf(t.wbs + '.') === 0)
     }))
   });
+  _schPdfLegend(doc, 'HML-PMC-MS');
   _pmPdfFooters(doc, 'HML-PMC-MS', 'MASTER SCHEDULE', true);
   doc.save(_schFileName(pid, 'pdf', 'Master'));
   return true;
@@ -21746,21 +21920,27 @@ function _schPdfDetail(pid) {
       acc: Math.round(r.acc) + '%',
       planned: r.planned === '' ? '—' : Math.round(r.planned) + '%',
       variance: r.variance === '' ? '—' : (r.variance >= 0 ? '+' : '') + r.variance.toFixed(1) + '%',
+      _start: r.start, _finish: r.finish, _pct: r.acc,
+      // A line that is BEHIND is drawn red, for the same reason its variance cell is: on a printed
+      // programme the eye finds the colour long before it reads the column.
+      _critical: r.variance !== '' && r.variance < -10,
       _indent: 3,
       _colors: r.variance === '' ? null
         : { variance: r.variance < -10 ? [239, 68, 68] : r.variance < -0.5 ? [217, 119, 6] : [0, 150, 82] }
     });
   });
+  const dAxis = _schGanttAxis(rows.filter(r => r._start), 118);
   _pmPdfTable(doc, {
     landscape: true, top: y, head: head, indentKey: 'name',
-    cols: [{ k: 'name', label: 'Report item', w: 34 }, { k: 'category', label: 'Trade', w: 12 },
-           { k: 'start', label: 'Start', w: 9 }, { k: 'finish', label: 'Finish', w: 9 },
-           { k: 'qty', label: 'Qty at / plan', w: 14, align: 'right' },
-           { k: 'acc', label: 'Accum.', w: 7, align: 'right' },
-           { k: 'planned', label: 'Planned', w: 8, align: 'right' },
-           { k: 'variance', label: 'Variance', w: 8, align: 'right' }],
+    chart: dAxis ? { w: 118, axis: dAxis, today: day, draw: _schGanttBar } : null,
+    cols: [{ k: 'name', label: 'Report item', w: 40 }, { k: 'category', label: 'Trade', w: 13 },
+           { k: 'qty', label: 'Qty at / plan', w: 15, align: 'right' },
+           { k: 'acc', label: 'Accum.', w: 8, align: 'right' },
+           { k: 'planned', label: 'Planned', w: 9, align: 'right' },
+           { k: 'variance', label: 'Variance', w: 9, align: 'right' }],
     rows: rows
   });
+  _schPdfLegend(doc, 'HML-PMC-DS');
   _pmPdfFooters(doc, 'HML-PMC-DS', 'DETAIL SCHEDULE', true);
   doc.save(_schFileName(pid, 'pdf', 'Detail'));
   return true;
@@ -24077,6 +24257,59 @@ async function _pmBulkCreate(coll, rows, onProgress, extra) {
   const BATCH = 6, GAP_MS = 900;        // ~400/min ceiling, comfortably inside the server's 240/min
   const RETRIES = 6;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  /* THE FAST PATH. /api/coll/<name>/bulk takes up to 250 rows per request, so a 500-task programme
+     is two requests and a few seconds rather than 500 requests paced over two and a half minutes.
+     Each row still goes through _coll_add on the server — same validation, same guards — and the
+     response names every row that was refused, with its index.
+
+     The slow path below is kept and is not dead code: it runs when the endpoint is not there. A
+     browser can be holding a cached shell newer than the server it is talking to (that is what the
+     stale-shell self-heal exists for), and "the import silently does nothing after a deploy" is a
+     worse failure than "the import is slower than it could be". A 404 or a 405 means old server;
+     anything else is a real error and is reported. */
+  const later = [];                    // rows a batch deferred; the paced writer finishes them
+  if (!_pmBulkCreate._noBulk) {
+    const CHUNK = 250;
+    let usable = true;
+    for (let i = 0; i < rows.length && usable; i += CHUNK) {
+      const slice = rows.slice(i, i + CHUNK).map(r => Object.assign({}, extra || {}, r));
+      try {
+        const res = await tkApi('/api/coll/' + coll + '/bulk', { method: 'POST', body: { items: slice } });
+        (res.created || []).forEach(it => created.push(it));
+        (res.failed || []).forEach(f => {
+          const row = slice[f.index] || {};
+          // A row the batch reports as 429 was refused for BUDGET, not for content — "later", not
+          // "no". Putting it straight into `failed` would lose it exactly the way the empty catch
+          // did, only with a better message. It goes to the paced writer at the end instead.
+          if (f.status === 429) later.push(row);
+          else failed.push({ row: row, why: f.error || _t2('Rejected.', 'Bị từ chối.') });
+        });
+        if (onProgress) { try { onProgress(created.length, rows.length, !!later.length); } catch (e) {} }
+      } catch (e) {
+        if (e && (e.status === 404 || e.status === 405)) {
+          // Old server. Forget anything this loop banked and fall through to the paced writer, so
+          // rows already created here are not counted twice.
+          usable = false;
+          _pmBulkCreate._noBulk = true;
+          created.length = 0; failed.length = 0;
+          break;
+        }
+        // A 429 here means the ITEM budget is spent, not that bulk is unavailable. Let the paced
+        // writer finish the job — it knows how to wait.
+        if (e && e.status === 429) { usable = false; created.length = 0; failed.length = 0; break; }
+        failed.push({ row: slice[0] || {}, why: _errMsg(e) });
+        usable = false;
+        break;
+      }
+    }
+    if (usable) {
+      if (!later.length) return { created: created, failed: failed };
+      // Fall through with only the deferred rows left to write, keeping everything already banked.
+      rows = later;
+    }
+  }
+
   for (let i = 0; i < rows.length; i += BATCH) {
     const chunk = rows.slice(i, i + BATCH);
     await Promise.all(chunk.map(async row => {
