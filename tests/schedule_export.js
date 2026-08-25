@@ -74,6 +74,10 @@ const ENV =
   take('function _pmWbsCmp(', '_pmWbsCmp') +
   take('function _pmWbsLevel(', '_pmWbsLevel') +
   take('function _pdScheds(', '_pdScheds') +
+  // _pdAllRows delegates to the one detail ordering; lifting it without its comparator is how
+  // a slice reports ReferenceError instead of an answer.
+  take('function _pdOrderKey(', '_pdOrderKey') +
+  take('function _pdOrderCmp(', '_pdOrderCmp') +
   take('function _pdAllRows(', '_pdAllRows') +
   take('function _pdUnfiled(', '_pdUnfiled') +
   take('function _pdCurSched(', '_pdCurSched') +

@@ -198,6 +198,7 @@ const regStubs = `
   function _pdQtyAt(r){ return { q: +r.qtyAt || 0, inferred: !!r.inferred }; }
   function _pdVarColor(){ return '#000'; } function _pdVarLabel(){ return 'x'; }
   function _pmCard(title, coll, add, table, extra){ return table; }
+  function pdCollapseAllBtn(pid){ return '<button>Collapse all</button>'; }
   function _t2(en, vn){ return en; }
   function _tkEscA(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
 `;

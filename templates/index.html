@@ -23572,11 +23572,46 @@ function _pdScheds(pid) {
     .sort((a, b) => (+a.order || 0) - (+b.order || 0) || String(a.name || '').localeCompare(String(b.name || '')));
 }
 /* Every row for this project, unfiltered — the denominator for "is anything unfiled?" */
+/* ══ ONE ORDER FOR THE WHOLE DETAIL SCHEDULE ═════════════════════════════════════════════════════
+   Ascending by the WBS of the MASTER ACTIVITY each line reports against — 1.2 before 1.10 before
+   1.4.4.4.3 before 1.4.4.4.4 — because that is the number a reader follows down the page and the
+   one the master programme is numbered by.
+
+   It used to sort on `category`, the trade name, alphabetically. Two activities sharing a trade
+   therefore appeared in whatever order their names happened to fall in, which on a real project put
+   1.4.4.4.4 above 1.4.4.4.3; and the group list, built by walking these rows and taking each new
+   group as it appeared, inherited the same wrong order.
+
+   Defined once and used everywhere. The Timeline, the Register, the Daily-progress dialog and the
+   exports all read this, so they cannot disagree about what comes first — which they did. */
+function _pdOrderKey(pid, r) {
+  const t = _pdMasterOf(pid, r);
+  return t ? String(t.wbs || '').trim() : '';
+}
+function _pdOrderCmp(pid) {
+  return (a, b) => {
+    const ka = _pdOrderKey(pid, a), kb = _pdOrderKey(pid, b);
+    // A line that reports against nothing sorts LAST, not first and not interleaved: it is the
+    // exception the register already surfaces separately, and burying it mid-list hides it.
+    if (!ka !== !kb) return ka ? -1 : 1;
+    // Within a group: by start date, but an UNDATED line goes last. '' localeCompares before every
+    // real date, so without this the lines nobody has scheduled led every section.
+    const sa = String(a.start || ''), sb = String(b.start || '');
+    return (ka && kb ? _pmWbsCmp(ka, kb) : 0) ||
+      String(a.category || '').localeCompare(String(b.category || '')) ||
+      (!sa !== !sb ? (sa ? -1 : 1) : sa.localeCompare(sb)) ||
+      String(a.name || '').localeCompare(String(b.name || ''));
+  };
+}
 function _pdAllRows(pid) {
-  return _pmScopeFor(_PD_COLL, pid).slice().sort((a, b) =>
-    String(a.category || '').localeCompare(String(b.category || '')) ||
-    (a.start || '').localeCompare(b.start || '') ||
-    String(a.name || '').localeCompare(String(b.name || '')));
+  return _pmScopeFor(_PD_COLL, pid).slice().sort(_pdOrderCmp(pid));
+}
+/* The group headings, in that same order. Derived from the rows rather than sorted separately, so
+   a heading can never appear above the rows it heads. */
+function _pdCats(pid, rows) {
+  const out = [];
+  (rows || []).forEach(r => { const c = _pdGroupOf(pid, r); if (out.indexOf(c) < 0) out.push(c); });
+  return out;
 }
 function _pdUnfiled(pid) {
   const ids = _pdScheds(pid).map(s => s.id);
@@ -24076,9 +24111,14 @@ function pdDailyEntry(pid) {
   const rows = _pdRows(pid), day = _pmToday();
   if (!rows.length) { toast(_t('No detail items yet.'), 'warn'); return; }
   document.getElementById('pdEntryOverlay')?.remove();
+  /* Grouped and ordered exactly as the Timeline and the Register are — by the MASTER ACTIVITY,
+     via the same _pdGroupOf, off the same _pdRows order. It used to head its sections with
+     `r.category`, the trade, so a person filing today's numbers read a different list in a
+     different sequence from the one they had just been looking at, and had to find each line
+     again. The trade still rides on the row, where it identifies the line rather than ordering it. */
   let body = '', lastCat = null;
   rows.forEach(r => {
-    const cat = r.category || 'Uncategorised';
+    const cat = _pdGroupOf(pid, r);
     if (cat !== lastCat) {
       lastCat = cat;
       body += '<tr style="background:var(--soft-bg)"><td colspan="4" style="font-weight:700;font-size:12px">' + _pmEsc(cat) + '</td></tr>';
@@ -24086,6 +24126,7 @@ function pdDailyEntry(pid) {
     const acc = _pdAcc(r, day), pl = _pdPlanned(r, day), qp = _pdQtyPlan(r), at = _pdQtyAt(r, day);
     body += '<tr>' +
       '<td style="font-size:12.5px">' + _pmEsc(r.name || '') +
+        (r.category ? '<div style="font-size:10.5px;color:var(--text-light)">' + _pmEsc(r.category) + '</div>' : '') +
         (qp ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('of') + ' ' +
               (Math.round(qp * 100) / 100).toLocaleString() + ' ' + _pmEsc(r.unit || '') + '</div>' : '') + '</td>' +
       '<td style="text-align:right;font-size:12px;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
@@ -24259,6 +24300,36 @@ async function pdImportRun(pid) {
 /* ── the report table + grouped Gantt ─────────────────────────────────────────────────────────── */
 let _pdCol = {};                       // collapsed categories, by name
 function pdToggleCat(c) { _pdCol[c] = !_pdCol[c]; _pmReload(); }
+/* Collapse or expand EVERY group in one press. On a programme with twenty master activities,
+   folding them one at a time to find the two that are behind is twenty clicks, and unfolding them
+   again is twenty more.
+
+   The button reports what it will DO, not what the state is, and it decides that from the groups
+   actually on screen: if anything is still open, the press closes everything; only when all of them
+   are shut does it become "Expand all". A toggle that flips a remembered boolean gets out of step
+   with the groups the moment somebody opens one by hand. */
+function _pdAllCollapsed(pid) {
+  const cats = _pdCats(pid, _pdRows(pid));
+  return cats.length > 0 && cats.every(c => !!_pdCol[c]);
+}
+function pdCollapseAll(pid) {
+  const cats = _pdCats(pid, _pdRows(pid));
+  const collapse = !_pdAllCollapsed(pid);
+  // Only the groups on screen — leaving the flags of other schedules alone, so switching back to a
+  // schedule finds it as it was left.
+  cats.forEach(c => { if (collapse) _pdCol[c] = true; else delete _pdCol[c]; });
+  _pmReload();
+}
+function pdCollapseAllBtn(pid) {
+  const cats = _pdCats(pid, _pdRows(pid));
+  if (cats.length < 2) return '';        // nothing to fold: one group is already the whole list
+  const shut = _pdAllCollapsed(pid);
+  return '<button class="btn btn-ghost btn-sm" onclick="pdCollapseAll(\'' + pid + '\')" title="' +
+    _tkEscA(shut ? _t2('Open every group', 'Mở tất cả các nhóm')
+                 : _t2('Close every group', 'Đóng tất cả các nhóm')) + '">' +
+    (shut ? '\u002b ' + _t2('Expand all', 'Mở tất cả')
+          : '\u2212 ' + _t2('Collapse all', 'Thu gọn tất cả')) + '</button>';
+}
 
 /* Every detail view shares the same head: which schedule, and where it stands. The view-specific
    part is the only thing that changes underneath — so switching Timeline↔Board↔Calendar never moves
@@ -24267,7 +24338,7 @@ function _pdView(pid, view) {
   const rows = _pdRows(pid), day = _pmToday();
   const head = _pdKpis(pid, rows, day);        // the picker now lives in the tab bar, above the views
   if (!rows.length) return head + _pdEmpty(pid);
-  const cats = []; rows.forEach(r => { const c = _pdGroupOf(pid, r); if (cats.indexOf(c) < 0) cats.push(c); });
+  const cats = _pdCats(pid, rows);
   if (view === 'board') return head + _pdBoard(pid, rows, day);
   if (view === 'calendar') return head + _pdCalendar(pid, rows, day);
   if (view === 'timeline') return head + _pdTimeline(pid, rows, cats, day) + _pdSCurve(rows, day);
@@ -24724,6 +24795,7 @@ function _pdRegister(pid, rows, cats, day) {
       '<span><b style="color:var(--text)">' + _t('Roll-up') + '</b> ' + _t('is weighted by duration (or by the weight you set), never a plain average.') + '</span>' +
     '</div>' +
     _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table,
+      pdCollapseAllBtn(pid) +
       '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
       '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import') + '</button>');
 }
@@ -25288,7 +25360,8 @@ function _pdTimeline(pid, rows, cats, day) {
   return _schTimeline(_pdNorm(pid, rows, day), { day: day, ns: 'd', collapsed: _pdCol,
     toggle: "pdToggleCat(decodeURIComponent('{g}'))", labelHead: 'Trade / Activity',
     rowHint: _t('File progress for this activity'), sub: _t('click an activity to file progress'),
-    actions: '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
+    actions: pdCollapseAllBtn(pid) +
+      '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
 }
 /* Save one cell of the register. Three fields, three different meanings:
    · qtyPlan / unit describe the WORK and live on the item;
