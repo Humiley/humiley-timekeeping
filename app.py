@@ -16052,6 +16052,46 @@ class Handler(BaseHTTPRequestHandler):
         # report all change, and nothing on screen says why. Lowering it flatters the job; raising it
         # buries a delay. So: free to set while nothing has been measured, and after that a manager's
         # decision with a stated reason, kept on the record and in the tamper-evident chain.
+        # -- pm_detail / pm_tasks: a key the body never mentions must not be treated as a change --
+        # PATCH here is a blind whole-document REPLACE (db.put_collection_item does
+        # `ON CONFLICT(coll,id) DO UPDATE SET data = excluded.data`), so a key the body leaves out is
+        # deleted just as surely as one it changes. Three collections already carry a hand-written
+        # guard for exactly this -- contracts above, candidates below it, hrdocs further down -- each
+        # added after a list read blanked a field and the next round trip destroyed it.
+        #
+        # `log` is the most valuable field in the Projects module: the site's reported progress, one
+        # entry per day, and the thing every percentage on the Schedule is computed from. It had no
+        # guard -- while `qtyPlanLog` immediately below DID. That asymmetry protected the audit trail
+        # of a scheduled quantity but not the measurements themselves.
+        #
+        # ABSENT, not falsy. `if not body.get("log")` would be wrong: deleting the only reading on a
+        # line legitimately leaves `log: []`, and reading that as "nothing supplied" would make the
+        # deletion silently fail and the reading reappear. The question is whether the client SAID
+        # anything about the log, so the test is `"log" in body`.
+        _KEEP_IF_UNSAID = {
+            "pm_detail": (
+                "log",
+                # qtyPlan is the same trap wearing a different hat. The guard immediately below
+                # compares the body's qtyPlan against the stored one to decide whether somebody is
+                # moving a scheduled quantity that progress has already been reported against. An
+                # ABSENT qtyPlan reads as 0.0 there, so a PATCH that never mentioned it looks like
+                # a change from 500 to nothing: on a line with readings that refuses the whole edit
+                # with "say why the scheduled quantity is changing", and on a line without them it
+                # sails through and silently erases the quantity. Restoring it first means the
+                # comparison sees no change, which is the truth -- the client said nothing about it.
+                "qtyPlan",
+            ),
+            # A signature and a baseline date are statements about what was agreed, and when. A
+            # kanban drag PATCHes the whole task to change one status field; if the row it spreads
+            # ever lacks these, dragging a card would quietly unsign an activity.
+            "pm_tasks": ("signatures", "baselineFinish"),
+        }
+        if name in _KEEP_IF_UNSAID:
+            _prevp = db.get_collection_item(name, iid) or {}
+            body = dict(body or {})
+            for _pk in _KEEP_IF_UNSAID[name]:
+                if _pk not in body and _prevp.get(_pk) is not None:
+                    body[_pk] = _prevp.get(_pk)
         if name == "pm_detail":
             _prevq = db.get_collection_item(name, iid) or {}
             def _f(v):
