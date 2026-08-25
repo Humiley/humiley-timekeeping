@@ -3534,6 +3534,11 @@ function _tkMergeAttendance(fetched) {
   const localExtra = (_DEMO_ATTENDANCE || []).filter(r => !seen.has(key(r)));   // keep rows the server hasn't returned yet
   _DEMO_ATTENDANCE = localExtra.concat(map);
 }
+/* Whose attendance history has been fully hydrated. Keyed to the ACCOUNT, not a bare boolean:
+   attendance is scoped per user, and the Admin view switcher changes identity without reloading
+   the page — a plain flag would leave the staff workspace believing the admin's history had
+   already been fetched. Sign-out reloads, so that path clears itself. */
+let _attHydratedFor = null;
 async function tkBootstrap() {
   // Attendance is the fastest-growing table (headcount × every workday). Loading ALL of it for a
   // management/admin session blocked login and got slower every month. Boot fetches a recent window
@@ -3547,10 +3552,23 @@ async function tkBootstrap() {
   _DEMO_EMPLOYEES  = emps.employees;
   try { _tkPaintUserAva(); } catch (e) {}
   _DEMO_ATTENDANCE = att.attendance.map(r => ({ ...r, in: r.clock_in, out: r.clock_out }));
-  (function () {   // hydrate full attendance history after first paint, on idle
-    const hydrate = () => tkApi('/api/attendance').then(a => { try { _tkMergeAttendance(a.attendance || []); } catch (e) {} }).catch(() => {});
+  /* Hydrate the full attendance history after first paint — ONCE PER SESSION.
+     This was unguarded, and _armManagerPoll calls tkBootstrap() every 30s: so the single
+     largest and fastest-growing table in the portal (headcount x every workday, unbounded —
+     the very thing the windowed fetch above exists to avoid) was re-downloaded and re-parsed
+     every thirty seconds, forever, on every manager's browser. It is history: it does not
+     change behind you, and the windowed fetch at the top of this function already re-pulls
+     this month and last on every tick, which is where anything new actually lands.
+     Measured at rest with no interaction: /api/attendance appeared 4x in 91s where every other
+     endpoint appeared twice — two ticks, each paying for the window AND the whole history. */
+  const _who = String((TK.user || {}).id || '');
+  if (_attHydratedFor !== _who) {
+    _attHydratedFor = _who;
+    const hydrate = () => tkApi('/api/attendance')
+      .then(a => { try { _tkMergeAttendance(a.attendance || []); } catch (e) {} })
+      .catch(() => { if (_attHydratedFor === _who) _attHydratedFor = null; });   // never arrived — let a later boot try again
     if ('requestIdleCallback' in window) requestIdleCallback(hydrate, { timeout: 6000 }); else setTimeout(hydrate, 3500);
-  })();
+  }
   _DEMO_LEAVE      = lv.leave;
   /* An explicit key list, so a field the server starts returning does NOT silently appear in the
      gate — but it must list every field the gate needs. `active` and `dept` were missing, which is
@@ -5846,6 +5864,11 @@ function _idleLogout() {
    re-renders whatever admin view is open, so activity from ALL users shows up live. */
 let _mgrPollTimer = null;
 let _mgrPollSig = null, _mgrPollTick = 0;
+/* The views whose content is drawn from the bootstrap data. Kept beside the repaint switch at the
+   bottom of the tick and MUST list the same views: a view that repaints but is missing here would
+   redraw itself from data the tick declined to fetch, which looks like a screen that has quietly
+   stopped updating rather than like a bug. */
+const _MGR_POLL_LIVE = ['dashboard', 'attendance', 'reports', 'manager', 'inbox'];
 function _armManagerPoll() {
   if (_mgrPollTimer) { clearInterval(_mgrPollTimer); _mgrPollTimer = null; }
   if (_userRole !== 'manager') return;
@@ -5853,7 +5876,20 @@ function _armManagerPoll() {
   _mgrPollTimer = setInterval(async () => {
     if (!TK.token || _userRole !== 'manager') { clearInterval(_mgrPollTimer); _mgrPollTimer = null; return; }
     if (document.hidden) return;                 // skip a backgrounded tab
-    try { await tkBootstrap(); } catch (e) { return; }
+    /* Pull the whole roster only where it is actually on screen. tkBootstrap fetches employees,
+       attendance, leave and zones, but the repaint at the bottom of this tick only ever touches
+       the five views listed in _MGR_POLL_LIVE — everywhere else all four responses were parsed
+       and thrown away. A project manager reading a Gantt was re-downloading the company roster
+       and the attendance table twice a minute to draw a chart that contains neither.
+       Off those views the only thing that still has to be current is the top-bar bell, and the
+       bell reads leave plus the approval registers below. So: one request instead of four, and
+       the moment the user navigates to a live view the next tick pays for the full set again. */
+    const _live = _MGR_POLL_LIVE.indexOf(_currentView) >= 0;
+    if (_live) {
+      try { await tkBootstrap(); } catch (e) { return; }
+    } else {
+      try { const _lv = await tkApi('/api/leave'); _DEMO_LEAVE = _lv.leave; } catch (e) { return; }
+    }
     /* Also refresh the approval sources so NEW claims/travel/payments/requisitions light the
        bell + inbox badge live — but only every SECOND tick: 5 extra fetches + JSON parses every
        30s was a steady source of mobile scroll stutter. */
@@ -7109,14 +7145,35 @@ function _tkCollLoadFailed(name, msg) {
   } catch (e) {}
 }
 const _COLL_TTL = 45000;    // a collection stays "fresh" for 45s
+/* How long a collection read may take before it is treated as failed rather than pending.
+   Sized for the worst REAL case rather than the average: a 500-activity master schedule plus a
+   400-line detail programme on a phone on 4G. Anything past this is not a slow answer, it is no
+   answer, and the caller needs to be told so it can offer Retry instead of a permanent skeleton. */
+const _COLL_TIMEOUT_MS = 30000;
 async function tkLoadColl(name, opts) {
   opts = opts || {};
   const fresh = _COLL_TS[name] && (Date.now() - _COLL_TS[name] < _COLL_TTL) && Array.isArray(_HR[name]);
   if (!opts.force && fresh) return _HR[name];
   if (_COLL_INFLIGHT[name]) return _COLL_INFLIGHT[name];   // dedupe simultaneous loads of the same collection
   const pr = (async () => {
+    /* A fetch with no deadline is not slow, it is INDEFINITE. Every caller here awaits this, and
+       the ones that matter most paint a skeleton first: pmTab does
+           if (_missing.length) _body.innerHTML = tkSkeleton();
+           const _failed = await _pmNeed(t.need);
+       so a request the network accepts and never answers — a phone that changed cell, a proxy that
+       held the socket, a laptop resumed from sleep — leaves the shimmer on screen for as long as
+       the tab is open. No error, no Retry, nothing in the console: the tab simply never finishes
+       loading, which is exactly what a Schedule tab full of skeleton bars looks like.
+       On a timeout we take the SAME branch a 500 takes, so the tab already knows how to say
+       "Could not load this tab" and offer Retry. _COLL_TS is left unset, so nothing is cached and
+       pressing Retry really re-fetches. Generous on purpose: a big programme on 4G is slow, not
+       broken, and cutting a working request off would trade a hang for a lie. */
+    const _ac = ('AbortController' in window) ? new AbortController() : null;
+    let _timedOut = false;
+    const _kill = setTimeout(() => { _timedOut = true; try { _ac && _ac.abort(); } catch (e) {} }, _COLL_TIMEOUT_MS);
     try {
-      const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token } });
+      const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token },
+                                                   signal: _ac ? _ac.signal : undefined });
       if (r.ok) {
         const j = await r.json();
         _HR[name] = j.items || []; _COLL_TS[name] = Date.now(); delete _COLL_ERR[name];
@@ -7134,11 +7191,16 @@ async function tkLoadColl(name, opts) {
         else _tkCollLoadFailed(name, _msg || ('HTTP ' + r.status));
       }
     } catch (e) {
-      // Offline or the request never completed. Same rule: say so rather than show an empty list.
-      _COLL_ERR[name] = { status: 0, message: String((e && e.message) || e) };
-      _tkCollLoadFailed(name, '');
+      // Offline, aborted, or the request never completed. Same rule: say so rather than show an
+      // empty list. A timeout gets its own words — "check your connection" is the right advice for
+      // a dead network and the wrong advice for a request that is merely taking too long.
+      const _msg = _timedOut
+        ? _t2('The server did not answer in time.', 'M\u00e1y ch\u1ee7 kh\u00f4ng ph\u1ea3n h\u1ed3i k\u1ecbp th\u1eddi.')
+        : String((e && e.message) || e);
+      _COLL_ERR[name] = { status: 0, message: _msg, timedOut: _timedOut };
+      _tkCollLoadFailed(name, _timedOut ? _msg : '');
     }
-    finally { delete _COLL_INFLIGHT[name]; }
+    finally { clearTimeout(_kill); delete _COLL_INFLIGHT[name]; }
     return _HR[name];
   })();
   _COLL_INFLIGHT[name] = pr;
@@ -46829,7 +46891,19 @@ async function _healStaleShell() {
   } catch (e) { /* offline or blocked — the app keeps working on what it has */ }
 }
 
-async function _checkForUpdate() {
+/* When the version check last went to the network. _onAppResume's 3s guard exists to stop
+   visibilitychange AND focus both firing on ONE app-switch — it was never a budget for how often
+   this may hit the server, but it became one, because resume calls this unconditionally. Every
+   focus change therefore cost two requests: /api/config here and /api/build inside _healStaleShell.
+   On a phone that is not rare — the on-screen keyboard opening and closing flips focus, so typing
+   a search term could spend half a dozen round-trips announcing nothing. What this asks is "has a
+   new build been deployed"; the answer cannot usefully change more than once a minute, and the 4
+   minute interval below is the real schedule. Resume just brings the next check forward. */
+let _lastUpdCheck = 0;
+const _UPD_CHECK_MS = 60000;
+async function _checkForUpdate(force) {
+  if (!force && Date.now() - _lastUpdCheck < _UPD_CHECK_MS) return;
+  _lastUpdCheck = Date.now();
   _healStaleShell();          // runs on its own terms: no session, no _APP_VERSION needed
   if (_updReloading || !window._APP_VERSION) return;
   try {
@@ -46873,7 +46947,10 @@ document.addEventListener('visibilitychange', function () { if (document.visibil
 window.addEventListener('focus', _onAppResume);
 window.addEventListener('online', _onAppResume);
 window.addEventListener('pageshow', function (e) { if (e && e.persisted) _onAppResume(); });   // iOS bfcache restore
-setInterval(_checkForUpdate, 4 * 60 * 1000);   // also while the app stays open
+/* The real schedule, and it forces: a resume check a minute ago must not be able to push the
+   scheduled one out by another four. setInterval passes no arguments of its own, so the
+   force flag has to be handed over explicitly. */
+setInterval(function () { _checkForUpdate(true); }, 4 * 60 * 1000);   // also while the app stays open
 /* Manual one-tap: window.tkForceUpdate() clears caches + reloads (wired to a button below). */
 async function tkForceUpdate() {
   try { toast('Refreshing…', undefined, 2000); } catch (e) {}
