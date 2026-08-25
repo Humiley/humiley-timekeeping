@@ -73,11 +73,20 @@ ok('the label carries the activity name', /l:\s*\(nm && nm !== v\)/.test(optSrc)
 ok('the list is sorted with the WBS comparator', /\.sort\(\(a, b\) => _wbsCmp\(a\.v, b\.v\)\)/.test(optSrc));
 ok('duplicates are still collapsed', /seen\[v\]/.test(optSrc));
 
-/* ── _pdMasterOf still matches on the unchanged ref ─────────────────────────── */
+/* ── a detail line still resolves to its activity by the unchanged ref ──────────
+   This used to assert the MECHANISM — `_pmScopeFor('pm_tasks', pid).find(t => _pdTaskRef(t) === ref)`
+   — and it went red the moment that scan became a Map lookup, which is what it was there to notice.
+   The property it actually protects is narrower and survives the change: the option list stores a
+   bare ref, and resolution matches it against `_pdTaskRef(t)` by string equality. Enriching the
+   stored value with a label would break that on either implementation. */
 ok('_pdTaskRef is unchanged (wbs || name)',
    /function _pdTaskRef\(t\) \{ return String\(\(t && \(t\.wbs \|\| t\.name\)\) \|\| ''\)\.trim\(\); \}/.test(src));
-ok('_pdMasterOf still compares _pdTaskRef(t) === ref',
-   /_pmScopeFor\('pm_tasks', pid\)\.find\(t => _pdTaskRef\(t\) === ref\)/.test(src));
+ok('the activity index is keyed by exactly that ref',
+   /const k = _pdTaskRef\(t\);/.test(src) && /map\.set\(k, t\)/.test(src),
+   'if the index were keyed on anything else, the taskRef stored by the option list above would no ' +
+   'longer find its activity');
+ok('and _pdMasterOf looks the line\'s own trimmed ref up in it',
+   /const ref = String\(\(r && r\.taskRef\) \|\| ''\)\.trim\(\);[\s\S]{0,120}_pdMasterIndex\(pid\)\.get\(ref\)/.test(src));
 
 /* ── the select renderer handles BOTH shapes ───────────────────────────────── */
 const selLine = src.split('\n').find(l => l.indexOf("if (f.type === 'select')") >= 0) || '';

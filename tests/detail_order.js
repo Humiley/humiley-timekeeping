@@ -64,6 +64,12 @@ const API = new Function('TASKS', 'ROWS',
   'const _pmScopeFor = (c, pid) => (_HR[c] || []).filter(x => x.projectId === pid);\n' +
   take('function _pmWbsCmp(', '_pmWbsCmp') +
   take('function _pdTaskRef(', '_pdTaskRef') +
+  /* The index _pdMasterOf now reads. It replaced a full `_pmScopeFor('pm_tasks', pid).find(...)`
+     per lookup, which _pdOrderKey performed twice per comparison — on a real programme that was
+     5,767 whole-array scans for ONE sort. The ordering assertions below are what prove the index
+     resolves to the same activity the scan did, so it is lifted here rather than stubbed. */
+  'let _pdMIdx = { arr: null, pid: null, map: null };\n' +
+  take('function _pdMasterIndex(', '_pdMasterIndex') +
   take('function _pdMasterOf(', '_pdMasterOf') +
   take('function _pdGroupOf(', '_pdGroupOf') +
   take('function _pdOrderKey(', '_pdOrderKey') +
