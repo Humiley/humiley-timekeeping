@@ -3720,6 +3720,12 @@ class Handler(BaseHTTPRequestHandler):
     # gzip text responses: the single-file app HTML is ~1.6 MB raw — uncompressed it took
     # seconds per open on 4G (the "app feels flat/slow on mobile" complaint). ~5x smaller gzipped.
     GZIP_TYPES = ("text/", "application/json", "application/javascript", "application/manifest+json", "image/svg+xml")
+    # `no-cache` does NOT mean "do not store" — it means "store it, but never hand it over without
+    # asking me first". That is precisely what is wanted: the browser keeps the last body, and the
+    # next request is a revalidation that ends in 304 whenever nothing changed. `private` keeps it
+    # out of any shared cache, which user-scoped data must never enter.
+    JSON_CACHE = "private, no-cache, must-revalidate"
+    JSON_VARY = "Accept-Encoding, Authorization"
 
     def _accepts_gzip(self):
         return "gzip" in (self.headers.get("Accept-Encoding") or "")
@@ -3742,6 +3748,34 @@ class Handler(BaseHTTPRequestHandler):
                              "geolocation=(self), camera=(), microphone=(), payment=(), usb=()")
 
     def _send(self, body, ctype, status=200, cache=None):
+        # ── Conditional GET on read-only JSON ──────────────────────────────────────────────────
+        # /api/coll and friends had NO validator of any kind: no ETag, no Last-Modified, nothing.
+        # Every open of a screen re-serialised, re-compressed and re-sent the WHOLE collection even
+        # when not one byte had changed since the last request thirty seconds earlier. On a project
+        # carrying a 500-activity master schedule and a ~400-line detail programme whose rows each
+        # accumulate a per-day log, that is the dominant cost of opening the Schedule tab, and it is
+        # paid again on every tab switch, every navigation back in, and every expiry of the 45s
+        # client cache.
+        #
+        # The validator is a hash of the RESPONSE BODY, which is already scoped to the caller by
+        # every guard in _coll_list — so two accounts entitled to different rows get different
+        # bodies and therefore different tags. It cannot be used to read somebody else's data.
+        # WEAK ("W/") because the same resource is served gzipped or plain depending on the request;
+        # a weak validator is exactly what a conditional GET wants and is what Vary is for.
+        #
+        # No client change is needed: fetch() with the default cache mode revalidates on its own and
+        # hands JavaScript the cached 200 body, so nothing in the app ever sees a 304.
+        etag = None
+        if status == 200 and self.command == "GET" and ctype.startswith("application/json"):
+            etag = 'W/"%s"' % hashlib.sha256(body).hexdigest()[:32]
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", cache or self.JSON_CACHE)
+                self.send_header("Vary", self.JSON_VARY)
+                self._emit_sec_headers(ctype)
+                self.end_headers()
+                return
         gz = (
             len(body) > 1024
             and self._accepts_gzip()
@@ -3756,9 +3790,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         if gz:
             self.send_header("Content-Encoding", "gzip")
-        self.send_header("Vary", "Accept-Encoding")
-        if cache:
-            self.send_header("Cache-Control", cache)
+        # Authorization joins the Vary key on anything carrying a validator. The tag alone already
+        # makes cross-account reuse impossible (a different entitlement is a different body is a
+        # different tag), but keeping the token in the cache key means a second account on a shared
+        # device never even reaches for the first one's entry.
+        self.send_header("Vary", self.JSON_VARY if etag else "Accept-Encoding")
+        if etag:
+            self.send_header("ETag", etag)
+        if cache or etag:
+            self.send_header("Cache-Control", cache or self.JSON_CACHE)
         self._emit_sec_headers(ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
