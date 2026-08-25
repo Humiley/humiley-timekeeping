@@ -92,6 +92,11 @@ const ENV =
   take('function _pdHasPlan(', '_pdHasPlan') +
   take('function _pdWeight(', '_pdWeight') +
   take('function _pdTaskRef(', '_pdTaskRef') +
+  // Same shape as _pmCpmMemo below: _pdMasterOf memoises against a module-level `let` declared
+  // just above it, and lifting the function without its index is how a slice reports
+  // ReferenceError instead of an answer.
+  'let _pdMIdx = { arr: null, pid: null, map: null };\n' +
+  take('function _pdMasterIndex(', '_pdMasterIndex') +
   take('function _pdMasterOf(', '_pdMasterOf') +
   take('function _pdGroupOf(', '_pdGroupOf') +
   // _pmCPM memoises against a module-level `let` declared just above it. Lifting the function

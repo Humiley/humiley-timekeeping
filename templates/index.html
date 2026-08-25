@@ -25349,10 +25349,44 @@ function _pmTaskNorm(pid, day) {
    is an attribute of the line, not its parent, so it rides along as a suffix instead of grouping.
    A line with no master link is never hidden — it groups under a named bucket so the gap is visible
    and fixable, because an unlinked line contributes to nothing. */
+/* Master activities indexed by the reference a detail line points at, built once per project.
+ *
+ * _pdMasterOf used to do `_pmScopeFor('pm_tasks', pid).find(...)` — a full filter over EVERY
+ * activity in the whole portfolio, then a linear search of the result, on every single lookup. That
+ * is fine when a lookup happens a few times. It does not: _pdOrderKey calls it once per row per
+ * comparison, so sorting is O(rows x log rows x tasks), and _pdGroupOf calls it once per row again
+ * in the Timeline, the Register, the group filter, the daily dialog and the roll-up.
+ *
+ * Measured on a realistic portfolio — 934 activities across 8 projects, 400 detail lines on the big
+ * one — ONE _pdAllRows did 5,767 full array scans and took 83 ms on a fast laptop; the nine calls a
+ * single Schedule render makes came to 51,903 scans and 468 ms, before _pdGroupOf's per-row lookups
+ * are counted at all. A phone is four to six times slower again. That is the Schedule tab sitting
+ * on skeleton loaders, and it arrived with the ordering fix in #125 — the sort it replaced compared
+ * two strings and never looked a task up.
+ *
+ * Keyed on the IDENTITY of _HR.pm_tasks, which tkLoadColl replaces wholesale on every fetch
+ * (`_HR[name] = j.items || []`), so a reload can never be served a stale index. Nothing anywhere
+ * assigns to a task's `wbs` or `name` in place — checked — and those two fields are all this index
+ * reads, so an in-place edit of some other field cannot invalidate it either.
+ *
+ * FIRST WINS, exactly as `.find` did: two activities sharing a WBS code is a data problem, and this
+ * must not quietly start resolving to the other one. */
+let _pdMIdx = { arr: null, pid: null, map: null };
+function _pdMasterIndex(pid) {
+  const arr = (typeof _HR !== 'undefined') ? _HR['pm_tasks'] : null;
+  if (_pdMIdx.map && _pdMIdx.arr === arr && _pdMIdx.pid === pid) return _pdMIdx.map;
+  const map = new Map();
+  _pmScopeFor('pm_tasks', pid).forEach(t => {
+    const k = _pdTaskRef(t);
+    if (k && !map.has(k)) map.set(k, t);
+  });
+  _pdMIdx = { arr: arr, pid: pid, map: map };
+  return map;
+}
 function _pdMasterOf(pid, r) {
   const ref = String((r && r.taskRef) || '').trim();
   if (!ref) return null;
-  return _pmScopeFor('pm_tasks', pid).find(t => _pdTaskRef(t) === ref) || null;
+  return _pdMasterIndex(pid).get(ref) || null;
 }
 /* The CLIENT's contract section for a master activity.
 
