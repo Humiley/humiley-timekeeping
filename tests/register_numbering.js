@@ -139,8 +139,12 @@ console.log('\nA document number reads prefix first, then its digits as a number
 // ══ the register uses it ═══════════════════════════════════════════════════════════════════════
 console.log('\nThe ITP register opens in ITP-number order\n');
 {
+  /* Assert the SORT, not the punctuation after it. A first version matched through to the closing
+     `));` and went red when a Renumber button was added as the card's `extra` argument — a change
+     that did not touch the ordering at all. */
   ok('the table is sorted by the ITP number, not by planned date',
-     /\], itp\.slice\(\)\.sort\(_pmDocNoCmp\('itpNo'\)\)\)\);/.test(src),
+     /\], itp\.slice\(\)\.sort\(_pmDocNoCmp\('itpNo'\)\)/.test(src) &&
+     !/itp\.slice\(\)\.sort\(_cmpNewest/.test(src),
      'it used to open _cmpNewest(\'plannedStart\') — newest planned first, which reads as no order ' +
      'at all once the planned dates cluster into the same week');
   ok('the ITP No. header sorts the FIELD rather than the rendered text',
