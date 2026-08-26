@@ -12424,7 +12424,11 @@ function _payNextNo() {
   const y = new Date().getFullYear();
   const nums = (_HR.payments || []).map(p => { const m = String(p.reqNo || '').match(/PR-\d{4}-(\d+)/); return m ? +m[1] : 0; });
   const n = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
-  return 'PR-' + y + '-' + ('00' + n).slice(-3);
+  // The same truncating pad the PMC and Engineering registers had: at 1000 this produced
+  // PR-2026-000, a number an earlier request already carried. The counter does not reset per
+  // year either — the scan above reads every payment regardless of year — so reaching four
+  // digits is a matter of time rather than of one unusually busy year.
+  return 'PR-' + y + '-' + _seqPad3(n);
 }
 /* Is this payment the current user's own? (scopes the My Space register to self — issue #20) */
 function _payIsMine(p, me) { if (!p || !me) return false; return (p.empId && me.id) ? p.empId === me.id : (!!p.name && !!me.name && p.name === me.name); }
@@ -21118,14 +21122,60 @@ function _pmDocNoCmp(f) {
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
 const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' } };
 function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
+/* Zero-pad to three, and NEVER truncate past it.
+   `('00' + seq).slice(-3)` was fine to 999 and then wrapped: 1000 became "000", 1001 became "001",
+   12345 became "345". So the thousandth record in a register did not just look wrong — it was
+   handed a number an earlier record already had, silently, with no warning and no uniqueness check
+   anywhere behind it. Three digits is a minimum width, not a maximum value. */
+function _seqPad3(n) { const t = String(n); return t.length >= 3 ? t : ('000' + t).slice(-3); }
+
+/* The register's OWN numbering convention, read off the records already in it.
+   The app's format is PREFIX-TAG-NNN, but a register that was imported or typed by hand may be
+   numbered 1, 2, 3 — and it stays that way until somebody presses Add, at which point the next
+   record used to arrive as MEG-ITP-101 in the middle of a plain 1..100 sequence. The register
+   already states its convention; the right thing is to read it rather than overrule it.
+   Only when EVERY existing number is a plain integer: a mixed register has no convention to
+   continue, so it falls back to the app's own format. `pad` keeps whatever zero-padding is actually
+   in use — 001 stays 001, while 1 stays 1. */
+function _pmNumStyle(coll, field, pid) {
+  const vals = _pmScopeFor(coll, pid).map(x => String(x[field] || '').trim()).filter(Boolean);
+  if (!vals.length) return null;
+  if (!vals.every(v => /^\d+$/.test(v))) return null;
+  return { plain: true, pad: Math.max.apply(null, vals.map(v => (/^0\d/.test(v) ? v.length : 0)).concat([0])) };
+}
+
+/* The next number in the register, continuing from the HIGHEST already there.
+   Highest, not count: a register with 1, 2 and 7 in it must go on to 8, and deleting the last
+   record must not hand its number to the next one. Reads the trailing digits, so it sees 99 and
+   MEG-ITP-099 alike. */
+function _pmNextSeq(coll, field, pid) {
+  let max = 0;
+  _pmScopeFor(coll, pid).forEach(x => {
+    const m = String(x[field] || '').match(/(\d+)\s*$/);
+    if (!m) return;
+    const n = +m[1];
+    if (isFinite(n) && n > max) max = n;
+  });
+  return max + 1;
+}
+
 function _pmAutoNumber(coll, data) {
   const sp = _PM_NUMSPEC[coll]; if (!sp) return;
   if (String(data[sp.f] || '').trim()) return;
   const pid = data.projectId || _pmPid(); if (!pid) return;
   let tag = sp.tag; if (coll === 'pm_quality') tag = ({ NCR: 'NCR', Inspection: 'INS', Audit: 'AUD', Test: 'TST', 'ITP item': 'ITP' })[data.type] || 'QA';
-  const nums = _pmScopeFor(coll, pid).map(x => { const m = String(x[sp.f] || '').match(/(\d+)\s*$/); return m ? +m[1] : 0; });
-  const seq = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
-  data[sp.f] = _pmPrefix3(pid) + '-' + tag + '-' + ('00' + seq).slice(-3);
+  const style = _pmNumStyle(coll, sp.f, pid);
+  const fmt = n => (style && style.plain)
+    ? (style.pad ? ('0000000000' + n).slice(-Math.max(style.pad, String(n).length)) : String(n))
+    : _pmPrefix3(pid) + '-' + tag + '-' + _seqPad3(n);
+  /* No "skip anything already taken" loop here, deliberately. It cannot fire: `fmt` always ends in
+     the digits of its argument and `_pmNextSeq` reads exactly those trailing digits, so a register
+     containing fmt(max+1) would have yielded a max of at least max+1. A loop that can never run
+     would only imply a duplicate-protection that does not exist.
+     Uniqueness is genuinely NOT enforced: two people pressing Add in the same second both read the
+     same highest number and both get it. That needs a server-side counter, not a client-side guess,
+     and it is worth saying plainly rather than papering over. */
+  data[sp.f] = fmt(_pmNextSeq(coll, sp.f, pid));
 }
 
 /* ---- Resources is the sole writer of pm_projects.members[] ---- */
@@ -27870,8 +27920,9 @@ function _engAutoDocNo(data, pid) {
   const p = _engProj(pid || data.projectId); if (!p) return;
   const fmt = _engNumFmt(p);
   const seq = _engNextSeq(p.id, data.discipline, data.docType, fmt);
-  const pad = (fmt.match(/\{NNN\}/) ? 3 : 3);
-  data.docNo = _engRenderNum(p, data, fmt).replace(/000$/, ('00' + seq).slice(-pad));
+  // `(x ? 3 : 3)` chose 3 either way — the width was never variable — and slice(-3) truncated the
+  // thousandth drawing to "000". Three digits is the minimum width; past that the number grows.
+  data.docNo = _engRenderNum(p, data, fmt).replace(/000$/, _seqPad3(seq));
 }
 /* Auto-number for the flat registers, project-prefixed like PMC's. */
 const _ENG_NUMSPEC = {
@@ -27886,7 +27937,8 @@ function _engAutoNumber(coll, data) {
   const pid = data.projectId || _engPid(); if (!pid) return;
   const nums = _engScopeFor(coll, pid).map(x => { const m = String(x[sp.f] || '').match(/(\d+)\s*$/); return m ? +m[1] : 0; });
   const seq = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
-  data[sp.f] = _engPrjCode(_engProj(pid)).slice(0, 6) + '-' + sp.tag + '-' + ('00' + seq).slice(-3);
+  // Same wrap the PMC registers had: ('00' + seq).slice(-3) turned the thousandth TQ into "000".
+  data[sp.f] = _engPrjCode(_engProj(pid)).slice(0, 6) + '-' + sp.tag + '-' + _seqPad3(seq);
 }
 
 /* ============================ revision codes ============================
