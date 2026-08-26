@@ -16550,6 +16550,25 @@ function tkQuickAdd(type, id, seed) {
      a save now stores the number they were shown instead of the one they could not see. Leaves with
      a typed percentage are untouched: from === 'typed' means nothing is rolling up. */
   let _qaSeed = ex;
+  /* An auto-numbered register fills its number IN THE FORM, so the person creating the record sees
+     the number they are about to issue and can still change it. It used to be injected at save
+     time: the field sat empty, which reads as "you must think of a number", and whatever the app
+     chose only appeared after the record existed. That is the same objection the `seed` comment
+     above makes about a silently-injected parent — a value nobody could see until too late.
+     Leaving it blank still works: _pmAutoNumber runs again on save and fills it.
+     pm_quality is deliberately excluded. Its tag depends on the record TYPE — NCR, INS, AUD, TST —
+     which is chosen inside this form, so a number issued at open would say QA and then be wrong the
+     moment somebody picked NCR. It keeps filling at save, when the type is known. */
+  if (!id && typeof _PM_NUMSPEC !== 'undefined' && _PM_NUMSPEC[spec.coll] &&
+      spec.coll !== 'pm_quality' && typeof _pmAutoNumber === 'function') {
+    const _nf = _PM_NUMSPEC[spec.coll].f;
+    const _pre = Object.assign({}, _qaSeed || {});
+    if (!String(_pre[_nf] || '').trim()) {
+      if (!_pre.projectId && typeof _pmPid === 'function') _pre.projectId = _pmPid();
+      try { _pmAutoNumber(spec.coll, _pre); } catch (e) {}
+      if (String(_pre[_nf] || '').trim()) _qaSeed = _pre;
+    }
+  }
   if (type === 'pm_tasks' && ex && typeof _pmTaskPctRoll === 'function') {
     try {
       const _pid = (typeof _pmPid === 'function') ? _pmPid() : '';
@@ -26239,15 +26258,131 @@ function pmRenderQuality(pid) {
       : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>') }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
-    { label: 'ITP No.', sk: 'itpNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
+    /* The number it was ISSUED under rides underneath the current one wherever the register has
+       been renumbered. A consolidated register that shows only its new numbers cannot be reconciled
+       against a signed plan or a contractor's transmittal; this keeps that answer on the screen
+       rather than only in the database. */
+    { label: 'ITP No.', sk: 'itpNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' +
+        (String(r.itpNoPrev || '').trim() && String(r.itpNoPrev).trim() !== String(r.itpNo || '').trim()
+          ? '<span style="display:block;font-size:9.5px;color:var(--text-light);line-height:1.2" title="' +
+            _tkEscA(_t('The number this plan was issued under')) + '">' + _t('was') + ' ' + _pmEsc(r.itpNoPrev) + '</span>'
+          : '') },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' }, { label: 'Package', k: 'discipline' },
     { label: 'Standard', k: 'standardRef' }, { label: 'Planned', sk: 'plannedStart', render: r => (r.plannedStart || r.plannedFinish) ? _pmFmt(r.plannedStart) + (r.plannedFinish && r.plannedFinish !== r.plannedStart ? ' → ' + _pmFmt(r.plannedFinish) : '') : '—' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
     /* The register opens in ITP-number order — 1, 2, 3 — because that is the order the plans are
        written, referenced and signed off in, and it is how anyone looking for ITP 47 expects to
        find it. It used to open newest-planned-first, which reads as no order at all once the
        planned dates cluster. Still a COPY: the timeline below must stay in date order. */
-  ], itp.slice().sort(_pmDocNoCmp('itpNo'))));
+  ], itp.slice().sort(_pmDocNoCmp('itpNo'))),
+    // Consolidating the numbering rewrites issued document numbers, so it sits behind the same
+    // level that may wipe a schedule, and it is absent entirely when there is nothing to renumber.
+    (_pmSeeAll() && itp.length > 1
+      ? '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="pmItpRenumber(\'' + pid + '\')" title="' +
+        _tkEscA(_t('Close the gaps so the register reads 1, 2, 3 …')) + '">' +
+        _t('Renumber 1…' + itp.length) + '</button>'
+      : ''));
   _pmSet(kpis + tbl + _pmItpTimeline(itp) + itpTbl);
+}
+
+/* ---------- Consolidate the ITP numbering ----------
+   An imported or hand-typed register drifts: numbers get skipped when a plan is dropped, two people
+   pick the same one, a batch arrives numbered from somewhere else. This closes the gaps so the
+   register reads 1, 2, 3 … N in the order it is already displayed.
+
+   It rewrites document numbers that appear on ISSUED, APPROVED inspection plans and on the
+   contractor's paperwork, so it is deliberate rather than automatic, and it is built to be
+   answerable afterwards:
+     - the whole mapping is shown BEFORE anything is written, old number beside new;
+     - the ORIGINAL number is kept on the record in `itpNoPrev`, first renumber only, so a second
+       pass can never overwrite the number the paperwork was issued under;
+     - the register shows that original underneath the new one, so the trail is on screen and not
+       only in the database;
+     - one audit row records who did it and how many changed.
+   Manager and above: this is a register-wide act, not an edit to one plan. */
+function _pmItpRenumberPlan(pid) {
+  const rows = _pmScopeFor('pm_quality_itp', pid).slice().sort(_pmDocNoCmp('itpNo'));
+  return rows.map((r, i) => ({ row: r, from: String(r.itpNo || '').trim(), to: String(i + 1) }))
+             .filter(m => m.from !== m.to);
+}
+async function pmItpRenumber(pid) {
+  if (!_requireLevel('manager')) return;
+  const all = _pmScopeFor('pm_quality_itp', pid);
+  if (!all.length) { toast(_t2('There are no ITPs to renumber.', 'Chưa c\u00f3 ITP n\u00e0o \u0111\u1ec3 \u0111\u00e1nh s\u1ed1 l\u1ea1i.'), 'warn'); return; }
+  const plan = _pmItpRenumberPlan(pid);
+  if (!plan.length) {
+    toast(_t2('The register already reads 1 to ' + all.length + '.',
+              'S\u1ed5 \u0111\u0103ng k\u00fd \u0111\u00e3 \u0111\u00e1nh s\u1ed1 1 \u0111\u1ebfn ' + all.length + '.'), 'success', 5000);
+    return;
+  }
+  /* Its own overlay, not tkConfirm: the thing being confirmed is a TABLE, and a person about to
+     rewrite a hundred issued document numbers should be able to read every line of it. */
+  const go = await new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2000';
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="width:560px;max-width:94vw">' +
+      '<div style="font-size:17px;font-weight:800;color:var(--navy);margin-bottom:6px">' +
+        _crmEsc(_t2('Renumber the ITP register 1 to ' + all.length + '?',
+                    '\u0110\u00e1nh s\u1ed1 l\u1ea1i s\u1ed5 ITP t\u1eeb 1 \u0111\u1ebfn ' + all.length + '?')) + '</div>' +
+      '<div style="font-size:13px;color:var(--text-dark);line-height:1.6;margin-bottom:10px">' +
+        _crmEsc(_t2(plan.length + ' of ' + all.length + ' plan(s) change number. Nothing else is touched.',
+                    plan.length + '/' + all.length + ' k\u1ebf ho\u1ea1ch \u0111\u1ed5i s\u1ed1. Kh\u00f4ng thay \u0111\u1ed5i g\u00ec kh\u00e1c.')) + '</div>' +
+      '<div style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-bottom:12px">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
+        '<thead><tr style="background:var(--soft-bg)">' +
+          '<th style="text-align:left;padding:6px 10px">' + _crmEsc(_t2('Now', 'Hi\u1ec7n t\u1ea1i')) + '</th>' +
+          '<th style="text-align:left;padding:6px 10px">' + _crmEsc(_t2('Becomes', 'Th\u00e0nh')) + '</th>' +
+          '<th style="text-align:left;padding:6px 10px">' + _crmEsc(_t2('Title', 'T\u00ean')) + '</th>' +
+        '</tr></thead><tbody>' +
+        plan.map(m => '<tr style="border-top:1px solid var(--soft-bg)">' +
+          '<td style="padding:5px 10px;font-variant-numeric:tabular-nums;color:var(--text-light)">' + _crmEsc(m.from || '\u2014') + '</td>' +
+          '<td style="padding:5px 10px;font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy)">' + _crmEsc(m.to) + '</td>' +
+          '<td style="padding:5px 10px">' + _crmEsc(m.row.title || '') + '</td></tr>').join('') +
+        '</tbody></table></div>' +
+      '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:16px">' +
+        _crmEsc(_t2('These numbers appear on issued plans and on the contractor\u2019s paperwork. The ' +
+                    'number each plan was issued under is kept on the record and shown underneath the ' +
+                    'new one.',
+                    'C\u00e1c s\u1ed1 n\u00e0y c\u00f3 tr\u00ean k\u1ebf ho\u1ea1ch \u0111\u00e3 ban h\u00e0nh v\u00e0 h\u1ed3 s\u01a1 nh\u00e0 th\u1ea7u. S\u1ed1 c\u0169 \u0111\u01b0\u1ee3c gi\u1eef l\u1ea1i tr\u00ean b\u1ea3n ghi v\u00e0 hi\u1ec3n th\u1ecb d\u01b0\u1edbi s\u1ed1 m\u1edbi.')) + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:10px">' +
+        '<button type="button" class="btn btn-outline" data-act="cancel">' + _crmEsc(_t2('Cancel', 'Hu\u1ef7')) + '</button>' +
+        '<button type="button" class="btn btn-primary" data-act="ok">' +
+          _crmEsc(_t2('Renumber ' + plan.length, '\u0110\u00e1nh s\u1ed1 l\u1ea1i ' + plan.length)) + '</button>' +
+      '</div></div>';
+    let done = false;
+    const finish = v => { if (done) return; done = true; document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); finish(false); } };
+    ov.querySelector('[data-act="ok"]').addEventListener('click', () => finish(true));
+    ov.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(false));
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(false); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    setTimeout(() => { const b = ov.querySelector('[data-act="cancel"]'); if (b) b.focus(); }, 30);
+  });
+  if (!go) return;
+
+  let ok = 0; const bad = [];
+  for (let i = 0; i < plan.length; i += 4) {
+    await Promise.all(plan.slice(i, i + 4).map(async m => {
+      try {
+        /* `itpNoPrev` is written ONCE. On a second consolidation it is already set, and keeping the
+           first value is the point: the paperwork was issued under THAT number, not under whatever
+           the register happened to read before the most recent pass. */
+        const body = Object.assign({}, m.row, { itpNo: m.to });
+        if (!String(m.row.itpNoPrev || '').trim() && m.from) body.itpNoPrev = m.from;
+        const res = await tkApi('/api/coll/pm_quality_itp/' + m.row.id, { method: 'PATCH', body: body });
+        const j = (_HR.pm_quality_itp || []).findIndex(x => x.id === m.row.id);
+        if (j >= 0 && res && res.item) _HR.pm_quality_itp[j] = res.item;
+        ok++;
+      } catch (e) { bad.push((m.row.title || m.row.id) + ': ' + _errMsg(e)); }
+    }));
+  }
+  if (ok) tkAudit('ITP register renumbered', _pmProj(pid) ? (_pmProj(pid).name || pid) : pid,
+                  ok + ' of ' + all.length + ' plan(s) renumbered 1-' + all.length);
+  if (bad.length) toast(_t2(ok + ' renumbered, ' + bad.length + ' could not be: ',
+                            '\u0110\u00e3 \u0111\u1ed5i ' + ok + ', ' + bad.length + ' kh\u00f4ng th\u1ec3: ') + bad[0], 'warn', 9000);
+  else toast(_t2('The register now reads 1 to ' + all.length + '.',
+                 'S\u1ed5 \u0111\u0103ng k\u00fd nay \u0111\u00e1nh s\u1ed1 1 \u0111\u1ebfn ' + all.length + '.'), 'success', 5000);
+  _pmReload();
 }
 
 /* ---------- 6. Resources (RACI + workload) ---------- */
