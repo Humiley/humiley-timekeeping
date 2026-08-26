@@ -24092,8 +24092,48 @@ function _pdTaskPct(task, pid) {
   // same ductwork run — reported only the half you happened to be looking at, and its percentage
   // CHANGED when you clicked the other chip. A master activity's progress is everything reported
   // against it; which chip is selected is a view, not a fact about the work.
-  const rows = _pdAllRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
+  const rows = _pdRowsByRef(pid).get(ref) || [];
   return rows.length ? { pct: Math.round(_pdRollup(rows).acc), n: rows.length } : null;
+}
+
+/* The detail rows grouped by the activity they report against, built once per project.
+ *
+ * _pdTaskPct used to do `_pdAllRows(pid).filter(...)` — a full filter AND SORT of every detail line
+ * on the project — and _pmTaskPctRoll calls it once per ACTIVITY. Indexing the activity lookup
+ * (see _pdMasterIndex) made each of those sorts cheap; it did not stop 500 of them happening. One
+ * pass of the '%' column over 500 activities against 400 detail lines still cost 497 ms and 500
+ * full sorts on a fast laptop, and the Activities table, the Timeline and the roll-up each do that
+ * pass. Grouped once, the same pass is a map read per activity.
+ *
+ * Built FROM _pdAllRows, so the rows inside each group keep the one ordering the Timeline, the
+ * Register, the Daily-progress dialog and the exports all read. Rebuilding the grouping with its
+ * own sort would be a fifth ordering to drift out of step with the other four.
+ *
+ * Keyed on the identity of BOTH arrays: the rows come from pm_detail, but their ORDER comes from
+ * pm_tasks via _pdOrderKey, so a task reload can change the answer even when no detail row moved.
+ * Every write path replaces these arrays rather than mutating them in place — tkLoadColl assigns
+ * `_HR[name] = j.items || []`, and the two delete paths both do `_HR[coll] = (...).filter(...)` —
+ * so a stale group cannot outlive the data. An in-place field edit (pdDailyEntrySave does
+ * `r.log = log`) is invisible to the GROUPING and must be: the map holds the live row objects, so
+ * _pdRollup reads the new reading; only `taskRef` decides membership, and nothing assigns to it
+ * in place.
+ *
+ * The arrays it hands back are the map's own. _pdTaskPct is the only caller and only reads them;
+ * anything that needs to sort or splice its result must take a copy first. */
+let _pdRefIdx = { det: null, tsk: null, pid: null, map: null };
+function _pdRowsByRef(pid) {
+  const det = (typeof _HR !== 'undefined') ? _HR[_PD_COLL] : null;
+  const tsk = (typeof _HR !== 'undefined') ? _HR['pm_tasks'] : null;
+  if (_pdRefIdx.map && _pdRefIdx.det === det && _pdRefIdx.tsk === tsk && _pdRefIdx.pid === pid) return _pdRefIdx.map;
+  const map = new Map();
+  _pdAllRows(pid).forEach(r => {
+    const k = String(r.taskRef || '').trim();
+    if (!k) return;                       // a line reporting against nothing joins no group
+    const at = map.get(k);
+    if (at) at.push(r); else map.set(k, [r]);
+  });
+  _pdRefIdx = { det: det, tsk: tsk, pid: pid, map: map };
+  return map;
 }
 function _pdVarColor(v) { return v >= -0.5 ? 'var(--emerald)' : (v >= -10 ? '#F59E0B' : '#EF4444'); }
 function _pdVarLabel(v) { return v >= -0.5 ? 'On/ahead' : (v >= -10 ? 'Slipping' : 'Behind'); }
