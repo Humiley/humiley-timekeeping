@@ -21102,6 +21102,19 @@ function _pmDerive(coll, data) {
     else { data.closedDate = ''; }
   }
 }
+/* Order a register by its document number the way a person reads one: by the PREFIX, then by the
+   trailing digits as a NUMBER. Plain `localeCompare` puts 10 before 2 and MEG-ITP-100 before
+   MEG-ITP-99; comparing the whole string numerically cannot cope with a prefix at all. Records
+   nobody has numbered yet go LAST — the end of the register is where an unnumbered row belongs. */
+function _pmDocNoCmp(f) {
+  return (a, b) => {
+    const sa = String((a || {})[f] || '').trim(), sb = String((b || {})[f] || '').trim();
+    if (!sa !== !sb) return sa ? -1 : 1;
+    const ma = sa.match(/^(.*?)(\d+)\s*$/), mb = sb.match(/^(.*?)(\d+)\s*$/);
+    if (ma && mb) return ma[1].localeCompare(mb[1]) || (+ma[2] - +mb[2]);
+    return sa.localeCompare(sb);
+  };
+}
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
 const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' } };
 function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
@@ -22464,6 +22477,10 @@ function _pmSortRows(coll, cols, rows) {
   // passed on DATE columns and every comparison became (NaN||0)-(NaN||0) === 0. Clicking a date header
   // flipped the arrow and reordered nothing at all, on both tkFmtDate and ISO columns.
   const numify = v => { const t = String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); if (t === '' || t === '-') return null; const n = +t; return isFinite(n) ? n : null; };
+  /* "No value", in every form the table can produce one: a missing field, an empty string, and
+     the em dash a render function prints for an empty cell. Declared here because BOTH branches
+     below need it — the date branch had its own, subtly wrong, handling. */
+  const _blank = v => v == null || v === '' || v === '\u2014';
   const vals = rows.map(r => _pmCell(col, r));
   // Date columns get a real chronological sort, checked BEFORE the numeric branch. Detected with
   // explicit patterns rather than _dateKey truthiness, so a plain number column is never mistaken for
@@ -22471,9 +22488,35 @@ function _pmSortRows(coll, cols, rows) {
   // other column.
   const _dOK = v => /^\d{4}-\d{2}-\d{2}/.test(String(v)) || /^[A-Za-z]{3}-\d{1,2}-\d{2}$/.test(String(v));
   const allDate = vals.some(_dOK) && vals.every(v => !v || v === '—' || _dOK(v));
-  if (allDate) { const byDate = _cmpNewest(r => _pmCell(col, r)); return rows.slice().sort((a, b) => byDate(a, b) * -so.dir); }
-  const allNum = vals.length > 0 && vals.every(v => v === '' || v == null || numify(v) !== null);
-  return rows.slice().sort((a, b) => { const x = _pmCell(col, a), y = _pmCell(col, b); if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir; });
+  /* `_cmpNewest` already sends undated rows to the end — but it is a DESCENDING comparator, and
+     `* -so.dir` flips its whole result, blanks included. So ascending by a date column put every
+     undated row FIRST: click "Planned" on the ITP register and the plans nobody has scheduled led
+     the list, above the one starting tomorrow. Decide blankness before handing over to the date
+     comparison, so an empty cell is last whichever way the arrow points. */
+  if (allDate) {
+    const byDate = _cmpNewest(r => _pmCell(col, r));
+    return rows.slice().sort((a, b) => {
+      const x = _pmCell(col, a), y = _pmCell(col, b);
+      if (_blank(x) !== _blank(y)) return _blank(x) ? 1 : -1;
+      return byDate(a, b) * -so.dir;
+    });
+  }
+  /* A row with NO value must not decide the type of the column. `_pmCell` renders an empty cell
+     as the em dash the table prints, so a single unnumbered ITP made `numify` return null, `allNum`
+     go false, and the WHOLE column fall back to localeCompare — where "10" sorts before "2" and a
+     register numbered 1..99 reads 1, 10, 100, 11, 12 … 2, 20. One blank row scrambled the numbering
+     of every other row, which is exactly what the ITP register was showing. The date branch
+     immediately above already allowed '—' for this reason; the numeric branch did not.
+     Blanks then sort LAST in both directions rather than counting as zero: a record nobody has
+     numbered yet belongs at the end of the register, not in front of number 1. Same rule the
+     Detail Schedule uses for a line that reports against nothing. */
+  const allNum = vals.length > 0 && vals.every(v => _blank(v) || numify(v) !== null);
+  return rows.slice().sort((a, b) => {
+    const x = _pmCell(col, a), y = _pmCell(col, b);
+    if (_blank(x) !== _blank(y)) return _blank(x) ? 1 : -1;
+    if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir;
+    return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir;
+  });
 }
 /* A cell for the long free-text these forms collect. Four of them were written and displayed
    nowhere: the mitigation plan behind a risk's one-word strategy, a stakeholder's engagement
@@ -26146,10 +26189,14 @@ function pmRenderQuality(pid) {
       : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>') }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
-    { label: 'ITP No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
+    { label: 'ITP No.', sk: 'itpNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' }, { label: 'Package', k: 'discipline' },
     { label: 'Standard', k: 'standardRef' }, { label: 'Planned', sk: 'plannedStart', render: r => (r.plannedStart || r.plannedFinish) ? _pmFmt(r.plannedStart) + (r.plannedFinish && r.plannedFinish !== r.plannedStart ? ' → ' + _pmFmt(r.plannedFinish) : '') : '—' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
-  ], itp.slice().sort(_cmpNewest('plannedStart'))));   // a COPY: the timeline below must stay ascending
+    /* The register opens in ITP-number order — 1, 2, 3 — because that is the order the plans are
+       written, referenced and signed off in, and it is how anyone looking for ITP 47 expects to
+       find it. It used to open newest-planned-first, which reads as no order at all once the
+       planned dates cluster. Still a COPY: the timeline below must stay in date order. */
+  ], itp.slice().sort(_pmDocNoCmp('itpNo'))));
   _pmSet(kpis + tbl + _pmItpTimeline(itp) + itpTbl);
 }
 
