@@ -253,8 +253,29 @@ def application(c, certified_this, state=None):
     if t["recoveryRule"] == REC_PRORATA:
         rec = r2(this * adv_pct / 100.0)
     elif t["recoveryRule"] == REC_FROM_PCT:
+        # A threshold of zero is not "recover from the start" — that rule already exists and is
+        # called prorata. It is a threshold nobody entered, and until there was a field for it there
+        # was no way to enter one: every contract on this rule recovered from claim #1 while its
+        # terms said the deposit was protected until an agreed percentage. Refuse rather than behave
+        # as a different rule, because the number goes on a certificate a director signs.
+        if t["recoveryFromPct"] <= 0 and sched["total"]:
+            return {"ok": False,
+                    "why": "This contract recovers the %s deposit only from an agreed %% complete, "
+                           "but no threshold is set — so it would recover from the first claim, "
+                           "which is the other rule. Set the threshold on the contract's terms."
+                           % _vnd(sched["total"])}
         rec = r2(this * adv_pct / 100.0) if pct_complete >= t["recoveryFromPct"] else 0.0
     elif t["recoveryRule"] == REC_MANUAL:   # the caller says, and the balance still binds
+        # `None` is "nobody said", and it used to mean ₫0 — so a contract on this rule recovered
+        # nothing on every claim, for the life of the job, while the screen said the balance must
+        # still reach zero. There was no field to say otherwise. An explicit 0 is a real answer
+        # ("recover nothing this time") and is honoured; a missing one is refused.
+        if st.get("recoverNow") is None and adv_out > 0:
+            return {"ok": False,
+                    "why": "This contract decides advance recovery per claim, and this claim does "
+                           "not say how much of the %s still outstanding it recovers. Enter the "
+                           "amount on the claim — ₫0 is a valid answer, but it has to be chosen."
+                           % _vnd(adv_out)}
         rec = r2(st.get("recoverNow"))
     elif not t["recoveryRule"]:
         # No rule AND no deposit — there is nothing to recover, so ₫0 is the answer, not a default.

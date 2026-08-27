@@ -144,3 +144,21 @@ def test_the_classes_are_the_published_ones_not_invented():
     assert keys == ["5", "4", "3", "2", "1"]
     assert tender.ACCURACY_BY_KEY["1"][1] == -3.0 and tender.ACCURACY_BY_KEY["1"][2] == 10.0
     assert tender.ACCURACY_BY_KEY["5"][1] == -20.0 and tender.ACCURACY_BY_KEY["5"][2] == 50.0
+
+
+def test_the_range_never_reads_backwards():
+    """The class percentages run low-to-high, which orders the MONEY only while the money is
+    positive. On a negative net — a credit, a line entered with a minus — a -20%/+50% band came out
+    as "as low as -80m, as high as -150m" under exactly those two labels, with a negative spread
+    beneath it. Nothing errors; it just says the opposite of what it means."""
+    seen = 0
+    for net in (1_000_000_000, 0, -100_000_000):
+        for row in tender.ACCURACY_CLASSES:
+            a = tender.accuracy({"accuracyClass": row[0]}, {"net": net})
+            # Without this, an unrecognised key would return the 'unstated' shape, where low and
+            # high are both the net — and every assertion below would pass while testing nothing.
+            assert a["stated"] is True, "the loop is not feeding accuracy() real classes"
+            assert a["low"] <= a["high"], (row[0], net, a["low"], a["high"])
+            assert a["spread"] >= 0, (row[0], net, a["spread"])
+            seen += 1
+    assert seen == 3 * len(tender.ACCURACY_CLASSES) >= 15

@@ -470,8 +470,16 @@ def package_cost(pkg, a):
         rate = _num(e.get("rate")) or _num(a.get("rate" + grade.title())) or GRADE_RATE.get(grade, 0)
         cost = vnd(days * rate)
         labour += cost
+        # Days that cost nothing are days quoted for free, and `GRADE_RATE.get(grade, 0)` will hand
+        # out exactly that for any grade it does not recognise — a typo, an import from a rate card
+        # whose grade codes differ, or a grade retired from GRADES while packages still reference
+        # it. Every one of those produced a package priced at zero that read on screen as though it
+        # had been costed. The cost still computes (refusing to price a stored tender would take
+        # the whole summary down over one bad row); it is the SILENCE that is fixed.
         effort.append({"grade": grade, "label": GRADE_LABEL.get(grade, grade),
-                       "days": days, "rate": vnd(rate), "cost": cost})
+                       "days": days, "rate": vnd(rate), "cost": cost,
+                       "unpriced": bool(days and not rate),
+                       "unknownGrade": grade not in GRADE_RATE})
 
     people = _num(pkg.get("travelPeople"))
     trips = _num(pkg.get("travelTrips"))
@@ -502,6 +510,10 @@ def package_cost(pkg, a):
                     or pkg.get("optional") is True,
         "effort": effort,
         "days": round(sum(e["days"] for e in effort), 2),
+        # Carried on the package, not just the row, so a handful of free days cannot hide inside a
+        # package whose other grades priced normally and whose total therefore looks healthy.
+        "unpricedDays": round(sum(e["days"] for e in effort if e["unpriced"]), 2),
+        "unknownGrades": sorted({e["grade"] for e in effort if e["unknownGrade"] and e["days"]}),
         "labour": labour,
         "expenseDetail": {"travel": trip_cost, "hotel": hotel, "perDiem": per_diem, "other": other},
         "expenses": expenses,
@@ -540,6 +552,8 @@ def services_rollup(packages, a, config=None):
         "packages": rows,
         "packageCount": len(rows),
         "days": days,
+        "unpricedDays": round(sum(r["unpricedDays"] for r in rows), 2),
+        "unknownGrades": sorted({g for r in rows for g in r["unknownGrades"]}),
         "labour": sum(r["labour"] for r in rows),
         "expenses": sum(r["expenses"] for r in rows),
         "cost": cost,
@@ -639,15 +653,14 @@ def quotation(tender, master=None, rollup=None, overrides=None):
                 "vatPct": round(vat, 4), "vat": vnd(net * _frac(vat)),
                 "gross": net + vnd(net * _frac(vat)), "cogs": p["cost"],
                 # The client's tender form asks for professional fee and travel & expenses
-                # separately. The letterhead table is built on the template's seven fixed columns,
-                # so rather than restructure a customer-facing document the split travels as a
-                # sub-line under the description — the same information, and it renders identically
-                # in the PDF, the on-screen preview and the Excel export instead of only in
-                # whichever of the three got new columns.
+                # separately, and they now have COLUMNS of their own — see tender.columns().
+                #
+                # These same two figures used to be printed as a sub-line under the description,
+                # because the table had no room for them. With the columns in place that sub-line
+                # became the same numbers twice on one row of a customer's quotation, so it is
+                # gone. A document that says a thing twice invites the reader to look for the
+                # difference between the two statements.
                 "professionalFee": p["professionalFee"], "expenses": p["expensesQuoted"],
-                "descNote": ("Professional fee %s  ·  Travel & expenses %s  ·  %s consultant days"
-                             % (format(p["professionalFee"], ","), format(p["expensesQuoted"], ","),
-                                ("%g" % p["days"]))) if p["days"] else "",
                 "durationMonths": p["durationMonths"], "days": p["days"],
             })
     else:
@@ -675,7 +688,15 @@ def quotation(tender, master=None, rollup=None, overrides=None):
     # its VAT relieved on the wrong base. apportion() is the same largest-remainder splitter used
     # for preliminaries and the cash-flow spread, so the parts sum to the whole exactly — a
     # discount that loses a dong to rounding makes the customer's own arithmetic fail to add up.
-    disc_pct = _num(tender.get("discountPct"))
+    # A discount is a share of the price, so it lives in 0..100. Outside that it stops being a
+    # discount: 150 (a typo for 15, one keystroke) produced a NEGATIVE invoice — negative net,
+    # negative VAT, a grand total owed by us to the customer — and every downstream figure, P&L and
+    # cash flow included, followed it down without a word. A negative percentage silently put the
+    # price UP. Capped rather than rejected, because a stored tender must still open; what was
+    # asked for is kept beside what was applied so the difference can be shown rather than hidden.
+    asked_pct = _num(tender.get("discountPct"))
+    disc_pct = min(max(asked_pct, 0.0), 100.0)
+    capped_disc = asked_pct != disc_pct
     disc_frac = _frac(disc_pct)
     discount = vnd(subtotal * disc_frac)
     if discount and subtotal:
@@ -693,6 +714,15 @@ def quotation(tender, master=None, rollup=None, overrides=None):
 
     net = subtotal - discount
     vat = sum(l["vat"] for l in lines)
+
+    # Facts about what is wrong with this price, not sentences about it. issue_check() is where a
+    # tender says what should be looked at before it is sent, and it already had a list; a second
+    # list computed somewhere else is how two surfaces come to say different things about one
+    # quotation. What lands here is only what this function can see and that one cannot.
+    unpriced_lines = [str(l.get("desc") or l.get("id") or "?")
+                      for l in lines if _num(l.get("qty")) > 0 and _num(l.get("net")) <= 0]
+    src = rollup or {}
+
     return {
         "costingType": ctype,
         "lines": lines,
@@ -703,10 +733,19 @@ def quotation(tender, master=None, rollup=None, overrides=None):
         # that is revenue.
         "subtotal": subtotal,
         "discountPct": round(disc_pct, 4),
+        "discountPctAsked": round(asked_pct, 4),
+        "discountCapped": capped_disc,
         "discount": discount,
         "net": net,
         "vat": vat,
         "gross": net + vat,
+        # A line with a quantity and no money: "we forgot to price this", carried by name so the
+        # warning can say WHICH line rather than that there is one.
+        "unpricedLines": unpriced_lines,
+        # Days of effort that cost nothing — see package_cost(). Carried up from the rollup because
+        # the quotation is the only object every caller has.
+        "unpricedDays": _num(src.get("unpricedDays")),
+        "unknownGrades": list(src.get("unknownGrades") or []),
         "grossProfit": net - cogs,
         "grossMarginPct": round((net - cogs) / net * 100, 2) if net else 0.0,
         # The effective mark-up actually taken across the whole quotation — the one number that
@@ -826,6 +865,12 @@ def revision(tender, quote, elements=None, note=""):
         "net": _num(quote.get("net")),
         "cogs": _num(quote.get("cogs")),
         "gross": _num(quote.get("gross")),
+        # The lines below are frozen at their PRE-discount value, because that is what a line is
+        # worth; the discount is a fact about the document. Both numbers have to be here or the
+        # difference between them lands in `unexplained`, which is the signal reserved for a change
+        # no line accounts for — see compare_revisions().
+        "subtotal": _num(quote.get("subtotal")),
+        "discount": _num(quote.get("discount")),
         "discountPct": _num(quote.get("discountPct")),
         "grossMarginPct": _num(quote.get("grossMarginPct")),
         "labourPct": _num((elements or {}).get("labourPct")),
@@ -840,6 +885,40 @@ def revision(tender, quote, elements=None, note=""):
     }
 
 
+def _diff_index(rev):
+    """Index a revision's lines for comparison, losing none of them.
+
+    Two faults this replaces, both of which produced a WRONG NUMBER rather than an error — which is
+    the only kind worth writing a helper for:
+
+    DUPLICATE IDS. `{l["id"]: l for l in lines}` keeps the last line with a given id and discards
+    the rest. Two rows sharing an id — an import run twice, a package copied — silently became one,
+    and the diff then compared the wrong pair while reporting a confident attribution. Duplicates
+    are now AGGREGATED: for the purpose of "what moved", two rows in the same position are one
+    position, and their money adds up instead of one of them evaporating.
+
+    MISSING IDS. `if l.get("id")` dropped them entirely, so a whole line could vanish between two
+    revisions with no row saying so. The movement then surfaced as `unexplained` — the signal
+    reserved for a discount or a changed mark-up — which is worse than silence: it is a specific
+    wrong answer. A line without an id falls back to its DESCRIPTION, and only then to its
+    position; description survives reordering and position does not.
+    """
+    out = {}
+    for i, l in enumerate(list((rev or {}).get("lines", []))):
+        key = str(l.get("id") or "").strip() or str(l.get("desc") or "").strip() or ("#%d" % i)
+        prev = out.get(key)
+        if prev is None:
+            out[key] = dict(l)
+            continue
+        # Same position, two rows: add the money, keep the first description, and mark the unit
+        # rate as no longer meaningful — an aggregate of two rates is not a rate anybody quoted.
+        prev["net"] = _num(prev.get("net")) + _num(l.get("net"))
+        prev["qty"] = _num(prev.get("qty")) + _num(l.get("qty"))
+        prev["unitCost"] = None
+        prev["aggregated"] = True
+    return out
+
+
 def compare_revisions(before, after):
     """What moved between two revisions, biggest mover first.
 
@@ -847,8 +926,7 @@ def compare_revisions(before, after):
     asked is "why did the price change" and the answer is almost always two or three lines. An
     alphabetical list of forty rows, thirty-seven of them unchanged, buries it.
     """
-    a = {l["id"]: l for l in (before or {}).get("lines", []) if l.get("id")}
-    b = {l["id"]: l for l in (after or {}).get("lines", []) if l.get("id")}
+    a, b = _diff_index(before), _diff_index(after)
     rows = []
     for key in sorted(set(a) | set(b)):
         was, now = a.get(key), b.get(key)
@@ -881,6 +959,26 @@ def compare_revisions(before, after):
     was_net = _num((before or {}).get("net"))
     now_net = _num((after or {}).get("net"))
     explained = sum(r["delta"] for r in rows)
+
+    # THE DISCOUNT IS NOT AN UNEXPLAINED MOVEMENT.
+    #
+    # Lines are frozen pre-discount; the header net is post-discount. So on any tender carrying a
+    # discount, re-pricing a line moved the two by different amounts and the difference — the
+    # discount's own share, moving in step, entirely explainable — was reported as `unexplained`.
+    # That is the label reserved for a change no line accounts for: a mark-up somebody altered, a
+    # discount PERCENTAGE somebody changed. A phantom residual on every ordinary re-price does not
+    # just mislead, it drowns the signal it is competing with.
+    #
+    # Attributed as its own component now. Revisions taken before this carry no `subtotal`, and
+    # there is no honest way to recover the discount from what they do carry, so they say the
+    # attribution is unavailable rather than implying a zero.
+    known = "subtotal" in (before or {"subtotal": 0}) and "subtotal" in (after or {})
+    disc_moved = (_num((after or {}).get("discount")) - _num((before or {}).get("discount"))
+                  if known else None)
+    # More discount given away moves the price DOWN, hence the sign.
+    disc_effect = -disc_moved if known else 0.0
+    unexplained = (now_net - was_net) - explained - disc_effect
+
     return {
         "rows": rows,
         "changed": len(rows),
@@ -893,7 +991,12 @@ def compare_revisions(before, after):
         # mark-up, a project fee. Reported rather than hidden: an unexplained difference is the one
         # worth looking at, and rounding it into the line list would lose it.
         "explainedByLines": explained,
-        "unexplained": (now_net - was_net) - explained,
+        # How much of the movement is the discount changing, and whether that could be worked out
+        # at all. `None` means this pair predates the record of it — not that it was nothing.
+        "discountMoved": disc_moved,
+        "discountEffect": disc_effect if known else None,
+        "discountKnown": known,
+        "unexplained": unexplained,
         "marginMoved": round(_num((after or {}).get("grossMarginPct"))
                              - _num((before or {}).get("grossMarginPct")), 2),
     }
@@ -960,7 +1063,12 @@ def accuracy(tender, quote=None):
                 "lowPct": 0.0, "highPct": 0.0, "low": net, "high": net, "maturity": "",
                 "spread": 0}
     label, lo, hi, maturity, note = ACCURACY_BY_KEY[key]
-    low, high = vnd(net * (1 + lo / 100.0)), vnd(net * (1 + hi / 100.0))
+    # Ordered rather than assumed. The percentages run low-to-high, which orders the money only
+    # while the money is positive: on a negative net — a credit, a line entered with a minus — the
+    # -20%/+50% band comes out as "as low as -80m, as high as -150m", read straight off the screen
+    # under those two labels, with a negative spread beneath it. Nothing errors; it simply says the
+    # opposite of what it means.
+    low, high = sorted((vnd(net * (1 + lo / 100.0)), vnd(net * (1 + hi / 100.0))))
     return {"key": key, "stated": True, "label": label, "note": note, "maturity": maturity,
             "lowPct": lo, "highPct": hi, "low": low, "high": high, "spread": high - low}
 
@@ -1613,6 +1721,46 @@ def issue_check(tender, quote):
     # The discount cap was declared as an assumption — "Maximum discount sales may offer without
     # approval" — and referenced by nothing. A control nobody enforces is not a control; it reads
     # like governance in the settings screen while any discount whatsoever went out unremarked.
+    # A discount that is not a share of the price. 150 is one keystroke from 15, and it used to
+    # produce a negative net, a negative VAT and a grand total the company owed the customer, with
+    # the P&L and the cash flow following it down without a word. quotation() now caps it; this is
+    # what says so, because a number silently corrected is the same class of problem as a number
+    # silently wrong.
+    if quote.get("discountCapped"):
+        warnings.append("A discount of %.1f%% was entered; %.1f%% was applied. A discount is a "
+                        "share of the price, so it can be neither negative nor greater than the "
+                        "price itself."
+                        % (_num(quote.get("discountPctAsked")), _num(quote.get("discountPct"))))
+
+    # Work that costs nothing. An unrecognised grade — a typo, a rate card with different codes, a
+    # grade retired while packages still reference it — priced at zero and read on screen as though
+    # it had been costed.
+    if _num(quote.get("unpricedDays")):
+        unknown = quote.get("unknownGrades") or []
+        warnings.append("%s day(s) of effort are priced at a rate of zero%s. Days that cost "
+                        "nothing are days quoted for free."
+                        % (_num(quote["unpricedDays"]),
+                           " — unrecognised grade(s): " + ", ".join(unknown) if unknown else ""))
+
+    # The amount in words against the amount in figures. The words are typed once; the figures
+    # move underneath them — a discount, a re-priced line, a new revision — and nobody re-reads a
+    # sentence they wrote last week. A letter whose words and figures disagree is worse than one
+    # with no words at all: in a Vietnamese contract the written amount is commonly the one that
+    # governs. This cannot read the sentence, but the total it was written against is stamped
+    # beside it, and two numbers can be compared.
+    words = str(tender.get("amountInWords") or "").strip()
+    stamped = tender.get("amountInWordsFor")
+    if words and stamped is not None and _num(stamped) != _num(quote.get("gross")):
+        warnings.append("The amount in words was written for a total of %s VND; the total is now "
+                        "%s VND. The letter says two different things."
+                        % (format(int(_num(stamped)), ","), format(int(_num(quote.get("gross"))), ",")))
+
+    free = quote.get("unpricedLines") or []
+    if free:
+        warnings.append("%d line(s) carry a quantity but no money: %s. A zero in a tender reads as "
+                        "\"we forgot to price this\"."
+                        % (len(free), ", ".join(free[:4]) + (" …" if len(free) > 4 else "")))
+
     a = assumptions(tender.get("assump"))
     cap = _num(a.get("discountCapPct"))
     given = _num(quote.get("discountPct", tender.get("discountPct")))
@@ -1757,6 +1905,49 @@ def doc_kind(tender):
     return "Quotation"
 
 
+# WHAT THE PRICED TABLE'S SEVEN COLUMNS MEAN, decided once, on the server.
+#
+# The letterhead template gives seven columns and no more, so this is not a choice about how many
+# but about what they carry. Goods are sold by quantity at a rate; a consultancy engagement is not.
+# "Qty 1, Unit: package" is a column pair saying nothing, printed beside a fee whose two halves —
+# professional time and travel — the client's own tender form asks for separately.
+#
+# Emitted from here rather than repeated in each renderer. The same seven headers were written out
+# three times (PDF, on-screen preview, Excel), which is exactly the arrangement that let the
+# discount be applied differently by each of four surfaces: the moment they disagree, the letter a
+# customer holds and the file they open stop being the same document.
+#
+# Renderers still FORMAT — a PDF draws money as text and Excel writes it as a number — but they no
+# longer decide what a column is.
+
+COLUMNS_DEFAULT = [
+    {"key": "idx", "label": "#", "align": "center"},
+    {"key": "itemCode", "label": "Item", "align": "left"},
+    {"key": "desc", "label": "Description", "align": "left"},
+    {"key": "qty", "label": "Qty", "align": "center"},
+    {"key": "unit", "label": "Unit", "align": "center"},
+    {"key": "unitSell", "label": "Unit Price (VND)", "align": "right", "money": True},
+    {"key": "net", "label": "Amount (VND)", "align": "right", "money": True},
+]
+
+COLUMNS_SERVICES = [
+    {"key": "idx", "label": "#", "align": "center"},
+    # The evaluator cross-checks this against their requirement spec, so it is named for what it
+    # is rather than left as a generic "Item".
+    {"key": "itemCode", "label": "URS Ref.", "align": "left"},
+    {"key": "desc", "label": "Scope of Services", "align": "left"},
+    {"key": "days", "label": "Days", "align": "center"},
+    {"key": "professionalFee", "label": "Professional Fee (VND)", "align": "right", "money": True},
+    {"key": "expenses", "label": "Travel & Expenses (VND)", "align": "right", "money": True},
+    {"key": "net", "label": "Total Price (VND)", "align": "right", "money": True},
+]
+
+
+def columns(tender):
+    ctype = str(tender.get("costingType") or TRADING).strip().lower()
+    return COLUMNS_SERVICES if ctype == SERVICES else COLUMNS_DEFAULT
+
+
 def document(tender, quote, company=None):
     """The quotation as the customer will read it — shaped as the LETTERHEAD, not as a data table.
 
@@ -1835,6 +2026,7 @@ def document(tender, quote, company=None):
                     or ("Sales Quotation No. " + (tender.get("quoteNo") or "")
                         + (" — " + tender["projectName"] if tender.get("projectName") else ""))),
         "docKind": doc_kind(tender),
+        "columns": columns(tender),
         "termsParagraph": terms_paragraph(tender),
         "conditions": conditions(tender),
         "conditionsAreDefault": is_default_conditions(tender),

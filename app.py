@@ -3720,6 +3720,12 @@ class Handler(BaseHTTPRequestHandler):
     # gzip text responses: the single-file app HTML is ~1.6 MB raw — uncompressed it took
     # seconds per open on 4G (the "app feels flat/slow on mobile" complaint). ~5x smaller gzipped.
     GZIP_TYPES = ("text/", "application/json", "application/javascript", "application/manifest+json", "image/svg+xml")
+    # `no-cache` does NOT mean "do not store" — it means "store it, but never hand it over without
+    # asking me first". That is precisely what is wanted: the browser keeps the last body, and the
+    # next request is a revalidation that ends in 304 whenever nothing changed. `private` keeps it
+    # out of any shared cache, which user-scoped data must never enter.
+    JSON_CACHE = "private, no-cache, must-revalidate"
+    JSON_VARY = "Accept-Encoding, Authorization"
 
     def _accepts_gzip(self):
         return "gzip" in (self.headers.get("Accept-Encoding") or "")
@@ -3742,6 +3748,34 @@ class Handler(BaseHTTPRequestHandler):
                              "geolocation=(self), camera=(), microphone=(), payment=(), usb=()")
 
     def _send(self, body, ctype, status=200, cache=None):
+        # ── Conditional GET on read-only JSON ──────────────────────────────────────────────────
+        # /api/coll and friends had NO validator of any kind: no ETag, no Last-Modified, nothing.
+        # Every open of a screen re-serialised, re-compressed and re-sent the WHOLE collection even
+        # when not one byte had changed since the last request thirty seconds earlier. On a project
+        # carrying a 500-activity master schedule and a ~400-line detail programme whose rows each
+        # accumulate a per-day log, that is the dominant cost of opening the Schedule tab, and it is
+        # paid again on every tab switch, every navigation back in, and every expiry of the 45s
+        # client cache.
+        #
+        # The validator is a hash of the RESPONSE BODY, which is already scoped to the caller by
+        # every guard in _coll_list — so two accounts entitled to different rows get different
+        # bodies and therefore different tags. It cannot be used to read somebody else's data.
+        # WEAK ("W/") because the same resource is served gzipped or plain depending on the request;
+        # a weak validator is exactly what a conditional GET wants and is what Vary is for.
+        #
+        # No client change is needed: fetch() with the default cache mode revalidates on its own and
+        # hands JavaScript the cached 200 body, so nothing in the app ever sees a 304.
+        etag = None
+        if status == 200 and self.command == "GET" and ctype.startswith("application/json"):
+            etag = 'W/"%s"' % hashlib.sha256(body).hexdigest()[:32]
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", cache or self.JSON_CACHE)
+                self.send_header("Vary", self.JSON_VARY)
+                self._emit_sec_headers(ctype)
+                self.end_headers()
+                return
         gz = (
             len(body) > 1024
             and self._accepts_gzip()
@@ -3756,9 +3790,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         if gz:
             self.send_header("Content-Encoding", "gzip")
-        self.send_header("Vary", "Accept-Encoding")
-        if cache:
-            self.send_header("Cache-Control", cache)
+        # Authorization joins the Vary key on anything carrying a validator. The tag alone already
+        # makes cross-account reuse impossible (a different entitlement is a different body is a
+        # different tag), but keeping the token in the cache key means a second account on a shared
+        # device never even reaches for the first one's entry.
+        self.send_header("Vary", self.JSON_VARY if etag else "Accept-Encoding")
+        if etag:
+            self.send_header("ETag", etag)
+        if cache or etag:
+            self.send_header("Cache-Control", cache or self.JSON_CACHE)
         self._emit_sec_headers(ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -3871,6 +3911,56 @@ class Handler(BaseHTTPRequestHandler):
     # structured log + optional webhook alert) and turned into a clean 500 instead of a reset
     # connection. The real routing lives in _do_get/_do_post/_do_patch/_do_delete.
     def do_GET(self):    self._serve_request("GET", self._do_get)
+
+    def do_HEAD(self):
+        """Same status and headers as GET, no body.
+
+        BaseHTTPRequestHandler answers 501 for any verb it has no do_* for, so every HEAD reached
+        this server as "Not Implemented" — including HEAD /api/health, which exists for exactly one
+        audience: uptime monitors. UptimeRobot, Pingdom and most others probe with HEAD by default
+        and would have reported portal.humiley.com down while it was serving every real request
+        perfectly. Nothing a browser does is affected, which is why it went unnoticed.
+
+        Implemented by running the ordinary GET and discarding the body rather than by duplicating
+        the routing: a second copy of "which path returns what" is a second thing to keep in step,
+        and the first time they disagree HEAD starts lying about a page it never rendered.
+
+        Content-Length is left as GET computed it. RFC 9110 §9.3.2 requires HEAD to carry the
+        header fields it WOULD have sent, so reporting the real body size is the correct answer,
+        not an inconsistency to tidy away.
+        """
+        real = self.wfile
+        state = {"headers_done": False}
+
+        class _BodySink:
+            """Lets the header block through, swallows whatever follows."""
+            def write(self, data):
+                if state["headers_done"]:
+                    return len(data)
+                return real.write(data)
+            def flush(self):
+                return real.flush()
+
+        end_headers = self.end_headers
+
+        def _end_headers():
+            end_headers()
+            state["headers_done"] = True
+
+        self.wfile = _BodySink()
+        self.end_headers = _end_headers
+        try:
+            self.do_GET()
+        finally:
+            self.wfile = real
+            # Remove the instance attribute so the class method is visible again; a handler is
+            # reused across keep-alive requests on the same connection, and leaving the override
+            # in place would silence the body of the NEXT GET on that socket.
+            self.__dict__.pop("end_headers", None)
+            try:
+                real.flush()
+            except Exception:
+                pass
     def do_POST(self):   self._serve_request("POST", self._do_post)
     def do_PATCH(self):  self._serve_request("PATCH", self._do_patch)
     def do_DELETE(self): self._serve_request("DELETE", self._do_delete)
@@ -4365,13 +4455,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/zones":
             return self._guard(lambda u: self._json({"id": db.create_zone(body)}), manager=True)
         if path.startswith("/api/coll/"):
-            name = path[len("/api/coll/"):].split("/")[0]
+            _parts = path[len("/api/coll/"):].split("/")
+            name = _parts[0]
             # `hrdocs` is exempt from the blunt role=="manager" door so it can reach _coll_add, where
             # _is_hr_admin is the real gate. Being NAMED as HR is the grant, and the HR officer who
             # writes the policies is often plain staff — this guard would refuse her at the route
             # before the grant was ever consulted. Same reason `devices` is exempt on PATCH.
-            return self._guard(lambda u: self._coll_add(u, name, body),
-                               manager=(name not in self.STAFF_WRITE and name != "hrdocs"))
+            _mgr = (name not in self.STAFF_WRITE and name != "hrdocs")
+            # /api/coll/<name>/bulk — many rows, one request. Deliberately the SAME route guard as
+            # the single-item POST beside it, and each row then goes through the same _coll_add:
+            # a bulk endpoint whose door is even slightly different from the one-at-a-time door is
+            # a second way in that no per-collection guard is watching.
+            if len(_parts) > 1 and _parts[1] == "bulk":
+                return self._guard(lambda u: self._coll_add_bulk(u, name, body), manager=_mgr)
+            return self._guard(lambda u: self._coll_add(u, name, body), manager=_mgr)
         return self._err("Not found.", 404)
 
     def _do_patch(self):
@@ -5157,6 +5254,45 @@ class Handler(BaseHTTPRequestHandler):
             if not (is_mgr or self._eng_is_lead(u, proj)):
                 return ("A stage gate is decided by the Design Manager or Lead Engineer named on "
                         "the commission.")
+            # A gate criterion used to be a sentence somebody ticked. Every register added since
+            # can answer some of them as fact, and a clean PASS asserts those facts are true. Where
+            # the register says otherwise the gate is not clean — but "Passed with actions" exists
+            # precisely for a gate that goes through carrying known work, so this refuses only the
+            # unqualified pass and names what is in the way. A gate that cannot be passed at all
+            # would be worked around by not recording the gate.
+            if t == "passed":
+                _blockers = []
+                _holds = [h for h in db.list_collection("eng_holds")
+                          if self._eng_project_of(h) == proj
+                          and str(h.get("kind") or "hold").strip().lower() == "hold"
+                          and str(h.get("status") or "open").strip().lower() in ("open", "raised")]
+                if _holds:
+                    _blockers.append("%d open HOLD(s): %s" % (
+                        len(_holds), ", ".join(str(h.get("ref") or h.get("title") or "?")
+                                               for h in _holds[:4])))
+                _devs = [d for d in db.list_collection("eng_deviations")
+                         if self._eng_project_of(d) == proj
+                         and str(d.get("decision") or "").strip().lower() not in
+                             ("approved", "rejected", "withdrawn", "closed")]
+                if _devs:
+                    _blockers.append("%d departure(s) from an adopted standard still to be agreed: %s" % (
+                        len(_devs), ", ".join(str(d.get("ref") or d.get("title") or "?")
+                                              for d in _devs[:4])))
+                _risks = [r for r in db.list_collection("eng_risks")
+                          if self._eng_project_of(r) == proj
+                          and str(r.get("status") or "").strip().lower() in
+                              ("transferred", "transfer to others", "residual")
+                          and not str(r.get("informedBy") or "").strip()]
+                if _risks:
+                    _blockers.append("%d residual risk(s) passed on with no record of who was told: %s" % (
+                        len(_risks), ", ".join(str(r.get("ref") or r.get("hazard") or "?")
+                                               for r in _risks[:4])))
+                if _blockers:
+                    return ("This gate cannot be passed clean while the registers say otherwise — "
+                            + "; ".join(_blockers) + ". Close them, or sign the gate as 'Passed "
+                            "with actions' and record what is being carried forward. A gate that "
+                            "says everything is done when the register says it is not is the "
+                            "document nobody can rely on afterwards.")
             return None
 
         if coll == "eng_changes":
@@ -5172,6 +5308,23 @@ class Handler(BaseHTTPRequestHandler):
                     (self._pm_same_person(_orig, u.get("name"))
                      or str(_orig).strip().lower() == str(u.get("name") or "").strip().lower()):
                 return "A change is authorised by somebody other than the person who raised it."
+            # Who pays is part of the decision, not a thing to settle afterwards. A change approved
+            # with chargeability still "to be agreed" is work that starts before anybody has said
+            # whose budget it comes out of, and the answer arrives after the hours are spent —
+            # which is the moment the office has the least leverage and the client the most.
+            # Only a DELIBERATE deferral blocks. A blank field is a record made before anybody
+            # asked the question — often an older one — and refusing those would break approvals
+            # that were legitimate when they were raised. "To be agreed" is different: somebody
+            # looked at it and put it off, and the deferral is what settles against us later. The
+            # money is caught for certain at implementation, where the work is actually done.
+            if t == "approved":
+                _cc = str(rec.get("clientChargeable") or "").strip().lower()
+                if _cc.startswith("to be agreed"):
+                    return ("Decide who pays for this change before approving it. 'To be agreed' "
+                            "settles itself after the hours are spent, and it settles against us. "
+                            "Mark it chargeable and raise the variation, or record that we are "
+                            "absorbing it — absorbing is a decision somebody should be seen to "
+                            "make.")
             return None
 
         if coll == "eng_transmittals":
@@ -7062,20 +7215,164 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
     @staticmethod
-    def _late_threshold(schedule):
-        """Work schedules are ADVISORY: they set the lateness expectation (shift start
-        + 15 min grace) and NEVER block a check-in. Flexible/WFH staff are never late;
-        employees without an assigned schedule fall back to the standard 08:00 + grace."""
+    def _grace_for(schedule_name, default=15):
+        """The grace minutes the schedule ACTUALLY carries, instead of a constant.
+
+        The Work Schedules form has a "Late Grace Period (min)" field, saveSchedule persists it as
+        `grace` on the schedule record, the register prints it in its own column, and the seeded
+        office pattern ships 30. Nothing ever read it: the threshold below added a hardcoded 15, so
+        an administrator who set 30 minutes' grace still had somebody arriving 08:16 stamped `late`
+        in the attendance register — a wrong fact about a named person, in the record kept under
+        Decree 145/2020 and disciplined from on Manager -> Late Arrivals.
+
+        Resolved by NAME against the schedules collection, the same way _rest_weekdays_for does:
+        employee.schedule holds the pattern's NAME, never the pattern. Matching the name itself
+        against the field is the bug that function documents.
+
+        15 stays the fallback when no schedule matches or the value is unusable — that is what every
+        existing record was judged by, and moving it silently would rewrite what history means.
+        """
+        name = str(schedule_name or "").strip()
+        if not name:
+            return default
+        try:
+            for row in db.list_collection("schedules"):
+                if str(row.get("name") or "").strip().lower() == name.lower():
+                    g = row.get("grace")
+                    if g is None or str(g).strip() == "":
+                        return default
+                    g = int(float(g))
+                    # Negative grace would make people late before their shift begins; an absurd one
+                    # would make lateness unreportable. Both are input errors, not policies.
+                    return g if 0 <= g <= 240 else default
+        except Exception:
+            pass
+        return default
+
+    @staticmethod
+    def _checkin_window_end(schedule_name):
+        """The END of the "Check-In Window" an administrator entered on this pattern, as HH:MM.
+
+        The Work Schedules form has had this field since the register was written and NOTHING read
+        it: saveSchedule persists `inwin`, the register prints it in its own column, and lateness was
+        decided by parsing a time out of the schedule's NAME. So a pattern named without one —
+        "Factory Shift A", with a window of 05:45 – 06:15 typed right there on the form — was judged
+        against a hardcoded 08:00, and a 06:40 arrival two hours into the shift recorded as on time.
+        Same class as the grace period, opposite direction: too lenient rather than too harsh, which
+        is why nobody complained.
+
+        The END, not the start. A window of 07:30 – 08:30 brackets an 08:00 shift; its start is when
+        the door opens, its end is the last acceptable arrival. On every seeded pattern that can be
+        late it already equals shift start + grace — Standard 08:30 = 08:00 + 30, Morning 06:15 =
+        06:00 + 15, Evening 14:15 = 14:00 + 15 — so honouring it changes no existing verdict and
+        makes the field mean what it says.
+        """
+        name = str(schedule_name or "").strip()
+        if not name:
+            return None
+        try:
+            for row in db.list_collection("schedules"):
+                if str(row.get("name") or "").strip().lower() == name.lower():
+                    times = re.findall(r"(\d{1,2}):(\d{2})", str(row.get("inwin") or ""))
+                    if len(times) < 2:
+                        return None                      # one time is not a window; refuse to guess
+                    hh, mm = int(times[-1][0]), int(times[-1][1])
+                    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                        return None
+                    return "%02d:%02d" % (hh, mm)
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _shift_start_for(schedule):
+        """When this pattern's door opens, HH:MM. The reference point lateness is measured FROM.
+
+        The check-in window's START when there is one — that is literally when arrivals begin being
+        accepted — otherwise a time in the pattern's name, otherwise the standard 08:00.
+        """
         s = (schedule or "").strip()
-        if not s:
-            return "08:15"
+        if s:
+            try:
+                for row in db.list_collection("schedules"):
+                    if str(row.get("name") or "").strip().lower() == s.lower():
+                        times = re.findall(r"(\d{1,2}):(\d{2})", str(row.get("inwin") or ""))
+                        if len(times) >= 2:
+                            hh, mm = int(times[0][0]), int(times[0][1])
+                            if 0 <= hh <= 23 and 0 <= mm <= 59:
+                                return "%02d:%02d" % (hh, mm)
+                        break
+            except Exception:
+                pass
+            m = re.search(r"(\d{1,2}):(\d{2})", s)
+            if m and 0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59:
+                return "%02d:%02d" % (int(m.group(1)), int(m.group(2)))
+        return "08:00"
+
+    @staticmethod
+    def _is_late(punch, thr, start):
+        """Is this punch late — measured FORWARD from when the shift's door opened?
+
+        A plain same-day string compare cannot answer this, and the portal has been getting it
+        wrong for every night shift since the feature existed. "Night Shift 23:30 - 07:30" with 45
+        minutes' grace has a threshold of 00:15, which has wrapped past midnight; `'23:35' <=
+        '00:15'` is False, so somebody arriving FIVE MINUTES into their shift was written into the
+        attendance register as late — every night, for every night worker, with Manager → Late
+        Arrivals disciplining from it. The same compare stamped a night pattern named without a
+        time (falling back to an 08:00 threshold) late on arrival too.
+
+        Both are fixed by measuring elapsed minutes from the shift start instead of comparing clock
+        faces, and both directions are guarded:
+          · a punch BEFORE the door opens is early, never late — 07:00 against an 08:30 threshold
+            is not 22½ hours late, which is what a naive modular subtraction would make it.
+          · more than twelve hours after the door opened is a punch for a different shift, not a
+            late arrival, so it is not reported as one.
+        """
+        def mins(x):
+            hh, mm = str(x).split(":")
+            hh, mm = int(hh), int(mm)
+            # RANGE-CHECKED, not merely parseable. "25:99" splits and int()s without complaint and
+            # would then produce a confident, wrong elapsed time rather than an error — the exact
+            # shape of failure this module keeps being bitten by.
+            if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                raise ValueError(x)
+            return hh * 60 + mm
+        try:
+            dp = (mins(punch) - mins(start)) % 1440
+            dt = (mins(thr) - mins(start)) % 1440
+        except Exception:
+            return False        # an unparseable time is not evidence of lateness
+        return dt < dp <= 720
+
+    @staticmethod
+    def _late_threshold(schedule):
+        """Work schedules are ADVISORY: they set the lateness expectation and NEVER block a check-in.
+        Flexible/WFH staff are never late; employees without an assigned schedule fall back to the
+        standard 08:00 + default grace.
+
+        Three sources, in order of authority:
+          window  — the Check-In Window typed on the pattern. An explicit statement by an
+                    administrator about this shift, so it outranks anything inferred.
+          name    — a time embedded in the pattern's name, + that pattern's grace.
+          default — 08:00 + grace, for an employee with no schedule at all.
+        """
+        s = (schedule or "").strip()
+        grace = Handler._grace_for(s)
+        # Never-late staff stay never-late whatever their window says — the window is about when the
+        # door is open, and for these patterns lateness is not a concept.
         if "flex" in s.lower() or "wfh" in s.lower():
             return None
+        win = Handler._checkin_window_end(s)
+        if win:
+            return win
+        if not s or not re.search(r"(\d{1,2}):(\d{2})", s):
+            hh, mm = 8, grace
+            while mm >= 60:
+                hh, mm = hh + 1, mm - 60
+            return "%02d:%02d" % (hh % 24, mm)
         m = re.search(r"(\d{1,2}):(\d{2})", s)
-        if not m:
-            return "08:15"
-        hh, mm = int(m.group(1)), int(m.group(2)) + 15
-        if mm >= 60:
+        hh, mm = int(m.group(1)), int(m.group(2)) + grace
+        while mm >= 60:
             hh, mm = hh + 1, mm - 60
         return "%02d:%02d" % (hh % 24, mm)
 
@@ -7099,7 +7396,11 @@ class Handler(BaseHTTPRequestHandler):
         if db.open_attendance(emp_id, date):
             return self._err("Already checked in today.")
         thr = self._late_threshold(u.get("schedule"))
-        status = "on-time" if (thr is None or t <= thr or not self._is_workday(date)) else "late"
+        # Measured from the shift start, not compared as clock faces — see _is_late. The old
+        # `t <= thr` stamped every night-shift arrival late because their threshold wraps midnight.
+        start = self._shift_start_for(u.get("schedule"))
+        status = "on-time" if (thr is None or not self._is_late(t, thr, start)
+                               or not self._is_workday(date)) else "late"
         # Strip angle brackets from the free-text location server-side (defense-in-depth): the In/Out
         # report escapes it on render, but attendance rows bypass the /api/coll _crm_sanitize path, so
         # neutralise HTML markup here too before it ever reaches storage.
@@ -8079,6 +8380,15 @@ class Handler(BaseHTTPRequestHandler):
         out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
         out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
         out["payerSeparation"] = db.get_setting("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
+        # The company's Decree 293/2025 wage region and the trained-worker uplift. These were
+        # WRITEABLE (they are in _portal_update's whitelist) and never READ BACK, so the settings
+        # form had no way to show what was stored — and once a field existed, loading blank and
+        # saving would have silently cleared them. A write path without its matching read is how a
+        # setting quietly resets itself.
+        out["wageRegion"] = db.get_setting("portal_wageRegion", "") or ""
+        # "1"/"0" both ways. Handing the form a bare stored value would send it a boolean on one
+        # save and a string on the next, and `!!"0"` is true.
+        out["trainedUplift"] = "1" if self._flag("portal_trainedUplift") else "0"
         # Read back to an admin only — like the payer allow-list, it is an authorization list, and
         # publishing who reads concerns tells everyone who to avoid raising one about.
         if self._caller_level(u) == "admin":
@@ -8768,9 +9078,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -9809,6 +10119,69 @@ class Handler(BaseHTTPRequestHandler):
         n = db.next_doc_no(prefix, year, _floor)
         item[field] = doc_number.format_no(prefix, year, n)
         return item[field]
+
+    #: Most rows one request may carry. Not a limit on how big a schedule may be — the client
+    #: sends as many requests as it needs — but a bound on how much work one request can ask the
+    #: single-process server to do before anything else gets a turn.
+    BULK_MAX = 250
+
+    def _coll_add_bulk(self, u, name, body):
+        """Create many rows in one request. Each one through `_coll_add`, unchanged.
+
+        `_coll_add` writes its outcome to the socket, so it is called with `_json`/`_err` swapped for
+        collectors and restored in a `finally`. That is deliberately how this reuses it: the
+        alternative — a bulk path that re-implements the checks — is a second door into every
+        collection that no per-collection guard is watching. Read the loop as "N ordinary POSTs, one
+        connection".
+
+        Partial success is the normal outcome and is reported per item, with its index, so the
+        browser can name the rows that did not go. A bulk write that answers 200 having written some
+        of the rows and saying which is honest; one that answers 200 and says only a count is how a
+        rate limit came to look like a product limit.
+        """
+        items = body.get("items") if isinstance(body, dict) else None
+        if not isinstance(items, list):
+            return self._err("Send {items: [...]}.", 400)
+        if not items:
+            return self._json({"ok": True, "created": [], "failed": []})
+        if len(items) > self.BULK_MAX:
+            return self._err("At most %d rows per request — send the rest in another." % self.BULK_MAX, 413)
+        # Charge the limiter for the ROWS, not for the request. Without this a bulk endpoint hands
+        # back the flood it was added to prevent: 250 rows x 240 requests a minute.
+        if not self._rate_check("bulkwrite", 3000, 60):
+            return None
+
+        created, failed = [], []
+        cap = {}
+
+        def _cap_json(obj, status=200):
+            cap["r"] = ("ok", status, obj)
+
+        def _cap_err(msg, status=400):
+            cap["r"] = ("err", status, msg)
+
+        try:
+            self._json, self._err = _cap_json, _cap_err
+            for i, it in enumerate(items):
+                cap.clear()
+                try:
+                    self._coll_add(u, name, it)
+                except Exception as e:                      # one bad row must not take the batch down
+                    cap["r"] = ("err", 500, str(e) or "Could not save this row.")
+                kind, status, payload = cap.get("r", ("err", 500, "No response."))
+                if kind == "ok" and isinstance(payload, dict) and payload.get("item"):
+                    created.append(payload["item"])
+                else:
+                    failed.append({"index": i, "status": status,
+                                   "error": payload if isinstance(payload, str) else "Rejected."})
+        finally:
+            # Remove the INSTANCE attributes so the class methods are visible again. Assigning the
+            # bound methods back would leave a shadow on every later call in this request.
+            self.__dict__.pop("_json", None)
+            self.__dict__.pop("_err", None)
+
+        return self._json({"ok": True, "created": created, "failed": failed,
+                           "createdCount": len(created), "failedCount": len(failed)})
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
@@ -11086,7 +11459,9 @@ class Handler(BaseHTTPRequestHandler):
                                    or str(db.get_setting("portal_wageRegion", "") or ""))
         if terms.get("trained") is None:
             terms["trained"] = bool(emp.get("trained"))
-        terms["applyTrainedUplift"] = bool(db.get_setting("portal_trainedUplift", False))
+        # _flag, not bool(get_setting(...)): a stored "0" is a non-empty string and would put the
+        # +7% trained-worker uplift into every contract check with the switch turned off.
+        terms["applyTrainedUplift"] = self._flag("portal_trainedUplift")
         blockers = contract_doc.blockers(settings, emp, terms)
         if any(blockers.values()):
             return self._json({"error": "This contract cannot be issued yet — something it must "
@@ -12036,7 +12411,7 @@ class Handler(BaseHTTPRequestHandler):
         # 3. Wages — the minimum-wage register.
         wage = min_wage.review(emps, as_of,
                                default_region=str(db.get_setting("portal_wageRegion", "") or ""),
-                               apply_trained_uplift=bool(db.get_setting("portal_trainedUplift", False)))
+                               apply_trained_uplift=self._flag("portal_trainedUplift"))
         # An UNCHECKED employee is a finding, not a silence. Without this the section rendered
         # "nothing outstanding" in green while its own statement said nobody could be checked —
         # exactly the reading-as-a-pass this pack exists to prevent, and the first thing an auditor
@@ -13095,10 +13470,18 @@ class Handler(BaseHTTPRequestHandler):
             claims = ({str(k): float(v or 0) for k, v in (body.get("claims") or {}).items()}
                       if "claims" in (body or {})
                       else {str(k): float(v or 0) for k, v in ((cur or {}).get("claims") or {}).items()})
-            preview = self._application_compute(c, claims)
+            # The amount this claim recovers off the advance. Taken from the request when the
+            # user names one, otherwise from the draft as it stands — editing a claim's lines must
+            # not silently drop a recovery figure already agreed on it.
+            _rn = (body or {}).get("recoverNow", None)
+            if _rn is None:
+                _rn = (cur or {}).get("recoverNow", None)
+            preview = self._application_compute(c, claims, _rn)
             if not preview["ok"]:
                 return self._err(preview["why"], 400)
             doc = dict(cur or {})
+            if _rn is not None:
+                doc["recoverNow"] = round(float(_rn or 0), 2)
             doc.update({"contractId": c.get("id"), "contractNo": c.get("contractNo"),
                         # Copied onto the claim, not looked up later: the invoice raised from this
                         # claim must quote the PO the customer ordered against, and their accounts
@@ -13173,7 +13556,9 @@ class Handler(BaseHTTPRequestHandler):
             if c.get("status") != sales_doc.ACTIVE:
                 return None, "The contract is no longer active.", 400
             rev0 = c.get("_rev")
-            out = self._application_compute(c, claims)
+            # From the claim being certified — never re-asked at signing time. What the signer sees
+            # on screen is what gets certified.
+            out = self._application_compute(c, claims, cur.get("recoverNow", None))
             if not out["ok"]:
                 return None, out["why"], 400
             c["lines"] = out["lines"]
@@ -13206,18 +13591,30 @@ class Handler(BaseHTTPRequestHandler):
         return saved, None, 200
 
 
-    def _application_compute(self, c, claims):
+    def _application_compute(self, c, claims, recover_now=None):
         """What this claim comes to, against the contract as it stands right now.
 
         Both guards run: the per-LINE open balance and the CONTRACT-level advance and retention. A
         claim can be fine on every line and still be wrong for the contract, and vice versa.
+
+        `recover_now` is how much of the advance THIS claim recovers, and it only means anything on
+        a contract whose rule is "decided per claim". It travels from the claim document, because
+        that is where the decision was made and where an auditor will look for it — sales_contract
+        read it out of the state dict and _contract_state never put it there, so the rule recovered
+        ₫0 on every claim ever raised under it.
         """
         applied = sales_doc.apply(c.get("lines") or [], claims, counter="certifiedAmt")
         if not applied["ok"]:
             first = (applied.get("problems") or [{}])[0]
             return {"ok": False, "why": first.get("why") or applied["why"], "problems": applied.get("problems")}
         total = round(sum(float(v or 0) for v in (claims or {}).values()), 2)
-        res = sales_contract.application(c, total, self._contract_state(c))
+        st = self._contract_state(c)
+        # Only set the key when an amount was actually named. sales_contract distinguishes "nobody
+        # said" (None -> refuse) from an explicit 0 ("recover nothing this claim" -> honoured), so
+        # writing a default here would put the silence back.
+        if recover_now is not None:
+            st["recoverNow"] = round(float(recover_now or 0), 2)
+        res = sales_contract.application(c, total, st)
         if not res["ok"]:
             return res
         res["lines"] = applied["lines"]
@@ -14108,7 +14505,7 @@ class Handler(BaseHTTPRequestHandler):
         emps = [e for e in db.list_employees()
                 if str(e.get("status") or "Active").strip().lower() != "inactive"]
         default_region = str(db.get_setting("portal_wageRegion", "") or "")
-        apply_uplift = bool(db.get_setting("portal_trainedUplift", False))
+        apply_uplift = self._flag("portal_trainedUplift")
         r = min_wage.review(emps, as_of, default_region=default_region,
                             apply_trained_uplift=apply_uplift)
         r.update({"ok": True, "headcount": len(emps),
@@ -15655,6 +16052,46 @@ class Handler(BaseHTTPRequestHandler):
         # report all change, and nothing on screen says why. Lowering it flatters the job; raising it
         # buries a delay. So: free to set while nothing has been measured, and after that a manager's
         # decision with a stated reason, kept on the record and in the tamper-evident chain.
+        # -- pm_detail / pm_tasks: a key the body never mentions must not be treated as a change --
+        # PATCH here is a blind whole-document REPLACE (db.put_collection_item does
+        # `ON CONFLICT(coll,id) DO UPDATE SET data = excluded.data`), so a key the body leaves out is
+        # deleted just as surely as one it changes. Three collections already carry a hand-written
+        # guard for exactly this -- contracts above, candidates below it, hrdocs further down -- each
+        # added after a list read blanked a field and the next round trip destroyed it.
+        #
+        # `log` is the most valuable field in the Projects module: the site's reported progress, one
+        # entry per day, and the thing every percentage on the Schedule is computed from. It had no
+        # guard -- while `qtyPlanLog` immediately below DID. That asymmetry protected the audit trail
+        # of a scheduled quantity but not the measurements themselves.
+        #
+        # ABSENT, not falsy. `if not body.get("log")` would be wrong: deleting the only reading on a
+        # line legitimately leaves `log: []`, and reading that as "nothing supplied" would make the
+        # deletion silently fail and the reading reappear. The question is whether the client SAID
+        # anything about the log, so the test is `"log" in body`.
+        _KEEP_IF_UNSAID = {
+            "pm_detail": (
+                "log",
+                # qtyPlan is the same trap wearing a different hat. The guard immediately below
+                # compares the body's qtyPlan against the stored one to decide whether somebody is
+                # moving a scheduled quantity that progress has already been reported against. An
+                # ABSENT qtyPlan reads as 0.0 there, so a PATCH that never mentioned it looks like
+                # a change from 500 to nothing: on a line with readings that refuses the whole edit
+                # with "say why the scheduled quantity is changing", and on a line without them it
+                # sails through and silently erases the quantity. Restoring it first means the
+                # comparison sees no change, which is the truth -- the client said nothing about it.
+                "qtyPlan",
+            ),
+            # A signature and a baseline date are statements about what was agreed, and when. A
+            # kanban drag PATCHes the whole task to change one status field; if the row it spreads
+            # ever lacks these, dragging a card would quietly unsign an activity.
+            "pm_tasks": ("signatures", "baselineFinish"),
+        }
+        if name in _KEEP_IF_UNSAID:
+            _prevp = db.get_collection_item(name, iid) or {}
+            body = dict(body or {})
+            for _pk in _KEEP_IF_UNSAID[name]:
+                if _pk not in body and _prevp.get(_pk) is not None:
+                    body[_pk] = _prevp.get(_pk)
         if name == "pm_detail":
             _prevq = db.get_collection_item(name, iid) or {}
             def _f(v):
@@ -16105,6 +16542,26 @@ class Handler(BaseHTTPRequestHandler):
             # appends a reversal rather than deleting, so testing the chain would leave a reversed
             # record frozen for ever. Each register keeps exactly one later fact editable, because
             # that fact is about the document rather than a change to it.
+            # A chargeable change that was built and never billed is the quietest way a design
+            # office funds a client's change out of its own fee. The variation does not have to
+            # exist yet when the change is approved — it usually cannot, the scope is still being
+            # argued — but by the time the work is recorded as done, the thing that recovers it has
+            # to be pointed at. Nothing here prices it: that is the sell-side's job, and this only
+            # refuses to let the link be forgotten.
+            if name == "eng_changes" and existing:
+                _newst = str(item.get("status") or "").strip().lower()
+                _wasst = str(existing.get("status") or "").strip().lower()
+                _cc = str(item.get("clientChargeable") or existing.get("clientChargeable") or "").strip().lower()
+                _linked = str(item.get("variationId") or existing.get("variationId")
+                              or item.get("variationRef") or existing.get("variationRef") or "").strip()
+                if _newst in ("implemented", "closed") and _wasst not in ("implemented", "closed") \
+                        and _cc.startswith("yes") and not _linked:
+                    return self._err(
+                        "This change was agreed as chargeable to the client, and it is about to be "
+                        "recorded as done with nothing to bill it against. Link the sell-side "
+                        "variation that recovers it, or change it to 'No — at our cost' so the "
+                        "decision to absorb the work is on the record rather than implied.", 409)
+
             # A code revision is not a typo correction. Once an edition has been adopted, every
             # deliverable on the commission has been designed and checked against THAT text; moving
             # the register to a newer one silently re-bases the whole design and leaves the drawings
@@ -16140,7 +16597,8 @@ class Handler(BaseHTTPRequestHandler):
                     # may still be completed.
                     "eng_stages": ("status", ("closed",), ("gateActionsClosedOn",)),
                     # An approved change gets built, and then it is done.
-                    "eng_changes": ("status", ("implemented", "closed"), ("implementedOn",)),
+                    "eng_changes": ("status", ("implemented", "closed"),
+                                    ("implementedOn", "variationId", "variationRef")),
                     # A transmittal is acknowledged by the recipient, days after it went out.
                     "eng_transmittals": ("status", ("acknowledged", "closed"), ("acknowledgedOn", "acknowledgedBy")),
                 }[name]
@@ -16388,12 +16846,39 @@ class Handler(BaseHTTPRequestHandler):
             st = str(existing.get("status") or "").strip().lower()
             if st in ("approved", "paid", "reviewed") or existing.get("signatures"):
                 return self._err("This request has been signed/approved and cannot be deleted. Cancel or reverse it instead.", 403)
-        # Ownership: non-admins may only delete their OWN self-owned / crm / pm records.
+        # ── A PROJECT record is not a personal record ────────────────────────────────────────────
+        # Every pm_* row below the project — a schedule activity, a detail line, a risk, an RFI — is
+        # the PROJECT's data. The rule underneath was written for claims and travel ("you may delete
+        # what you own") and was being applied to these too, on a definition of "own" that could not
+        # work for them: `owner_nm` falls back to `name`, which on a pm_detail row is the name of the
+        # work item ("Cốp pha sàn"), so it was comparing a task name to a person's name and always
+        # deciding no. A programme imported by one engineer was undeletable by everyone else,
+        # including the project manager — 400 rows nobody could remove.
+        #
+        # It was also incoherent: _coll_update has NO ownership guard for pm_*, so any of those same
+        # people could already blank the row's name, dates and progress. Being able to destroy the
+        # content of a record but not the record was an obstacle, not a protection.
+        #
+        # The rule that actually fits: you may delete a project's records if the project is one of
+        # YOURS — you manage it, or you are on its Team — which is the same test _pm_visible_projects
+        # already applies to reading them. Manager level and above see the whole portfolio and so may
+        # delete across it, exactly as they may read across it. Nothing here weakens the guards
+        # ABOVE: a signed variation order, a certified payment certificate and a project that still
+        # holds records are all refused before this point, admin included.
+        if name.startswith("pm_") and name != "pm_projects" and not is_admin:
+            _vis = self._pm_visible_projects(u)
+            if _vis is not None:
+                _pid = str(existing.get("projectId") or "")
+                if not _pid or _pid not in _vis:
+                    return self._err("That record belongs to a project you are not on. Ask its "
+                                     "project manager, or have yourself added to the Team.", 403)
+        # Ownership: non-admins may only delete their OWN self-owned / crm / eng / ahu / sales / est
+        # records. pm_* is handled above, by project rather than by author.
         if not is_admin:
             owner_id = existing.get("empId") or existing.get("createdById")
             owner_nm = existing.get("owner") or existing.get("name")
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
-            if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")
+            if (name in self.SELF_OWNED or name.startswith("crm_") or name == "pm_projects"
                     or name.startswith("eng_") or name.startswith("ahu_")
                     or name.startswith("sales_") or name.startswith("est_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):

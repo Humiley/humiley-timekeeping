@@ -350,6 +350,72 @@ Two refusals keep the record honest:
 Transmittals issued for information ask for nothing and close freely — most do, and making those a
 fight would empty the register.
 
+## Effort and earned value
+
+The MDR already carried a weight and a rule-of-credit status per deliverable — that is earned
+value. Nothing recorded the hours that bought it, so the two halves never met and the only answer
+to "are we over?" was somebody's feel for it. `eng_timelogs` books design hours against a
+deliverable, and the **Effort & Earned Value** tab puts them together.
+
+**SPI** is earned over planned: a ratio of weight to weight, so it is honest whatever the weights
+mean.
+
+**CPI** is earned over hours spent — and that is a cost index *only if the weights are hours*. A
+weight of 40 might be forty manhours or forty points of relative size, and dividing points by hours
+produces a confident number that means nothing. So the commission declares its weight unit, and
+until it does the screen reports **Not measured** with the reason rather than showing an index. Same
+for a CPI that would be infinite (nothing booked) or zero (nothing earned).
+
+Planned value **steps** at the planned issue date. Nothing pretends to know the shape of the curve
+in between; a smooth S-curve nobody agreed to is a number nobody can check.
+
+Two things it surfaces that a total would hide: hours booked to the commission but to no
+deliverable — they count as cost and earn nothing — and deliverables that have spent well past what
+they have earned and are not finished yet.
+
+## Recovering a chargeable change
+
+A chargeable change that was built and never billed is the quietest way a design office funds a
+client's change out of its own fee. It does not look like anything at the time: the ECN is approved,
+the drawings are revised, the work is recorded as done, and the variation that was going to recover
+it is still a conversation somebody meant to have.
+
+Two points where it can still be caught.
+
+**Approval** refuses a change whose chargeability is *"To be agreed"*. That is a deliberate
+deferral, and it settles itself once the hours are spent — against us. A **blank** field is not
+refused: it is a record made before anybody asked the question, and older changes are full of them.
+
+**Implementation** refuses a change agreed as chargeable that has nothing to bill it against. The
+variation does not have to exist at approval — usually it cannot, the scope is still being argued —
+but by the time the work is recorded as done, the thing that recovers it has to be pointed at.
+Absorbing the cost stays available; it just has to be a decision somebody is seen to make, which is
+why the refusal offers both exits.
+
+The Change Control tab totals what is unrecovered: each change looks handled on its own row, and
+the sum is the only place the money shows.
+
+## Gate readiness — the criteria the registers can answer
+
+Gate criteria were sentences somebody ticked. Every register added since can answer some of them as
+fact, and a clean **Passed** asserts those facts are true.
+
+Three are checked by the server when the gate is signed, because they carry liability:
+
+- no open **HOLDs** on the commission,
+- every **departure** from an adopted standard agreed,
+- every **residual risk** passed on has a record of who was told.
+
+An unqualified pass over any of those is refused, and the refusal names them. **Passed with
+actions** stays open — that status exists precisely for a gate that goes through carrying known
+work, and a gate that could not be passed at all would be worked around by not recording the gate.
+Held and Failed are never blocked.
+
+The Stages tab shows the fuller picture before anybody signs: those three, plus open client
+comments, unanswered technical queries, transmittals still waiting on a response, and whether any
+code has been adopted at all. The ones a screen cannot decide are marked **judgement — not
+enforced** rather than quietly ticked.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value
