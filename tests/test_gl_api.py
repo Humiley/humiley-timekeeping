@@ -118,11 +118,23 @@ def test_a_draft_pay_run_does_not_post(api, tokens):
     assert s == 409 and "no finalised pay run" in r.get("error", "").lower()
 
 
-def test_only_payroll_posts_so_far_and_it_says_so(api, tokens):
+def test_a_source_the_ledger_cannot_price_is_refused_and_says_so(api, tokens):
+    """Payroll, claims, receipts and credit notes post. A purchase does not yet — it needs its own
+    rules about what it debits, and the refusal says that rather than accepting it and guessing."""
+    s, r = api("POST", "/api/gl/post", tokens["management"],
+               {"source": "purchase", "period": PERIOD})
+    assert s == 400
+    assert "guessing would be worse" in r.get("error", "")
+
+
+def test_a_sell_side_document_must_name_WHICH_document(api, tokens):
+    """There are many claims in a month and each carries its own date, so a claim posts by id. A
+    period would not identify one — and letting the caller pass a period would let them choose which
+    month a document lands in, which is the one thing the date is there to decide."""
     s, r = api("POST", "/api/gl/post", tokens["management"],
                {"source": "invoice", "period": PERIOD})
     assert s == 400
-    assert "guessing them would be worse" in r.get("error", "")
+    assert "by id" in r.get("error", "")
 
 
 def test_the_entries_come_from_the_pay_run_not_from_the_request(api, tokens):

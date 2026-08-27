@@ -70,6 +70,7 @@ import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import gl               # the general ledger: what balances, what posts, what closes (pure)
+import sales_journal    # the entries a certified claim, a receipt and a credit note make (pure)
 import demo_data         # which rows came from the shipped sample, and which only look like it (pure)
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
@@ -15640,6 +15641,90 @@ class Handler(BaseHTTPRequestHandler):
             return None, str(ex)
         return batch, None
 
+    def _gl_sales_accounts(self):
+        """The company's own account numbers for the sell side, over sales_journal's documented
+        defaults. Same shape and same reasoning as portal_payrollAccounts: a company on Circular 133
+        or with its own sub-accounts uses different numbers, and guessing on their behalf produces
+        books that look right and are not theirs."""
+        try:
+            acc = db.get_setting("portal_salesAccounts") or {}
+            if isinstance(acc, str):
+                acc = json.loads(acc or "{}") or {}
+        except Exception:
+            acc = {}
+        return acc if isinstance(acc, dict) else {}
+
+    # Each sell-side source: the collection it lives in, the status that makes it postable, the
+    # field carrying its own document date, and the function that turns it into entries.
+    #
+    # A document's date is its OWN — the day it was certified, the day the cash arrived — never
+    # today. Posting last month's receipt into this month would move cash between periods for no
+    # reason other than when somebody got round to it.
+    GL_SALES_SOURCES = {
+        gl.INVOICE: {
+            "coll": "sales_applications", "status": "certified",
+            "dates": ("certifiedAt", "periodTo", "issuedOn", "ts"),
+            "entries": lambda d, a: sales_journal.application_entries(d, a),
+            "warnings": lambda d: sales_journal.application_warnings(d),
+            "label": lambda d: "Claim %s" % (d.get("appNo") or d.get("id") or ""),
+            "detail": lambda d: _money_vnd(float(d.get("certifiedThis") or 0)),
+            "not_ready": "Only a CERTIFIED claim posts. A draft is a proposal, and a claim is "
+                         "certified by e-signature — that signature is what makes it revenue.",
+        },
+        gl.RECEIPT: {
+            "coll": "sales_receipts", "status": None,
+            "dates": ("receivedOn", "ts"),
+            "entries": lambda d, a: sales_journal.receipt_entries(d, a),
+            "warnings": lambda d: [],
+            "label": lambda d: "Receipt %s" % (d.get("receiptNo") or d.get("id") or ""),
+            "detail": lambda d: _money_vnd(float(d.get("amount") or 0)),
+            "not_ready": "",
+        },
+        gl.CREDIT_NOTE: {
+            "coll": "sales_credits", "status": "issued",
+            "dates": ("issuedOn", "issuedAt", "ts"),
+            "entries": lambda d, a: sales_journal.credit_entries(d, a),
+            "warnings": lambda d: [],
+            "label": lambda d: "Credit note %s" % (d.get("creditNo") or d.get("id") or ""),
+            "detail": lambda d: _money_vnd(float(d.get("creditThis") or d.get("value") or 0)),
+            "not_ready": "Only an ISSUED credit note posts — a draft has not been given to anybody.",
+        },
+    }
+
+    @staticmethod
+    def _gl_doc_date(doc, fields):
+        """The document's own date, from the first field that carries one. A document with no date
+        at all cannot be filed into a period, and guessing one would put money in a month it never
+        happened in — so gl.period_of raises and the caller reports it."""
+        for f in fields:
+            v = str(doc.get(f) or "").strip()
+            if len(v) >= 10 and v[4] == "-" and v[7] == "-":
+                return v[:10]
+        return ""
+
+    def _gl_doc_batch(self, source, doc_id, actor=""):
+        """The batch one sell-side document produces, or a sentence saying why it cannot post yet."""
+        spec = self.GL_SALES_SOURCES.get(source)
+        if not spec:
+            return None, "%s does not post to the ledger." % source
+        doc = db.get_collection_item(spec["coll"], doc_id)
+        if not doc:
+            return None, "No such document."
+        if spec["status"] and str(doc.get("status") or "").strip().lower() != spec["status"]:
+            return None, spec["not_ready"]
+        date = self._gl_doc_date(doc, spec["dates"])
+        if not date:
+            return None, ("This document carries no date, so there is no month to file it in. A "
+                          "posting dated by the day somebody pressed the button is money in a "
+                          "period it never happened in.")
+        try:
+            lines = spec["entries"](doc, self._gl_sales_accounts())
+            batch = gl.batch(source, "%s:%s" % (source, doc_id), date, lines,
+                             memo=spec["label"](doc), actor=actor)
+        except gl.LedgerError as ex:
+            return None, str(ex)
+        return batch, None
+
     def _gl_summary_ep(self, u, qs):
         """The ledger for one period: what is in it, whether it balances, what has not posted yet."""
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_POST_LEVEL):
@@ -15670,6 +15755,23 @@ class Handler(BaseHTTPRequestHandler):
                                 "label": "Payroll %s" % rp,
                                 "detail": "%d employee(s)" % len(r.get("lines") or [])})
                 break
+
+        # The sell side, document by document. A claim, a receipt and a credit note each belong to
+        # the month of their OWN date, so this filters on that rather than on anything the document
+        # says about a period — a claim certified on 2 August for July work is August revenue.
+        for src, spec in self.GL_SALES_SOURCES.items():
+            for d in db.list_collection(spec["coll"]):
+                if spec["status"] and str(d.get("status") or "").strip().lower() != spec["status"]:
+                    continue
+                date = self._gl_doc_date(d, spec["dates"])
+                if not date or date[:7] != period:
+                    continue
+                sid = "%s:%s" % (src, d.get("id"))
+                if (src, sid) in posted:
+                    continue
+                pending.append({"source": src, "sourceId": sid, "id": d.get("id"),
+                                "label": spec["label"](d), "detail": spec["detail"](d),
+                                "warnings": spec["warnings"](d)})
 
         return self._json({
             "ok": True,
@@ -15703,17 +15805,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Approver (management) level or above is required to post to the "
                              "ledger.", 403)
         source = str(body.get("source") or "").strip()
-        if source != gl.PAYRUN:
-            return self._err("Only payroll posts to the ledger so far. Sales invoices, receipts and "
-                             "purchases follow — each needs its own rules about what it debits, and "
-                             "guessing them would be worse than waiting.", 400)
-        period = str(body.get("period") or "").strip()
-        if not gl.period_valid(period):
-            return self._err("'%s' is not a period." % period, 400)
+        actor = u.get("name") or u.get("email") or ""
 
-        batch, err = self._gl_payrun_batch(period, actor=u.get("name") or u.get("email") or "")
-        if err:
-            return self._err(err, 409)
+        if source in self.GL_SALES_SOURCES:
+            # A sell-side document posts by ID, not by period: there are many in a month and each
+            # carries its own date. The period is DERIVED from that date inside _gl_doc_batch, so a
+            # caller cannot choose which month a document lands in.
+            doc_id = str(body.get("id") or "").strip()
+            if not doc_id:
+                return self._err("Which document? A %s posts one at a time, by id."
+                                 % gl.SOURCES.get(source, source), 400)
+            batch, err = self._gl_doc_batch(source, doc_id, actor=actor)
+            if err:
+                return self._err(err, 409)
+        elif source == gl.PAYRUN:
+            period = str(body.get("period") or "").strip()
+            if not gl.period_valid(period):
+                return self._err("'%s' is not a period." % period, 400)
+            batch, err = self._gl_payrun_batch(period, actor=actor)
+            if err:
+                return self._err(err, 409)
+        else:
+            return self._err(
+                "Payroll, claims, receipts and credit notes post to the ledger. Purchases follow — "
+                "they need their own rules about what they debit, and guessing would be worse than "
+                "waiting.", 400)
         try:
             bid = db.gl_post(batch, posted_by=u.get("name") or u.get("email") or "",
                              posted_by_id=u.get("id") or "")
