@@ -10207,10 +10207,22 @@ async function tkRenderLedger() {
       '<div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' +
       _t('This period balances on what has been posted. These documents are signed and have not been posted, so the books are not complete yet.') + '</div>' +
       (r.pending || []).map(p =>
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)">' +
-        '<div><b>' + _crmEsc(p.label) + '</b> <span style="font-size:12px;color:var(--text-light)">' + _crmEsc(p.detail || '') + '</span></div>' +
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)">' +
+        '<div><b>' + _crmEsc(p.label) + '</b> <span style="font-size:12px;color:var(--text-light)">' + _crmEsc(p.detail || '') + '</span>' +
+        /* What is true about THIS document that the person clicking should see before they click,
+           not after. A claim whose VAT was never priced against a recorded tax point still posts —
+           the revenue belongs in the books — but not silently. */
+        ((p.warnings || []).length
+          ? '<div style="font-size:11.5px;color:var(--warning);margin-top:3px">' +
+            (p.warnings || []).map(w => '&#9888; ' + _crmEsc(w)).join('<br>') + '</div>'
+          : '') + '</div>' +
         (canPost && !r.closed
-          ? '<button class="btn btn-emerald btn-sm" onclick="glPost(' + JSON.stringify(p.source) + ')">' + _t('Post to ledger') + '</button>'
+          /* Payroll posts by PERIOD (one run a month); a claim, a receipt or a credit note posts by
+             ID, because there are many in a month and each carries its own date. The server derives
+             the period from that date either way — this only says WHICH document. */
+          ? '<button class="btn btn-emerald btn-sm" style="white-space:nowrap" onclick="glPost(' +
+            JSON.stringify(p.source) + ',' + JSON.stringify(p.id || '') + ')">' +
+            _t('Post to ledger') + '</button>'
           : '') + '</div>').join('') + '</div>'
     : '';
 
@@ -10338,14 +10350,17 @@ async function _glLoadAccount(account) {
     : _t('No movement.');
 }
 
-async function glPost(source) {
+async function glPost(source, id) {
   const ok = await tkConfirm({
     title: _t('Post to the ledger?'),
     body: _t('Postings are permanent. A mistake is corrected by a reversal, which stays visible beside it — nothing in the ledger is edited or deleted.')
   });
   if (!ok) return;
+  /* A document goes by id; payroll goes by period. The server decides the MONTH from the
+     document's own date in both cases, so nothing here can choose where the money lands. */
+  const body = id ? { source: source, id: id } : { source: source, period: _glPeriod };
   try {
-    const r = await tkApi('/api/gl/post', { method: 'POST', body: { source: source, period: _glPeriod } });
+    const r = await tkApi('/api/gl/post', { method: 'POST', body: body });
     toast(_t('Posted') + ' — ' + _PAY_FMT(r.debit) + ' · ' + r.lines + ' ' + _t('entries'), 'success');
   } catch (e) { toast(_errMsg(e), 'error', 10000); return; }
   tkRenderLedger();

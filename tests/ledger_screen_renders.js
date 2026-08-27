@@ -36,7 +36,13 @@ const SUMMARY = {
   batches: [{ id: 'GL-202605-abc', memo: 'Payroll 2026-05', source_id: 'payrun:2026-05',
               kind: 'post', posted_at: '2026-06-01T09:00:00Z', posted_by: 'Finance Approver',
               debit: 123500000 }],
-  pending: [{ source: 'payrun', label: 'Payroll 2026-05', detail: '1 employee(s)' }],
+  pending: [
+    // Payroll has no id: it posts by PERIOD, one run a month.
+    { source: 'payrun', label: 'Payroll 2026-05', detail: '1 employee(s)' },
+    // A claim posts by ID and carries its own caveats, which must reach the person clicking.
+    { source: 'invoice', id: 'PA-7', label: 'Claim PA-7', detail: '2,000,000,000',
+      warnings: ['The VAT on this claim was not priced against a recorded tax point'] },
+  ],
 };
 
 // --- the page's own helpers, stubbed only where they touch the DOM or the network ---------------
@@ -79,6 +85,14 @@ eval(take('function glAccount(account)'));
     must(level + ': every account appears', ['642', '334', '331'].every(a => h.includes(a)));
     must(level + ': the unposted document is named', h.includes('Payroll 2026-05'));
     must(level + ': the post button is offered', h.includes('glPost('));
+    // Payroll by period (empty id), a claim by its own id — getting this wrong would post the
+    // wrong document, or post nothing while reporting success.
+    must(level + ': payroll posts by period, with no document id',
+         h.includes('glPost("payrun","")'), h.match(/glPost\([^)]*\)/g));
+    must(level + ': a claim posts by its own id',
+         h.includes('glPost("invoice","PA-7")'), h.match(/glPost\([^)]*\)/g));
+    must(level + ": the claim's caveat is shown before the button, not after",
+         h.includes('recorded tax point'));
     must(level + ': an account on the wrong side is shown in red',
          h.includes('var(--danger)') && h.includes('-5,000,000'));
     must(level + ': the closed month is marked in the period list', h.includes('closed'));
