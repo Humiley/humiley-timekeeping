@@ -142,13 +142,19 @@ console.log('\nThe ITP register opens in ITP-number order\n');
   /* Assert the SORT, not the punctuation after it. A first version matched through to the closing
      `));` and went red when a Renumber button was added as the card's `extra` argument — a change
      that did not touch the ordering at all. */
+  /* Assert the SORT, not the variable holding the rows. A first version named `itp.slice()` and
+     went red when the table started rendering the FILTERED rows instead — a change that did not
+     touch the ordering. */
   ok('the table is sorted by the ITP number, not by planned date',
-     /\], itp\.slice\(\)\.sort\(_pmDocNoCmp\('itpNo'\)\)/.test(src) &&
-     !/itp\.slice\(\)\.sort\(_cmpNewest/.test(src),
+     /\.slice\(\)\.sort\(_pmDocNoCmp\('itpNo'\)\)/.test(src) &&
+     !/itp\w*\.slice\(\)\.sort\(_cmpNewest/.test(src),
      'it used to open _cmpNewest(\'plannedStart\') — newest planned first, which reads as no order ' +
      'at all once the planned dates cluster into the same week');
   ok('the ITP No. header sorts the FIELD rather than the rendered text',
      /\{ label: 'ITP No\.', sk: 'itpNo', render:/.test(src));
+  ok('and it renders the FILTERED rows, so the filter bar above it actually does something',
+     /\], _itpRows\.slice\(\)\.sort\(_pmDocNoCmp\('itpNo'\)\)\)/.test(src),
+     'a filter bar wired to a table that still renders every row is a control that lies');
   ok('and the timeline below still gets date order',
      /_pmItpTimeline\(itp\)/.test(src),
      'the table takes a COPY precisely so the timeline keeps its own ordering');
