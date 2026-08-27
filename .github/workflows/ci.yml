@@ -75,6 +75,15 @@ jobs:
       - name: Detail Schedule arithmetic
         run: node tests/detail_schedule_math.js
 
+      # A duplicate key in _VI is last-wins with NO parse error, and its diff shows only additions —
+      # so it silently replaces a reviewed translation with whichever copy landed later, and the
+      # damage is to a string nobody in the PR touched. It has happened twice: 159 duplicates
+      # existed once, and a three-way merge reintroduced three more by appending both sides'
+      # blocks, which is exactly the case no pre-merge check can see. Cheap to assert, invisible
+      # otherwise.
+      - name: No duplicate translation keys
+        run: node tools/i18n/check.js dups
+
       # The In/Out Log carries one row per punch across many days. Until the Date column existed
       # every row showed only a clock time, so nobody could tell which day a check-in belonged to —
       # and the date filters looked broken because nothing on screen changed when you set one.
