@@ -205,6 +205,12 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
    NOTE: the sticky header needs an OPAQUE background — the retheme layer sets
    `th{background:transparent !important}` below, so rows would otherwise bleed through it. */
 .table-wrap{overflow-x:auto;overflow-y:hidden}
+/* …until the list is long enough that the page stops being one natural scroll. _fitTableScroll adds
+   .tw-tall (and the measured cap) to a table taller than ~1.25x the viewport budget; everything
+   shorter keeps flowing exactly as before, which is what the note above is protecting. The sticky
+   header then pins to THIS box rather than the page, which is what makes a long register readable:
+   the column names stay put while the rows move under them. */
+.table-wrap.tw-tall{overflow-y:auto;overscroll-behavior:contain}
 .table-wrap thead th{position:sticky;top:0;z-index:3;background:var(--card) !important}
 /* The register's group name is emitted twice: in the Category column for desktop, and again inside
    the name column for phones, where Category is hidden so that column can freeze. Only one shows. */
@@ -23202,7 +23208,25 @@ async function _pmPhaseCascade(parent, prevPhase) {
   }
   return done;
 }
-function _pmSet(html) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = html; }
+function _pmSet(html) {
+  const b = document.getElementById('pm-tab-body'); if (!b) return;
+  /* A re-render replaces every node in the tab, so whatever had focus is destroyed with it. For a
+     search box that means the caret jumps out from under somebody mid-word, one keystroke in — which
+     is why the twelve registers already using _crmFiltSearch all re-render a table BODY rather than
+     a whole screen. These tabs cannot do that (the KPI strip and the counts move with the filter),
+     so put the focus and the caret back instead. */
+  const a = document.activeElement;
+  const keep = (a && a.id && b.contains(a))
+    ? { id: a.id, s: a.selectionStart, e: a.selectionEnd } : null;
+  b.innerHTML = html;
+  if (!keep) return;
+  const el = document.getElementById(keep.id);
+  if (!el) return;
+  try {
+    el.focus({ preventScroll: true });
+    if (keep.s != null && el.setSelectionRange) el.setSelectionRange(keep.s, keep.e);
+  } catch (e) {}
+}
 
 /* ---------- 2. Scope / WBS ---------- */
 function pmRenderScope(pid) {
@@ -26257,7 +26281,14 @@ function pmRenderQuality(pid) {
       ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--navy);white-space:nowrap" onclick="pmNcrClose(\'' + r.id + '\')" title="Record the disposition, then sign the verification of closure">✍ Verify &amp; close</button>'
       : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>') }
   ], q));
-  const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
+  /* The ITP register was the one list on either tab with no filter at all — on a project carrying
+     a hundred-plus plans that leaves scrolling as the only way to find one. Same shared bar the
+     Communications and Issue logs use, so the three behave identically. */
+  const _itpSpecs = [{ k: 'contractor', label: 'Contractor' }, { k: 'discipline', label: 'Package' },
+                     { k: 'status', label: 'Status' }];
+  const _itpBar = _pmFiltBar('pm_quality_itp', itp, _itpSpecs);
+  const _itpRows = _pmFiltApply('pm_quality_itp', itp, _itpSpecs);
+  const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _itpBar + _pmTable('pm_quality_itp', [
     /* The number it was ISSUED under rides underneath the current one wherever the register has
        been renumbered. A consolidated register that shows only its new numbers cannot be reconciled
        against a signed plan or a contractor's transmittal; this keeps that answer on the screen
@@ -26273,7 +26304,7 @@ function pmRenderQuality(pid) {
        written, referenced and signed off in, and it is how anyone looking for ITP 47 expects to
        find it. It used to open newest-planned-first, which reads as no order at all once the
        planned dates cluster. Still a COPY: the timeline below must stay in date order. */
-  ], itp.slice().sort(_pmDocNoCmp('itpNo'))),
+  ], _itpRows.slice().sort(_pmDocNoCmp('itpNo'))),
     // Consolidating the numbering rewrites issued document numbers, so it sits behind the same
     // level that may wipe a schedule, and it is absent entirely when there is nothing to renumber.
     (_pmSeeAll() && itp.length > 1
@@ -27127,8 +27158,54 @@ async function pmChatSend() {
 /* ---------- 7. Communications & Issues ---------- */
 let _pmFilt = {};
 function pmFiltSet(coll, k, v) { (_pmFilt[coll] = _pmFilt[coll] || {})[k] = v; _pmReload(); }
-function pmFiltClear(coll) { _pmFilt[coll] = {}; _pmReload(); }
-function _pmFiltApply(coll, rows, specs) { const f = _pmFilt[coll] || {}; const g = {}; (specs || []).forEach(function (sp) { g[sp.k] = sp.get || function (r) { return r[sp.k]; }; }); return rows.filter(function (r) { return Object.keys(f).every(function (k) { if (!f[k]) return true; const gv = (g[k] || function (x) { return x[k]; })(r); return String(gv == null ? '' : gv) === String(f[k]); }); }); }
+/* Clear means clear. Leaving the typed words behind while the dropdowns reset produces a register
+   that is still filtered by something the Clear button just implied it had removed. */
+function pmFiltClear(coll) {
+  _pmFilt[coll] = {};
+  delete _crmLF[_pmFiltQId(coll)];      // the typed words are part of the filter, so Clear clears them
+  _pmReload();
+}
+function _pmFiltApply(coll, rows, specs) {
+  const f = _pmFilt[coll] || {}; const g = {};
+  (specs || []).forEach(function (sp) { g[sp.k] = sp.get || function (r) { return r[sp.k]; }; });
+  /* Every word has to match SOMETHING, not the whole phrase one field at a time: "ntc rebar" should
+     find a rebar plan by NTC, which no single field contains. Accent-insensitive via _pmFold, so
+     "be tong" finds "bê tông" — the register is filled in Vietnamese and searched on a keyboard
+     that may not be. */
+  const keys = _PM_FILT_Q[coll];
+  const raw = keys ? String(_crmLF[_pmFiltQId(coll)] || '').trim() : '';
+  const words = raw ? _pmFold(raw).split(/\s+/).filter(Boolean) : [];
+  return rows.filter(function (r) {
+    const sel = Object.keys(f).every(function (k) {
+      if (!f[k]) return true;
+      const gv = (g[k] || function (x) { return x[k]; })(r);
+      return String(gv == null ? '' : gv) === String(f[k]);
+    });
+    if (!sel || !words.length) return sel;
+    const hay = _pmFold(keys.map(function (k) { return r[k] == null ? '' : r[k]; }).join(' '));
+    return words.every(function (w) { return hay.indexOf(w) >= 0; });
+  });
+}
+/* Which fields a register's search box reads. Named per register rather than "every string on the
+   row": a row also carries ids, a base64 attachment and internal bookkeeping, and a search that
+   matches those returns hits nobody can see the reason for. */
+const _PM_FILT_Q = {
+  pm_quality: ['refNo', 'title', 'contractor', 'discipline', 'type', 'status', 'raisedBy', 'owner'],
+  pm_quality_itp: ['itpNo', 'itpNoPrev', 'title', 'contractor', 'discipline', 'standardRef', 'status'],
+  pm_comms: ['subject', 'type', 'audience', 'status', 'note'],
+  pm_issues: ['issueNo', 'title', 'owner', 'priority', 'status', 'description'],
+};
+function _pmFiltQId(coll) { return 'pmq-' + coll; }
+/* Accent- and case-insensitive, so "be tong" finds "b\u00ea t\u00f4ng" and "DUC" finds "\u0111\u1ee9c". The register is
+   filled in Vietnamese and searched on whatever keyboard is to hand.
+   NOTE: this idiom is open-coded in six other places in this file as a local `fold` closure. This is
+   a seventh, scoped to the project registers rather than pretending to be the shared one — folding
+   them all into a single helper is worth doing, but not inside a change about filters. */
+function _pmFold(v) {
+  return String(v == null ? '' : v).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\u0111/g, 'd').replace(/\s+/g, ' ').trim();
+}
 function _pmFiltBar(coll, rows, specs) {
   if (!rows.length) return '';
   const f = _pmFilt[coll] || {};
@@ -27138,9 +27215,15 @@ function _pmFiltBar(coll, rows, specs) {
     if (!opts.length) return '';
     return '<select class="form-control" style="width:auto;font-size:12px" onchange="pmFiltSet(\'' + coll + '\',\'' + sp.k + '\',this.value)"><option value="">' + _pmT(sp.label) + ': ' + _pmT('All') + '</option>' + opts.map(function (o) { return '<option value="' + _tkEscA(o) + '"' + ((f[sp.k] || '') === o ? ' selected' : '') + '>' + _pmEsc(_pmT(o)) + '</option>'; }).join('') + '</select>';
   }).join('');
-  const active = Object.keys(f).some(function (k) { return f[k]; });
+  /* The same search control the rest of the portal uses — _crmFiltSearch keeps its own value in
+     _crmLF and debounces, so this is one convention rather than a second one that behaves subtly
+     differently. */
+  const qid = _pmFiltQId(coll);
+  const search = _PM_FILT_Q[coll]
+    ? _crmFiltSearch(qid, _pmT('Search') + '\u2026', '_pmReload') : '';
+  const active = Object.keys(f).some(function (k) { return f[k]; }) || !!(_crmLF[qid] || '').trim();
   const shown = _pmFiltApply(coll, rows, specs).length;
-  return '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' + sels + (active ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmFiltClear(\'' + coll + '\')">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + shown + ' of ' + rows.length + '</span>' : '') + '</div>';
+  return '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' + search + sels + (active ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmFiltClear(\'' + coll + '\')">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + shown + ' of ' + rows.length + '</span>' : '') + '</div>';
 }
 function pmRenderComms(pid) {
   const comms = _pmScope(_HR.pm_comms).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -35755,11 +35838,38 @@ function showView(id, navEl, title) {
    element on a page in response to scrolling feeds back into the page's scroll height and jitters.
    top0 is measured scroll-independently (rect.top + scrollTop) so the value is stable at any scroll
    position. Skipped on phones (the page scrolls there) and during PDF export (full height needed). */
+/* How much taller than its box a table must be before it earns its own scrollbar. Not a row count:
+   row height varies with the content, and a monitor twice as tall should hold twice as many rows
+   before anything is capped. The 1.25 is hysteresis — a table two rows over the budget should keep
+   flowing rather than gain a scrollbar that moves almost nothing. */
+const _TW_TALL_FACTOR = 1.25;
 function _fitTableScroll() {
-  // Tables are no longer capped to the viewport — they grow to full height so the PAGE scrolls as one
-  // natural list. This only clears any max-height left on a box by an older cached build.
+  /* SHORT tables grow to full height and the PAGE scrolls, as one natural list — the note beside
+     .table-wrap explains why, and a 12-row register that made you scroll a little inner box is
+     exactly the thing being avoided.
+     LONG ones are the case that rule was never sized for. A project with 135 inspection plans turns
+     that "one natural scroll" into a page a screen-and-a-half of which is a single table: the KPI
+     cards, the filters and the second register are all pushed somewhere you have to go looking for
+     them, and there is no way to move within the list without moving the whole page. Past a
+     measured threshold the box scrolls itself and the header stays put.
+     Phones are deliberately left uncapped — see the media query on .table-wrap: there is no
+     persistent scrollbar to strand, and swiping the page is the natural gesture there.
+     Exporting is uncapped too, so a PDF gets the whole table and not the visible window. */
   const content = document.getElementById('content'); if (!content) return;
-  content.querySelectorAll('.table-wrap').forEach(w => { if (w.style.maxHeight) w.style.maxHeight = ''; });
+  const off = (window.matchMedia && window.matchMedia('(max-width:820px)').matches) ||
+              document.body.classList.contains('exporting');
+  const cap = Math.max(340, Math.round(window.innerHeight * 0.66));
+  content.querySelectorAll('.table-wrap').forEach(w => {
+    /* An inline max-height set by whoever built the box — a dialog's own list, say — is a decision
+       already taken about that table, so leave it alone rather than overruling it from here. */
+    if (w.dataset.twCap !== '1' && w.style.maxHeight) return;
+    /* scrollHeight is the CONTENT height and does not change once the box is capped, so this
+       decision is stable across re-runs instead of oscillating as the cap takes effect. */
+    const tall = !off && w.scrollHeight > cap * _TW_TALL_FACTOR;
+    w.classList.toggle('tw-tall', tall);
+    if (tall) { w.style.maxHeight = cap + 'px'; w.dataset.twCap = '1'; }
+    else if (w.dataset.twCap === '1') { w.style.maxHeight = ''; delete w.dataset.twCap; }
+  });
 }
 /* Pin a synced horizontal scrollbar to the viewport bottom while a WIDE table is on screen. Without it,
    a wide + long table's own h-scrollbar sits at the very bottom of the page, so you'd have to scroll
