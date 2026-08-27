@@ -1235,6 +1235,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-label">Payroll</span>
   </div>
 
+  <div class="nav-item" data-roles="manager" data-level="management" data-app="finance" onclick="showView('ledger',this,'General Ledger')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="17" y2="7"/><line x1="9" y1="11" x2="17" y2="11"/></svg></span>
+    <span class="nav-label">General Ledger</span>
+  </div>
+
   <div class="nav-item" data-roles="manager" data-level="editor" data-app="finance" onclick="showView('invtrack',this,'Invoice Tracking')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span>
     <span class="nav-label">Invoice Tracking</span>
@@ -1898,6 +1903,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div id="payroll-root"></div>
 </div>
 
+<div id="view-ledger" class="view"></div>
 <div id="view-invtrack" class="view"></div>
 
 <div id="view-audit" class="view"><div id="audit-root"></div></div>
@@ -10142,6 +10148,243 @@ function tkPayTab(tab, el) { ['dash', 'reg', 'runs', 'journal'].forEach(t => { c
    Payroll used to end at the payslip: what the month cost, what was still owed and what had to be
    remitted were re-keyed into the accounts by hand from a PDF. This is the same figures the Director
    signed, as double-entry lines, with a CSV the accountant imports. */
+/* ── THE GENERAL LEDGER ────────────────────────────────────────────────────────────────────────
+   Every money module here was complete except its last inch. Payroll computed the month, refused to
+   emit an unbalanced journal — and handed the entries to a screen. So the company's real books lived
+   in an accountant's separate file, re-keyed from a PDF, and no question spanning two modules could
+   be answered at all.
+
+   This screen shows what is IN the ledger, what still OWES the ledger, and whether the month
+   balances. It computes NOTHING: every figure comes from /api/gl/summary, because a browser that
+   recomputes a trial balance is a second set of books that will eventually disagree with the first.
+   Same rule as [[estimating-module]]'s "no arithmetic in the browser".                            */
+let _glPeriod = '';
+let _glOpenAccount = '';
+
+async function tkRenderLedger() {
+  const v = document.getElementById('view-ledger'); if (!v) return;
+  v.innerHTML = tkSkeleton();
+  let r;
+  try {
+    r = await tkApi('/api/gl/summary' + (_glPeriod ? '?period=' + encodeURIComponent(_glPeriod) : ''));
+  } catch (e) {
+    v.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>';
+    return;
+  }
+  _glPeriod = r.period;
+  const tb = r.trialBalance || { rows: [], debit: 0, credit: 0, balanced: true, difference: 0 };
+  const res = r.result || { income: 0, expense: 0, profit: 0 };
+  const money = n => _PAY_FMT(n || 0);
+  const canPost = _lvlRank(_userLevel) >= _lvlRank('management');
+  const canClose = _lvlRank(_userLevel) >= _lvlRank('admin');
+
+  const opts = (r.periods || []).slice();
+  if (opts.indexOf(r.period) < 0) opts.push(r.period);
+  const periodPick = '<select class="form-input" style="width:auto;min-width:150px" onchange="_glGo(this.value)">' +
+    opts.map(p => '<option value="' + _tkEscA(p) + '"' + (p === r.period ? ' selected' : '') + '>' +
+      _crmEsc(p) + ((r.closedPeriods || []).indexOf(p) >= 0 ? ' — ' + _t('closed') : '') + '</option>').join('') +
+    '</select>';
+
+  /* WHETHER TO BELIEVE ANY OF IT. A trial balance that does not balance means something reached the
+     ledger that should not have, and every figure downstream of it is suspect — so this sits in the
+     header, not in a footnote under the table. */
+  const verdict = tb.balanced
+    ? '<span style="color:var(--emerald-deep);font-weight:800">' + _t('Balances') + '</span>'
+    : '<span style="color:var(--danger);font-weight:800">' + _t('DOES NOT BALANCE') + '</span>' +
+      '<div style="font-size:11px;color:var(--danger)">' + _t('out by') + ' ' + money(Math.abs(tb.difference)) + '</div>';
+
+  /* WHAT THE MONTH STILL OWES THE LEDGER. A trial balance is correct about the entries it has and
+     silent about the ones nobody posted, so "the books are complete" is the one claim it cannot
+     make on its own. */
+  const pending = (r.pending || []).length
+    ? '<div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:3px solid var(--warning)">' +
+      '<div style="font-weight:700;color:var(--navy);font-size:13px">' + _t('Signed, and not in the ledger') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' +
+      _t('This period balances on what has been posted. These documents are signed and have not been posted, so the books are not complete yet.') + '</div>' +
+      (r.pending || []).map(p =>
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)">' +
+        '<div><b>' + _crmEsc(p.label) + '</b> <span style="font-size:12px;color:var(--text-light)">' + _crmEsc(p.detail || '') + '</span></div>' +
+        (canPost && !r.closed
+          ? '<button class="btn btn-emerald btn-sm" onclick="glPost(' + JSON.stringify(p.source) + ')">' + _t('Post to ledger') + '</button>'
+          : '') + '</div>').join('') + '</div>'
+    : '';
+
+  const closedBar = r.closed
+    ? '<div class="card" style="padding:12px 18px;margin-bottom:14px;border-left:3px solid var(--navy);font-size:12.5px">' +
+      '<b>' + _crmEsc(r.period) + ' ' + _t('is closed') + '</b> — ' + _t('nothing further posts into it') +
+      (r.closedBy ? ' · ' + _t('closed by') + ' ' + _crmEsc(r.closedBy) : '') +
+      (r.closedAt ? ' · ' + _crmEsc(String(r.closedAt).slice(0, 10)) : '') +
+      (canClose ? ' <button class="btn btn-outline btn-sm" style="margin-left:8px" onclick="glReopen()">' + _t('Re-open') + '</button>' : '') +
+      '</div>'
+    : '';
+
+  const tile = (lbl, val, hex, sub) => '<div style="flex:1 1 145px;min-width:135px">' +
+    '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' + _t(lbl) + '</div>' +
+    '<div style="font-size:18px;font-weight:800;color:' + (hex || 'var(--navy)') + ';font-variant-numeric:tabular-nums;line-height:1.25">' + val + '</div>' +
+    (sub ? '<div style="font-size:11px;color:var(--text-light)">' + sub + '</div>' : '') + '</div>';
+
+  const rows = (tb.rows || []).map(a =>
+    '<tr style="cursor:pointer" onclick="glAccount(' + JSON.stringify(a.account) + ')" title="' +
+      _tkEscA(_t('Show every movement in this account')) + '">' +
+    '<td style="font-variant-numeric:tabular-nums;font-weight:600">' + _crmEsc(a.account) + '</td>' +
+    '<td style="font-size:12px">' + _crmEsc(a.name || '') + '</td>' +
+    '<td style="font-size:11px;color:var(--text-light)">' + _crmEsc(a.classLabel || '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (a.debit ? money(a.debit) : '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (a.credit ? money(a.credit) : '') + '</td>' +
+    /* Negative means the account is sitting on the wrong side — usually an overpayment or a posting
+       to the wrong place. Shown in red rather than flipped into the other column, because tidying
+       it away is how it stops being noticed. */
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700' +
+      (a.balance < 0 ? ';color:var(--danger)' : '') + '">' + money(a.balance) +
+      ' <span style="font-size:10px;color:var(--text-light);font-weight:400">' +
+      (a.normalSide === 'debit' ? 'Dr' : 'Cr') + '</span></td></tr>' +
+    (_glOpenAccount === a.account
+      ? '<tr><td colspan="6" style="padding:0;background:var(--soft-bg)"><div id="gl-acct-' + _tkEscA(a.account) +
+        '" style="padding:10px 14px;font-size:12px;color:var(--text-light)">' + _t('Loading…') + '</div></td></tr>'
+      : '')).join('');
+
+  const batches = (r.batches || []).map(b =>
+    '<tr><td style="font-size:11px;font-variant-numeric:tabular-nums">' + _crmEsc(b.id) + '</td>' +
+    '<td style="font-size:12px">' + _crmEsc(b.memo || b.source_id || '') +
+      (b.kind === 'reverse' ? ' <span style="color:var(--danger);font-weight:700;font-size:11px">' + _t('reversal') + '</span>' : '') + '</td>' +
+    '<td style="font-size:11px;color:var(--text-light)">' + _crmEsc(String(b.posted_at || '').slice(0, 16).replace('T', ' ')) +
+      (b.posted_by ? ' · ' + _crmEsc(b.posted_by) : '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + money(b.debit) + '</td>' +
+    '<td style="text-align:right">' +
+      (canPost && b.kind === 'post' && !r.closed
+        ? '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px" onclick="glReverse(' + JSON.stringify(b.id) + ')">' + _t('Reverse') + '</button>'
+        : '') + '</td></tr>').join('');
+
+  v.innerHTML =
+    '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
+    '<div><div style="font-weight:800;color:var(--navy);font-size:17px">' + _t('General Ledger') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light)">' +
+      _t('Every posting, on the Vietnamese chart of accounts') + ' · ' + _crmEsc(r.basis || '') + '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + periodPick +
+    (canClose && !r.closed && (r.entryCount || 0) > 0
+      ? '<button class="btn btn-emerald btn-sm" onclick="glClose()">' + _t('Close period') + '</button>' : '') +
+    '</div></div>' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">' +
+    tile('Total debits', money(tb.debit)) +
+    tile('Total credits', money(tb.credit)) +
+    tile('Revenue', money(res.income), 'var(--emerald-deep)') +
+    tile('Expenses', money(res.expense)) +
+    tile('Result', money(res.profit), res.profit < 0 ? 'var(--danger)' : 'var(--emerald-deep)',
+         _t('revenue less expenses, this period')) +
+    '<div style="flex:1 1 145px;min-width:135px"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' +
+    _t('Trial balance') + '</div><div style="font-size:15px;margin-top:2px">' + verdict + '</div></div>' +
+    '</div></div>' +
+    closedBar + pending +
+    (rows
+      ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+        '<th>' + _t('Account') + '</th><th>' + _t('Account name') + '</th><th>' + _t('Class') + '</th>' +
+        '<th style="text-align:right">' + _t('Debit') + '</th><th style="text-align:right">' + _t('Credit') + '</th>' +
+        '<th style="text-align:right">' + _t('Balance') + '</th></tr></thead><tbody>' + rows +
+        '<tr style="border-top:2px solid var(--navy);font-weight:800"><td colspan="3">' + _t('TOTAL') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + money(tb.debit) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + money(tb.credit) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums' + (tb.balanced ? '' : ';color:var(--danger)') + '">' +
+          (tb.balanced ? '—' : money(tb.difference)) + '</td></tr></tbody></table></div></div>'
+      : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light)">' +
+        '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('Nothing posted for') + ' ' + _crmEsc(r.period) + '</div>' +
+        '<div style="font-size:12px">' + _t('A pay run a Director has signed is the first thing that can post. A draft is a proposal, and proposals do not belong in a ledger.') + '</div></div>') +
+    (batches
+      ? '<div class="card" style="padding:0;overflow:hidden">' +
+        '<div style="padding:11px 16px;background:var(--soft-bg);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy)">' +
+        _t('Postings this period') + '</div><div class="table-wrap"><table style="min-width:700px"><thead><tr>' +
+        '<th>' + _t('Batch') + '</th><th>' + _t('Document') + '</th><th>' + _t('Posted') + '</th>' +
+        '<th style="text-align:right">' + _t('Amount') + '</th><th></th></tr></thead><tbody>' + batches +
+        '</tbody></table></div></div>'
+      : '');
+
+  if (_glOpenAccount) _glLoadAccount(_glOpenAccount);
+}
+
+function _glGo(p) { _glPeriod = p || ''; _glOpenAccount = ''; tkRenderLedger(); }
+
+/* One account's movements, expanded in place. Every row names the document it came from, which is
+   the whole reason a balance is auditable rather than merely arithmetic. */
+function glAccount(account) {
+  _glOpenAccount = (_glOpenAccount === account) ? '' : account;
+  tkRenderLedger();
+}
+
+async function _glLoadAccount(account) {
+  const box = document.getElementById('gl-acct-' + account);
+  if (!box) return;
+  let r;
+  try {
+    r = await tkApi('/api/gl/entries?period=' + encodeURIComponent(_glPeriod) +
+                    '&account=' + encodeURIComponent(account));
+  } catch (e) { box.innerHTML = _crmEsc(_errMsg(e)); return; }
+  const rows = (r.rows || []).map(x =>
+    '<tr><td style="font-size:11px;color:var(--text-light);white-space:nowrap">' + _crmEsc(String(x.doc_date || '').slice(0, 10)) + '</td>' +
+    '<td style="font-size:12px">' + _crmEsc(x.source_id || '') +
+      '<span style="color:var(--text-light)"> · ' + _crmEsc(x.source || '') +
+      (x.kind === 'reverse' ? ' · ' + _t('reversal') : '') + '</span></td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.debit ? _PAY_FMT(x.debit) : '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.credit ? _PAY_FMT(x.credit) : '') + '</td></tr>').join('');
+  box.innerHTML = rows
+    ? '<table style="width:100%;font-size:12px"><tbody>' + rows +
+      '<tr style="font-weight:700;border-top:1px solid var(--line)"><td colspan="2">' + _t('TOTAL') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _PAY_FMT((r.totals || {}).debit) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _PAY_FMT((r.totals || {}).credit) + '</td></tr></tbody></table>'
+    : _t('No movement.');
+}
+
+async function glPost(source) {
+  const ok = await tkConfirm({
+    title: _t('Post to the ledger?'),
+    body: _t('Postings are permanent. A mistake is corrected by a reversal, which stays visible beside it — nothing in the ledger is edited or deleted.')
+  });
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/gl/post', { method: 'POST', body: { source: source, period: _glPeriod } });
+    toast(_t('Posted') + ' — ' + _PAY_FMT(r.debit) + ' · ' + r.lines + ' ' + _t('entries'), 'success');
+  } catch (e) { toast(_errMsg(e), 'error', 10000); return; }
+  tkRenderLedger();
+}
+
+async function glReverse(batch) {
+  const reason = await tkPrompt({
+    title: _t('Reverse this batch'),
+    body: _t('Why? It becomes a permanent line in the books, and why is the only part of it a reader cannot reconstruct.')
+  });
+  if (!reason) return;
+  try {
+    await tkApi('/api/gl/reverse', { method: 'POST', body: { batch: batch, reason: reason } });
+    toast(_t('Reversed'), 'success');
+  } catch (e) { toast(_errMsg(e), 'error', 10000); return; }
+  tkRenderLedger();
+}
+
+async function glClose() {
+  const ok = await tkConfirm({
+    title: _t('Close') + ' ' + _glPeriod + '?',
+    body: _t('Nothing further posts into a closed period. Closing is the assertion that these are the books for that month — and you cannot close a month you posted into yourself.')
+  });
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/gl/close', { method: 'POST', body: { period: _glPeriod } });
+    toast(_t('Closed by') + ' ' + (r.closedBy || ''), 'success');
+  } catch (e) { toast(_errMsg(e), 'error', 12000); return; }
+  tkRenderLedger();
+}
+
+async function glReopen() {
+  const reason = await tkPrompt({
+    title: _t('Re-open') + ' ' + _glPeriod,
+    body: _t('A closed month is a signed assertion about the company. Re-opening one is recorded with your name and this reason.')
+  });
+  if (!reason) return;
+  try {
+    await tkApi('/api/gl/reopen', { method: 'POST', body: { period: _glPeriod, reason: reason } });
+    toast(_t('Re-opened'), 'success');
+  } catch (e) { toast(_errMsg(e), 'error', 10000); return; }
+  tkRenderLedger();
+}
+
 async function tkRenderPayJournal() {
   const el = document.getElementById('pay-journal'); if (!el) return;
   if (_payYM && _payYM.m === -1) { el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _t('Choose a specific month — a journal is posted per period.') + '</div>'; return; }
@@ -20683,8 +20926,8 @@ async function crmImportFile(coll, file) {
 }
 
 
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack','audit']);
-const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'editor', esigngov: 'management', permissions: 'admin', audit: 'admin', 'crm-targets': 'management' };
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack','ledger','audit']);
+const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'editor', ledger: 'management', esigngov: 'management', permissions: 'admin', audit: 'admin', 'crm-targets': 'management' };
 const _HR_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 /* HR views that share the Human Resource hub tab bar (Overview + all modules). */
 const _HR_HUB_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin']);
@@ -35664,7 +35907,7 @@ function showView(id, navEl, title) {
   if (id.indexOf('crm-') === 0 && _appDeniedCurrent('crm')) { toast('Access restricted — CRM is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('pm-') === 0 && _appDeniedCurrent('pm')) { toast('Access restricted — Projects is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (_HR_VIEWS.has(id) && _appDeniedCurrent('hr')) { toast('Access restricted — HR is not enabled for your account. Ask an admin.', 'warn'); return; }
-  if ((id === 'finance' || id === 'payroll' || id === 'invtrack') && _appDeniedCurrent('finance')) { toast('Access restricted — Finance is not enabled for your account. Ask an admin.', 'warn'); return; }
+  if ((id === 'finance' || id === 'payroll' || id === 'invtrack' || id === 'ledger') && _appDeniedCurrent('finance')) { toast('Access restricted — Finance is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id === 'procurement' && _appDeniedCurrent('procurement')) { toast('Access restricted — Procurement is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('eng-') === 0 && _appDeniedCurrent('eng')) { toast('Access restricted — Engineering Design is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('ahu-') === 0 && _appDeniedCurrent('ahu')) { toast('Access restricted — AHU Production is not enabled for your account. Ask an admin.', 'warn'); return; }
@@ -35704,6 +35947,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-overview') { try { tkRenderCrmOverview(); } catch (e) { console.warn('crm-overview:', e.message); } }
   if (id === 'myspace-overview') { try { tkRenderMySpaceOverview(); } catch (e) { console.warn('myspace-overview:', e.message); } }
   if (id === 'invtrack') { try { tkRenderInvTrack(); } catch (e) { console.warn('invtrack:', e.message); } }
+  if (id === 'ledger') { try { tkRenderLedger(); } catch (e) { console.warn('ledger:', e.message); } }
   // Report sub-panels live in #content (not inside the view) — hide them off the Reports page, show the default tab on it.
   ['attendance', 'leave', 'inout', 'recruit', 'payroll'].forEach(t => { const p = document.getElementById('rpt-' + t); if (p) p.style.display = (id === 'reports' && t === 'attendance') ? 'block' : 'none'; });
   // The period control has to exist the moment the page opens, not from the first tab CLICK.

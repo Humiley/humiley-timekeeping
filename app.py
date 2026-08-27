@@ -69,6 +69,7 @@ import contracts         # Labour Code Art. 20 contract terms, expiry and the re
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
+import gl               # the general ledger: what balances, what posts, what closes (pure)
 import demo_data         # which rows came from the shipped sample, and which only look like it (pure)
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
@@ -4118,6 +4119,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/me":
             u = self._user()
             return self._json(u) if u else self._err("Not authenticated.", 401)
+        if path == "/api/gl/summary":
+            return self._guard(lambda u: self._gl_summary_ep(u, qs), manager=True)
+        if path == "/api/gl/entries":
+            return self._guard(lambda u: self._gl_entries_ep(u, qs), manager=True)
         if path == "/api/procurement/sso":
             # Mint a signed SSO token for the current user to open the Procurement app seamlessly.
             return self._guard(lambda u: self._procurement_sso_token(u))
@@ -4433,6 +4438,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._attendance_ot(u, aid, body), manager=True)
         if path == "/api/leave":
             return self._guard(lambda u: self._leave_create(u, body))
+        if path == "/api/gl/post":
+            return self._guard(lambda u: self._gl_post_ep(u, body), manager=True)
+        if path == "/api/gl/reverse":
+            return self._guard(lambda u: self._gl_reverse_ep(u, body), manager=True)
+        if path == "/api/gl/close":
+            return self._guard(lambda u: self._gl_close_ep(u, body), manager=True)
+        if path == "/api/gl/reopen":
+            return self._guard(lambda u: self._gl_reopen_ep(u, body), manager=True)
         if path == "/api/tender/revise":
             return self._guard(lambda u: self._tender_revise_ep(u, body), manager=True)
         if path == "/api/est/adopt":
@@ -9136,7 +9149,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -9209,10 +9222,20 @@ class Handler(BaseHTTPRequestHandler):
     # the past. Unlike CONFIDENTIAL these are NOT hidden — the whole point is that people read
     # them — so the refusal explains itself and names the thing to do instead. They are created by
     # /api/tender/revise, which builds them from the priced rows rather than from a request body.
-    FROZEN = {"est_revs"}
+    FROZEN = {"est_revs", "gl_periods"}
     FROZEN_MSG = ("A revision is a record of what this tender said at a moment. It cannot be "
                   "edited or deleted — take a new revision instead, and the difference between "
                   "them becomes the explanation.")
+    # A period close is an assertion about the company's books, signed by a Director, and the one
+    # thing standing between a closed month and somebody quietly changing it. Reached through
+    # /api/gl/close and /api/gl/reopen — which check the balance, the level and segregation of
+    # duties — and never through the generic collection API, where none of those checks exist.
+    FROZEN_MSGS = {
+        "gl_periods": ("An accounting period is closed or re-opened through the ledger, not by "
+                       "editing the register. Use Close period / Re-open — they check that the "
+                       "month balances, that you are not closing books you posted yourself, and "
+                       "they leave a trail."),
+    }
     ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
                        "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},
                        "sales_variations": {"_rev", "id"}, "sales_credits": {"_rev", "id"},   # nothing: every change goes through the endpoint
@@ -9239,7 +9262,13 @@ class Handler(BaseHTTPRequestHandler):
     # commercially sensitive number the company holds. Manager and above, matching pm_costs,
     # which is where a won estimate lands.
     EST_MIN = "manager"
-    READ_MIN = {"est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
+    READ_MIN = {
+                # The close register: who declared which month final, and the totals they asserted.
+                # Readable at management so the Ledger screen can show it; WRITES never come through
+                # the generic API (FROZEN), only through /api/gl/close and /api/gl/reopen, which are
+                # the only paths that check the month balances and that the closer did not post it.
+                "gl_periods": "management",
+                "est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
                 "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_wbs": EST_MIN, "est_quote": EST_MIN, "est_revs": EST_MIN,
                 "est_risks": EST_MIN,
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
@@ -10245,7 +10274,7 @@ class Handler(BaseHTTPRequestHandler):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
         if name in self.FROZEN:
-            return self._err(self.FROZEN_MSG, 409)
+            return self._err(self.FROZEN_MSGS.get(name, self.FROZEN_MSG), 409)
         if name in self.CONFIDENTIAL:
             # Not 403 with an explanation of what lives here — that confirms the collection exists
             # and how many rows it has. It is simply not a collection this route serves.
@@ -15538,6 +15567,290 @@ class Handler(BaseHTTPRequestHandler):
                            "accounts": dept_acc,
                            "basis": "Circular 200/2014/TT-BTC"})
 
+    # ══════════════════════════════════════════════════════════════════════════
+    #   The general ledger
+    # ══════════════════════════════════════════════════════════════════════════
+    #
+    # gl.py owns the arithmetic and db.gl_post owns exclusion and the prior-state rules. What lives
+    # here is WHO may do it — and the rule that matters more than either:
+    #
+    #   THE ENTRIES ARE BUILT FROM THE SOURCE DOCUMENT, NEVER FROM THE REQUEST BODY.
+    #
+    # A ledger that posts what a client sends is a ledger anybody with a session can write anything
+    # into. `_gl_payrun_batch` re-derives the entries from the FINALISED pay run at the moment of
+    # posting, exactly as `_tender_revise_ep` rebuilds a revision from the priced rows. The caller
+    # chooses which document to post, and nothing else about it.
+
+    GL_POST_LEVEL = "management"     # posting moves the company's books
+    GL_CLOSE_LEVEL = "admin"         # declaring them final is a Director act
+
+    def _gl_dept_accounts(self):
+        try:
+            acc = db.get_setting("portal_payrollAccounts") or {}
+            if isinstance(acc, str):
+                acc = json.loads(acc or "{}") or {}
+        except Exception:
+            acc = {}
+        return acc if isinstance(acc, dict) else {}
+
+    @staticmethod
+    def _gl_month_end(period):
+        """The last day of a YYYY-MM. Payroll is a month, not a moment, and dating it by the posting
+        run would file July's payroll in whatever month somebody pressed the button."""
+        y, m = int(str(period)[:4]), int(str(period)[5:7])
+        nxt = datetime(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 1)
+        return (nxt - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def _gl_payrun_batch(self, period, actor=""):
+        """The batch a finalised pay run produces, or a sentence saying why there is none.
+
+        Returns (batch, error). Every refusal here is one the payroll journal screen already makes —
+        deliberately repeated, because a rule enforced on a screen and not at the endpoint behind it
+        is not enforced at all.
+        """
+        runs = [r for r in db.list_collection("payruns")
+                if (r.get("lines") or [])
+                and "final" in str(r.get("status") or "").lower()
+                and str(r.get("period") or "").strip().lower() == str(period).strip().lower()]
+        if not runs:
+            return None, ("There is no finalised pay run for %s. A draft is a proposal, and "
+                          "proposals do not belong in a ledger." % period)
+
+        # The same guard the journal and the bank file make. One person in two finalised runs posts
+        # their salary, insurance and PIT twice — and BOTH sides double, so the ledger still balances
+        # and nothing downstream would ever say so.
+        dupes = self._payrun_duplicate_people(runs)
+        if dupes:
+            who = ", ".join("%s (%s)" % (v["name"], " + ".join(sorted(str(x) for x in v["runs"])))
+                            for v in list(dupes.values())[:8])
+            return None, ("%d person(s) appear in more than one finalised pay run for %s, so posting "
+                          "would double their pay: %s. Cancel or supersede the duplicate run first."
+                          % (len(dupes), period, who))
+
+        merged = {"lines": [l for r in runs for l in (r.get("lines") or [])]}
+        entries = payroll_journal.entries(merged, dept_accounts=self._gl_dept_accounts())
+        if not entries:
+            return None, "That pay run produced no entries."
+        try:
+            batch = gl.batch(gl.PAYRUN, "payrun:" + str(period), self._gl_month_end(period), entries,
+                             memo="Payroll %s — %d run(s), %d employee(s)"
+                                  % (period, len(runs), len(merged["lines"])),
+                             actor=actor)
+        except gl.LedgerError as ex:
+            return None, str(ex)
+        return batch, None
+
+    def _gl_summary_ep(self, u, qs):
+        """The ledger for one period: what is in it, whether it balances, what has not posted yet."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_POST_LEVEL):
+            return self._err("Approver (management) level or above is required — the ledger carries "
+                             "the company's books.", 403)
+        seen = db.gl_periods_seen()
+        period = str(qs.get("period", [""])[0] or "").strip()
+        if period and not gl.period_valid(period):
+            return self._err("'%s' is not a period." % period, 400)
+        if not period:
+            period = seen[-1] if seen else self._utc_now()[:7]
+
+        rows = db.gl_rows(period=period)
+        closed = db.gl_closed_periods()
+
+        # WHAT THIS MONTH STILL OWES THE LEDGER. A trial balance is correct about the entries it has
+        # and silent about the ones nobody posted, so "the books are complete" is precisely the claim
+        # it cannot make. The unposted list sits beside it and makes that claim checkable.
+        posted = {(b["source"], b["source_id"]) for b in db.gl_batches(period=period)
+                  if b["kind"] == gl.POST}
+        pending = []
+        for r in db.list_collection("payruns"):
+            rp = str(r.get("period") or "").strip()
+            if (rp == period and "final" in str(r.get("status") or "").lower()
+                    and (r.get("lines") or [])
+                    and (gl.PAYRUN, "payrun:" + rp) not in posted):
+                pending.append({"source": gl.PAYRUN, "sourceId": "payrun:" + rp,
+                                "label": "Payroll %s" % rp,
+                                "detail": "%d employee(s)" % len(r.get("lines") or [])})
+                break
+
+        return self._json({
+            "ok": True,
+            "period": period,
+            "periods": seen,
+            "closedPeriods": sorted(closed),
+            "closed": period in closed,
+            "closedBy": (closed.get(period) or {}).get("closedBy") or "",
+            "closedAt": (closed.get(period) or {}).get("closedAt") or "",
+            "trialBalance": gl.trial_balance(rows),
+            "result": gl.result(rows),
+            "batches": db.gl_batches(period=period),
+            "pending": pending,
+            "entryCount": len(rows),
+            "basis": "Circular 200/2014/TT-BTC",
+        })
+
+    def _gl_entries_ep(self, u, qs):
+        """One account's movements — the enquiry an accountant makes when a balance looks wrong."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_POST_LEVEL):
+            return self._err("Approver (management) level or above is required.", 403)
+        period = str(qs.get("period", [""])[0] or "").strip() or None
+        account = str(qs.get("account", [""])[0] or "").strip() or None
+        rows = db.gl_rows(period=period, account=account)
+        return self._json({"ok": True, "period": period or "all", "account": account or "all",
+                           "rows": rows, "totals": gl.totals(rows), "count": len(rows)})
+
+    def _gl_post_ep(self, u, body):
+        """Post one source document into the ledger."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_POST_LEVEL):
+            return self._err("Approver (management) level or above is required to post to the "
+                             "ledger.", 403)
+        source = str(body.get("source") or "").strip()
+        if source != gl.PAYRUN:
+            return self._err("Only payroll posts to the ledger so far. Sales invoices, receipts and "
+                             "purchases follow — each needs its own rules about what it debits, and "
+                             "guessing them would be worse than waiting.", 400)
+        period = str(body.get("period") or "").strip()
+        if not gl.period_valid(period):
+            return self._err("'%s' is not a period." % period, 400)
+
+        batch, err = self._gl_payrun_batch(period, actor=u.get("name") or u.get("email") or "")
+        if err:
+            return self._err(err, 409)
+        try:
+            bid = db.gl_post(batch, posted_by=u.get("name") or u.get("email") or "",
+                             posted_by_id=u.get("id") or "")
+        except ValueError as ex:
+            return self._err(str(ex), 409)
+
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Posted to the general ledger",
+            "target": "%s %s" % (gl.SOURCES.get(batch["source"], batch["source"]), batch["sourceId"]),
+            "detail": "%s · %s · debit %s = credit %s · batch %s"
+                      % (batch["period"], batch["memo"], format(int(batch["debit"]), ","),
+                         format(int(batch["credit"]), ","), bid),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "batch": bid, "period": batch["period"],
+                           "debit": batch["debit"], "credit": batch["credit"],
+                           "lines": batch["lineCount"]})
+
+    def _gl_reverse_ep(self, u, body):
+        """Contra a batch that should not have been posted.
+
+        The only correction there is. Nothing in the ledger is edited or deleted, so the mistake and
+        its correction both stay visible — the difference between books somebody can audit and a
+        spreadsheet somebody can tidy.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_POST_LEVEL):
+            return self._err("Approver (management) level or above is required.", 403)
+        bid = str(body.get("batch") or "").strip()
+        stored = db.gl_batch(bid)
+        if not stored:
+            return self._err("No such ledger batch.", 404)
+        if stored["kind"] == gl.REVERSE:
+            return self._err("That batch is itself a reversal. Reversing a reversal would re-post "
+                             "the original — post the source again if that is what is meant.", 409)
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 4:
+            return self._err("A reversal needs a reason. It is a permanent line in the books, and "
+                             "'why' is the only part of it a reader cannot reconstruct.", 400)
+
+        try:
+            rev = gl.reversal({"source": stored["source"], "sourceId": stored["source_id"],
+                               "date": stored["doc_date"], "period": stored["period"],
+                               "lines": stored["lines"], "actor": stored.get("posted_by") or ""},
+                              memo="Reversal of %s — %s" % (bid, reason))
+            rid = db.gl_post(rev, posted_by=u.get("name") or u.get("email") or "",
+                             posted_by_id=u.get("id") or "", reverses=bid)
+        except (gl.LedgerError, ValueError) as ex:
+            return self._err(str(ex), 409)
+
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Reversed a ledger batch",
+            "target": bid,
+            "detail": "%s · %s · reversal %s" % (stored["period"], reason, rid),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "batch": rid, "reverses": bid, "period": rev["period"]})
+
+    def _gl_close_ep(self, u, body):
+        """Close a period. After this, nothing further posts into it.
+
+        Two controls, both of which already exist elsewhere in this platform and neither of which is
+        decoration:
+
+        SEGREGATION OF DUTIES. Whoever posted into the month may not be the one who declares it
+        final. The same preparer-is-not-signer rule the pay run enforces, and the control an auditor
+        asks about first.
+
+        IT MUST BALANCE. Closing is the assertion that these ARE the books. Asserting it over a
+        difference is the one thing a close must never be able to do.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_CLOSE_LEVEL):
+            return self._err("Closing a period is a Director act — Admin level is required.", 403)
+        period = str(body.get("period") or "").strip()
+        if not gl.period_valid(period):
+            return self._err("'%s' is not a period." % period, 400)
+        if db.gl_is_closed(period):
+            return self._err("%s is already closed." % period, 409)
+
+        rows = db.gl_rows(period=period)
+        tb = gl.trial_balance(rows)
+        if not tb["balanced"]:
+            return self._err(
+                "%s does not balance — debits %s against credits %s, a difference of %s. A period "
+                "cannot be closed over an imbalance: closing is the assertion that these are the "
+                "books, and they are not yet."
+                % (period, format(int(tb["debit"]), ","), format(int(tb["credit"]), ","),
+                   format(int(abs(tb["difference"])), ",")), 409)
+
+        posters = {b.get("posted_by_id") for b in db.gl_batches(period=period)}
+        if u.get("id") in posters:
+            return self._err(
+                "You posted into %s, so you cannot also be the one who closes it. Whoever prepares a "
+                "set of books does not get to declare them final — the same rule the pay run follows "
+                "between its preparer and its signer." % period, 409)
+
+        item = {"id": period, "period": period, "status": "closed",
+                "closedBy": u.get("name") or u.get("email"), "closedById": u.get("id"),
+                "closedAt": self._utc_now(),
+                "debit": tb["debit"], "credit": tb["credit"], "accounts": tb["accounts"],
+                "entryCount": len(rows),
+                "note": str(body.get("note") or "").strip()}
+        db.put_collection_item(db.GL_PERIODS, item)
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Closed an accounting period",
+            "target": period,
+            "detail": "debit %s = credit %s across %d account(s)"
+                      % (format(int(tb["debit"]), ","), format(int(tb["credit"]), ","),
+                         tb["accounts"]),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "period": period, "closedBy": item["closedBy"],
+                           "closedAt": item["closedAt"]})
+
+    def _gl_reopen_ep(self, u, body):
+        """Re-open a closed period — Director only, reason required, and it leaves a trail.
+
+        Deliberately possible. A close that could never be undone would be undone anyway, by editing
+        the database directly, and that is the version nobody can see afterwards.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_CLOSE_LEVEL):
+            return self._err("Re-opening a period is a Director act — Admin level is required.", 403)
+        period = str(body.get("period") or "").strip()
+        reason = str(body.get("reason") or "").strip()
+        if not db.gl_is_closed(period):
+            return self._err("%s is not closed." % period, 409)
+        if len(reason) < 4:
+            return self._err("Re-opening a closed period needs a reason.", 400)
+        prev = db.gl_closed_periods().get(period) or {}
+        db.put_collection_item(db.GL_PERIODS, dict(prev, id=period, period=period, status="open",
+                                                   reopenedBy=u.get("name") or u.get("email"),
+                                                   reopenedAt=self._utc_now(), reopenReason=reason))
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Re-opened a closed accounting period",
+            "target": period, "detail": reason, "ts": self._utc_now()})
+        return self._json({"ok": True, "period": period, "status": "open"})
+
     def _bank_transfer_ep(self, u, qs, body=None, create=False):
         """The salary payment file for a signed pay run.
 
@@ -15896,7 +16209,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _coll_update(self, u, name, iid, body):
         if name in self.FROZEN:
-            return self._err(self.FROZEN_MSG, 409)
+            return self._err(self.FROZEN_MSGS.get(name, self.FROZEN_MSG), 409)
         if name not in self.COLLECTIONS or name in self.CONFIDENTIAL or not iid:
             # CONFIDENTIAL folds into the same 404: saying "you may not touch this one" confirms
             # the collection exists, which for the speak-up channel is itself information.
@@ -16787,7 +17100,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _coll_delete(self, u, name, iid):
         if name in self.FROZEN:
-            return self._err(self.FROZEN_MSG, 409)
+            return self._err(self.FROZEN_MSGS.get(name, self.FROZEN_MSG), 409)
         if name not in self.COLLECTIONS or name in self.CONFIDENTIAL or not iid:
             # CONFIDENTIAL folds into the same 404: saying "you may not touch this one" confirms
             # the collection exists, which for the speak-up channel is itself information.
