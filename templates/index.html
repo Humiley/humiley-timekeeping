@@ -301,6 +301,42 @@ body.exporting .sch-xrow{display:none !important}
 body.exporting .sch-vp{max-height:none !important;overflow:visible !important}
 body.exporting .sch-vp,body.exporting .sch-vp *{scrollbar-width:none !important}
 body.exporting .sch-cap,body.exporting .sch-cap .card{overflow:visible !important;max-height:none !important}
+/* ── The ITP timeline is a Gantt too, and it was the one chart in the app that never got a box. A
+   120-plan register rendered ~3,400px of chart straight down the page: the legend, the card below it
+   and the tab you were reading were all pushed off screen, and there was no way to move within the
+   chart without moving the whole page.
+   ONE height for every scroll box in the app. The registers' tables cap at this number too, so a tab
+   that stacks a table on a timeline — Quality does exactly that — shows two boxes of one size. The
+   Schedule Gantt used to carry its own 520px inline; a second number is how "the same" quietly stops
+   being true, so it reads this variable now as well.
+   NOT folded into _fitTableScroll, deliberately: a Gantt needs a TWO-axis box, because the months run
+   off to the right as well as the rows running down. That also inverts the phone rule — an uncapped
+   table on a phone is a natural page scroll, but an uncapped Gantt is 3,400px of chart you can only
+   pan by moving the page, so this box keeps its cap where a table drops one. */
+:root{--scrollbox-h:560px}
+.sch-vp,.itp-vp{max-height:var(--scrollbox-h)}
+.itp-vp{overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(32,80,144,.28) transparent}
+.itp-vp:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
+/* Both axes get a bar here, unlike .sch-vp — that one suppresses its horizontal bar because it has
+   the inset .sch-xbar proxy underneath it. This box has no proxy, so killing its bar would leave the
+   months to the right reachable only by guessing. */
+.itp-vp::-webkit-scrollbar{width:11px;height:11px}
+.itp-vp::-webkit-scrollbar-track{background:transparent}
+.itp-vp::-webkit-scrollbar-thumb{background:rgba(32,80,144,.22);border:3px solid transparent;background-clip:padding-box;border-radius:9px}
+.itp-vp::-webkit-scrollbar-corner{background:transparent}
+/* Pinned the way a table's thead is. Scroll into row 90 of a 120-row Gantt with the month axis gone
+   and a bar's position on the page means nothing at all.
+   This only works because the viewport sets `align-items:flex-start`. A flex item stretches to the
+   CROSS SIZE OF THE LINE by default, so each column measured 535px — the box's height — while holding
+   3,381px of rows. A sticky element cannot travel outside its containing block, so the axis pinned for
+   the first 514px of scrolling and then slid away with everything else, which reads as a header that
+   works until you actually need it. Measured before and after: without flex-start the header sat at
+   -1164px from the box top at scrollTop 1800; with it, offset 0 at every position to the very end. */
+.itp-vp .itp-hd{position:sticky;top:0;z-index:4;background:var(--card)}
+body.exporting .itp-vp{max-height:none !important;overflow:visible !important}
+/* The card clips (overflow:hidden), so un-capping the box alone would still cut the chart off at the
+   card's edge — the same pairing .sch-cap needs. */
+body.exporting .itp-cap{overflow:visible !important;max-height:none !important}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid var(--line);background:var(--soft-bg)}
 td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -25691,7 +25727,8 @@ function _schTimeline(rows, o) {
     '<div class="sch-vp" data-labw="' + LABW + '" data-plotw="' + plotW + '"' +
       ' data-fit="' + (_pdWide ? '0' : '1') + '" tabindex="0" role="group"' +
       ' aria-label="' + _tkEscA(_t('Scroll the timeline sideways')) + '"' +
-      ' style="overflow:auto;max-height:520px">' +
+      /* Height comes from --scrollbox-h now, so this box and a register table are the same size. */
+      ' style="overflow:auto">' +
       '<div style="min-width:' + (LABW + plotW) + 'px">' +
       header +
       '<div style="position:relative">' +
@@ -26492,18 +26529,30 @@ function _pmItpTimeline(itps) {
       if (off <= 100.5) _ml.push({ off: Math.max(0, off), lab: d.toLocaleString('en-US', { month: 'short' }) + ((d.getMonth() === 0 || _ml.length === 0) ? " '" + String(d.getFullYear()).slice(-2) : '') });
       d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
   const grid = _ml.map(function (m) { return '<div style="position:absolute;left:' + m.off + '%;top:0;bottom:0;width:0;border-left:1px solid var(--line)"></div>'; }).join('');
-  const monthHdr = '<div style="position:relative;height:15px;margin-bottom:6px">' + _ml.map(function (m) { return '<div style="position:absolute;left:' + m.off + '%;font-size:10px;font-weight:700;color:var(--text-light);white-space:nowrap;padding-left:3px">' + m.lab + '</div>'; }).join('') + '</div>';
+  /* padding, not margin: a sticky element paints its background over its PADDING box, so a 6px
+     margin here would leave a 6px slot for rows to show through under the pinned months.
+     The height counts the padding, because the stylesheet sets `*{box-sizing:border-box}`. Written as
+     `height:15px;padding-bottom:6px` this row measured 15px and not 21, and the bar column then sat
+     6px above its own labels for the entire length of the chart. Caught by measuring it in a browser;
+     the source test that computed 15+6 agreed with the bug, because that sum is the content-box
+     answer and this page is not content-box.
+     31 = the 21px band + the 10px of breathing room that used to be the scroll container's
+     padding-top. It had to move in here: padding on a scroll container is INSIDE the scrollport, so
+     it scrolled away and left a 10px strip above the pinned months with rows running through it
+     (measured: plan 64 painting above the axis at scrollTop 1800). Carried by the header instead, the
+     gap is part of what gets pinned and nothing can pass through it. */
+  const monthHdr = '<div class="itp-hd" style="height:31px;padding-top:10px;padding-bottom:6px">' + _ml.map(function (m) { return '<div style="position:absolute;left:' + m.off + '%;font-size:10px;font-weight:700;color:var(--text-light);white-space:nowrap;padding-left:3px">' + m.lab + '</div>'; }).join('') + '</div>';
   const todayOff = (_pmDateDiff(min, _pmToday()) || 0) / span * 100;
   const today = (todayOff >= 0 && todayOff <= 100) ? '<div style="position:absolute;left:' + todayOff + '%;top:0;bottom:0;width:0;border-left:2px dashed #EF4444;z-index:3" title="Today"></div>' : '';
   const clr = function (st) { return st === 'Approved' ? '#00B060' : st === 'Superseded' ? '#94a3b8' : '#F59E0B'; };
-  const labels = '<div style="height:21px"></div>' + dated.map(function (t) { const full = (t.itpNo ? t.itpNo + '  ' : '') + (t.title || ''); return '<div title="' + _tkEscA(full) + '" style="height:' + ROW + 'px;display:flex;align-items:center;font-size:11px;line-height:1.15;overflow:hidden;padding-right:10px;border-bottom:1px solid var(--soft-bg)"><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + (t.itpNo ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px;margin-right:5px">' + _pmEsc(t.itpNo) + '</span>' : '') + _pmEsc(t.title || '') + '</span></div>'; }).join('');
+  const labels = '<div class="itp-hd" style="height:31px;padding-top:10px"></div>' + dated.map(function (t) { const full = (t.itpNo ? t.itpNo + '  ' : '') + (t.title || ''); return '<div title="' + _tkEscA(full) + '" style="height:' + ROW + 'px;display:flex;align-items:center;font-size:11px;line-height:1.15;overflow:hidden;padding-right:10px;border-bottom:1px solid var(--soft-bg)"><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + (t.itpNo ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px;margin-right:5px">' + _pmEsc(t.itpNo) + '</span>' : '') + _pmEsc(t.title || '') + '</span></div>'; }).join('');
   const bars = dated.map(function (t) { const sdt = t.plannedStart || t.plannedFinish, f = t.plannedFinish || t.plannedStart; let off = Math.max(0, (_pmDateDiff(min, sdt) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(sdt, f) || 0) / span) * 100); if (off > 100) off = 100; if (off + w > 100) w = 100 - off; const hex = clr(t.status); const point = sdt === f;
     const bar = point ? '<div style="position:absolute;left:' + off + '%;top:5px;width:12px;height:12px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="' + _pmFmt(f) + '"></div>' : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:7px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + '"></div>';
     return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
-  const dates = '<div style="height:21px"></div>' + dated.map(function (t) { return '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:10.5px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.plannedFinish || t.plannedStart) + '</div>'; }).join('');
+  const dates = '<div class="itp-hd" style="height:31px;padding-top:10px"></div>' + dated.map(function (t) { return '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:10.5px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.plannedFinish || t.plannedStart) + '</div>'; }).join('');
   const timeline = monthHdr + '<div style="position:relative">' + grid + today + bars + '</div>';
   const legend = '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#00B060;border-radius:2px"></span> Approved</span><span><span style="display:inline-block;width:10px;height:8px;background:#F59E0B;border-radius:2px"></span> Draft</span><span><span style="display:inline-block;width:10px;height:8px;background:#94a3b8;border-radius:2px"></span> Superseded</span><span><span style="display:inline-block;width:9px;height:9px;background:#94a3b8;transform:rotate(45deg)"></span> Single date</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div>';
-  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + labels + '</div><div style="flex:1;min-width:340px">' + timeline + '</div><div style="width:96px;flex-shrink:0">' + dates + '</div></div>' + legend + '</div>';
+  return '<div class="card itp-cap" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div class="itp-vp" tabindex="0" role="group" aria-label="' + _tkEscA(_t('Scroll the ITP timeline')) + '" style="display:flex;align-items:flex-start;padding:0 16px 4px;overflow:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + labels + '</div><div style="flex:1;min-width:340px">' + timeline + '</div><div style="width:96px;flex-shrink:0">' + dates + '</div></div>' + legend + '</div>';
 }
 function pmRenderQuality(pid) {
   const all = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
@@ -36977,6 +37026,7 @@ const _VI = {
   'Show or hide this trade': 'Ẩn/hiện bộ môn này',
   'File progress for this activity': 'Ghi nhận tiến độ công việc này',
   'Scroll the timeline sideways': 'Kéo thanh thời gian sang ngang',
+  'Scroll the ITP timeline': 'Cuộn dòng thời gian ITP',
   'Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind': 'Thanh nhạt = khoảng kế hoạch · thanh đậm = tiến độ luỹ kế · chấm = đúng kế hoạch, chậm nhẹ hoặc trễ',
   'Wide': 'Rộng',
   'Fit': 'Vừa khung',
