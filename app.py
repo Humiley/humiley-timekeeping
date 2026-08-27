@@ -5043,6 +5043,44 @@ class Handler(BaseHTTPRequestHandler):
         return any(n and (n.strip().lower() == me or self._pm_same_person(n, u.get("name")))
                    for n in names)
 
+    def _eng_log_refusal(self, u, coll, set_status, rec, why, source="sign"):
+        """Record that a rule stopped somebody, so it can be judged on real work.
+
+        The rule is identified by (collection, attempted status, opening sentence) rather than by
+        an id threaded through a dozen call sites. That leaves the rules themselves untouched — a
+        logging change that had to edit every rule is a logging change that eventually gets one of
+        them wrong — and the triple stays stable as long as the wording does.
+        """
+        rec = rec or {}
+        db.put_collection_item("eng_refusals", {
+            # _eng_project_of returns the project RECORD, not its id — writing that here put
+            # a whole commission object in the field and the row could not be filtered by project.
+            "projectId": rec.get("projectId") or (self._eng_project_of(rec) or {}).get("id") or "",
+            "coll": coll,
+            "attempted": str(set_status or ""),
+            "rule": (str(why or "").strip().split(".")[0])[:90],
+            "message": str(why or "")[:400],
+            "recordId": rec.get("id") or "",
+            "recordRef": str(rec.get("ref") or rec.get("docNo") or rec.get("ecnNo")
+                             or rec.get("trnNo") or rec.get("rev") or rec.get("title") or "")[:80],
+            "who": u.get("name") or "",
+            "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "source": source,
+        })
+
+    def _eng_err_logged(self, u, coll, attempted, rec, msg, code):
+        """A refusal raised on the WRITE path rather than the signing path.
+
+        Two of the nine live there — the code edition and the unrecovered change — and leaving them
+        uncounted would make the tally quietly partial, which is worse than not counting at all:
+        the two rules most likely to be argued with would be the two with no evidence either way.
+        """
+        try:
+            self._eng_log_refusal(u, coll, attempted, rec, msg, source="write")
+        except Exception:
+            pass
+        return self._err(msg, code)
+
     def _eng_appr_check(self, u, coll, cur_status, set_status, rec):
         t = str(set_status or "").strip().lower()
         if not t:
@@ -6388,7 +6426,27 @@ class Handler(BaseHTTPRequestHandler):
         # commission's Design Manager / Lead Engineer, OR the person actually named as Approver on
         # the deliverable being issued.
         if coll.startswith("eng_"):
-            return self._eng_appr_check(u, coll, cur_status, set_status, rec)
+            _why = self._eng_appr_check(u, coll, cur_status, set_status, rec)
+            # Every refusal in this module lands here, so this is the one place that can count
+            # them. Nine rules were added in a fortnight and nothing recorded whether any fires on
+            # real work — and a control that stops the wrong thing does not get fixed, it gets
+            # ROUTED AROUND. A register full of "commission-wide" entries looks populated while
+            # meaning nothing, so counting is the only way to tell a rule that works from one
+            # people have learned to avoid.
+            if _why:
+                try:
+                    self._eng_log_refusal(u, coll, set_status, rec, _why)
+                except Exception as _e:
+                    # The refusal must stand whatever happens here — but a logger that fails
+                    # silently is a counter that reads zero and looks like "no rule ever fired",
+                    # which is the most misleading number this screen could show. It cost three
+                    # test failures to find `add_collection_item` does not exist; without the
+                    # tests the swallow would have hidden it in production indefinitely.
+                    try:
+                        print("eng refusal log failed: %r" % (_e,))
+                    except Exception:
+                        pass
+            return _why
         if coll.startswith("ahu_"):
             return self._ahu_appr_check(u, coll, cur_status, set_status, rec)
         if coll not in self.THREE_LEVEL_COLLS:
@@ -9078,7 +9136,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -16556,7 +16614,8 @@ class Handler(BaseHTTPRequestHandler):
                               or item.get("variationRef") or existing.get("variationRef") or "").strip()
                 if _newst in ("implemented", "closed") and _wasst not in ("implemented", "closed") \
                         and _cc.startswith("yes") and not _linked:
-                    return self._err(
+                    return self._eng_err_logged(
+                        u, "eng_changes", "implemented", existing,
                         "This change was agreed as chargeable to the client, and it is about to be "
                         "recorded as done with nothing to bill it against. Link the sell-side "
                         "variation that recovers it, or change it to 'No — at our cost' so the "
@@ -16576,7 +16635,8 @@ class Handler(BaseHTTPRequestHandler):
                     "adopted", "current", "in force")
                 if _was and _now and _was != _now and _adopted \
                         and not str(item.get("changeRef") or "").strip():
-                    return self._err(
+                    return self._eng_err_logged(
+                        u, "eng_standards", "edition change", existing,
                         "%s is adopted on this commission at %s, and every deliverable has been "
                         "checked against that edition. Moving it to %s is a change to a design "
                         "input: raise an engineering change and put its reference in "
