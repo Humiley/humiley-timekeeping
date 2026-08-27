@@ -196,9 +196,14 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 .grid-6-4{display:grid;grid-template-columns:6fr 4fr;gap:16px}
 
 /* ── TABLE ── */
-/* Tables grow to their FULL height and the PAGE scrolls — one natural scroll for a long list, instead
-   of a short inner box you scroll separately (nested scrolling made a 12-row list feel "stuck in one
-   page"). Only the HORIZONTAL axis scrolls inside the box, for tables wider than the card.
+/* Every table sits in a box of the SAME height and scrolls inside it (_fitTableScroll sets the cap;
+   .tw-tall carries it). This replaced an earlier rule where tables grew to full height and the PAGE
+   scrolled — one natural scroll, chosen because a short list in its own little box felt "stuck in
+   one page". That held for a twelve-row list and stopped holding at 135: a register that owns a
+   screen and a half pushes the KPI strip, the filter bar and the next register somewhere you have
+   to go looking for them. Uniform height also means the thing you are looking for is in the same
+   place on every tab.
+   The HORIZONTAL axis scrolls inside the box too, for tables wider than the card.
    Reaching that horizontal bar on a long table would mean scrolling to the very bottom of the page, so
    _twXBar() (JS) pins a synced proxy scrollbar to the bottom of the viewport while a wide table is in
    view — you can slide the columns from anywhere in the list. The header row stays pinned via sticky.
@@ -36082,11 +36087,14 @@ function showView(id, navEl, title) {
    element on a page in response to scrolling feeds back into the page's scroll height and jitters.
    top0 is measured scroll-independently (rect.top + scrollTop) so the value is stable at any scroll
    position. Skipped on phones (the page scrolls there) and during PDF export (full height needed). */
-/* How much taller than its box a table must be before it earns its own scrollbar. Not a row count:
-   row height varies with the content, and a monitor twice as tall should hold twice as many rows
-   before anything is capped. The 1.25 is hysteresis — a table two rows over the budget should keep
-   flowing rather than gain a scrollbar that moves almost nothing. */
-const _TW_TALL_FACTOR = 1.25;
+/* Every register is the same height. Not "long ones get a scrollbar and short ones do not" — that
+   was two rounds of this change and it is not what was asked for: a page of registers that each
+   end wherever their row count happens to land reads as a different rule per table, and the one
+   you are looking for is never where the last one was.
+   A fixed ceiling rather than a share of the viewport, so a register is the same size on a laptop
+   and on a 27-inch monitor and the layout below it does not move when somebody resizes. The vh
+   term only ever pulls it DOWN, for a short window where 560px would fill the screen. */
+const _TW_CAP_PX = 560;
 function _fitTableScroll() {
   /* SHORT tables grow to full height and the PAGE scrolls, as one natural list — the note beside
      .table-wrap explains why, and a 12-row register that made you scroll a little inner box is
@@ -36102,14 +36110,20 @@ function _fitTableScroll() {
   const content = document.getElementById('content'); if (!content) return;
   const off = (window.matchMedia && window.matchMedia('(max-width:820px)').matches) ||
               document.body.classList.contains('exporting');
-  const cap = Math.max(340, Math.round(window.innerHeight * 0.66));
+  /* 0.8, not 0.62: at 0.62 a 900px laptop window computed 558 and the box was NOT the same
+     height as on a taller screen, which is the whole point. The vh term is a floor for SHORT
+     windows only — under about 700px — and must not touch an ordinary one. */
+  const cap = Math.min(_TW_CAP_PX, Math.max(300, Math.round(window.innerHeight * 0.8)));
   content.querySelectorAll('.table-wrap').forEach(w => {
     /* An inline max-height set by whoever built the box — a dialog's own list, say — is a decision
        already taken about that table, so leave it alone rather than overruling it from here. */
     if (w.dataset.twCap !== '1' && w.style.maxHeight) return;
     /* scrollHeight is the CONTENT height and does not change once the box is capped, so this
        decision is stable across re-runs instead of oscillating as the cap takes effect. */
-    const tall = !off && w.scrollHeight > cap * _TW_TALL_FACTOR;
+    /* Capped unconditionally. A table with fewer rows than the box simply shows no scrollbar —
+       there is nothing to scroll — so "the same for every table" costs a short register nothing
+       while making every long one behave identically. */
+    const tall = !off;
     w.classList.toggle('tw-tall', tall);
     if (tall) { w.style.maxHeight = cap + 'px'; w.dataset.twCap = '1'; }
     else if (w.dataset.twCap === '1') { w.style.maxHeight = ''; delete w.dataset.twCap; }
