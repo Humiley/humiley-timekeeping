@@ -38,16 +38,21 @@ if not db.list_collection("ahu_orders"):
         "productionLead": "Tran Van Long", "qcInspector": "Pham Thi Mai"})
     print("seeded order", order["poNumber"])
 
-    for i, (pin, tag, fam, cr) in enumerate([
-            ("PIN-2026-0417-01", "AHU-B-01", "hygienic", "ISO7"),
-            ("PIN-2026-0417-02", "AHU-B-02", "modular", None),
-            ("PIN-2026-0417-03", "AHU-B-03", "outdoor", None)]):
+    # Section counts on two of the three, and deliberately NOT on the third. Five of the nine
+    # workstations are quoted per section, so a unit without a count cannot have its tact bands
+    # scaled to it — the capacity chart and the labour analysis both refuse to judge it rather than
+    # assuming one section. That refusal is a feature worth being able to see, so one unit keeps it.
+    for i, (pin, tag, fam, cr, secs) in enumerate([
+            ("PIN-2026-0417-01", "AHU-B-01", "hygienic", "ISO7", 4),
+            ("PIN-2026-0417-02", "AHU-B-02", "modular", None, 6),
+            ("PIN-2026-0417-03", "AHU-B-03", "outdoor", None, None)]):
         unit = db.put_collection_item("ahu_units", {
             "id": "ahu-unit-demo-%d" % (i + 1), "orderId": "ahu-ord-demo",
             "pin": pin, "tag": tag, "family": fam,
             "model": "AeroSmart AS-%d" % (18 + i * 6),
             "airflow": 12000 + i * 4000, "esp": 450, "voltage": 400, "coilDesignBar": 16,
-            "cleanroom": cr, "selectionRef": "AS-2026-%03d" % (410 + i),
+            "cleanroom": cr, "sectionCount": secs,
+            "selectionRef": "AS-2026-%03d" % (410 + i),
             "fatRequired": "Yes" if i == 0 else "", "bomStatus": "Draft",
             "productionLead": "Tran Van Long", "qcInspector": "Pham Thi Mai",
             "status": "In production"})
@@ -65,6 +70,31 @@ if not db.list_collection("ahu_orders"):
             s["signedBy"] = who
             s["signedOn"] = "2026-08-01"
             db.put_collection_item("ahu_steps", s)
+    # Two workstations actually worked, with a START as well as a signature — the only way real
+    # touch time can be known, and without it the Labour & Flow screen has nothing but the SOP's
+    # claims. One runs inside its band and one over it, with the reason recorded, because a demo
+    # where everything is on time demonstrates nothing and teaches nobody what the screen is for.
+    #
+    # WS-01 is "20 - 60 min / panel set" — over 4 sections a band of 1.3 to 4.0 h. 2.5 h is inside.
+    # WS-02 is "30 - 90 min / section"   — over 4 sections a band of 2.0 to 6.0 h. 9.0 h is over,
+    # which is what the delay reason is there to explain.
+    for code, a, b, why in [
+            ("WS-01", "2026-08-04T08:00:00Z", "2026-08-04T10:30:00Z", ""),
+            ("WS-02", "2026-08-05T08:00:00Z", "2026-08-05T17:00:00Z",
+             "Waiting for material or a part")]:
+        s = db.get_collection_item("ahu_steps", "ahu-unit-demo-1-" + code)
+        if s:
+            s["status"] = "Complete"
+            s["signedBy"] = "Tran Van Long"
+            s["signedOn"] = b[:10]
+            s["startedAt"] = a
+            s["startedBy"] = "Tran Van Long"
+            if why:
+                s["delayReason"] = why
+            s["signatures"] = [{"name": "Tran Van Long", "ts": b, "meaning": code + " complete"}]
+            db.put_collection_item("ahu_steps", s)
+    print("seeded 2 worked stations on the first unit (one over tact, with the reason)")
+
     db.put_collection_item("ahu_docs", {
         "id": "ahu-doc-demo-1", "unitId": "ahu-unit-demo-1", "kind": "GA drawing",
         "docNo": "HML-AHU-GA-HYG-0417-01", "title": "General arrangement — AHU-B-01",
@@ -77,5 +107,64 @@ if not db.list_collection("ahu_orders"):
             "receivedQty": q if n < 3 else 0, "iqcStatus": "Passed" if n < 3 else "Pending",
             "shortageQty": 0})
     print("seeded a GA drawing and 5 BOM lines on the first unit")
+
+# ── The evidence registers ──────────────────────────────────────────────────────────────────────
+# Seeded because an empty screen cannot be told apart from a broken one. Somebody opening Quality
+# Evidence on a fresh demo database was seeing nothing at all, which is the same thing a bug looks
+# like — and it gave them no idea what a good record is supposed to contain.
+#
+# The examples are deliberately not all healthy. One instrument is out of calibration, one has no
+# due date at all, and one qualification has expired: those are the three states the screen exists
+# to separate, and a demo where everything is green demonstrates nothing.
+
+if not db.list_collection("ahu_instruments"):
+    for i in [
+        {"id": "ahu-instr-1", "name": "Digital manometer", "type": "Manometer",
+         "serial": "DM-99181", "maker": "Testo 512-1", "calDate": "2026-03-15",
+         "calDue": "2027-03-15", "certNo": "VN-CAL-2026-4417", "calBy": "QUATEST 3",
+         "location": "QC room"},
+        {"id": "ahu-instr-2", "name": "Hi-pot tester", "type": "Hi-pot tester",
+         "serial": "HP-0042", "maker": "Kikusui TOS5301", "calDate": "2025-06-30",
+         # Out of calibration: signing a T7 against this is refused, which is the point.
+         "calDue": "2026-06-30", "certNo": "VN-CAL-2025-2210", "calBy": "QUATEST 3",
+         "location": "Test bay"},
+        {"id": "ahu-instr-3", "name": "Vane anemometer", "type": "Anemometer",
+         "serial": "AN-7734", "maker": "TSI 5725",
+         # No due date recorded. Reads UNKNOWN, never VALID — and is listed separately, because an
+         # instrument with no due date never appears in a report sorted by due date.
+         "location": "Test bay"},
+    ]:
+        db.put_collection_item("ahu_instruments", i)
+    print("seeded 3 test instruments (one expired, one with no due date)")
+
+if not db.list_collection("ahu_quals"):
+    for q in [
+        {"id": "ahu-qual-1", "person": "Pham Thi Mai", "scope": "ipqc",
+         "qualifiedOn": "2025-02-01", "expiresOn": "2028-02-01", "certRef": "HML-QA-COMP-014",
+         "issuedBy": "QA Manager"},
+        {"id": "ahu-qual-2", "person": "Pham Thi Mai", "scope": "T3, T4",
+         "qualifiedOn": "2025-02-01", "expiresOn": "2028-02-01", "certRef": "HML-QA-COMP-015",
+         "issuedBy": "QA Manager"},
+        {"id": "ahu-qual-3", "person": "Tran Van Long", "scope": "T7",
+         # Expired: the hi-pot qualification lapsed and nobody renewed it.
+         "qualifiedOn": "2023-01-10", "expiresOn": "2026-01-10", "certRef": "HML-QA-COMP-009",
+         "issuedBy": "QA Manager"},
+    ]:
+        db.put_collection_item("ahu_quals", q)
+    print("seeded 3 qualifications (one expired)")
+
+if not db.list_collection("ahu_trace"):
+    # Two units share a fan batch, so the recall search has something real to find. This is the shape
+    # of the question that matters: a supplier reports a fault in B-2026-14, which units got it?
+    for n, (unit_id, comp, maker, serial, batch) in enumerate([
+        ("ahu-unit-demo-1", "Fan", "ebm-papst", "EB-2026-0091", "B-2026-14"),
+        ("ahu-unit-demo-2", "Fan", "ebm-papst", "EB-2026-0092", "B-2026-14"),
+        ("ahu-unit-demo-1", "Motor", "WEG", "WG-2026-5512", "M-2026-03"),
+        ("ahu-unit-demo-1", "Coil", "Kaori", "KO-771-A", "C-2026-99"),
+    ]):
+        db.put_collection_item("ahu_trace", {
+            "id": "ahu-trace-demo-%d" % n, "unitId": unit_id, "component": comp,
+            "maker": maker, "serial": serial, "batch": batch, "recordedOn": "2026-08-05"})
+    print("seeded 4 component serials (two units share fan batch B-2026-14)")
 
 print("done")

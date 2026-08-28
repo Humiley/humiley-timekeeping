@@ -40,14 +40,62 @@ This module answers all five, because every controlled act in it is signed rathe
 
 ---
 
-## The four screens
+## The screens
 
 | Screen | What it is for |
 |---|---|
-| **Production Board** | Every unit on the floor: its stage, its completion, what it is waiting for, what is holding it. Refreshes itself every 30 s while visible — the screen somebody leaves open on a wall. |
+| **Production Board** | Opens on the process itself: seven stages left to right, the gate that closes each, and how many units sit in each right now. Click a stage to filter the table below it. Then every unit on the floor — its stage, completion, what it is waiting for, what is holding it. Updates within about a second of a sign-off, and still refreshes on a 30 s timer so a dead connection cannot leave it looking live. |
 | **AHU Register** | One row per physical unit, by its Production Identification Number. |
 | **Orders & Contracts** | Customer POs and contracts, the units built against each, and the contract review that gate G1 checks. |
+| **Capacity & Load** | SOP §6.7's rolling 8-week load chart, plus elapsed time against each step's tact. Needs a weekly capacity to give a verdict; without one it reports hours and says so. |
+| **Quality Evidence** | Whether the measurements this factory has signed can be defended: the instrument register, who is qualified for what, and the reverse search that answers "which units got this part". |
 | **Production Standard** | AHU-SOP-MASTER-001 rendered from the server's own copy — so "what is IPQC-3 supposed to measure?" gets the same answer the gate will enforce. |
+
+## Starting from nothing
+
+The module works the day it is switched on — a unit can be registered, routed and signed with none
+of the registers below filled in. What the registers buy is the ability to *defend* what was signed,
+and they are worth filling in roughly this order.
+
+**1. Name the people on each order.** Production lead, QC inspector, sales owner. Authority is
+checked against these names, so an order with none means a manager has to sign everything, and the
+alert for a failed step has nobody to reach.
+
+**2. Set the weekly capacity** (Capacity & Load → *Weekly capacity*). Productive hours the floor
+actually has in a week. Until it is set the load chart reports hours with **no verdict**, which is
+deliberate: a chart drawn against a guessed capacity looks exactly like one drawn against a real
+one, and this is the number a delivery promise rests on.
+
+**3. Register the test instruments** (Quality Evidence → *Register an instrument*). Anything that
+produces a number on a test or hold point: manometer, hi-pot tester, anemometer, vibration meter.
+The calibration due date is the field everything turns on — leave it blank and the instrument reads
+`UNKNOWN`, never valid, because "we have no record" and "it is in calibration" are opposite claims.
+
+Once they are registered, the picker appears on every test and hold-point panel. A step signed
+against an instrument the register shows as **out of calibration is refused**, whether or not any
+rule is switched on. That one is not a policy setting: signing a measurement to an instrument known
+to be out of calibration produces a record the company cannot stand behind.
+
+**4. Record who is qualified** (Quality Evidence → *Record a qualification*). Scope can be a whole
+kind — `ipqc`, `test` — or specific codes, `T3, T4`. A kind is how you say "signed off for hold
+points" without listing five codes.
+
+**5. Then, and only then, tighten the rules.** Two settings, both off by default:
+
+| Setting | What it does when on |
+|---|---|
+| `ahu_require_instrument` | A test or hold point cannot be signed without naming the instrument that measured it. |
+| `ahu_require_qualification` | A test or hold point cannot be signed by somebody with no current qualification for it. |
+
+They are off by default on purpose. Switching either on against an empty register would stop every
+test in the building, and a control that has to be switched off again on its first morning is one
+nobody trusts afterwards. Until they are on, the gaps are still **reported** — Quality Evidence
+names every signed test that recorded no instrument, by unit and step code.
+
+**What to look at afterwards.** Quality Evidence separates three states that a single red/green
+would report identically: expired, none on file, and *on file with no expiry date recorded*. The
+third is the one that matters most and the one a report sorted by due date can never show you,
+because an instrument with no due date does not appear in it at all.
 
 ## The traveller
 
@@ -155,5 +203,17 @@ the next revision rather than quietly diverging.
   by the whole portal, so a bare generic word is a claim on that word in every module and the later
   definition wins silently. Every VN key this module adds is qualified for that reason —
   `Production stage`, not `Stage`.
-* `tools/seed_ahu_demo.py` — a small demo order with three units for looking at the module with real
-  data in it. Writes to `TK_DB_PATH`; point it at a throwaway file.
+* `tools/seed_ahu_demo.py` — a small demo order with three units, plus the evidence registers, for
+  looking at the module with real data in it. Writes to `TK_DB_PATH`; point it at a throwaway file.
+  It is idempotent: re-running adds nothing.
+
+  The seeded examples are deliberately **not** all healthy — one instrument is out of calibration,
+  one has no due date at all, one qualification has expired, two units share a fan batch, and one
+  workstation ran past its tact with the reason recorded. Those are the states the screens exist to
+  separate, and a demo where everything is green demonstrates nothing. An empty screen also cannot
+  be told apart from a broken one, which is why the registers are seeded at all.
+
+  Two of the three units carry a section count and the third deliberately does not. Five of the nine
+  workstations are quoted per section, so a unit without a count cannot have its tact bands scaled to
+  it — the capacity chart and the labour analysis both refuse to judge it rather than assuming one
+  section. That refusal is a feature, and it is worth being able to see it.
