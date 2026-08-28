@@ -15,6 +15,8 @@ Demanding an explanation for an unconfirmed fix would put the burden on whoever 
 which is not a finding about a person. Blocking the punch outright would be worse still: somebody who
 worked would have no record of it, and unrecorded hours are the employer's exposure, not theirs.
 """
+from datetime import datetime, timedelta
+
 import db
 
 EMP = "HML-MGT"          # the 'management' token's employee (tests/conftest.py)
@@ -24,8 +26,49 @@ UNVER = "HQ Tower (GPS unverified)"
 INZONE = "HQ Tower"
 
 
+def _past_time(vn=None):
+    """A check-in time that is in the past on the COMPANY clock, whatever hour the suite runs at.
+
+    These tests used to send a hardcoded "08:00". The server stamps a punch with the VN day (UTC+7)
+    and refuses one in the future, so between 00:00 and 08:00 Vietnam time every test in this file
+    failed on "Check-in time can't be in the future" instead of on the thing it asserts. That window
+    is the middle of the afternoon in UTC, so it took CI red on an unrelated PR to notice — and it
+    was failing on main just the same, for everybody, for eight hours a day.
+
+    The server's clock is the only one that matters here, so derive the time from it rather than
+    from the runner's timezone.
+    """
+    vn = vn or (datetime.utcnow() + timedelta(hours=7))
+    earlier = vn - timedelta(minutes=5)
+    if earlier.date() != vn.date():
+        # Just after midnight: five minutes ago was YESTERDAY, and the punch is recorded against
+        # today's date — so yesterday's clock time would read as the future all over again.
+        return "00:00"
+    return earlier.strftime("%H:%M")
+
+
+def test_the_time_this_file_sends_is_never_in_the_future_at_any_hour():
+    """The helper above is the fix, so it gets a test of its own — swept across every minute of the
+    day rather than trusted at whatever minute the suite happens to run.
+
+    This is the assertion the old hardcoded "08:00" would have failed for 480 of these 1,440
+    minutes, and passing it at 09:00 is exactly why nobody noticed.
+    """
+    day = datetime(2026, 8, 29)
+    for minute in range(24 * 60):
+        now = day + timedelta(minutes=minute)
+        sent = _past_time(now)
+        hh, mm = (int(x) for x in sent.split(":"))
+        claimed = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        # The server's own rule: refused when the claimed time is past the company clock, and it
+        # always stamps the punch with TODAY's date, so the comparison is same-day.
+        assert claimed <= now, (
+            "at %s the helper offered %s, which the server would refuse as the future"
+            % (now.strftime("%H:%M"), sent))
+
+
 def _checkin(api, tok, **body):
-    body.setdefault("time", "08:00")
+    body.setdefault("time", _past_time())
     return api("POST", "/api/attendance/checkin", tok, body)
 
 
