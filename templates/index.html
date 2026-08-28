@@ -1158,7 +1158,14 @@ window.addEventListener('orientationchange', _setLoginBg);
     <img class="sidebar-logo-full" src="/static/brand/portal-logo-login.png"
            alt="Humiley Engineering &amp; Solutions"
            style="height:34px;width:auto;max-width:172px;display:block">
-    <img class="sidebar-logo-mark" src="/static/brand/H-mark-color.png"
+    <!-- data-src, not src. `display:none` on an image element does NOT stop the browser fetching it — only a
+         CSS background on a hidden element is skipped — so this 228 KB mark was downloaded by every
+         session, and being ~94 KB into the document the preload scanner queued it AHEAD of the vendor
+         JS and the login photo. It is only ever seen after sign-in AND after the sidebar is collapsed,
+         drawn at 34px. _sbMarkSrc() gives it its src the first time that happens.
+         Safe for the letterhead at _lhLogo: `querySelector('.sidebar-logo img')` returns the FIRST
+         match, which is .sidebar-logo-full above, not this one. -->
+    <img class="sidebar-logo-mark" data-src="/static/brand/H-mark-color.png"
            alt="Humiley" style="display:none">
   </div>
 
@@ -36749,6 +36756,15 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('collapsed');
   document.getElementById('main').classList.toggle('expanded');
   try { _sbSyncCollapseBtn(); } catch (e) {}
+  try { _sbMarkSrc(); } catch (e) {}
+}
+/* The collapsed-sidebar mark, fetched the first time it can actually be seen rather than on every
+   boot. Idempotent and cheap to call again — after the first assignment there is no data-src left. */
+function _sbMarkSrc() {
+  const m = document.querySelector('.sidebar-logo-mark[data-src]');
+  if (!m) return;
+  m.src = m.dataset.src;
+  m.removeAttribute('data-src');
 }
 function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 

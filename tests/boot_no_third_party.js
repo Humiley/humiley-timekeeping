@@ -155,5 +155,49 @@ console.log('\nAnd a map that is opened still gets one\n');
   });
 }
 
+// ══ 7. and nothing invisible is downloaded ═════════════════════════════════════════════════════
+console.log('\nA hidden image is not downloaded\n');
+{
+  /* `display:none` on an <img> does NOT stop the fetch — only a CSS background on a hidden element is
+     skipped. The collapsed-sidebar mark is 228 KB, sits ~94 KB into the document so the preload
+     scanner queues it AHEAD of the vendor JS and the login photo, and is only ever seen after sign-in
+     AND after the sidebar is collapsed, drawn at 34px. */
+  const marks = [...src.matchAll(/<img[^>]*class="sidebar-logo-mark"[^>]*>/g)].map(m => m[0]);
+  ok('the collapsed-sidebar mark is in the page', marks.length === 1,
+     'found ' + marks.length);
+  ok('and it carries no src at boot', marks.length === 1 && !/\ssrc=/.test(marks[0]),
+     marks[0] + ' — display:none does not suppress the fetch, so a src here is 228 KB every session');
+  ok('it holds the URL in data-src instead', marks.length === 1 && /data-src="\/static\/brand\//.test(marks[0]));
+  /* Read toggleSidebar's OWN BODY. A "_sbMarkSrc appears within N characters of toggleSidebar"
+     regex is the same loose proximity check that let a dropped SRI pin through elsewhere in this
+     change — it passes on any nearby mention and needs its N tuned every time the function grows. */
+  const tsAt = src.indexOf('function toggleSidebar() {');
+  const tsBody = tsAt < 0 ? '' : src.slice(tsAt, src.indexOf('\nfunction ', tsAt + 10));
+  ok('and something assigns it when the sidebar collapses',
+     /function _sbMarkSrc\(\)/.test(src) && /m\.src = m\.dataset\.src;/.test(src) &&
+     /_sbMarkSrc\(\)/.test(tsBody),
+     'toggleSidebar body:\n' + tsBody.slice(0, 400) +
+     '\n        without the call the mark is permanently blank once collapsed');
+  /* The letterhead reads querySelector('.sidebar-logo img').src — the FIRST match. That must still be
+     the full logo, which is why .sidebar-logo-full has to stay ahead of the mark in the DOM. */
+  /* Both indexes have to be FOUND before comparing them. A bare `indexOf(a) < indexOf(b)` is true
+     whenever `a` is missing, because indexOf returns -1 — so this passed when the mutation renamed
+     .sidebar-logo-full out of the file entirely, which is the exact breakage it exists to catch. */
+  /* Match the <img> TAGS, not the bare class names. Both names also appear in CSS rules near the top
+     of the file, so `indexOf('sidebar-logo-full')` found a STYLESHEET SELECTOR at ~line 60 and
+     compared that — it stayed green when the mutation renamed the actual <img> away, because the
+     thing it was measuring was never the img at all. */
+  const tagAt = (cls) => {
+    const m = new RegExp('<img[^>]*class="' + cls + '"').exec(src);
+    return m ? m.index : -1;
+  };
+  const iFull = tagAt('sidebar-logo-full'), iMark = tagAt('sidebar-logo-mark');
+  ok('the full logo <img> still precedes the mark, so the letterhead keeps picking it',
+     iFull >= 0 && iMark >= 0 && iFull < iMark,
+     'full <img> at ' + iFull + ', mark <img> at ' + iMark +
+     ' (-1 means the tag is missing) — _lhLogo reads querySelector(\'.sidebar-logo img\').src, the ' +
+     'FIRST match, so if the mark comes first the letterhead gets an image with no src');
+}
+
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
