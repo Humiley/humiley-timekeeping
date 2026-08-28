@@ -1,9 +1,18 @@
-"""Signed design records are kept for ten years.
+"""Signed design records are kept for ten years after the COMMISSION closes.
 
 Construction liability in Vietnam runs long past handover, and the document that answers "who
 checked this, against which edition, and what did they know at the time" is the signed record in
 these registers. Nothing stopped one being deleted — not by a mistake, but by somebody tidying up
 years later who no longer remembers why it was kept.
+
+The clock runs from the commission's close date, not from the signature on the individual record.
+A drawing signed in year one of a four-year job would otherwise fall out of retention while the
+project it belongs to is still being argued about — and these records only answer the question as a
+set: the drawing, the check, the deviation that permitted it, the gate that accepted it.
+
+A commission with no close date recorded protects its records with no end in sight. That is right —
+the work is live — and it gives somebody a reason to record the close date, because until they do
+the clock never starts.
 
 The rule is deliberately narrow. Only a SIGNED record is protected: a commission set up wrong, a
 duplicate, a test row — none of those carry a signature, and refusing to delete them would train
@@ -95,9 +104,28 @@ def test_a_signed_revision_is_kept(api, tokens, commission):
     assert st != 200, "an issued drawing revision was deleted"
 
 
+def test_a_commission_closed_long_ago_releases_its_records(api, tokens, commission):
+    """The clock does run out. Ten years after close, the record can be cleared."""
+    g = _signed_gate(api, tokens, commission)
+    commission["closedOn"] = "2005-01-01"
+    st, _ = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], commission)
+    assert st == 200
+    st, b = api("DELETE", "/api/coll/eng_stages/" + g["id"], tokens["admin"])
+    assert st == 200, b
+
+
+def test_an_open_commission_protects_everything_it_holds(api, tokens, commission):
+    """No close date means the clock has not started, and the refusal says so."""
+    g = _signed_gate(api, tokens, commission)
+    st, b = api("DELETE", "/api/coll/eng_stages/" + g["id"], tokens["admin"])
+    assert st != 200
+    assert "close date" in str(b).lower() or "closes" in str(b).lower()
+
+
 def test_the_commission_can_set_its_own_period(api, tokens, commission):
     """Ten years is the default, not a law of nature — a contract may require longer."""
     commission["retentionYears"] = "20"
+    commission["closedOn"] = "2020-06-30"
     st, _ = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], commission)
     assert st == 200
     g = _signed_gate(api, tokens, commission)
