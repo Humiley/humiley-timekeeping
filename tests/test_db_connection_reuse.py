@@ -234,6 +234,49 @@ def test_the_backstop_rolls_back_work_left_open_by_the_leak():
     assert rows == [], "a leaked open transaction survived the end of the request"
 
 
+def test_one_thread_serving_two_requests_does_not_leak_between_them():
+    """The scope is a thread, not a request, and on a kept-alive socket those differ.
+
+    BaseHTTPRequestHandler speaks HTTP/1.0 here but still honours `Connection: keep-alive`, so one
+    thread can serve several requests in turn without ending. Request N+1 must inherit nothing from
+    request N — which is why app.py releases in the finally of every request rather than leaving it
+    to the thread dying.
+    """
+    c = db.get_conn()
+    c.execute("CREATE TABLE IF NOT EXISTS _reuse_keepalive (v TEXT)")
+    c.commit()
+    c.close()
+
+    def request_that_misbehaves():
+        conn = db.get_conn()                       # taken, never given back
+        conn.isolation_level = None
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("INSERT INTO _reuse_keepalive (v) VALUES ('request one')")
+        db.end_thread_conn()                       # what _serve_request's finally does
+
+    def request_that_follows():
+        conn = db.get_conn()
+        state = (conn.in_transaction, conn.isolation_level)
+        rows = conn.execute("SELECT v FROM _reuse_keepalive").fetchall()
+        conn.close()
+        return state, rows
+
+    out = {}
+
+    def one_thread():
+        request_that_misbehaves()
+        out["second"] = request_that_follows()
+
+    t = threading.Thread(target=one_thread)         # both requests on the SAME thread
+    t.start()
+    t.join()
+
+    (in_txn, iso), rows = out["second"]
+    assert not in_txn, "the second request inherited an open transaction from the first"
+    assert iso == "", "the second request inherited isolation_level=%r from the first" % (iso,)
+    assert rows == [], "the first request's uncommitted write was visible to the second"
+
+
 def test_the_backstop_is_safe_when_nothing_is_open():
     db.end_thread_conn()
     db.end_thread_conn()

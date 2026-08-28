@@ -54,9 +54,12 @@ _AUDIT_LOCK = threading.Lock()   # serialize read-head -> insert -> advance-head
 # but the honest figure to quote is the one above, taken through actual requests.
 #
 # `close()` therefore does not close: it hands the connection back, having first restored everything
-# a caller could have changed. The server sets no protocol_version, so BaseHTTPRequestHandler speaks
-# HTTP/1.0 and gives each request its own thread — this is one connection per REQUEST, not a
-# cross-request pool.
+# a caller could have changed. The scope is a THREAD, and how many requests that covers depends on
+# the client: the server sets no protocol_version, so BaseHTTPRequestHandler speaks HTTP/1.0 and
+# most clients get one request per connection — but it still honours `Connection: keep-alive`, and
+# then one thread serves several requests in turn. That is the reason app.py releases per REQUEST
+# rather than leaving it to the thread ending: on a kept-alive socket, the thread may not end for a
+# while, and request N+1 must not inherit anything from request N.
 #
 # THE TWO THINGS THIS HAS TO GET RIGHT, both of which were silently free when every caller got its
 # own connection:
