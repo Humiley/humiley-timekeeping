@@ -42,10 +42,23 @@ const api = {};
 new Function(PRELUDE +
   take('function _pmActivityPct(', '_pmActivityPct') +
   take('function _pmTaskWeight(', '_pmTaskWeight') +
+  // pmWbsRollup no longer inlines the per-package sum: it and the WBS register both call
+  // _pmDelivRoll, so the project total and the row a PM reads can never disagree. Those two are
+  // exercised on their own in tests/wbs_rollup.js — pulled in here because the chain runs through
+  // them for real, not against a stub.
+  // The REAL ladder, not a stub and not a fallback: _pmDelivRoll calls _pmTaskPctRoll now, and a
+  // harness that left it undefined would run the composed path's other half and report success
+  // about code it never executed.
+  take('function _pdWeight(', '_pdWeight') +
+  take('function _pmWbsChildren(', '_pmWbsChildren') +
+  take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  take('function _pmDelivBuckets(', '_pmDelivBuckets') +
+  take('function _pmDelivRoll(', '_pmDelivRoll') +
+  take('function _pmStatusFromPct(', '_pmStatusFromPct') +
   take('function pmWbsRollup(', 'pmWbsRollup') +
   take('function pmScopeRollup(', 'pmScopeRollup') +
-  '\nObject.assign(this, { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _HR });').call(api);
-const { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight } = api;
+  '\nObject.assign(this, { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _pmDelivRoll, _HR });').call(api);
+const { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _pmDelivRoll } = api;
 const HR = api._HR;
 
 const PID = 'p1';
@@ -95,6 +108,12 @@ ok('the roll-up also reads the master schedule', /_pmScopeFor\('pm_tasks', pid\)
 // without being edited. Assert the delegation, or a future edit could quietly fork the two.
 ok('pmScopeRollup delegates to pmWbsRollup rather than duplicating it',
    /function pmScopeRollup\(pid\) \{ return pmWbsRollup\(pid\); \}/.test(src));
+// The same forking risk one level down. The project KPI used to sum the packages itself while the
+// WBS register printed the typed fields — two answers to one question, and the register's was the
+// stale one. Both go through _pmDelivRoll now; assert it, or they can quietly diverge again.
+ok('the project total is summed from the same per-package function the register shows',
+   /_pmDelivRoll\(d, \(d\.id \? byDeliv\[d\.id\] : null\) \|\| \[\], pid, ts\)/.test(rollupSrc),
+   'a KPI that disagrees with the rows under it is worse than either number alone');
 {
   const callers = (src.match(/pmScopeRollup\(/g) || []).length;
   ok('the existing call sites still use pmScopeRollup', callers >= 8,
@@ -188,7 +207,17 @@ setDeliverables([]); setTasks([]);
 
 /* ── LEVEL 3 -> 2: ALL sub-items must reach their master activity ───────────── */
 ok('the detail -> master roll-up helper exists', /function _pdTaskPct\(task, pid\)/.test(src));
-ok('it matches detail rows by the master ref', /String\(r\.taskRef \|\| ''\)\.trim\(\) === ref/.test(src));
+/* This used to assert the literal filter `String(r.taskRef || '').trim() === ref`, and went red the
+   moment that per-activity filter became a group-by built once per project — which is what it was
+   there to notice. The property is unchanged and is now asserted where the matching lives: rows are
+   keyed by their TRIMMED taskRef, and an activity is looked up by its own ref. */
+ok('detail rows are grouped by their trimmed master ref',
+   /const k = String\(r\.taskRef \|\| ''\)\.trim\(\);/.test(src) && /map\.set\(k, \[r\]\)/.test(src));
+ok('and an activity reads the group under its own ref',
+   /const rows = _pdRowsByRef\(pid\)\.get\(ref\) \|\| \[\];/.test(src));
+ok('a line reporting against nothing is in no group at all',
+   /if \(!k\) return;/.test(src),
+   'otherwise unlinked lines would be counted towards whichever activity swept them up');
 ok('it weights them rather than averaging', /_pdRollup\(rows\)\.acc/.test(src));
 
 // The owner's requirement is that ALL sub-items contribute to their master WBS. _pdRows() narrows

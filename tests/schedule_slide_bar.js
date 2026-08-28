@@ -79,8 +79,12 @@ ok('_schXBar mirrors that exact condition',
 ok('the inner width is sized from measured geometry, not plotW',
    /bar\.clientWidth \+ max/.test(fn),
    'matching the two scrollable distances is what makes a drag land where the eye expects');
-ok('the gutter spacer is bound to LABW',
-   /class="sch-xgut" style="width:' \+ LABW \+ 'px"/.test(src));
+/* The spacer no longer bakes in the builder's number: the gutter is decided twice (again by
+   _schFitPlot, from the measured pane) and everything that lines up with it reads the same CSS
+   variable. A spacer frozen at the built width would leave the bar's travel out of register with
+   the chart's the moment the gutter moved. See tests/schedule_fit.js. */
+ok('the gutter spacer tracks the same variable as the rows',
+   /class="sch-xgut" style="width:' \+ LABV \+ '"/.test(src));
 
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

@@ -126,7 +126,13 @@ def build(doc, lines=None):
     rows.append(_row(15, H["intro"], _span(15, S_PARA, text=doc.get("intro") or "")))
 
     # ── the priced table ──
-    heads = ["#", "Item", "Description", "Qty", "Unit", "Unit Price (VND)", "Amount (VND)"]
+    # From the document, not from here — see tender.columns(). Three renderers each holding their
+    # own copy of these seven strings is how a letter and the file attached to it drift apart.
+    heads = [c["label"] for c in (doc.get("columns") or [])] or [
+        "#", "Item", "Description", "Qty", "Unit", "Unit Price (VND)", "Amount (VND)"]
+    cols = (doc.get("columns") or [])
+    keys = [c.get("key") for c in cols] or ["idx", "itemCode", "desc", "qty", "unit", "unitSell", "net"]
+    money = [bool(c.get("money")) for c in cols] or [False, False, False, False, False, True, True]
     rows.append(_row(17, H["thead"], [_cell("ABCDEFG"[i] + "17", S_THEAD, text=h) for i, h in enumerate(heads)]))
     for i in range(n):
         r = first + i
@@ -137,11 +143,22 @@ def build(doc, lines=None):
                     formula='IF($B%d="","",COUNTA($B$%d:$B%d))' % (r, first, r)),
               _cell("B%d" % r, S_ITEM, text=(ln or {}).get("itemCode") or ""),
               _cell("C%d" % r, S_DESC, text=desc),
-              _cell("D%d" % r, S_CELL, value=_num((ln or {}).get("qty")) if ln else None),
-              _cell("E%d" % r, S_CELL, text=(ln or {}).get("unit") or ""),
-              _cell("F%d" % r, S_MONEY, value=_num((ln or {}).get("unitSell")) if ln else None),
-              _cell("G%d" % r, S_MONEY, value=_num((ln or {}).get("net")) if ln else None,
-                    formula='IF($B%d="","",$D%d*$F%d)' % (r, r, r))]
+              _cell("D%d" % r, S_CELL, value=_num((ln or {}).get(keys[3])) if ln else None),
+              # Column E is a unit ("lot", "package") for goods and a MONEY figure for services,
+              # so its style follows the column rather than the position. Writing a professional
+              # fee with the text style would left-align it under a right-aligned header and drop
+              # its thousands separators — the file would be readable and wrong.
+              (_cell("E%d" % r, S_MONEY, value=_num((ln or {}).get(keys[4])) if ln else None)
+               if money[4] else
+               _cell("E%d" % r, S_CELL, text=(ln or {}).get(keys[4]) or "")),
+              _cell("F%d" % r, S_MONEY, value=_num((ln or {}).get(keys[5])) if ln else None),
+              # The amount stays a FORMULA for a goods quotation, because somebody will open this
+              # and add a line: qty x rate is arithmetic Excel should keep doing. For services the
+              # total is fee PLUS expenses — two independent figures, not a product — so the
+              # formula follows the columns instead of multiplying whatever lands in D and F.
+              _cell("G%d" % r, S_MONEY, value=_num((ln or {}).get(keys[6])) if ln else None,
+                    formula=('IF($B%d="","",$E%d+$F%d)' % (r, r, r)) if money[4]
+                            else ('IF($B%d="","",$D%d*$F%d)' % (r, r, r)))]
         rows.append(_row(r, desc_height(desc) if ln else H["line"], cs))
 
     tot = doc.get("totals") or {}
@@ -154,13 +171,34 @@ def build(doc, lines=None):
     rows.append(_row(r_disc, H["tot"], [_cell(c + str(r_disc), S_TOT_LBL, text="Project Discount" if c == "C" else "")
                                         for c in "CDE"] +
                     [_cell("F%d" % r_disc, S_PCT, value=disc),
-                     _cell("G%d" % r_disc, S_MONEY, value=round(sub * disc),
+                     # The server's figure, not this file's own multiplication of it. Recomputing
+                     # here used Python's round() where the server uses vnd(), and the two part
+                     # company on a half — the workbook printed a grand total one dong away from
+                     # the letter for the same tender. One dong is not the point: a customer
+                     # holding two documents that disagree has to ask which is real.
+                     _cell("G%d" % r_disc, S_MONEY, value=_num(tot.get("discount")),
                            formula="G%d*F%d" % (r_sub, r_disc))]))
-    rows.append(_row(r_vat, H["tot"], [_cell(c + str(r_vat), S_TOT_LBL, text="Tax / VAT (if applicable)" if c == "C" else "")
+    # VAT AT ONE RATE, OR AT SEVERAL.
+    #
+    # The formula "(subtotal - discount) x rate" is right only while every line carries the same
+    # rate. A tender mixing a 10%-rated domestic sale with a zero-rated export used to write the
+    # server's correct per-line total into the cell and that formula beside it: the file agreed
+    # with the letter until Excel recalculated on open, and then overstated the tax by the whole
+    # of the exempt line — hundreds of millions on a real tender, in front of the customer.
+    #
+    # Where the rates differ there is no single-rate formula that could be correct, and inventing
+    # one out of hidden helper columns would put arithmetic in the workbook that the letter does
+    # not show. So the figure is written as a value with no formula behind it: nothing recalculates,
+    # nothing drifts, and the rate cell says why it is not a percentage.
+    line_rates = {round(_num(l.get("vatPct")), 4) for l in (doc.get("lines") or [])}
+    one_rate = len(line_rates) <= 1
+    vat_label = "Tax / VAT (if applicable)" if one_rate else "Tax / VAT (rates vary by line)"
+    rows.append(_row(r_vat, H["tot"], [_cell(c + str(r_vat), S_TOT_LBL, text=vat_label if c == "C" else "")
                                        for c in "CDE"] +
-                    [_cell("F%d" % r_vat, S_PCT, value=vat_pct),
+                    [_cell("F%d" % r_vat, S_PCT, value=vat_pct) if one_rate
+                     else _cell("F%d" % r_vat, S_TOT_LBL, text="per line"),
                      _cell("G%d" % r_vat, S_MONEY, value=_num(tot.get("vat")),
-                           formula="(G%d-G%d)*F%d" % (r_sub, r_disc, r_vat))]))
+                           formula=("(G%d-G%d)*F%d" % (r_sub, r_disc, r_vat)) if one_rate else None)]))
     rows.append(_row(r_gt, H["gt"], [_cell(c + str(r_gt), S_GT_LBL, text="GRAND TOTAL" if c == "C" else "")
                                      for c in "CDEF"] +
                     [_cell("G%d" % r_gt, S_GT_VAL, value=_num(tot.get("gross")),

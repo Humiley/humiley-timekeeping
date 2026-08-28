@@ -244,6 +244,56 @@ def init_db():
             created  TEXT
         );
 
+        -- ── The general ledger ────────────────────────────────────────────────────────────
+        --
+        -- Real tables, not the `collections` blob store, and the difference is the point. A ledger
+        -- is asked "every entry in this account, this period" thousands of times by one trial
+        -- balance; a JSON blob per row answers that by loading the whole ledger into Python and
+        -- filtering it. It also needs a UNIQUE constraint the database itself enforces, because
+        -- the one thing that must never happen — the same document posting twice — cannot be
+        -- prevented by a check in application code that two requests can both pass.
+        --
+        -- A BATCH is one source document. Its entries live or die with it: gl_entries has a
+        -- foreign key ON DELETE CASCADE not because entries are ever deleted (they are not — see
+        -- gl.py rule 5) but so that a half-written batch cannot survive a crash mid-insert.
+        CREATE TABLE IF NOT EXISTS gl_batches (
+            id         TEXT PRIMARY KEY,
+            source     TEXT NOT NULL,          -- payrun / invoice / receipt / ... (gl.SOURCES)
+            source_id  TEXT NOT NULL,          -- the document's own id, so it can be traced back
+            kind       TEXT NOT NULL,          -- post | reverse
+            period     TEXT NOT NULL,          -- YYYY-MM, from the DOCUMENT's date
+            doc_date   TEXT NOT NULL,
+            memo       TEXT,
+            posted_at  TEXT NOT NULL,
+            posted_by  TEXT,
+            posted_by_id TEXT,
+            reverses   TEXT,                   -- the batch id this one contras, if any
+            debit      REAL NOT NULL,
+            credit     REAL NOT NULL,
+            -- The idempotency guard, enforced by the database rather than hoped for. Posting the
+            -- same pay run twice would double the month's salary, insurance and PIT — and BOTH
+            -- sides would double, so the ledger would still balance and no report would say so.
+            UNIQUE (source, source_id, kind)
+        );
+
+        CREATE TABLE IF NOT EXISTS gl_entries (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch     TEXT NOT NULL REFERENCES gl_batches(id) ON DELETE CASCADE,
+            seq       INTEGER NOT NULL,
+            period    TEXT NOT NULL,
+            account   TEXT NOT NULL,
+            name      TEXT,
+            debit     REAL NOT NULL DEFAULT 0,
+            credit    REAL NOT NULL DEFAULT 0,
+            memo      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gl_period      ON gl_entries (period);
+        CREATE INDEX IF NOT EXISTS idx_gl_acct_period ON gl_entries (account, period);
+        CREATE INDEX IF NOT EXISTS idx_gl_batch       ON gl_entries (batch);
+        CREATE INDEX IF NOT EXISTS idx_gl_b_period    ON gl_batches (period);
+        CREATE INDEX IF NOT EXISTS idx_gl_b_source    ON gl_batches (source, source_id);
+
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
         CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
@@ -305,6 +355,18 @@ def init_db():
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
             pass  # column already exists
+    # A geofence zone has had an "Active" toggle and a "Department" select on screen since the
+    # register was written, and neither had anywhere to be stored: the toggle's whole handler was
+    # two classList calls, and saveLocation read `dept` and `notes` out of the form and then posted
+    # {name, lat, lon, radius}. An administrator could retire a decommissioned site, watch it grey
+    # out, and have it go on authorising check-ins.
+    #   active: 1 by default, so every existing zone keeps authorising exactly what it did.
+    #   dept:   'All' by default, same reason — scoping is opt-in, never retroactive.
+    for col in ("active INTEGER DEFAULT 1", "dept TEXT", "notes TEXT"):
+        try:
+            conn.execute("ALTER TABLE zones ADD COLUMN " + col)
+        except sqlite3.OperationalError:
+            pass
     try:
         conn.execute("ALTER TABLE leave ADD COLUMN token TEXT")  # approval-link token
     except sqlite3.OperationalError:
@@ -321,9 +383,13 @@ def init_db():
     # module side by side without ever introducing them, so labour cost per job — the number a
     # contractor most needs — had no answer. Nullable on purpose: a blank means "nobody recorded it",
     # which the cost report reports as unattributed rather than guessing.
+    # away_reason: why somebody clocked in while the app could see they were NOT at the site they
+    # picked. Blocking that punch outright is what makes people work unrecorded, and unrecorded
+    # hours are the employer's exposure, not the worker's — so the punch is taken and the reason
+    # is taken with it, in its own column rather than smuggled into the 120-char loc label.
     for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT",
                 "amended_by TEXT", "amended_at TEXT", "amend_reason TEXT", "amend_count INTEGER",
-                "project TEXT"):
+                "project TEXT", "away_reason TEXT"):
         try:
             conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -1100,15 +1166,16 @@ def set_attendance_project(att_id, project):
     return get_attendance(att_id)
 
 
-def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time", project=None):
+def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time", project=None,
+             away_reason=None):
     emp = get_employee(emp_id)
     conn = get_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon,project) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon,project,away_reason) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
-             date, time_hm, status, loc, lat, lon, (project or None)))
+             date, time_hm, status, loc, lat, lon, (project or None), (away_reason or None)))
         conn.commit()
     except sqlite3.IntegrityError:
         # uq_att_open: a concurrent request already opened today's record — atomic double-tap guard
@@ -1590,8 +1657,14 @@ def list_zones():
 
 def create_zone(data):
     conn = get_conn()
-    cur = conn.execute("INSERT INTO zones (name,lat,lon,radius) VALUES (?,?,?,?)",
-                       (data.get("name"), data.get("lat"), data.get("lon"), data.get("radius")))
+    # active defaults to 1 and dept to 'All' when the caller says nothing, so a zone created by any
+    # older client still authorises everybody rather than silently authorising nobody.
+    act = data.get("active")
+    cur = conn.execute(
+        "INSERT INTO zones (name,lat,lon,radius,active,dept,notes) VALUES (?,?,?,?,?,?,?)",
+        (data.get("name"), data.get("lat"), data.get("lon"), data.get("radius"),
+         0 if act in (0, "0", False, "false") else 1,
+         (data.get("dept") or "All"), (data.get("notes") or "")))
     conn.commit()
     rid = cur.lastrowid
     conn.close()
@@ -1600,7 +1673,7 @@ def create_zone(data):
 
 def update_zone(zone_id, data):
     sets, params = [], []
-    for f in ("name", "lat", "lon", "radius"):
+    for f in ("name", "lat", "lon", "radius", "active", "dept", "notes"):
         if f in data:
             sets.append("%s = ?" % f); params.append(_scalar(data[f]))
     if not sets:
@@ -2003,3 +2076,144 @@ def delete_collection_item(coll, item_id):
     conn.execute("DELETE FROM collections WHERE coll = ? AND id = ?", (coll, item_id))
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# The general ledger
+# ---------------------------------------------------------------------------
+#
+# gl.py owns the arithmetic; this owns the two rules that only a database can enforce, because both
+# are about what ALREADY happened and neither can be checked by looking at the batch alone:
+#
+#   · the period is closed  — a check in application code races another request
+#   · this document already posted — likewise, and the consequence is a doubled month
+#
+# Both are enforced inside one BEGIN IMMEDIATE, so two concurrent posts of the same pay run cannot
+# both read "not yet posted" and both insert.
+
+GL_PERIODS = "gl_periods"       # the close register — a signed document, so it lives in collections
+
+
+def gl_closed_periods():
+    """Every period that has been closed, newest first. Read from the collection register, which is
+    where the closing signature and the person who applied it live."""
+    out = {}
+    for p in list_collection(GL_PERIODS):
+        key = str(p.get("period") or "").strip()
+        if key and str(p.get("status") or "").lower() == "closed":
+            out[key] = p
+    return out
+
+
+def gl_is_closed(period):
+    return str(period or "").strip() in gl_closed_periods()
+
+
+def gl_post(batch, posted_by="", posted_by_id="", reverses=None):
+    """Write one balanced batch, whole, or write nothing.
+
+    `batch` is the output of `gl.batch()` — already normalised, already balanced, already refused if
+    it was not. What is added here is exclusion and the two prior-state rules above.
+
+    Returns the stored batch id. Raises ValueError with a sentence that names what to do instead:
+    every one of these reaches somebody in the middle of closing a month, and "constraint failed"
+    tells them nothing.
+    """
+    import gl as _gl                      # local: db.py must stay importable by tools that lack gl
+
+    period = str(batch.get("period") or "").strip()
+    if not _gl.period_valid(period):
+        raise ValueError("'%s' is not a period." % period)
+
+    bid = "GL-%s-%s" % (period.replace("-", ""), uuid.uuid4().hex[:10])
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        if gl_is_closed(period):
+            raise ValueError(
+                "%s is closed, so nothing further can be posted into it. This entry belongs to that "
+                "month — it has not been moved into an open one, because that would misstate both. "
+                "Re-open %s if it genuinely has to change." % (period, period))
+
+        dup = conn.execute(
+            "SELECT id, posted_at, posted_by FROM gl_batches WHERE source=? AND source_id=? AND kind=?",
+            (batch["source"], batch["sourceId"], batch["kind"])).fetchone()
+        if dup is not None:
+            raise ValueError(
+                "%s %s has already been posted (%s, by %s, batch %s). Posting it again would double "
+                "every figure in it — and both sides would double, so the ledger would still balance "
+                "and no report would say so. Reverse that batch if it was wrong."
+                % (_gl.SOURCES.get(batch["source"], batch["source"]), batch["sourceId"],
+                   str(dup["posted_at"])[:16].replace("T", " "), dup["posted_by"] or "?", dup["id"]))
+
+        conn.execute(
+            "INSERT INTO gl_batches (id, source, source_id, kind, period, doc_date, memo, posted_at,"
+            " posted_by, posted_by_id, reverses, debit, credit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (bid, batch["source"], batch["sourceId"], batch["kind"], period, batch.get("date") or "",
+             batch.get("memo") or "", now_iso(), posted_by, posted_by_id, reverses,
+             float(batch["debit"]), float(batch["credit"])))
+        for i, ln in enumerate(batch["lines"], start=1):
+            conn.execute(
+                "INSERT INTO gl_entries (batch, seq, period, account, name, debit, credit, memo)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (bid, i, period, ln["account"], ln.get("name") or "",
+                 float(ln.get("debit") or 0), float(ln.get("credit") or 0), ln.get("memo") or ""))
+        conn.commit()
+        return bid
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def gl_batch(batch_id):
+    row = _row("SELECT * FROM gl_batches WHERE id = ?", (batch_id,))
+    if not row:
+        return None
+    out = dict(row)
+    out["lines"] = [dict(r) for r in _rows(
+        "SELECT seq, account, name, debit, credit, memo FROM gl_entries WHERE batch = ? ORDER BY seq",
+        (batch_id,))]
+    return out
+
+
+def gl_batches(period=None, source=None, source_id=None, limit=500):
+    sql = "SELECT * FROM gl_batches WHERE 1=1"
+    args = []
+    if period:
+        sql += " AND period = ?"; args.append(str(period))
+    if source:
+        sql += " AND source = ?"; args.append(str(source))
+    if source_id:
+        sql += " AND source_id = ?"; args.append(str(source_id))
+    sql += " ORDER BY posted_at DESC, id DESC LIMIT ?"
+    args.append(int(limit))
+    return [dict(r) for r in _rows(sql, tuple(args))]
+
+
+def gl_rows(period=None, account=None, upto=None):
+    """Ledger entries for a trial balance or an account enquiry.
+
+    `upto` gives CUMULATIVE movement to the end of a period — what a balance sheet needs, since a
+    liability is what is owed in total and not what moved this month.
+    """
+    sql = ("SELECT e.account, e.name, e.debit, e.credit, e.period, e.memo, e.seq,"
+           " b.id AS batch, b.source, b.source_id, b.doc_date, b.kind, b.posted_at, b.posted_by"
+           " FROM gl_entries e JOIN gl_batches b ON b.id = e.batch WHERE 1=1")
+    args = []
+    if period:
+        sql += " AND e.period = ?"; args.append(str(period))
+    if upto:
+        sql += " AND e.period <= ?"; args.append(str(upto))
+    if account:
+        sql += " AND e.account = ?"; args.append(str(account))
+    sql += " ORDER BY e.period, b.posted_at, e.seq"
+    return [dict(r) for r in _rows(sql, tuple(args))]
+
+
+def gl_periods_seen():
+    """Every period that has ledger movement, oldest first."""
+    return [r["period"] for r in _rows(
+        "SELECT DISTINCT period FROM gl_entries ORDER BY period")]

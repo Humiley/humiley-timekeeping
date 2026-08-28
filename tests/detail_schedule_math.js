@@ -198,6 +198,9 @@ const regStubs = `
   function _pdQtyAt(r){ return { q: +r.qtyAt || 0, inferred: !!r.inferred }; }
   function _pdVarColor(){ return '#000'; } function _pdVarLabel(){ return 'x'; }
   function _pmCard(title, coll, add, table, extra){ return table; }
+  function pdCollapseAllBtn(pid){ return '<button>Collapse all</button>'; }
+  function _t2(en, vn){ return en; }
+  function _tkEscA(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
 `;
 const reg = {};
 new Function(regStubs + src.slice(ri, rj) + '\n Object.assign(this, { _pdRegister });').call(reg);
@@ -253,6 +256,8 @@ if (bi < 0 || ei < 0) {
 const doorStubs = `
   const _PD_COLL = 'pm_detail';
   function _t(s){ return s; }
+  function _t2(en, vn){ return en; }
+  function schExportBtn(pid){ return '<button>Export</button>'; }
   function _tkEscA(s){ return String(s).replace(/"/g,'&quot;'); }
   function _pmEsc(s){ return String(s==null?'':s); }
   function _pdScheds(){ return EMPTY ? [] : [{id:'S1',name:'Block E — MEP'}]; }
@@ -275,6 +280,10 @@ door.setEmpty(true);
 const barEmpty = door.bar('P1'), emptyCard = door.empty('P1');
 t('an empty project still renders the schedule row', barEmpty.length > 0, true);
 t('an empty project can create its first detail schedule', barEmpty.indexOf('pdSchedNew') > -1, true);
+/* A project with no schedules has nothing to rename or delete. Offering either would be a button
+   whose only possible outcome is an error — which is how the register got its reputation. */
+t('an empty project is not offered Rename', barEmpty.indexOf('pdSchedRename') > -1, false);
+t('an empty project is not offered Delete', barEmpty.indexOf('pdSchedDelete') > -1, false);
 t('the empty card also offers it, where the eye lands', emptyCard.indexOf('pdSchedNew') > -1, true);
 t('the empty card still offers the Excel import', emptyCard.indexOf('pdImport') > -1, true);
 t('the empty card still offers Add report item', emptyCard.indexOf('add="Add report item"') > -1, true);
@@ -283,6 +292,12 @@ door.setEmpty(false);
 const barFull = door.bar('P1');
 t('a project WITH schedules still shows its chips', barFull.indexOf('pdSchedPick') > -1, true);
 t('a project WITH schedules still offers another', barFull.indexOf('pdSchedNew') > -1, true);
+/* Rendered, not pattern-matched against the source: this is the one place the bar is actually
+   built, and a button that exists only in a template literal is not a button. */
+t('and can rename the one it is showing', barFull.indexOf("pdSchedRename('P1','S1')") > -1, true);
+t('and delete it', barFull.indexOf("pdSchedDelete('P1','S1')") > -1, true);
+t('both say the PIN will be asked for, before it is clicked',
+  (barFull.match(/signing PIN/g) || []).length === 2, true);
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
