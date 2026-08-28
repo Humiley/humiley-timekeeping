@@ -36,6 +36,14 @@ def _rows(coll, field, value):
     return [r for r in db.list_collection(coll) if r.get(field) == value]
 
 
+def _grouped(coll, field):
+    """A whole collection read ONCE and grouped by one field."""
+    out = {}
+    for r in db.list_collection(coll):
+        out.setdefault(r.get(field), []).append(r)
+    return out
+
+
 # ── What the unit declares about itself ──────────────────────────────────────────────────────────
 def unit_decl(unit):
     """The properties a class-derived acceptance limit is resolved from.
@@ -186,21 +194,48 @@ def verdict(unit, step, order=None):
 
 
 # ── The context a gate is judged in ──────────────────────────────────────────────────────────────
-def load_ctx(unit_id):
-    """Everything about one unit, in one pass, so a gate check does not re-read six collections."""
-    unit = db.get_collection_item(UNITS, unit_id) or {}
+CTX_COLLS = (("steps", STEPS), ("bom", BOM), ("docs", DOCS), ("trace", TRACE),
+             ("ncr", NCR), ("dispatch", DISPATCH))
+
+
+def ctx_index():
+    """The six per-unit collections plus the orders, each read ONCE and keyed by id.
+
+    Pass the result to `load_ctx` when building context for MANY units. Without it every unit
+    re-reads and re-parses all six collections in full, so a board of N units does N x (six whole
+    collections) of work — quadratic, because the collections themselves grow with N. Measured on
+    the shop-floor board: 0.06 s at 10 units, 1.98 s at 100, and that screen is polled.
+
+    A snapshot, not a live view, and READ-ONLY. Build it, use it, discard it: anything written
+    while it is held will not be in it, and the row dicts it hands out are SHARED between every
+    context built from it — the un-indexed path re-parses the JSON and so hands out private copies.
+    Every caller here only reads. Anything that wants to mutate a step must take the un-indexed
+    path or copy the row first, or it will change what the other units on the board are showing.
+    """
+    idx = {"orders": {o.get("id"): o for o in db.list_collection(ORDERS)},
+           "units": {u.get("id"): u for u in db.list_collection(UNITS)}}
+    for key, coll in CTX_COLLS:
+        idx[key] = _grouped(coll, "unitId")
+    return idx
+
+
+def load_ctx(unit_id, idx=None):
+    """Everything about one unit, in one pass, so a gate check does not re-read six collections.
+
+    `idx` is an optional `ctx_index()` snapshot. With one, this does no database work beyond the
+    unit itself; without one it reads the collections directly, which is what every single-unit
+    caller wants.
+    """
+    unit = (idx["units"].get(unit_id) if idx else db.get_collection_item(UNITS, unit_id)) or {}
     order = None
     if unit.get("orderId"):
-        order = db.get_collection_item(ORDERS, unit["orderId"])
-    return {
-        "unit": unit, "order": order or {},
-        "steps": sorted(_rows(STEPS, "unitId", unit_id), key=lambda r: (r.get("seq") or 0)),
-        "bom": _rows(BOM, "unitId", unit_id),
-        "docs": _rows(DOCS, "unitId", unit_id),
-        "trace": _rows(TRACE, "unitId", unit_id),
-        "ncr": _rows(NCR, "unitId", unit_id),
-        "dispatch": _rows(DISPATCH, "unitId", unit_id),
-    }
+        order = (idx["orders"].get(unit["orderId"]) if idx
+                 else db.get_collection_item(ORDERS, unit["orderId"]))
+    ctx = {"unit": unit, "order": order or {}}
+    for key, coll in CTX_COLLS:
+        ctx[key] = list(idx[key].get(unit_id) or []) if idx else _rows(coll, "unitId", unit_id)
+    ctx["steps"] = sorted(ctx["steps"], key=lambda r: (r.get("seq") or 0))
+    return ctx
 
 
 def open_ncrs(ctx):
@@ -508,11 +543,12 @@ def board():
     malformed.
     """
     out = []
-    for unit in db.list_collection(UNITS):
+    idx = ctx_index()
+    for unit in idx["units"].values():
         if _norm(unit.get("status")) in ("dispatched", "cancelled", "closed"):
             continue
         try:
-            out.append(unit_state(load_ctx(unit.get("id"))))
+            out.append(unit_state(load_ctx(unit.get("id"), idx)))
         except Exception as exc:                       # one bad row costs its own row, not the board
             out.append({"unitId": unit.get("id"), "pin": unit.get("pin"),
                         "tag": unit.get("tag"), "family": unit.get("family"),
