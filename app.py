@@ -4125,6 +4125,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._gl_summary_ep(u, qs), manager=True)
         if path == "/api/gl/entries":
             return self._guard(lambda u: self._gl_entries_ep(u, qs), manager=True)
+        if path == "/api/gl/statements":
+            return self._guard(lambda u: self._gl_statements_ep(u, qs), manager=True)
         if path == "/api/procurement/sso":
             # Mint a signed SSO token for the current user to open the Procurement app seamlessly.
             return self._guard(lambda u: self._procurement_sso_token(u))
@@ -15885,6 +15887,42 @@ class Handler(BaseHTTPRequestHandler):
             "entryCount": len(rows),
             "basis": "Circular 200/2014/TT-BTC",
         })
+
+    def _gl_statements_ep(self, u, qs):
+        """A balance sheet and an income statement as at the end of a period.
+
+        Reads EVERY entry up to and including that period, not just the period's own — a balance
+        sheet built from one month's movement is that month's movement with a misleading title.
+        `db.gl_rows(upto=...)` is what makes that a single indexed query rather than the whole
+        ledger loaded into Python and filtered.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.GL_POST_LEVEL):
+            return self._err("Approver (management) level or above is required — these are the "
+                             "company's financial statements.", 403)
+        period = str(qs.get("period", [""])[0] or "").strip()
+        if period and not gl.period_valid(period):
+            return self._err("'%s' is not a period." % period, 400)
+        if not period:
+            seen = db.gl_periods_seen()
+            period = seen[-1] if seen else self._utc_now()[:7]
+
+        # The fiscal year is a company fact, not something to infer from the data. Calendar year
+        # unless somebody has said otherwise — a subsidiary reporting to a foreign parent may run
+        # April–March, and guessing that from a ledger's earliest entry would be a coin toss.
+        try:
+            start_month = int(db.get_setting("portal_fiscalYearStartMonth") or 1)
+        except (TypeError, ValueError):
+            start_month = 1
+        if not 1 <= start_month <= 12:
+            start_month = 1
+
+        st = gl.statements(db.gl_rows(upto=period), period, year_start_month=start_month)
+        st["ok"] = True
+        st["periods"] = db.gl_periods_seen()
+        st["closedPeriods"] = sorted(db.gl_closed_periods())
+        st["fiscalYearStartMonth"] = start_month
+        st["basis"] = "Circular 200/2014/TT-BTC"
+        return self._json(st)
 
     def _gl_entries_ep(self, u, qs):
         """One account's movements — the enquiry an accountant makes when a balance looks wrong."""

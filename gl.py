@@ -344,6 +344,130 @@ def trial_balance(rows):
     }
 
 
+# ── The statements ───────────────────────────────────────────────────────────────────────────────
+#
+# A trial balance proves the ledger is internally consistent. It does not tell anybody what the
+# company is worth or whether it made money, and those are the two questions a bank, an auditor or a
+# foreign partner actually asks. Both come out of the same rows; what differs is the PERIOD EACH
+# CLASS OF ACCOUNT IS MEASURED OVER, and getting that wrong is the classic way to produce a
+# statement that looks professional and is nonsense:
+#
+#   · a balance sheet account (1/2/3/4) is CUMULATIVE — everything ever, up to the date
+#   · a profit-and-loss account (5/6/7/8) is a PERIOD — this month, or this year to date
+#
+# Undistributed profit is what reconciles them. A ledger that has never run a year-end close still
+# carries prior years' revenue and expense as open P&L balances; those belong in equity as retained
+# earnings, and the current year's belong there as profit for the year. Reported SEPARATELY, because
+# "we have never closed a year" is a fact the reader should see rather than a rounding into one
+# number.
+
+RETAINED = "421"          # Lợi nhuận sau thuế chưa phân phối — undistributed profit after tax
+NAMES_EXTRA = {
+    RETAINED: "Lợi nhuận sau thuế chưa phân phối / Undistributed profit after tax",
+}
+
+
+def fiscal_year_start(period, start_month=1):
+    """The first period of the fiscal year that `period` falls in.
+
+    Vietnam's default is the calendar year, and `start_month` exists because a subsidiary reporting
+    to a foreign parent may run to March or September — not because anybody should guess it.
+    """
+    y, m = int(str(period)[:4]), int(str(period)[5:7])
+    if m < int(start_month):
+        y -= 1
+    return "%04d-%02d" % (y, int(start_month))
+
+
+def _totals_by_account(rows):
+    acc = {}
+    for r in rows or []:
+        code = str(r.get("account") or "").strip()
+        if not code:
+            continue
+        a = acc.setdefault(code, {"account": code, "name": str(r.get("name") or "").strip(),
+                                  "debit": 0.0, "credit": 0.0})
+        a["debit"] += _n(r.get("debit"))
+        a["credit"] += _n(r.get("credit"))
+        if not a["name"] and r.get("name"):
+            a["name"] = str(r["name"]).strip()
+    return acc
+
+
+def statements(rows, period, year_start_month=1):
+    """A balance sheet and an income statement, from entries UP TO AND INCLUDING `period`.
+
+    `rows` must be everything the ledger holds up to that date — `db.gl_rows(upto=period)` — because
+    a balance sheet built from one month's movement is not a balance sheet, it is that month's
+    movement with a misleading title.
+
+    THE INVARIANT: assets = liabilities + equity, where equity includes the undistributed profit the
+    P&L rows produce. It is not FORCED — the two sides are summed independently and compared, so a
+    ledger that does not balance produces a balance sheet that says it does not, with the gap. A
+    statement that always balances by construction cannot tell you when your books are broken, which
+    is the only time you need it to speak up.
+    """
+    fy = fiscal_year_start(period, year_start_month)
+    acc = _totals_by_account(rows)
+
+    sheet = {ASSET: [], LIABILITY: [], EQUITY: []}
+    pl_all = 0.0                  # every P&L movement ever recorded, as profit
+    for code in sorted(acc):
+        a = acc[code]
+        kind, label, side = account_class(code)
+        net = _r(a["debit"] - a["credit"])
+        row = {"account": code, "name": a["name"],   # entries carry their own name; gl.py holds no chart of its own
+               "debit": _r(a["debit"]), "credit": _r(a["credit"]),
+               "balance": net if side == "debit" else _r(-net),
+               "classLabel": label}
+        if kind in (ASSET, LIABILITY, EQUITY):
+            sheet[kind].append(row)
+        elif kind == INCOME:
+            pl_all += _r(a["credit"] - a["debit"])
+        elif kind == EXPENSE:
+            pl_all -= _r(a["debit"] - a["credit"])
+        # RESULT accounts (9xx) are the closing mechanism itself and belong to neither statement.
+
+    this_year = [r for r in (rows or []) if str(r.get("period") or "") >= fy]
+    ytd = result(this_year)
+    prior = _r(pl_all - ytd["profit"])
+
+    # Undistributed profit, split so the reader can see what a year-end close has not done.
+    equity = list(sheet[EQUITY])
+    if prior:
+        equity.append({"account": RETAINED, "name": NAMES_EXTRA[RETAINED] + " — prior years",
+                       "debit": 0.0, "credit": 0.0, "balance": prior,
+                       "classLabel": CLASSES["4"][1], "derived": True,
+                       "note": "Prior years' result, still open — no year-end close has been run."})
+    equity.append({"account": RETAINED, "name": NAMES_EXTRA[RETAINED] + " — this year",
+                   "debit": 0.0, "credit": 0.0, "balance": _r(ytd["profit"]),
+                   "classLabel": CLASSES["4"][1], "derived": True,
+                   "note": "Result for the fiscal year beginning %s." % fy})
+
+    assets = _r(sum(r["balance"] for r in sheet[ASSET]))
+    liabilities = _r(sum(r["balance"] for r in sheet[LIABILITY]))
+    equity_total = _r(sum(r["balance"] for r in equity))
+
+    return {
+        "period": period,
+        "fiscalYearStart": fy,
+        "balanceSheet": {
+            "assets": sheet[ASSET], "assetsTotal": assets,
+            "liabilities": sheet[LIABILITY], "liabilitiesTotal": liabilities,
+            "equity": equity, "equityTotal": equity_total,
+            "fundedTotal": _r(liabilities + equity_total),
+            "difference": _r(assets - (liabilities + equity_total)),
+            "balanced": _r(assets - (liabilities + equity_total)) == 0,
+        },
+        "incomeStatement": {
+            "period": result([r for r in (rows or []) if str(r.get("period") or "") == period],),
+            "yearToDate": ytd,
+            "sinceInception": {"profit": _r(pl_all)},
+        },
+        "retainedPriorYears": prior,
+    }
+
+
 def result(rows):
     """Revenue less expenses over the rows given — the P&L bottom line, with no accruals of its own.
 
