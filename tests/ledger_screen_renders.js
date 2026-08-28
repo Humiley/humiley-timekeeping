@@ -65,6 +65,8 @@ global.document = { getElementById: (id) => (id === 'view-ledger' ? el : null) }
 // globals because that is what the page's own top-level `let` becomes at runtime.
 global._glPeriod = '';
 global._glOpenAccount = '';
+global._glView = 'trial';
+global._glLoadStatements = async () => {};
 eval(take('async function tkRenderLedger()'));
 eval(take('function glAccount(account)'));
 
@@ -101,6 +103,22 @@ eval(take('function glAccount(account)'));
          level + ' saw glClose: ' + h.includes('glClose()'));
   }
 
+  // The two views. A trial balance and a balance sheet answer different questions, and the switch
+  // between them must actually switch: rendering the trial-balance table under a "Balance sheet"
+  // heading would be worse than having no second view at all.
+  must('the trial view shows the account table', el.innerHTML.includes('Account name'));
+  must('the trial view offers the statements switch', el.innerHTML.includes("_glSetView(\"statements\")"));
+  global._glView = 'statements';
+  el.innerHTML = '';
+  await tkRenderLedger();
+  must('the statements view drops the trial-balance table',
+       !el.innerHTML.includes('Account name'), el.innerHTML.slice(0, 200));
+  must('the statements view leaves a container for the server figures',
+       el.innerHTML.includes('id="gl-statements"'));
+  global._glView = 'trial';
+  el.innerHTML = '';
+  await tkRenderLedger();
+
   // An unbalanced ledger has to SAY so — the whole reason the report exists.
   SUMMARY.trialBalance.balanced = false;
   SUMMARY.trialBalance.difference = 1000000;
@@ -122,6 +140,55 @@ eval(take('function glAccount(account)'));
   await tkRenderLedger();
   must('a closed period offers no Post button', !el.innerHTML.includes('glPost('));
   must('…and says it is closed', el.innerHTML.includes('is closed'));
+
+  // ── the statements panel, which is its own renderer and was untouched by everything above ──
+  // A balance sheet that silently looks balanced when the ledger is not is the single worst thing
+  // this screen could do, so both outcomes are driven here.
+  const STATEMENTS = {
+    period: '2026-06', fiscalYearStart: '2026-01', basis: 'Circular 200/2014/TT-BTC',
+    balanceSheet: {
+      assets: [{ account: '112', name: 'Cash at bank', balance: 1760000000 },
+               { account: '131', name: 'Trade receivables', balance: 440000000 }],
+      assetsTotal: 2200000000,
+      liabilities: [{ account: '334', name: 'Payable to employees', balance: 89500000 }],
+      liabilitiesTotal: 89500000,
+      equity: [{ account: '421', name: 'Undistributed profit — this year', balance: 2110500000,
+                 derived: true, note: 'Result for the fiscal year beginning 2026-01.' }],
+      equityTotal: 2110500000, fundedTotal: 2200000000, difference: 0, balanced: true,
+    },
+    incomeStatement: {
+      period: { income: 2000000000, expense: 0, profit: 2000000000 },
+      yearToDate: { income: 2000000000, expense: 123500000, profit: 1876500000 },
+    },
+  };
+  const sbox = { innerHTML: '' };
+  global.document = { getElementById: (id) => (id === 'gl-statements' ? sbox : (id === 'view-ledger' ? el : null)) };
+  global.tkApi = async () => STATEMENTS;
+  eval(take('async function _glLoadStatements()'));
+  global._glPeriod = '2026-06';
+
+  await _glLoadStatements();
+  let h = sbox.innerHTML;
+  must('statements: the panel is not empty', h.length > 500, h.slice(0, 160));
+  must('statements: it says the two sides agree', h.includes('Assets equal liabilities plus equity'));
+  must('statements: assets are listed', h.includes('112') && h.includes('1,760,000,000'));
+  must('statements: liabilities and equity are listed', h.includes('334') && h.includes('421'));
+  must('statements: the funded total is shown', h.includes('LIABILITIES + EQUITY'));
+  must('statements: derived equity is marked with an asterisk', h.includes('421*'));
+  must('statements: the income statement shows both windows',
+       h.includes('This period') && h.includes('Year to date'));
+  must('statements: the year-to-date expense is the cumulative one', h.includes('123,500,000'));
+  must('statements: the fiscal year is stated', h.includes('2026-01'));
+
+  STATEMENTS.balanceSheet.balanced = false;
+  STATEMENTS.balanceSheet.difference = 1000000;
+  sbox.innerHTML = '';
+  await _glLoadStatements();
+  h = sbox.innerHTML;
+  must('statements: an unbalanced sheet SAYS it does not balance',
+       h.includes('THE BALANCE SHEET DOES NOT BALANCE'));
+  must('statements: …with the gap', h.includes('1,000,000'));
+  must('statements: …and warns the figures are suspect', h.includes('suspect'));
 
   console.log(failed ? '\n' + failed + ' problem(s)' : '\nthe Ledger screen renders.');
   process.exit(failed ? 1 : 0);

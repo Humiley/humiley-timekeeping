@@ -10207,6 +10207,7 @@ function tkPayTab(tab, el) { ['dash', 'reg', 'runs', 'journal'].forEach(t => { c
    Same rule as [[estimating-module]]'s "no arithmetic in the browser".                            */
 let _glPeriod = '';
 let _glOpenAccount = '';
+let _glView = 'trial';        // 'trial' = the trial balance · 'statements' = balance sheet + P&L
 
 async function tkRenderLedger() {
   const v = document.getElementById('view-ledger'); if (!v) return;
@@ -10321,6 +10322,16 @@ async function tkRenderLedger() {
     '<div style="font-size:12px;color:var(--text-light)">' +
       _t('Every posting, on the Vietnamese chart of accounts') + ' · ' + _crmEsc(r.basis || '') + '</div></div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + periodPick +
+    /* A trial balance proves the ledger is internally consistent. It does not say what the company
+       is worth or whether it made money — and those are the two questions a bank, an auditor or a
+       foreign partner actually asks. Same rows, different windows; see gl.statements(). */
+    '<div style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden">' +
+    ['trial', 'statements'].map(v =>
+      '<button style="border:none;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;background:' +
+      (_glView === v ? 'var(--navy)' : 'transparent') + ';color:' + (_glView === v ? '#fff' : 'var(--text-light)') +
+      '" onclick="_glSetView(' + JSON.stringify(v) + ')">' +
+      _t(v === 'trial' ? 'Trial balance' : 'Balance sheet & P&L') + '</button>').join('') +
+    '</div>' +
     (canClose && !r.closed && (r.entryCount || 0) > 0
       ? '<button class="btn btn-emerald btn-sm" onclick="glClose()">' + _t('Close period') + '</button>' : '') +
     '</div></div>' +
@@ -10335,7 +10346,9 @@ async function tkRenderLedger() {
     _t('Trial balance') + '</div><div style="font-size:15px;margin-top:2px">' + verdict + '</div></div>' +
     '</div></div>' +
     closedBar + pending +
-    (rows
+    (_glView === 'statements'
+      ? '<div id="gl-statements">' + tkSkeleton() + '</div>'
+      : (rows
       ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
         '<th>' + _t('Account') + '</th><th>' + _t('Account name') + '</th><th>' + _t('Class') + '</th>' +
         '<th style="text-align:right">' + _t('Debit') + '</th><th style="text-align:right">' + _t('Credit') + '</th>' +
@@ -10355,9 +10368,95 @@ async function tkRenderLedger() {
         '<th>' + _t('Batch') + '</th><th>' + _t('Document') + '</th><th>' + _t('Posted') + '</th>' +
         '<th style="text-align:right">' + _t('Amount') + '</th><th></th></tr></thead><tbody>' + batches +
         '</tbody></table></div></div>'
-      : '');
+      : ''));
 
-  if (_glOpenAccount) _glLoadAccount(_glOpenAccount);
+  if (_glView === 'statements') _glLoadStatements();
+  else if (_glOpenAccount) _glLoadAccount(_glOpenAccount);
+}
+
+function _glSetView(v) { _glView = v; _glOpenAccount = ''; tkRenderLedger(); }
+
+/* THE BALANCE SHEET AND THE INCOME STATEMENT.
+   Computed entirely server-side from every entry up to this period — nothing here adds anything up.
+   The one thing this screen must never do is present a sheet that looks balanced when the ledger is
+   not: `balanced` comes from the server comparing the two sides independently, and when it is false
+   the difference is shown at the top rather than buried under the columns. */
+async function _glLoadStatements() {
+  const box = document.getElementById('gl-statements');
+  if (!box) return;
+  let st;
+  try {
+    st = await tkApi('/api/gl/statements?period=' + encodeURIComponent(_glPeriod));
+  } catch (e) {
+    box.innerHTML = '<div class="card" style="padding:20px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>';
+    return;
+  }
+  const bs = st.balanceSheet || {}, inc = st.incomeStatement || {};
+  const money = n => _PAY_FMT(n || 0);
+
+  const section = (title, rowsArr, total) =>
+    '<div style="padding:11px 16px;background:var(--soft-bg);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy)">' +
+    _t(title) + '</div>' +
+    '<table style="width:100%;font-size:12.5px"><tbody>' +
+    ((rowsArr || []).length
+      ? (rowsArr || []).map(a =>
+          '<tr><td style="font-variant-numeric:tabular-nums;font-weight:600;width:70px">' +
+            (a.derived ? '<span style="color:var(--text-light)" title="' +
+              _tkEscA(_t('Computed from the profit and loss — nobody posted to it')) + '">' + _crmEsc(a.account) + '*</span>'
+              : _crmEsc(a.account)) + '</td>' +
+          '<td>' + _crmEsc(a.name || '') +
+            (a.note ? '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(a.note) + '</div>' : '') + '</td>' +
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600' +
+            (a.balance < 0 ? ';color:var(--danger)' : '') + '">' + money(a.balance) + '</td></tr>').join('')
+      : '<tr><td colspan="3" style="padding:10px 16px;color:var(--text-light)">' + _t('Nothing here yet.') + '</td></tr>') +
+    '<tr style="border-top:2px solid var(--navy);font-weight:800"><td colspan="2">' + _t('TOTAL') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + money(total) + '</td></tr>' +
+    '</tbody></table>';
+
+  const verdict = bs.balanced
+    ? '<span style="color:var(--emerald-deep);font-weight:800">' + _t('Assets equal liabilities plus equity') + '</span>'
+    : '<span style="color:var(--danger);font-weight:800">' + _t('THE BALANCE SHEET DOES NOT BALANCE') + '</span>' +
+      '<div style="font-size:12px;color:var(--danger)">' + _t('out by') + ' ' + money(Math.abs(bs.difference)) +
+      ' — ' + _t('something reached the ledger that should not have; every figure here is suspect until it is found.') + '</div>';
+
+  const pl = (label, v) => '<tr><td>' + _t(label) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + money(v) + '</td></tr>';
+
+  box.innerHTML =
+    '<div class="card" style="padding:13px 16px;margin-bottom:14px;border-left:3px solid ' +
+      (bs.balanced ? 'var(--emerald)' : 'var(--danger)') + '">' + verdict +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-top:3px">' +
+      _t('As at the end of') + ' ' + _crmEsc(st.period || '') + ' · ' +
+      _t('fiscal year from') + ' ' + _crmEsc(st.fiscalYearStart || '') + ' · ' + _crmEsc(st.basis || '') +
+      '</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">' +
+    '<div class="card" style="padding:0;overflow:hidden">' + section('Assets', bs.assets, bs.assetsTotal) + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden">' +
+      section('Liabilities', bs.liabilities, bs.liabilitiesTotal) +
+      section('Equity', bs.equity, bs.equityTotal) +
+      '<div style="padding:10px 16px;display:flex;justify-content:space-between;font-weight:800;background:var(--soft-bg)">' +
+      '<span>' + _t('LIABILITIES + EQUITY') + '</span>' +
+      '<span style="font-variant-numeric:tabular-nums">' + money(bs.fundedTotal) + '</span></div>' +
+    '</div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden;margin-top:14px">' +
+    '<div style="padding:11px 16px;background:var(--soft-bg);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy)">' +
+    _t('Income statement') + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0">' +
+    ['period', 'yearToDate'].map(k => {
+      const v = inc[k] || {};
+      return '<div style="padding:12px 16px;border-top:1px solid var(--line)">' +
+        '<div style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">' +
+        _t(k === 'period' ? 'This period' : 'Year to date') + '</div>' +
+        '<table style="width:100%;font-size:12.5px"><tbody>' +
+        pl('Revenue', v.income) + pl('Expenses', v.expense) +
+        '<tr style="border-top:1px solid var(--line);font-weight:800"><td>' + _t('Result') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;color:' +
+        ((v.profit || 0) < 0 ? 'var(--danger)' : 'var(--emerald-deep)') + '">' + money(v.profit) + '</td></tr>' +
+        '</tbody></table></div>';
+    }).join('') + '</div>' +
+    '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);border-top:1px solid var(--line)">' +
+    '* ' + _t('Undistributed profit is computed from the profit and loss — nobody posts to it. A year-end close has not been run, so any prior-year result is shown on its own line.') +
+    '</div></div>';
 }
 
 function _glGo(p) { _glPeriod = p || ''; _glOpenAccount = ''; tkRenderLedger(); }
