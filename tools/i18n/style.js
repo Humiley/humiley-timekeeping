@@ -11,13 +11,21 @@
 // defect is using both in one product, so the fix is to pick the majority and follow it.
 const { load } = require('./vi.js');
 
-// Vietnamese accent placement on <vowel-cluster>: "hoà" (old style) vs "hòa" (new style). Both are
-// taught and both are correct. Mixing them inside one interface is the problem.
+// Vietnamese accent placement on an open "oa / uy" cluster: "hoà" (older style) vs "hòa" (the
+// style Bộ GD&ĐT teaches). Both are correct; using both in one interface is the defect.
+//
+// These MUST be matched as whole syllables. The distinction only exists on an OPEN syllable — once
+// a final consonant closes it the mark sits on the second vowel in both conventions, so "hoàn",
+// "toàn", "khoán" and "suýt" are spelled the same either way and are not in scope. Substring
+// matching does not know that: it reports "hoà x55" when 54 of those are inside "hoàn", and a
+// rewrite driven off it turns hoàn into hòan, which is not a variant, just wrong. That happened.
 const ORTHO = [
   ['hoá', 'hóa'], ['hoà', 'hòa'], ['khoá', 'khóa'], ['thuỷ', 'thủy'], ['tuỳ', 'tùy'],
-  ['quý', 'quí'], ['thuý', 'thúy'], ['loà', 'lòa'], ['xoá', 'xóa'], ['toà', 'tòa'],
-  ['giý', 'giú'], ['huỷ', 'hủy'], ['nguỵ', 'ngụy'], ['suý', 'súy'], ['luỹ', 'lũy'],
+  ['thuý', 'thúy'], ['loà', 'lòa'], ['xoá', 'xóa'], ['toà', 'tòa'],
+  ['huỷ', 'hủy'], ['nguỵ', 'ngụy'], ['suý', 'súy'], ['luỹ', 'lũy'],
 ];
+// the cluster must not be followed by another letter — that would make it a closed syllable
+const syl = w => new RegExp(w + '(?![a-zà-ỹ])', 'gi');
 
 // How the product addresses the reader. Mixing these is the most visible register slip.
 const ADDRESS = [
@@ -32,8 +40,7 @@ const vn = entries.filter(e => /[àáảãạăâèéêìíòóôơùúưỳýđ
 console.log('=== orthography: both spellings in use ===');
 let orthoSplit = 0;
 for (const [a, b] of ORTHO) {
-  const ra = new RegExp(a, 'gi'), rb = new RegExp(b, 'gi');
-  const A = vn.filter(e => ra.test(e.val)), B = vn.filter(e => rb.test(e.val));
+  const A = vn.filter(e => syl(a).test(e.val)), B = vn.filter(e => syl(b).test(e.val));
   if (!A.length || !B.length) continue;
   orthoSplit++;
   const minor = A.length <= B.length ? { w: a, list: A } : { w: b, list: B };

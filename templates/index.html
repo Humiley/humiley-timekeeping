@@ -13475,9 +13475,9 @@ function _crmTabBar(active) {
 const _CRM_INTRO = {
   'crm-pipeline': ['Pipeline', 'Your active deals as a board, one column per stage. Drag a deal forward as it progresses — each stage carries a win-probability that feeds the forecast. Mark it Won to hand off to a PMC project, or Lost to close it out.', 'Các cơ hội đang theo đuổi dạng bảng, mỗi cột là một giai đoạn. Kéo cơ hội tiến lên khi có tiến triển — mỗi giai đoạn có xác suất thắng dùng cho dự báo. Đánh dấu Thắng để chuyển thành dự án PMC, hoặc Mất để đóng lại.'],
   'crm-leads': ['Leads', 'Raw inbound interest that is not yet a real opportunity. Qualify a lead (right fit, budget, need), then convert it into a deal — or mark it unqualified so your pipeline stays clean.', 'Khách hàng tiềm năng thô, chưa phải cơ hội thực sự. Sàng lọc lead (phù hợp, ngân sách, nhu cầu), rồi chuyển thành cơ hội — hoặc đánh dấu không đủ điều kiện để pipeline luôn sạch.'],
-  'crm-companies': ['Companies', 'The accounts (organisations) you sell to. Each company groups all of its contacts and deals in one place, so you can see the whole relationship at a glance.', 'Các khách hàng (tổ chức) bạn bán hàng. Mỗi công ty gom tất cả người liên hệ và cơ hội liên quan về một nơi để bạn nắm tòan bộ quan hệ.'],
+  'crm-companies': ['Companies', 'The accounts (organisations) you sell to. Each company groups all of its contacts and deals in one place, so you can see the whole relationship at a glance.', 'Các khách hàng (tổ chức) bạn bán hàng. Mỗi công ty gom tất cả người liên hệ và cơ hội liên quan về một nơi để bạn nắm toàn bộ quan hệ.'],
   'crm-contacts': ['Contacts', 'The individual people at your accounts — decision-makers and influencers. Link each contact to a company and keep their details current so deals route to the right person.', 'Những cá nhân tại các khách hàng — người ra quyết định và người ảnh hưởng. Gắn mỗi người với một công ty và cập nhật thông tin để cơ hội đến đúng người.'],
-  'crm-products': ['Products', 'Your catalog of offerings and prices. Build quotes from this catalog so pricing stays consistent across the whole sales team.', 'Danh mục sản phẩm và giá của bạn. Lập báo giá từ danh mục này để giá thống nhất trong tòan đội bán hàng.']
+  'crm-products': ['Products', 'Your catalog of offerings and prices. Build quotes from this catalog so pricing stays consistent across the whole sales team.', 'Danh mục sản phẩm và giá của bạn. Lập báo giá từ danh mục này để giá thống nhất trong toàn đội bán hàng.']
 };
 function _crmIntro(viewId) {
   const t = _CRM_INTRO[viewId]; if (!t) return '';
@@ -13563,11 +13563,11 @@ async function tkRenderCrmOverview() {
   // How-to guide
   const tips = [
     ['Log every lead the moment it comes in — an untracked lead is a lost lead.', 'Ghi nhận mọi khách hàng tiềm năng ngay khi phát sinh — lead không được theo dõi là lead bị mất.'],
-    ['Keep each deal in its true stage; move it forward only when the next step is genuinely done.', 'Luôn để mỗi cơ hội ở đúng giai đoạn; chỉ chuyển tiếp khi bước kế tiếp đã thực sự hòan tất.'],
+    ['Keep each deal in its true stage; move it forward only when the next step is genuinely done.', 'Luôn để mỗi cơ hội ở đúng giai đoạn; chỉ chuyển tiếp khi bước kế tiếp đã thực sự hoàn tất.'],
     ['Always set an expected close date and a next activity so nothing goes quiet.', 'Luôn đặt ngày dự kiến chốt và hoạt động kế tiếp để không bỏ quên cơ hội nào.'],
     ['When you win a deal, convert it into a PMC project so delivery and finance stay linked.', 'Khi thắng một cơ hội, chuyển thành dự án PMC để gắn kết triển khai và tài chính.'],
     ['Link every deal to a company and a contact so the account history stays complete.', 'Gắn mỗi cơ hội với một công ty và một người liên hệ để lịch sử khách hàng luôn đầy đủ.'],
-    ['Build quotes from the Products catalog to keep pricing consistent across the team.', 'Lập báo giá từ danh mục Sản phẩm để đảm bảo giá thống nhất trong tòan đội.']
+    ['Build quotes from the Products catalog to keep pricing consistent across the team.', 'Lập báo giá từ danh mục Sản phẩm để đảm bảo giá thống nhất trong toàn đội.']
   ];
   const guide = '<div class="card" style="padding:18px;margin-bottom:20px">' +
     '<div style="font-size:14px;font-weight:800;color:var(--navy);margin-bottom:12px">' + _t('How to work the CRM') + '</div>' +
@@ -13605,7 +13605,7 @@ async function tkRenderCrmOverview() {
   ];
   const intro = '<div class="card" style="padding:18px;margin-bottom:20px;border-left:4px solid var(--emerald)">' +
     '<div style="font-size:15px;font-weight:800;color:var(--navy);margin-bottom:5px">' + _t2('What is CRM?', 'CRM là gì?') + '</div>' +
-    '<div style="font-size:13px;color:var(--text-light);margin-bottom:16px;max-width:920px;line-height:1.5">' + _t2('CRM (Customer Relationship Management) is where Humiley manages the entire sales relationship — from a first lead, through the companies and contacts you deal with, to opportunities moving across the pipeline, and finally a won deal handed over to a PMC project. It keeps every customer, conversation and opportunity in one place so nothing slips.', 'CRM (Quản lý quan hệ khách hàng) là nơi Humiley quản lý tòan bộ quan hệ bán hàng — từ khách hàng tiềm năng đầu tiên, qua các công ty và người liên hệ, đến những cơ hội di chuyển trong pipeline, và cuối cùng là cơ hội thắng được bàn giao thành dự án PMC. Mọi khách hàng, trao đổi và cơ hội ở một nơi để không bỏ sót điều gì.') + '</div>' +
+    '<div style="font-size:13px;color:var(--text-light);margin-bottom:16px;max-width:920px;line-height:1.5">' + _t2('CRM (Customer Relationship Management) is where Humiley manages the entire sales relationship — from a first lead, through the companies and contacts you deal with, to opportunities moving across the pipeline, and finally a won deal handed over to a PMC project. It keeps every customer, conversation and opportunity in one place so nothing slips.', 'CRM (Quản lý quan hệ khách hàng) là nơi Humiley quản lý toàn bộ quan hệ bán hàng — từ khách hàng tiềm năng đầu tiên, qua các công ty và người liên hệ, đến những cơ hội di chuyển trong pipeline, và cuối cùng là cơ hội thắng được bàn giao thành dự án PMC. Mọi khách hàng, trao đổi và cơ hội ở một nơi để không bỏ sót điều gì.') + '</div>' +
     '<div style="font-size:11px;font-weight:800;color:var(--navy);margin-bottom:11px;text-transform:uppercase;letter-spacing:.5px">' + _t2('The CRM Workflow', 'Quy trình CRM') + '</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:stretch">' +
     flow.map((s, i) => {
@@ -13739,7 +13739,7 @@ async function tkRenderMySpaceOverview() {
     ['mygoals', 'My Goals', _t('PADR & self-review'), 'Your goals and self-assessment.', 'Mục tiêu và tự đánh giá của bạn.', '#F59E0B'],
     ['myonboarding', 'Onboarding', (_msOnbTodo ? _msOnbTodo + ' ' + _t('to sign') : _msOnbDone + ' ' + _t('signed')),
       'Company documents to read and sign.', 'Tài liệu công ty cần đọc và ký.', _msOnbTodo ? '#F59E0B' : '#00B060'],
-    ['mytraining', 'My Training', trainDone + '/' + _msEnr + ' ' + _t('done'), 'Courses, progress and completion.', 'Khóa học, tiến độ và hòan thành.', '#14b8a6'],
+    ['mytraining', 'My Training', trainDone + '/' + _msEnr + ' ' + _t('done'), 'Courses, progress and completion.', 'Khóa học, tiến độ và hoàn thành.', '#14b8a6'],
     ['travelclaims', 'Travel Expense', _msTrips + ' ' + _t('trips') + ' · ' + _msClaims + ' ' + _t('claims'), 'Travel requests and expense claims.', 'Đề nghị công tác và thanh toán chi phí.', '#8B5CF6'],
     ['payments', 'Payment Requests', _msPays + ' ' + _t('requests'), 'Raise and track payment requests.', 'Tạo và theo dõi đề nghị thanh toán.', '#0ea5e9'],
     ['mydevices', 'My Devices', _msDevices + ' ' + _t('assigned'), 'Company assets assigned to you.', 'Tài sản công ty được cấp cho bạn.', '#EF4444']
@@ -18385,7 +18385,7 @@ async function crmRenderPipeline() {
   const addBtn = '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_deals') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button></div>';
   const tab = _crmPipeTab || 'dashboard';
   const subBtn = (id, label) => '<button onclick="_crmPipeGo(\'' + id + '\')" style="font-family:inherit;font-size:12.5px;font-weight:700;border:none;border-radius:8px;padding:6px 16px;cursor:pointer;transition:.12s;' + (tab === id ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + label + '</button>';
-  const scopeLbl = _crmSeeAll() ? _t2('Company-wide pipeline', 'Pipeline tòan công ty') : (_userLevel === 'staff' ? _t2('Your own pipeline', 'Pipeline của riêng bạn') : _t2('Your team', 'Nhóm của bạn'));
+  const scopeLbl = _crmSeeAll() ? _t2('Company-wide pipeline', 'Pipeline toàn công ty') : (_userLevel === 'staff' ? _t2('Your own pipeline', 'Pipeline của riêng bạn') : _t2('Your team', 'Nhóm của bạn'));
   const subTabs = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">' +
     '<div style="display:inline-flex;background:var(--soft-bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">' + subBtn('dashboard', _t('Dashboard')) + subBtn('board', _t('Sales Pipeline')) + '</div>' +
     '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;color:var(--text-light)">' + _t('Period') + '</span>' + _crmFiltPeriod('crm-pipe-period', 'crmRenderPipeline') + '</div></div>';
@@ -18658,7 +18658,7 @@ async function crmRenderContracts() {
   const kpis = _hrKpiRow([
     _hrKpi(_t2('Live contract value', 'Giá trị hợp đồng đang chạy'), _crmMoney(live.reduce((s, c) => s + (+c.value || 0), 0)), '#205090'),
     _hrKpi(_t2('Still to certify', 'Chưa nghiệm thu'), _crmMoney(toBill), '#0ea5e9'),
-    _hrKpi(_t2('Advance still owed back', 'Tạm ứng còn phải hòan'), _crmMoney(advOut), advOut ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Advance still owed back', 'Tạm ứng còn phải hoàn'), _crmMoney(advOut), advOut ? '#B45309' : 'var(--emerald)'),
     _hrKpi(_t2('Retention being held', 'Đang bị giữ lại'), _crmMoney(retHeld), retHeld ? '#8B5CF6' : 'var(--emerald)')
   ]);
 
@@ -18721,7 +18721,7 @@ async function crmOpenCredit(applicationId, id) {
       '<button class="modal-close" onclick="document.getElementById(\'cnOverlay\').remove()">&times;</button></div>' +
     '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6;margin-bottom:10px">' +
       _crmEsc(_t2('This claim certified %c, of which %l is still creditable. A credit reverses the retention and the advance recovery in the same proportion — that is what keeps the final account reconcilable.',
-                  'Đợt này đã nghiệm thu %c, còn %l có thể ghi giảm. Việc ghi giảm sẽ hòan lại tiền giữ lại và khấu trừ tạm ứng theo đúng tỷ lệ — đó là điều giữ cho quyết toán khớp nhau.')
+                  'Đợt này đã nghiệm thu %c, còn %l có thể ghi giảm. Việc ghi giảm sẽ hoàn lại tiền giữ lại và khấu trừ tạm ứng theo đúng tỷ lệ — đó là điều giữ cho quyết toán khớp nhau.')
         .replace('%c', _crmMoney(a.certifiedThis)).replace('%l', _crmMoney(left))) + '</div>' +
     '<div class="grid-2" style="gap:12px">' +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Amount to credit (₫)', 'Số tiền ghi giảm (₫)') + '</label>' +
@@ -19045,7 +19045,7 @@ function _ctDepositBlock(c, id, draft) {
       _t2('Deposit (tạm ứng)', 'Tạm ứng') + '</div>' +
     '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-bottom:8px">' +
       _crmEsc(_t2('However the PO and the contract expressed it — a percentage, a stated amount, or staged tranches. It is not revenue: it is money you hold and owe back, recovered out of each claim.',
-                  'Theo đúng cách đơn hàng và hợp đồng quy định — theo %, một số tiền cụ thể, hoặc chia nhiều đợt. Đây không phải doanh thu: đây là tiền mình đang giữ và phải hòan lại, được khấu trừ dần qua từng đợt thanh toán.')) + '</div>' +
+                  'Theo đúng cách đơn hàng và hợp đồng quy định — theo %, một số tiền cụ thể, hoặc chia nhiều đợt. Đây không phải doanh thu: đây là tiền mình đang giữ và phải hoàn lại, được khấu trừ dần qua từng đợt thanh toán.')) + '</div>' +
     (draft ? '<div id="ct-dep-rows">' + (rows.length ? rows.map((r, i) => _ctDepositRow(i, r)).join('') : _ctDepositRow(0, {})) + '</div>' +
       '<button class="btn btn-ghost btn-sm" onclick="crmDepositAddRow()">' + _t2('+ Another tranche', '+ Thêm đợt') + '</button>'
       : '<div style="font-size:12.5px;line-height:1.7">' +
@@ -19164,17 +19164,17 @@ async function crmOpenContract(id) {
          the contract said the deposit was protected. Shown only for that rule: a number that means
          nothing under the others is a number somebody fills in anyway. */
       '<div class="form-group" id="ct-fromPct-wrap"' + (c.recoveryRule === 'from_pct' ? '' : ' style="display:none"') + '>' +
-        '<label class="form-label" style="font-size:11.5px">' + _t2('Recover nothing until the works reach', 'Chưa khấu trừ cho đến khi hòan thành') + '</label>' +
+        '<label class="form-label" style="font-size:11.5px">' + _t2('Recover nothing until the works reach', 'Chưa khấu trừ cho đến khi hoàn thành') + '</label>' +
         '<div style="display:flex;align-items:center;gap:8px">' +
           '<input type="number" class="form-control" id="ct-recoveryFromPct" min="0" max="100" step="0.01"' +
             ' value="' + (c.recoveryFromPct != null && c.recoveryFromPct !== '' ? _tkEscA(String(c.recoveryFromPct)) : '') + '"' +
             (draft ? '' : ' disabled') + ' style="max-width:120px">' +
-          '<span style="font-size:12px;color:var(--text-light)">' + _t2('% complete', '% hòan thành') + '</span></div></div>' +
+          '<span style="font-size:12px;color:var(--text-light)">' + _t2('% complete', '% hoàn thành') + '</span></div></div>' +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT rate for this contract', 'Thuế suất GTGT cho hợp đồng này') + '</label>' +
         '<select class="form-control" id="ct-vatRate"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— company default —', '— mặc định công ty —') + '</option>' +
           [0, 5, 8, 10].map(v => '<option value="' + v + '"' + (String(c.vatRate || '') === String(v) ? ' selected' : '') + '>' + v + '%</option>').join('') +
           '<option value="na"' + (String(c.vatRate || '') === 'na' ? ' selected' : '') + '>' + _t2('Not a VAT supply', 'Không chịu thuế GTGT') + '</option>' + '</select></div>' +
-      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('When retention comes back', 'Khi nào hòan trả giữ lại') + '</label>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('When retention comes back', 'Khi nào hoàn trả giữ lại') + '</label>' +
         '<select class="form-control" id="ct-releaseRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RELEASE, c.releaseRule) + '</select></div>' +
     '</div>' +
     (draft || !(+c.retentionHeld) ? '' : (function () {
@@ -19184,14 +19184,14 @@ async function crmOpenContract(id) {
       return '<div class="card" style="padding:12px 14px;margin:6px 0 12px;background:var(--soft-bg)">' +
         '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">' + _t2('Retention', 'Tiền giữ lại bảo hành') + '</div>' +
         '<div style="font-size:12.5px;line-height:1.6;margin-bottom:8px">' +
-          _t2('Held', 'Đang giữ') + ' <b>' + _crmMoney(out) + '</b>' + (rel ? ' · ' + _t2('already released', 'đã hòan trả') + ' ' + _crmMoney(rel) : '') +
+          _t2('Held', 'Đang giữ') + ' <b>' + _crmMoney(out) + '</b>' + (rel ? ' · ' + _t2('already released', 'đã hoàn trả') + ' ' + _crmMoney(rel) : '') +
           (c.acceptedOn ? ' · ' + _t2('accepted', 'nghiệm thu') + ' ' + _crmEsc(c.acceptedOn)
                         : '<div style="color:#B45309;margin-top:4px">' + _crmEsc(_t2('No acceptance date, so nothing can be dated — the warranty period runs from the day the works were accepted.', 'Chưa có ngày nghiệm thu nên chưa xác định được hạn — thời hạn bảo hành tính từ ngày nghiệm thu.')) + '</div>') +
         '</div>' +
         '<button class="btn btn-ghost btn-sm" onclick="crmContractAccept(\'' + id + '\')">' +
           (c.acceptedOn ? _t2('Change acceptance date', 'Sửa ngày nghiệm thu') : _t2('Record acceptance date', 'Ghi ngày nghiệm thu')) + '</button>' +
         (out > 0 && c.acceptedOn ? '<button class="btn btn-ghost btn-sm" onclick="crmReleaseRetention(\'' + id + '\')">' +
-          _t2('Record a release', 'Ghi hòan trả') + '</button>' : '') +
+          _t2('Record a release', 'Ghi hoàn trả') + '</button>' : '') +
       '</div>';
     })()) +
     (draft ? '<div class="card" style="padding:12px 14px;margin:6px 0 12px;background:var(--soft-bg)">' +
@@ -19318,11 +19318,11 @@ async function crmRenderBilling() {
         '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap">' +
           '<div><div style="font-size:10.5px;color:var(--text-light)">' + _t2('Retention held by customers', 'Khách hàng đang giữ lại') + '</div>' +
             '<div style="font-size:14px;font-weight:700;color:' + ((+r.retentionHeldByCustomers || 0) ? '#8B5CF6' : 'var(--text-light)') + ';font-variant-numeric:tabular-nums">' + _crmMoney(r.retentionHeldByCustomers) + '</div></div>' +
-          '<div><div style="font-size:10.5px;color:var(--text-light)">' + _t2('Advance still owed back', 'Tạm ứng còn phải hòan') + '</div>' +
+          '<div><div style="font-size:10.5px;color:var(--text-light)">' + _t2('Advance still owed back', 'Tạm ứng còn phải hoàn') + '</div>' +
             '<div style="font-size:14px;font-weight:700;color:' + ((+r.advanceOwedBack || 0) ? '#B45309' : 'var(--text-light)') + ';font-variant-numeric:tabular-nums">' + _crmMoney(r.advanceOwedBack) + '</div></div></div>' +
         '<div style="margin-top:10px;font-size:11.5px;color:var(--text-light);line-height:1.55">' +
           _crmEsc(_t2(r.whyNotOneNumber || '',
-                      'Nợ thương mại, tiền giữ lại và tạm ứng là ba chiếc đồng hồ khác nhau. Tiền giữ lại không phải là quá hạn — nó chưa đến hạn cho tới khi hết bảo hành. Tạm ứng là tiền mình đang giữ và phải hòan lại, không phải tiền người ta nợ mình. Cộng chúng lại sẽ ra một con số sai theo ba hướng.')) + '</div>' +
+                      'Nợ thương mại, tiền giữ lại và tạm ứng là ba chiếc đồng hồ khác nhau. Tiền giữ lại không phải là quá hạn — nó chưa đến hạn cho tới khi hết bảo hành. Tạm ứng là tiền mình đang giữ và phải hoàn lại, không phải tiền người ta nợ mình. Cộng chúng lại sẽ ra một con số sai theo ba hướng.')) + '</div>' +
         (flags.length ? '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:rgba(180,83,9,.09);font-size:11.5px;color:#8a4a00;line-height:1.55">' +
           flags.map(f => '<div>' + _crmEsc(f) + '</div>').join('') + '</div>' : '') +
       '</div>';
@@ -19333,7 +19333,7 @@ async function crmRenderBilling() {
     _hrKpi(_t2('Certified, awaiting cash', 'Đã nghiệm thu, chờ thu tiền'), _crmMoney(owed), owed ? '#0ea5e9' : 'var(--emerald)'),
     _hrKpi(_t2('Certified, not yet invoiced', 'Đã nghiệm thu, chưa xuất hóa đơn'), _crmMoney(noInvoice), noInvoice ? '#B45309' : 'var(--emerald)'),
     _hrKpi(_t2('Retention being held', 'Đang bị giữ lại'), _crmMoney(retHeld), retHeld ? '#8B5CF6' : 'var(--emerald)'),
-    _hrKpi(_t2('Advance still owed back', 'Tạm ứng còn phải hòan'), _crmMoney(advOut), advOut ? '#B45309' : 'var(--emerald)')
+    _hrKpi(_t2('Advance still owed back', 'Tạm ứng còn phải hoàn'), _crmMoney(advOut), advOut ? '#B45309' : 'var(--emerald)')
   ]);
 
   const rows = apps.length ? apps.map(a => {
@@ -19674,11 +19674,11 @@ const _TR_GAP = {
     vnWhy: 'Đang giữ %m và đồng hồ bảo hành tính từ ngày nghiệm thu — ngày đó chưa được ghi nhận.' },
   'retention-no-rule': {
     en: 'Retention held and the contract does not say when it comes back',
-    vn: 'Đang giữ tiền nhưng hợp đồng chưa quy định khi nào hòan trả',
-    enWhy: '%m is being held with no release rule recorded.', vnWhy: 'Đang giữ %m nhưng chưa có quy định hòan trả.' },
+    vn: 'Đang giữ tiền nhưng hợp đồng chưa quy định khi nào hoàn trả',
+    enWhy: '%m is being held with no release rule recorded.', vnWhy: 'Đang giữ %m nhưng chưa có quy định hoàn trả.' },
   'retention-due': {
-    en: 'Retention due back now', vn: 'Tiền giữ lại đã đến hạn hòan trả',
-    enWhy: '%m of retention is due back from the customer.', vnWhy: 'Khách hàng phải hòan trả %m tiền giữ lại.' },
+    en: 'Retention due back now', vn: 'Tiền giữ lại đã đến hạn hoàn trả',
+    enWhy: '%m of retention is due back from the customer.', vnWhy: 'Khách hàng phải hoàn trả %m tiền giữ lại.' },
   'deposit-not-received': {
     en: 'The agreed deposit has not arrived', vn: 'Tạm ứng đã thoả thuận chưa về',
     enWhy: '%m of the deposit has not arrived. That part is not recovered out of any claim until it does.',
@@ -19982,7 +19982,7 @@ async function crmStatement(accountId, accountName) {
           '<b style="font-variant-numeric:tabular-nums">' + _crmMoney(r.advanceOwedBack) + '</b></div></div>' +
       '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-top:8px">' +
         _crmEsc(_t2('Retention and the advance are not part of the balance above. Retention is not late — it is not due until the warranty ends; an advance is money held that is owed back. They are shown separately so the balance can be agreed without arguing about them.',
-                    'Tiền giữ lại và tạm ứng không nằm trong số dư ở trên. Tiền giữ lại chưa đến hạn cho tới khi hết bảo hành; tạm ứng là tiền đang giữ và phải hòan lại. Tách riêng để hai bên chốt được số dư mà không phải tranh luận về chúng.')) + '</div>' +
+                    'Tiền giữ lại và tạm ứng không nằm trong số dư ở trên. Tiền giữ lại chưa đến hạn cho tới khi hết bảo hành; tạm ứng là tiền đang giữ và phải hoàn lại. Tách riêng để hai bên chốt được số dư mà không phải tranh luận về chúng.')) + '</div>' +
     '</div>' +
     '<div class="modal-footer">' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'stOverlay\').remove()">' + _t('Close') + '</button>' +
@@ -20027,8 +20027,8 @@ async function crmRenderRetention() {
 
   const kpis = _hrKpiRow([
     _hrKpi(_t2('Held by customers', 'Khách hàng đang giữ'), _crmMoney(r.totalHeld), r.totalHeld ? '#8B5CF6' : 'var(--emerald)'),
-    _hrKpi(_t2('Due back now', 'Đến hạn hòan trả'), _crmMoney(r.dueNow), r.dueNow ? '#B45309' : 'var(--emerald)'),
-    _hrKpi(_t2('Past its release date', 'Quá hạn hòan trả'), _crmMoney(overdue), overdue ? '#B91C1C' : 'var(--emerald)'),
+    _hrKpi(_t2('Due back now', 'Đến hạn hoàn trả'), _crmMoney(r.dueNow), r.dueNow ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Past its release date', 'Quá hạn hoàn trả'), _crmMoney(overdue), overdue ? '#B91C1C' : 'var(--emerald)'),
     _hrKpi(_t2('Cannot be dated', 'Chưa xác định được hạn'), (r.undateable || []).length, (r.undateable || []).length ? '#B45309' : 'var(--emerald)')
   ]);
 
@@ -20054,7 +20054,7 @@ async function crmRenderRetention() {
       '<div class="card-title">' + _t2('Holding money that cannot yet be dated', 'Đang giữ tiền nhưng chưa xác định được hạn') + '</div>' +
       '<div style="font-size:11.5px;color:var(--text-light);max-width:62ch;line-height:1.55">' +
         _crmEsc(_t2('These are the ones most likely to be lost. Nothing is due until the works were accepted — so record the acceptance date, or the rule that says when retention comes back. Neither is guessed here: a date nobody agreed to would chase a customer on the wrong day.',
-                    'Đây là những khoản dễ bị bỏ quên nhất. Chưa có gì đến hạn cho tới khi nghiệm thu — hãy ghi ngày nghiệm thu, hoặc quy định về thời điểm hòan trả. Không suy đoán ở đây: một ngày không ai thống nhất sẽ khiến đòi khách hàng sai thời điểm.')) +
+                    'Đây là những khoản dễ bị bỏ quên nhất. Chưa có gì đến hạn cho tới khi nghiệm thu — hãy ghi ngày nghiệm thu, hoặc quy định về thời điểm hoàn trả. Không suy đoán ở đây: một ngày không ai thống nhất sẽ khiến đòi khách hàng sai thời điểm.')) +
       '</div></div></div>' +
     '<div class="table-wrap"><table style="min-width:720px"><thead><tr>' +
       '<th>' + _t2('Contract', 'Hợp đồng') + '</th><th>' + _t2('What is missing', 'Còn thiếu') + '</th>' +
@@ -20062,7 +20062,7 @@ async function crmRenderRetention() {
       r.undateable.map(c => '<tr style="cursor:pointer" onclick="crmOpenContract(\'' + c.id + '\')">' +
         '<td style="white-space:nowrap"><b style="font-variant-numeric:tabular-nums">' + _crmEsc(c.contractNo) + '</b>' +
           '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(c.accountName || '') + '</div></td>' +
-        '<td style="font-size:11.5px;line-height:1.5">' + _crmEsc(c.acceptedOn ? _t2('The contract does not say when retention comes back.', 'Hợp đồng chưa quy định khi nào hòan trả tiền giữ lại.')
+        '<td style="font-size:11.5px;line-height:1.5">' + _crmEsc(c.acceptedOn ? _t2('The contract does not say when retention comes back.', 'Hợp đồng chưa quy định khi nào hoàn trả tiền giữ lại.')
                                                                                 : _t2('No acceptance date — the warranty clock has not started.', 'Chưa có ngày nghiệm thu — đồng hồ bảo hành chưa chạy.')) + '</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap">' + _crmMoney(c.outstanding) + '</td>' +
       '</tr>').join('') + '</tbody></table></div></div>' : '';
@@ -20072,7 +20072,7 @@ async function crmRenderRetention() {
        figure on this page is "₫30,325,000". Two currency formats in one paragraph reads as a bug. */
     '<div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' +
       _crmEsc(_t2('%h of retention is being held by customers; %d of it is due back now.',
-                  '%h tiền giữ lại đang do khách hàng nắm; %d trong đó đã đến hạn hòan trả.')
+                  '%h tiền giữ lại đang do khách hàng nắm; %d trong đó đã đến hạn hoàn trả.')
                 .replace('%h', _crmMoney(r.totalHeld)).replace('%d', _crmMoney(r.dueNow))) +
       ((r.undateable || []).length ? ' ' + _crmEsc(
         ((r.undateable.length === 1)
@@ -20081,7 +20081,7 @@ async function crmRenderRetention() {
             .replace('%n', r.undateable.length)) : '') +
       ' &nbsp;·&nbsp; ' + _crmEsc(_t2('as at ', 'tính đến ') + (r.asOf || '')) + '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px">' +
-      '<div class="card-title">' + _t2('Retention held, by release date', 'Tiền giữ lại theo ngày hòan trả') + '</div></div>' +
+      '<div class="card-title">' + _t2('Retention held, by release date', 'Tiền giữ lại theo ngày hoàn trả') + '</div></div>' +
     '<div class="table-wrap"><table style="min-width:840px"><thead><tr>' +
       '<th>' + _t2('Contract', 'Hợp đồng') + '</th><th>' + _t2('Job', 'Công trình') + '</th>' +
       '<th>' + _t2('Accepted', 'Nghiệm thu') + '</th><th>' + _t2('Falls due', 'Đến hạn') + '</th>' +
@@ -20095,7 +20095,7 @@ async function crmRenderRetention() {
 async function crmContractAccept(id) {
   const day = await tkPrompt({ title: _t2('When were the works accepted?', 'Nghiệm thu ngày nào?'),
     body: _t2('The warranty period runs from this date, so it is what makes the retention release date real. It is not the contract date and not the last claim.',
-              'Thời hạn bảo hành tính từ ngày này, nên đây là căn cứ để xác định ngày hòan trả tiền giữ lại. Không phải ngày ký hợp đồng, cũng không phải đợt nghiệm thu cuối.'),
+              'Thời hạn bảo hành tính từ ngày này, nên đây là căn cứ để xác định ngày hoàn trả tiền giữ lại. Không phải ngày ký hợp đồng, cũng không phải đợt nghiệm thu cuối.'),
     type: 'date' });
   if (!day) return;
   try {
@@ -20108,9 +20108,9 @@ async function crmContractAccept(id) {
 }
 
 async function crmReleaseRetention(id) {
-  const amt = await tkPrompt({ title: _t2('How much retention is coming back?', 'Hòan trả bao nhiêu tiền giữ lại?'),
+  const amt = await tkPrompt({ title: _t2('How much retention is coming back?', 'Hoàn trả bao nhiêu tiền giữ lại?'),
     body: _t2('Releasing more than is due today is allowed — customers do pay it back early — but it is recorded as early, with the reason.',
-              'Được phép hòan trả sớm hơn hạn — khách hàng đôi khi trả sớm — nhưng sẽ được ghi nhận là sớm, kèm lý do.'),
+              'Được phép hoàn trả sớm hơn hạn — khách hàng đôi khi trả sớm — nhưng sẽ được ghi nhận là sớm, kèm lý do.'),
     type: 'number' });
   if (!amt) return;
   const body = { id: id, action: 'release_retention', amount: +String(amt).replace(/[^0-9.]/g, '') };
@@ -20125,7 +20125,7 @@ async function crmReleaseRetention(id) {
     try { await tkApi('/api/sales/contract', { method: 'POST', body: body }); }
     catch (e2) { toast(_errMsg(e2), 'error', 9000); return; }
   }
-  toast(_t2('Retention released', 'Đã hòan trả tiền giữ lại'));
+  toast(_t2('Retention released', 'Đã hoàn trả tiền giữ lại'));
   _COLL_TS['sales_contracts'] = 0;
   document.getElementById('ctOverlay')?.remove();
   if (document.getElementById('crm-retention-root')) crmRenderRetention(); else crmRenderContracts();
@@ -21734,7 +21734,7 @@ function tkFilePreview(url, name, mime) {
                 'iPhone và iPad chỉ hiển thị được trang đầu tiên trong ứng dụng. Hãy mở tệp để xem đầy đủ các trang — hóa đơn, chứng từ và ủy nhiệm chi đều nằm trong tệp này.') +
           '</div>' +
           '<a href="' + url + '" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:14px;padding:11px 20px">' +
-            _t2('Open the full document', 'Mở tòan bộ tài liệu') + '</a></div>'
+            _t2('Open the full document', 'Mở toàn bộ tài liệu') + '</a></div>'
     : isPdf ? '<iframe src="' + url + '" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>'
     : '<div style="padding:36px;text-align:center;color:var(--text-light)">This file type can’t preview inline.<br><br><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-primary">Open / Download</a></div>';
   const el = document.createElement('div'); el.id = 'filePreviewOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
@@ -21793,9 +21793,9 @@ async function pmMasterWipe(pid) {
   const linkedDeliv = list.filter(t => t.delivId).length;
   const signed = list.filter(t => t.signatures || t.baselineFinish).length;
   const go = await tkConfirm({ danger: true,
-    title: _t2('Clear the entire Master Schedule?', 'Xóa tòan bộ Tiến độ tổng?'),
+    title: _t2('Clear the entire Master Schedule?', 'Xóa toàn bộ Tiến độ tổng?'),
     body: _t2(list.length + ' activities will be deleted. This cannot be undone.',
-              'Sẽ xóa ' + list.length + ' hạng mục. Không thể hòan tác.') +
+              'Sẽ xóa ' + list.length + ' hạng mục. Không thể hoàn tác.') +
       (linked ? '\n\n' + _t2(linked + ' detail line(s) report against them. Those lines are NOT ' +
                               'deleted — they move to "Not linked to a master activity", and they ' +
                               're-link on their own if you import a schedule using the same WBS codes.',
@@ -21812,7 +21812,7 @@ async function pmMasterWipe(pid) {
     cancelText: _t2('Keep the schedule', 'Giữ tiến độ') });
   if (!go) return;
   if (!await _pdPinGate(_t2('Delete all ' + list.length + ' master activities on this project.',
-                           'Xóa tòan bộ ' + list.length + ' hạng mục chính của dự án này.'))) return;
+                           'Xóa toàn bộ ' + list.length + ' hạng mục chính của dự án này.'))) return;
   toast(_t2('Clearing ' + list.length + ' activities\u2026', 'Đang xóa ' + list.length + ' hạng mục\u2026'), 'info', 30000);
   const res = await _pmBulkDelete('pm_tasks', list, (n, tot) => {
     if (n % 20 === 0) toast(_t2(n + ' of ' + tot + '\u2026', n + '/' + tot + '\u2026'), 'info', 30000);
@@ -23660,7 +23660,7 @@ function pmRenderScope(pid) {
     { label: 'Activities', sk: '_n', align: 'right', w: '1%', nowrap: true, render: r =>
         '<div style="display:flex;align-items:center;justify-content:flex-end;gap:7px">' +
         (r._n ? '<span title="' + _tkEscA(_t2(r._ro.done + ' of ' + r._n + ' complete',
-                                              'Hòan thành ' + r._ro.done + '/' + r._n)) +
+                                              'Hoàn thành ' + r._ro.done + '/' + r._n)) +
                   '" style="font-size:11px;font-variant-numeric:tabular-nums;color:var(--text-light)">' +
                   r._ro.done + '/' + r._n + '</span>'
               : '<span style="font-size:11px;color:var(--text-light)">' + _t('none') + '</span>') +
@@ -24313,7 +24313,7 @@ async function pdSchedDelete(pid, id) {
     body: '"' + (sc.name || '') + '"\n\n' + (n
       ? _t2('Its ' + n + ' task(s) are NOT deleted. They keep everything they hold and move to ' +
             '"Unfiled", where you can put them under another schedule.',
-            n + ' công việc trong đó KHÔNG bị xóa. Chúng giữ nguyên tòan bộ dữ liệu và chuyển sang ' +
+            n + ' công việc trong đó KHÔNG bị xóa. Chúng giữ nguyên toàn bộ dữ liệu và chuyển sang ' +
             '"Chưa phân loại", nơi bạn có thể xếp lại vào tiến độ khác.')
       : _t2('It holds no tasks.', 'Tiến độ này không có công việc nào.')),
     confirmText: _t2('Delete', 'Xóa'), cancelText: _t2('Keep it', 'Giữ lại') });
@@ -25268,7 +25268,7 @@ async function pdGroupDelete(pid, cat) {
   // number in a dialog that cannot be undone.
   const reported = list.filter(r => _pdLog(r).length).length;
   const go = await tkConfirm({ danger: true,
-    title: _t2('Delete every line in this group?', 'Xóa tòan bộ dòng trong nhóm này?'),
+    title: _t2('Delete every line in this group?', 'Xóa toàn bộ dòng trong nhóm này?'),
     body: cat + '\n\n' +
       _t2(list.length + ' line(s) will be deleted.', 'Sẽ xóa ' + list.length + ' dòng.') +
       (reported ? '\n' + _t2(reported + ' of them carry reported progress, which goes with them.',
@@ -28312,7 +28312,7 @@ const _ENG_STAGES = [
   { k: 'AsBuilt', label: 'As-Built / Record', short: 'AB', hex: '#64748B',
     gate: 'Gate 5 — Design file closed',
     riba: 'RIBA 6–7 Handover & Use', fel: 'Operate', aia: 'Project Closeout',
-    vn: 'Hồ sơ hòan công (as-built dossier)',
+    vn: 'Hồ sơ hoàn công (as-built dossier)',
     purpose: 'Record what was actually built, and close the design file so it can be handed over.',
     typical: 'As-built drawings · Redline incorporation · Design dossier · O&M input · Lessons learned' }
 ];
@@ -36734,7 +36734,7 @@ const _VI = {
   'Effort & Earned Value': 'Nhân công & Giá trị đạt được',
   'Design hours': 'Giờ thiết kế',
   'Book hours': 'Ghi nhận giờ',
-  'Budget at completion': 'Ngân sách khi hòan thành',
+  'Budget at completion': 'Ngân sách khi hoàn thành',
   'Hours booked': 'Giờ đã ghi nhận',
   'Planned by today': 'Kế hoạch đến hôm nay',
   'Hours against deliverables': 'Giờ theo từng tài liệu',
@@ -36783,7 +36783,7 @@ const _VI = {
   'What the design did': 'Thiết kế đã xử lý thế nào',
   'Who was told': 'Đã thông báo cho ai',
   'nothing recorded': 'chưa ghi nhận',
-  'Safety in design': 'An tòan trong thiết kế',
+  'Safety in design': 'An toàn trong thiết kế',
   'Constructability': 'Khả năng thi công',
   'Maintenance': 'Bảo trì',
   'Demolition': 'Phá dỡ',
@@ -36865,7 +36865,7 @@ const _VI = {
   "No register yet.": "Chưa có sổ rủi ro.",
   "No risks recorded. A tender with no risks on it has not been read carefully.": "Chưa ghi nhận rủi ro nào. Hồ sơ thầu không có rủi ro nào là hồ sơ chưa được đọc kỹ.",
   "Nothing to forecast yet.": "Chưa có gì để dự báo.",
-  "On completion": "Khi hòan thành",
+  "On completion": "Khi hoàn thành",
   "On target": "Đạt mục tiêu",
   "Outflows — project costs": "Dòng ra — chi phí dự án",
   "Payment milestones": "Mốc thanh toán",
@@ -36919,18 +36919,18 @@ const _VI = {
   "Build-up": "Bóc tách",
   "By count of decided tenders": "Theo số hồ sơ đã có kết quả",
   "Complete the missing fields first": "Hãy điền đủ các trường còn thiếu trước",
-  "Complete these first": "Hãy hòan tất các mục sau",
+  "Complete these first": "Hãy hoàn tất các mục sau",
   "Direct cost by resource": "Chi phí trực tiếp theo nguồn lực",
   "Direct cost of one unit": "Chi phí trực tiếp cho một đơn vị",
   "Distributed across the priced lines pro-rata to cost": "Phân bổ cho các dòng có giá theo tỷ lệ chi phí",
   "Draft, submitted or approved": "Nháp, đã nộp hoặc đã duyệt",
   "EXW → international leg → CIF → converted at the rate for that supplier’s currency → duty → special consumption tax → VAT → local charges → landed cost. The three taxes CASCADE: duty on CIF, SCT on CIF plus duty, VAT on all three. Import VAT is recoverable and never enters the cost.": "EXW → chặng quốc tế → CIF → quy đổi theo tỷ giá của đồng tiền nhà cung cấp → thuế nhập khẩu → thuế TTĐB → VAT → chi phí nội địa → giá vốn nhập kho. Ba sắc thuế TÍNH CHỒNG LÊN NHAU: thuế NK trên CIF, TTĐB trên CIF cộng thuế NK, VAT trên cả ba. VAT nhập khẩu được khấu trừ nên không bao giờ vào giá vốn.",
   "Edit the tender": "Sửa hồ sơ thầu",
-  "Effective mark-up across the whole quotation": "Tỷ lệ cộng giá thực tế của tòan bộ báo giá",
+  "Effective mark-up across the whole quotation": "Tỷ lệ cộng giá thực tế của toàn bộ báo giá",
   "Engineering &amp; Solutions": "Kỹ thuật &amp; Giải pháp",
   "Entered rates": "Đơn giá nhập tay",
   "Estimate not found.": "Không tìm thấy dự toán.",
-  "Every material this bill needs, gathered across all its lines and including the waste allowance. This is the list procurement would otherwise rebuild by hand from the drawings.": "Tòan bộ vật liệu bảng khối lượng này cần, tổng hợp từ mọi dòng và đã gồm hao hụt. Đây chính là danh sách mà bộ phận mua hàng lẽ ra phải tự bóc lại từ bản vẽ.",
+  "Every material this bill needs, gathered across all its lines and including the waste allowance. This is the list procurement would otherwise rebuild by hand from the drawings.": "Toàn bộ vật liệu bảng khối lượng này cần, tổng hợp từ mọi dòng và đã gồm hao hụt. Đây chính là danh sách mà bộ phận mua hàng lẽ ra phải tự bóc lại từ bản vẽ.",
   "Every rate this tender prices with, in one place. Change one and every line reprices — the same way the workbook’s named ranges flow through. Percentages are PERCENTAGES: 0.5 means half a percent, not half.": "Mọi tỷ lệ hồ sơ thầu này dùng, gom về một chỗ. Đổi một giá trị là mọi dòng tính lại — đúng như các named range trong file Excel. Phần trăm là PHẦN TRĂM: 0.5 nghĩa là nửa phần trăm, không phải một nửa.",
   "Fill these in before this is a document rather than a draft": "Hãy điền các mục sau để đây là một tài liệu chứ không phải bản nháp",
   "GRAND TOTAL (incl VAT)": "TỔNG CỘNG (đã gồm VAT)",
@@ -36965,7 +36965,7 @@ const _VI = {
   "Profit as a share of the selling price — the number the business lives on": "Lợi nhuận tính trên giá bán — con số doanh nghiệp sống bằng nó",
   "Quotation details": "Thông tin báo giá",
   "Quotation info": "Thông tin báo giá",
-  "Recoverable from the state — deliberately NOT part of the landed cost": "Được hòan/khấu trừ từ ngân sách — cố ý KHÔNG nằm trong giá vốn",
+  "Recoverable from the state — deliberately NOT part of the landed cost": "Được hoàn/khấu trừ từ ngân sách — cố ý KHÔNG nằm trong giá vốn",
   "SALES QUOTATION": "BẢNG BÁO GIÁ",
   "Section": "Chương",
   "Sections and notes carry no money — only priced items do. Open a line to build its rate from material, labour, plant and subcontract.": "Chương và ghi chú không mang giá trị — chỉ hạng mục có giá mới mang. Mở một dòng để bóc đơn giá từ vật liệu, nhân công, máy và thầu phụ.",
@@ -36973,7 +36973,7 @@ const _VI = {
   "Selling rate — direct cost plus this line’s share of preliminaries, overhead, risk and profit": "Đơn giá bán — chi phí trực tiếp cộng phần chia của dòng này trong chi phí chung, quản lý, dự phòng và lợi nhuận",
   "Set the project budget": "Đặt ngân sách dự án",
   "Subtotal (excl VAT)": "Cộng (chưa VAT)",
-  "Switch a production line off and it leaves the quotation entirely — not as a zero row, which a customer reads as “we forgot to price this”. Capacity scale multiplies QUANTITY, not unit price: half a line is half the equipment at the same price. The permanent plant cannot be switched off.": "Tắt một dây chuyền thì nó biến mất hòan tòan khỏi báo giá — không để lại dòng bằng 0, vì khách hàng sẽ hiểu là “họ quên báo giá mục này”. Hệ số công suất nhân với KHỐI LƯỢNG, không phải đơn giá: nửa dây chuyền là nửa số thiết bị với cùng đơn giá. Phần nhà máy cố định không thể tắt.",
+  "Switch a production line off and it leaves the quotation entirely — not as a zero row, which a customer reads as “we forgot to price this”. Capacity scale multiplies QUANTITY, not unit price: half a line is half the equipment at the same price. The permanent plant cannot be switched off.": "Tắt một dây chuyền thì nó biến mất hoàn toàn khỏi báo giá — không để lại dòng bằng 0, vì khách hàng sẽ hiểu là “họ quên báo giá mục này”. Hệ số công suất nhân với KHỐI LƯỢNG, không phải đơn giá: nửa dây chuyền là nửa số thiết bị với cùng đơn giá. Phần nhà máy cố định không thể tắt.",
   "Terms &amp; conditions": "Điều khoản &amp; điều kiện",
   "The quotation would price whichever came first — give them different codes.": "Báo giá sẽ lấy mã nào xuất hiện trước — hãy đặt mã khác nhau.",
   "The same item code is bought two ways": "Cùng một mã hàng được mua theo hai đường",
@@ -37133,7 +37133,7 @@ const _VI = {
   'not recorded': 'chưa ghi nhận',
   'Shop-floor card': 'Thẻ xưởng',
   'Print this and hang it with the unit. Scanning a code opens that step on a phone or tablet, already signed in.': 'In thẻ này và treo cùng sản phẩm. Quét mã sẽ mở đúng bước đó trên điện thoại hoặc máy tính bảng, đã đăng nhập sẵn.',
-  'Whole unit': 'Tòan bộ sản phẩm',
+  'Whole unit': 'Toàn bộ sản phẩm',
   'Signed by': 'Người ký',
   'Every step on this route is signed. There is nothing left to scan.': 'Mọi bước trên lộ trình đã được ký. Không còn gì để quét.',
   'Weekly capacity (productive hours)': 'Năng lực theo tuần (giờ công hữu ích)',
@@ -37146,12 +37146,12 @@ const _VI = {
   'Past their delivery date': 'Đã quá ngày giao hàng',
   'No delivery date, so not placed on the chart': 'Chưa có ngày giao hàng nên chưa đưa vào biểu đồ',
   'Running longer than tact': 'Chạy lâu hơn nhịp sản xuất',
-  'Order to dispatch — the shop floor, hold points, tests and the as-built record': 'Từ đơn hàng đến giao hàng — xưởng sản xuất, điểm dừng kiểm tra, thử nghiệm và hồ sơ hòan công',
+  'Order to dispatch — the shop floor, hold points, tests and the as-built record': 'Từ đơn hàng đến giao hàng — xưởng sản xuất, điểm dừng kiểm tra, thử nghiệm và hồ sơ hoàn công',
   'Production stage': 'Công đoạn sản xuất',
   'Route & sign-off': 'Lộ trình & ký duyệt',
   'Documents & drawings': 'Tài liệu & bản vẽ',
   'Packing & dispatch': 'Đóng gói & giao hàng',
-  'As-built dossier': 'Hồ sơ hòan công',
+  'As-built dossier': 'Hồ sơ hoàn công',
   'Component traceability': 'Truy xuất linh kiện',
   'Non-conformance & punch list': 'Không phù hợp & danh mục tồn',
   'Stage gate': 'Cổng công đoạn',
@@ -37167,7 +37167,7 @@ const _VI = {
   'Traveller card': 'Phiếu theo dõi sản phẩm',
   'Record & sign': 'Ghi nhận & ký',
   'Sign off': 'Ký duyệt',
-  'Sign the work complete': 'Ký xác nhận hòan thành',
+  'Sign the work complete': 'Ký xác nhận hoàn thành',
   'Pass the gate': 'Thông qua cổng',
   'Pass and sign': 'Đạt và ký',
   'Record a failure': 'Ghi nhận không đạt',
@@ -37179,7 +37179,7 @@ const _VI = {
   'Document register': 'Sổ đăng ký tài liệu',
   'Packing record': 'Hồ sơ đóng gói',
   'Measured values': 'Giá trị đo được',
-  'As-built record': 'Hồ sơ hòan công',
+  'As-built record': 'Hồ sơ hoàn công',
   'Contract review': 'Soát xét hợp đồng',
   /* AeroSelect selection handoff (2026-08-21) — qualified, same rule as above. */
   'AeroSelect selection': 'Bảng tính chọn AeroSelect',
@@ -37247,11 +37247,11 @@ const _VI = {
   'Unit of work (m, m², m³, no., set, lot…)': 'Đơn vị công việc (m, m², m³, cái, bộ, lô…)',
   'Scheduled quantity': 'Khối lượng kế hoạch',
   'Actual at site': 'Thực tế tại công trường',
-  '% Complete (site / scheduled)': '% Hòan thành (thực tế / kế hoạch)',
+  '% Complete (site / scheduled)': '% Hoàn thành (thực tế / kế hoạch)',
   'no quantity — progress is judged': 'không có khối lượng — đánh giá theo nhận định',
   'Derived from the reported percentage — no site quantity filed yet': 'Suy ra từ phần trăm đã báo — chưa ghi khối lượng thực tế',
   'Quantity installed at site (total)': 'Khối lượng đã thi công (lũy kế)',
-  'Percent complete is worked out from this — ': 'Phần trăm hòan thành được tính từ đây — ',
+  'Percent complete is worked out from this — ': 'Phần trăm hoàn thành được tính từ đây — ',
 
   /* Master↔detail linkage + date filter (2026-08-20) */
   'Not linked to a master activity': 'Chưa gắn với công việc tổng thể',
@@ -37375,7 +37375,7 @@ const _VI = {
   'Basic authentication, user': 'Xác thực Basic, tài khoản',
   'password = the key': 'mật khẩu = khóa',
   'password = this key': 'mật khẩu = khóa này',
-  'Percent complete must be weighted': 'Phần trăm hòan thành phải có trọng số',
+  'Percent complete must be weighted': 'Phần trăm hoàn thành phải có trọng số',
   'use': 'dùng',
   'an average of accumulatedPct is wrong at every grain above a single item.': 'lấy trung bình accumulatedPct là sai ở mọi cấp trên một hạng mục.',
   'Add ?format=csv for a file, and ?from=&to= to narrow the window.': 'Thêm ?format=csv để tải tệp, và ?from=&to= để thu hẹp khoảng thời gian.',
@@ -37776,7 +37776,7 @@ const _VI = {
   'My Payment Requests': 'Đề nghị thanh toán của tôi',
   'New Payment Request': 'Đề nghị thanh toán mới',
   'Payment Register': 'Sổ thanh toán',
-  'Request & approve operational and purchase payments — one register for the whole process': 'Đề nghị & phê duyệt thanh toán vận hành và mua sắm — một sổ theo dõi tòan bộ quy trình',
+  'Request & approve operational and purchase payments — one register for the whole process': 'Đề nghị & phê duyệt thanh toán vận hành và mua sắm — một sổ theo dõi toàn bộ quy trình',
   'Purpose / description': 'Mục đích / mô tả',
   'Payment method': 'Hình thức thanh toán',
   'Buyer / Customer': 'Bên mua / Khách hàng', 'Buyer tax code (MST)': 'MST bên mua',
@@ -37820,7 +37820,7 @@ const _VI = {
   'Procurement Portal': 'Cổng Mua hàng',
   'How it works': 'Cách hoạt động',
   'Your deals across every sales stage': 'Cơ hội theo từng giai đoạn bán hàng', 'Inbound and prospected leads to qualify': 'Khách hàng tiềm năng cần thẩm định', 'The accounts you sell to': 'Các khách hàng bạn bán cho', 'People at your accounts': 'Người liên hệ tại khách hàng', 'Your product catalogue and pricing': 'Danh mục sản phẩm và bảng giá', 'Annual Operating Plan (AOP)': 'Kế hoạch hoạt động năm (AOP)', 'Sales targets by company, segment and member': 'Chỉ tiêu bán hàng theo công ty, phân khúc và nhân viên',
-  'Draw your signature': 'Ký tên của bạn', 'Sign here': 'Ký tại đây', 'Use my saved signature': 'Dùng chữ ký đã lưu', 'Remember my signature on this device': 'Ghi nhớ chữ ký trên thiết bị này', 'Please draw your signature to sign.': 'Vui lòng ký tên để hòan tất.',
+  'Draw your signature': 'Ký tên của bạn', 'Sign here': 'Ký tại đây', 'Use my saved signature': 'Dùng chữ ký đã lưu', 'Remember my signature on this device': 'Ghi nhớ chữ ký trên thiết bị này', 'Please draw your signature to sign.': 'Vui lòng ký tên để hoàn tất.',
   'Procurement role': 'Vai trò Mua sắm', 'Applies when they next open Procurement.': 'Áp dụng khi họ mở Mua sắm lần tới.',
   '— procurement role —': '— vai trò mua sắm —', 'Requester': 'Người yêu cầu', 'Purchaser': 'Người mua hàng', 'Dept Manager': 'Quản lý phòng ban', 'Accountant': 'Kế toán', 'Warehouse': 'Thủ kho',
   'Settings': 'Cài đặt', 'Users': 'Người dùng', 'UoM': 'Đơn vị tính', 'Cost Centers': 'Trung tâm chi phí', 'Accounting Export': 'Xuất kế toán',
@@ -37836,13 +37836,13 @@ const _VI = {
   'Procurement app (URL)': 'Ứng dụng Mua hàng (URL)',
   'Procurement — separate procure-to-pay & inventory portal (opt-in per user below; roles inside are managed in the Procurement app itself)': 'Mua hàng — cổng mua sắm & tồn kho riêng (bật theo từng nhân viên bên dưới; vai trò bên trong quản lý tại chính ứng dụng Mua hàng)',
   'Finance Control': 'Kiểm soát tài chính',
-  'Company-wide control of all payments, claims & travel — approve, track and view every submission': 'Kiểm soát tòan công ty tất cả thanh toán, chi phí & công tác — duyệt, theo dõi và xem mọi hồ sơ',
+  'Company-wide control of all payments, claims & travel — approve, track and view every submission': 'Kiểm soát toàn công ty tất cả thanh toán, chi phí & công tác — duyệt, theo dõi và xem mọi hồ sơ',
   'Approved outflow': 'Chi đã duyệt',
   'Pending approvals': 'Chờ duyệt',
   'Pending value': 'Giá trị chờ duyệt',
   'By Type': 'Theo loại',
   'Company Finance Register': 'Sổ tài chính công ty',
-  'Every submission across the company': 'Mọi hồ sơ trong tòan công ty',
+  'Every submission across the company': 'Mọi hồ sơ trong toàn công ty',
   'Date requested': 'Ngày đề nghị', 'Date approved': 'Ngày duyệt', 'Date paid': 'Ngày thanh toán',
   'Payments · Claims · Travel — ': 'Thanh toán · Chi phí · Công tác — ',
   'Payment': 'Thanh toán',
@@ -37854,7 +37854,7 @@ const _VI = {
   'Date & time (UTC)': 'Ngày & giờ (UTC)',
   'Meaning': 'Ý nghĩa',
   'I certify that this electronic signature is the legally binding equivalent of my handwritten signature.': 'Tôi xác nhận chữ ký điện tử này có giá trị pháp lý tương đương chữ ký tay của tôi.',
-  'You will re-authenticate with Microsoft 365 to complete this signature.': 'Bạn sẽ xác thực lại bằng Microsoft 365 để hòan tất chữ ký này.',
+  'You will re-authenticate with Microsoft 365 to complete this signature.': 'Bạn sẽ xác thực lại bằng Microsoft 365 để hoàn tất chữ ký này.',
   'Demo mode — recorded without Microsoft 365 re-authentication.': "Chế độ demo — ghi nhận mà không xác thực lại Microsoft 365.",
   'Sign with Microsoft 365': 'Ký bằng Microsoft 365',
   'Sign': 'Ký',
@@ -37921,7 +37921,7 @@ const _VI = {
   'Contract value (₫)': 'Giá trị hợp đồng (₫)',
   'Approved budget (₫)': 'Ngân sách được duyệt (₫)',
   'Health (auto if blank)': 'Tình trạng (tự động nếu để trống)',
-  'Overall % complete': 'Tổng % hòan thành',
+  'Overall % complete': 'Tổng % hoàn thành',
   'Scope summary': 'Tóm tắt phạm vi',
   'Success criteria': 'Tiêu chí thành công',
   'Project image (photo / render)': 'Hình ảnh dự án (ảnh / phối cảnh)',
@@ -37942,7 +37942,7 @@ const _VI = {
   'WBS code (e.g. 1.2.3)': 'Mã WBS (vd. 1.2.3)',
   'Contractor / Subcontractor': 'Nhà thầu / Nhà thầu phụ',
   'Supervisor (project member)': 'Giám sát (thành viên dự án)',
-  '% complete': '% hòan thành',
+  '% complete': '% hoàn thành',
   'Acceptance criteria': 'Tiêu chí nghiệm thu',
   'Task / Milestone': 'Công việc / Mốc',
   'Task name': 'Tên công việc',
@@ -38012,7 +38012,7 @@ const _VI = {
   'Manpower (count)': 'Nhân lực (số người)',
   'Equipment on site': 'Thiết bị tại công trường',
   'Delays / issues': 'Chậm trễ / vấn đề',
-  'Safety incidents': 'Sự cố an tòan',
+  'Safety incidents': 'Sự cố an toàn',
   'Sales Quotation': 'Báo giá bán hàng',
   'Project Charter (cont.)': 'Điều lệ dự án (tiếp)',
   'Project Status Report': 'Báo cáo trạng thái dự án',
@@ -38021,8 +38021,8 @@ const _VI = {
   'HR': 'Nhân sự',
   'Cost Variance (CV)': 'Chênh lệch chi phí (CV)',
   'Schedule Variance (SV)': 'Chênh lệch tiến độ (SV)',
-  'Forecast (EAC)': 'Dự báo khi hòan thành (EAC)',
-  'Var. at Completion (VAC)': 'Chênh lệch khi hòan thành (VAC)',
+  'Forecast (EAC)': 'Dự báo khi hoàn thành (EAC)',
+  'Var. at Completion (VAC)': 'Chênh lệch khi hoàn thành (VAC)',
   'To Complete (ETC)': 'Chi phí còn lại (ETC)',
   'No records yet.': 'Chưa có bản ghi nào.',
   'Search projects…': 'Tìm dự án…',
@@ -38157,7 +38157,7 @@ const _VI = {
   'Basic Design / FEED': 'Thiết kế cơ sở / FEED',
   'Detailed Design': 'Thiết kế chi tiết',
   'Issued for Construction': 'Phát hành thi công',
-  'As-Built / Record': 'Hòan công / Lưu hồ sơ',
+  'As-Built / Record': 'Hoàn công / Lưu hồ sơ',
   /* KPIs and headings */
   'Design progress': 'Tiến độ thiết kế',
   'Design fee value': 'Giá trị phí thiết kế',
@@ -38281,7 +38281,7 @@ const _VI = {
   'Drawings & design': 'Bản vẽ & thiết kế',
   'Materials & delivery': 'Vật tư & giao hàng',
   'QA/QC & commissioning': 'QA/QC & nghiệm thu',
-  'Safety (HSE)': 'An tòan (HSE)',
+  'Safety (HSE)': 'An toàn (HSE)',
   'Cost & variation': 'Chi phí & phát sinh',
   'Programme & manpower': 'Tiến độ & nhân lực',
   'Client & consultant': 'Chủ đầu tư & tư vấn',
@@ -38333,13 +38333,13 @@ const _VI = {
   'These attachments are too large to save together': 'Các tệp đính kèm quá lớn để lưu cùng lúc',
   'Remove one, or link the project to SharePoint so the files are stored there instead.': 'Hãy bớt một tệp, hoặc liên kết dự án với SharePoint để lưu tệp ở đó.',
   /* Undo window — taking back a decision within the grace period. */
-  'Undo': 'Hòan tác',
+  'Undo': 'Hoàn tác',
   'Dismiss': 'Bỏ qua',
   'Reversed ✓ — ': 'Đã ghi đảo ✓ — ',
-  'Taken back. The original signature stays on the record, marked reversed.': 'Đã hòan tác. Chữ ký gốc vẫn nằm trên hồ sơ, được đánh dấu là đã đảo.',
-  'Reverse this payment': 'Hòan tác thanh toán này',
+  'Taken back. The original signature stays on the record, marked reversed.': 'Đã hoàn tác. Chữ ký gốc vẫn nằm trên hồ sơ, được đánh dấu là đã đảo.',
+  'Reverse this payment': 'Hoàn tác thanh toán này',
   'This corrects the record. It does not recall a transfer that has already left the bank — if money did move, reverse it with your bank first.': 'Thao tác này sửa hồ sơ. Nó KHÔNG thu hồi khoản tiền đã rời khỏi ngân hàng — nếu tiền đã chuyển, hãy làm việc với ngân hàng trước.',
-  'Why is this being reversed?': 'Vì sao hòan tác?',
+  'Why is this being reversed?': 'Vì sao hoàn tác?',
   'Recorded against the wrong request — no money moved': 'Ghi nhầm sang yêu cầu khác — chưa chuyển tiền',
   'The transfer was not executed, or it failed': 'Chưa thực hiện chuyển khoản, hoặc chuyển khoản thất bại',
   /* PMBOK integrity pass — time-phased PV, signed variations/certificates, NCR close-out. */
@@ -38520,7 +38520,7 @@ const _VI = {
   'Company plan': 'Kế hoạch công ty', 'Company actual': 'Thực tế công ty', 'Attainment': 'Mức đạt', 'Remaining to plan': 'Còn lại theo kế hoạch', 'Above plan': 'Vượt kế hoạch',
   'Total Employees': 'Tổng nhân viên', 'Managers': 'Quản lý', 'Departments': 'Phòng ban', 'Candidates': 'Ứng viên', 'Est. value': 'Giá trị ước tính', 'Admins': 'Quản trị viên',
   'Onboarding Now': 'Đang hội nhập', 'Open requisitions': 'Yêu cầu đang mở', 'Requisitions': "Yêu cầu tuyển", 'Offers Out': 'Đã gửi đề nghị', 'Ready Now': 'Sẵn sàng ngay', 'High Potential': 'Tiềm năng cao',
-  'Company OKRs': 'OKR công ty', 'Avg. Progress': 'Tiến độ TB', 'Avg. Rating': 'Điểm TB', 'Assessed': 'Đã đánh giá', 'Active enrolments': 'Đang ghi danh', 'Tasks Done': 'Việc hòan thành',
+  'Company OKRs': 'OKR công ty', 'Avg. Progress': 'Tiến độ TB', 'Avg. Rating': 'Điểm TB', 'Assessed': 'Đã đánh giá', 'Active enrolments': 'Đang ghi danh', 'Tasks Done': 'Việc hoàn thành',
   'Pending total': 'Tổng chờ duyệt', 'Gross Payroll': 'Lương gộp', 'Gross payroll': 'Lương gộp', 'Net Paid': 'Thực chi', 'Net paid': 'Thực chi', 'Turnover': "Tỷ lệ nghỉ việc",
   'Products / services': 'Sản phẩm / dịch vụ', 'Open high risks': 'Rủi ro cao đang mở', 'Avg unit price': 'Đơn giá TB', 'Tracked staff': 'NV theo dõi', 'With open deals': 'Có cơ hội mở', 'Stars': 'Sao',
   'How to work the CRM': 'Cách sử dụng CRM', 'CRM Modules': 'Phân hệ CRM',
@@ -38528,7 +38528,7 @@ const _VI = {
   'New': 'Mới', 'Qualified': 'Đủ điều kiện', 'Won': 'Thắng', 'Lost': 'Mất',
   'My Tools': 'Công cụ của tôi', 'to sign': 'cần ký', 'Onboarding': 'Hội nhập', 'Quick Actions': 'Thao tác nhanh', 'New Travel': 'Công tác mới', 'New Payment': 'Thanh toán mới',
   'Annual leave left': 'Phép năm còn lại', 'Present this month': 'Có mặt tháng này', 'On-time rate': 'Tỷ lệ đúng giờ', 'Pending requests': 'Đề nghị chờ duyệt', 'Training progress': 'Tiến độ đào tạo',
-  'present': 'có mặt', 'late': 'trễ', 'annual': 'phép năm', 'sick': 'phép ốm', 'PADR & self-review': 'PADR & tự đánh giá', 'done': 'hòan thành', 'trips': 'chuyến', 'requests': 'đề nghị',
+  'present': 'có mặt', 'late': 'trễ', 'annual': 'phép năm', 'sick': 'phép ốm', 'PADR & self-review': 'PADR & tự đánh giá', 'done': 'hoàn thành', 'trips': 'chuyến', 'requests': 'đề nghị',
   'HRBP Process': 'Quy trình HRBP', 'Employee Lifecycle': 'Vòng đời nhân viên',
   'The HR Business Partner cycle, end to end. Click any stage to jump straight in.': 'Chu trình HR Business Partner, từ đầu đến cuối. Chạm vào bất kỳ giai đoạn nào để mở ngay.',
   'Attract': 'Thu hút', 'Develop': 'Phát triển', 'Perform': 'Đánh giá', 'Retain': 'Giữ chân', 'Exit': 'Nghỉ việc',
@@ -38556,7 +38556,7 @@ const _VI = {
   'Sign in with Microsoft 365': 'Đăng nhập bằng Microsoft 365',
   'Microsoft 365 sign-in successful — select your access level:': 'Đăng nhập Microsoft 365 thành công — chọn cấp truy cập:',
   'Manager / HR Admin': 'Quản lý / Quản trị NS', 'Staff / Employee': 'Nhân viên',
-  'Full access — all employees, approvals, reports, HR admin': 'Tòan quyền — nhân sự, phê duyệt, báo cáo, quản trị',
+  'Full access — all employees, approvals, reports, HR admin': 'Toàn quyền — nhân sự, phê duyệt, báo cáo, quản trị',
   'Personal view — your check-in, attendance & leave': 'Chế độ cá nhân — chấm công, đi làm & nghỉ phép',
   // View headers + subtitles
   'Welcome back': 'Chào mừng trở lại', 'Centralized employee records · single source of truth': 'Dữ liệu nhân sự tập trung · nguồn duy nhất',
@@ -38568,14 +38568,14 @@ const _VI = {
   'Export PDF': 'Xuất PDF', 'Export CSV': 'Xuất CSV', 'Import Excel': 'Nhập Excel', 'Refresh': 'Làm mới',
   'Save': 'Lưu', 'Add': 'Thêm', 'Close': 'Đóng', 'View All →': 'Xem tất cả →',
   'Approve': 'Duyệt', 'Reject': 'Từ chối', 'Approve all': 'Duyệt tất cả', 'Reject all': 'Từ chối tất cả',
-  'Submit': 'Gửi', 'Mark Complete': 'Đánh dấu hòan thành', 'Save progress': 'Lưu tiến độ', 'Enroll': 'Đăng ký',
+  'Submit': 'Gửi', 'Mark Complete': 'Đánh dấu hoàn thành', 'Save progress': 'Lưu tiến độ', 'Enroll': 'Đăng ký',
   'Request Leave': 'Xin nghỉ phép', 'Travel Request': 'Đề nghị công tác', 'New Claim': "Đề nghị chi phí",
   'Submit a claim': 'Gửi đề nghị chi phí', 'Update My Profile': 'Cập nhật hồ sơ',
   'Assess Employee': 'Đánh giá nhân viên', 'Course link': 'Liên kết khóa học', 'Material': 'Tài liệu',
-  'Assets': 'Tài sản', 'Manage': 'Quản lý', 'Complete': 'Hòan thành', 'Initiate Exit': 'Khởi tạo thôi việc',
+  'Assets': 'Tài sản', 'Manage': 'Quản lý', 'Complete': 'Hoàn thành', 'Initiate Exit': 'Khởi tạo thôi việc',
   // Statuses
  'Inactive': 'Ngừng làm việc', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Đã từ chối',
-  'Completed': 'Hòan thành', 'In progress': 'Đang thực hiện', 'Enrolled': 'Đã đăng ký', 'Submitted': 'Đã gửi',
+  'Completed': 'Hoàn thành', 'In progress': 'Đang thực hiện', 'Enrolled': 'Đã đăng ký', 'Submitted': 'Đã gửi',
   'Assigned': 'Đã cấp phát', 'Available': 'Sẵn có', 'In Repair': 'Đang sửa', 'Retired': 'Thanh lý',
   'On Time': 'Đúng giờ', 'Absent': 'Vắng', 'Not started': 'Chưa bắt đầu',
   // KPI / labels
@@ -38598,8 +38598,8 @@ const _VI = {
   'Assign & e-sign': 'Cấp phát & ký', 'Assign asset & e-sign': 'Cấp phát tài sản & ký điện tử', 'Assign to (employee)': 'Cấp cho (nhân viên)', 'Note (optional)': 'Ghi chú (tùy chọn)', 'e.g. charger + bag included': 'ví dụ: kèm sạc + túi', 'Employee signature — sign to acknowledge receipt': 'Chữ ký nhân viên — ký để xác nhận đã nhận', 'Confirm & sign': 'Xác nhận & ký', 'Asset assigned to': 'Đã cấp tài sản cho', 'signed': 'đã ký',
   'Please select an employee.': 'Vui lòng chọn nhân viên.', 'Please ask the employee to sign to acknowledge receipt.': 'Vui lòng đề nghị nhân viên ký để xác nhận đã nhận.', 'No assets are currently assigned.': 'Hiện chưa có tài sản nào được cấp phát.',
   'To acknowledge': 'Cần xác nhận', 'Receipt acknowledged': 'Đã xác nhận nhận', 'Awaiting your signature': 'Chờ bạn ký xác nhận', 'Acknowledge receipt': 'Xác nhận đã nhận', 'Sign & acknowledge': 'Ký & xác nhận', 'Please draw your signature to acknowledge.': 'Vui lòng ký để xác nhận.', 'Receipt acknowledged — thank you.': 'Đã xác nhận nhận tài sản — cảm ơn bạn.',
-  'By signing you confirm you have received this company asset and are responsible for it until it is returned.': 'Bằng việc ký, bạn xác nhận đã nhận tài sản của công ty và chịu trách nhiệm cho đến khi hòan trả.',
-  'You are responsible for the company assets assigned to you. Please e-sign to acknowledge receipt of each item. On offboarding, all devices must be returned and signed off before your last working day.': 'Bạn chịu trách nhiệm với các tài sản công ty được cấp. Vui lòng ký điện tử để xác nhận đã nhận từng thiết bị. Khi nghỉ việc, tất cả thiết bị phải được hòan trả và ký bàn giao trước ngày làm việc cuối cùng.',
+  'By signing you confirm you have received this company asset and are responsible for it until it is returned.': 'Bằng việc ký, bạn xác nhận đã nhận tài sản của công ty và chịu trách nhiệm cho đến khi hoàn trả.',
+  'You are responsible for the company assets assigned to you. Please e-sign to acknowledge receipt of each item. On offboarding, all devices must be returned and signed off before your last working day.': 'Bạn chịu trách nhiệm với các tài sản công ty được cấp. Vui lòng ký điện tử để xác nhận đã nhận từng thiết bị. Khi nghỉ việc, tất cả thiết bị phải được hoàn trả và ký bàn giao trước ngày làm việc cuối cùng.',
   'The employee signs below to acknowledge receipt — this records the handover, adds the asset to their My Devices, and emails a signed copy.': 'Nhân viên ký bên dưới để xác nhận đã nhận — thao tác này lưu biên bản bàn giao, thêm tài sản vào “Thiết bị của tôi” và gửi email bản đã ký.',
   'Recruitment Funnel': 'Phễu tuyển dụng', 'Performance Distribution': 'Phân bố hiệu suất', 'Gender Split': 'Tỷ lệ giới tính',
   'Tenure Bands': 'Thâm niên', 'Attendance Status': 'Tình trạng chấm công', 'Leave Days by Type': 'Ngày nghỉ theo loại',
@@ -38621,8 +38621,8 @@ const _VI = {
   'Add New Employee': 'Thêm nhân viên mới', 'Edit Employee Profile': 'Sửa hồ sơ nhân viên', 'Add Candidate': 'Thêm ứng viên',
   'Add Device / Equipment': 'Thêm thiết bị / trang bị', 'Add Course': 'Thêm khóa học', 'Add New Hire': 'Thêm nhân sự mới',
   'My Onboarding Checklist': 'Danh sách hội nhập của tôi', 'My Courses': 'Khóa học của tôi', 'Asset Return & Sign-off': 'Trả tài sản & Ký xác nhận',
- 'Added successfully': 'Đã thêm thành công', 'Step completed': 'Đã hòan thành bước',
-  'Delete this item? This cannot be undone.': 'Xóa mục này? Hành động không thể hòan tác.', 'Are you sure?': 'Bạn có chắc không?',
+ 'Added successfully': 'Đã thêm thành công', 'Step completed': 'Đã hoàn thành bước',
+  'Delete this item? This cannot be undone.': 'Xóa mục này? Hành động không thể hoàn tác.', 'Are you sure?': 'Bạn có chắc không?',
   'No email on file for this employee': 'Nhân viên này chưa có email',
   'Working days': 'Ngày công', 'Unpaid days': 'Ngày không lương', 'KPI factor': 'Hệ số KPI', 'NET PAY': 'THỰC LÃNH', 'GROSS': 'TỔNG THU NHẬP',
   'TOTAL DEDUCTIONS': 'TỔNG KHẤU TRỪ', 'Earnings — 3P': 'Thu nhập — 3P', 'Other deductions — Employee': 'Khấu trừ khác — Nhân viên',
@@ -38697,12 +38697,12 @@ const _VI = {
   'Reconstructed from a finalised pay run, not recorded at the time.': 'Được dựng lại từ đợt lương đã chốt, không phải ghi nhận tại thời điểm đó.',
   'Salary and grade changes are not shown — those are visible to the employee themselves and to Approver (Management) level.': 'Không hiển thị thay đổi lương và bậc — chỉ nhân viên đó và cấp Phê duyệt (Ban giám đốc) mới xem được.',
   'FINAL — as signed': 'CHÍNH THỨC — theo bản đã ký', 'PROVISIONAL — month not closed': 'TẠM TÍNH — chưa chốt tháng',
-  'Export the full employee list?': 'Xuất tòan bộ danh sách nhân viên?',
+  'Export the full employee list?': 'Xuất toàn bộ danh sách nhân viên?',
   'The file includes personal data — ID numbers, dates of birth, addresses and emergency contacts. It leaves the portal’s access controls, so keep it on company storage and delete it when you are done. This export is recorded in the audit log.': 'Tệp này chứa dữ liệu cá nhân — số CCCD, ngày sinh, địa chỉ và liên hệ khẩn cấp. Tệp nằm ngoài phạm vi kiểm soát truy cập của hệ thống, vì vậy hãy lưu trên kho dữ liệu công ty và xóa sau khi dùng xong. Lần xuất này được ghi vào nhật ký kiểm toán.',
   'Payroll cannot be rolled out yet': 'Chưa thể chốt bảng lương',
   'These employees have no salary on file, so the system has no figure to pay them:': 'Những nhân viên sau chưa có mức lương trong hồ sơ nên hệ thống không có số liệu để chi trả:',
   'Set each one’s monthly gross on their employee record, then roll out again.': 'Hãy nhập lương gộp hằng tháng vào hồ sơ từng người, sau đó chốt lại.',
-  'The selected range is all weekend and public holidays — no leave would be used.': 'Khoảng thời gian đã chọn tòan ngày nghỉ và lễ — sẽ không trừ ngày phép nào.',
+  'The selected range is all weekend and public holidays — no leave would be used.': 'Khoảng thời gian đã chọn toàn ngày nghỉ và lễ — sẽ không trừ ngày phép nào.',
   'Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.': 'Ban hành tài liệu công ty dành cho Nhân sự, cấp Người chỉnh sửa và Quản trị viên — quản trị viên có thể thêm bạn ở mục Phân quyền.',
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
@@ -38850,7 +38850,7 @@ const _VI = {
   'Check-ins': 'Lượt chấm vào',
   'Check-out reminder': 'Nhắc nhở chấm ra',
   'Claim title / trip': 'Tiêu đề yêu cầu / chuyến đi',
-  'Claims': 'Yêu cầu hòan ứng',
+  'Claims': 'Yêu cầu hoàn ứng',
   'Clearance': 'Bàn giao & thanh toán',
   'Click': 'Nhấp',
   'Click a claim to see its items': 'Nhấp vào một yêu cầu để xem chi tiết',
@@ -38894,7 +38894,7 @@ const _VI = {
   'Add Contact': 'Thêm người liên hệ', 'Deal / Opportunity': 'Giao dịch / Cơ hội', 'Company / Account': 'Công ty / Khách hàng',
   'Pipeline value': 'Giá trị pipeline', 'Won value': 'Giá trị đã thắng',
   'Win rate': 'Tỷ lệ thắng', 'Convert': 'Chuyển đổi', 'Quote': 'Báo giá', 'Total leads': 'Tổng KH tiềm năng',
-  'Complete the HSE induction before site access.': 'Hòan thành đào tạo định hướng HSE trước khi vào công trường.',
+  'Complete the HSE induction before site access.': 'Hoàn thành đào tạo định hướng HSE trước khi vào công trường.',
   'Compliance': 'Tuân thủ',
   'Condition': 'Tình trạng',
   'Conditional': 'Có điều kiện',
@@ -39036,7 +39036,7 @@ const _VI = {
   'Record it': 'Ghi nhận',
   'Record': "Bản ghi",
   'With no printed expiry, the review treats a health examination as valid for 12 months — 6 for hazardous work, minors, elderly and disabled workers (OSH Law Art. 21(1)).': 'Nếu không in ngày hết hạn, khám sức khỏe được tính hiệu lực 12 tháng — 6 tháng với công việc nặng nhọc, người chưa thành niên, người cao tuổi và người khuyết tật (Điều 21(1) Luật ATVSLĐ).',
-  'With no printed expiry, safety training is treated as valid for 2 years (Decree 44/2016 Art. 24), and only where the person has an OSH group set.': 'Nếu không in ngày hết hạn, huấn luyện an tòan được tính hiệu lực 2 năm (Điều 24 NĐ 44/2016), và chỉ khi người lao động đã được phân nhóm.',
+  'With no printed expiry, safety training is treated as valid for 2 years (Decree 44/2016 Art. 24), and only where the person has an OSH group set.': 'Nếu không in ngày hết hạn, huấn luyện an toàn được tính hiệu lực 2 năm (Điều 24 NĐ 44/2016), và chỉ khi người lao động đã được phân nhóm.',
   'No statutory cadence is assumed for other certificates — only the expiry printed on them.': 'Chứng chỉ khác không áp chu kỳ luật định — chỉ dùng ngày hết hạn in trên chứng chỉ.',
   'Leave report exported': 'Đã xuất báo cáo phép',
   'Leave balances exported': 'Đã xuất số ngày phép',
@@ -39152,7 +39152,7 @@ const _VI = {
   // ── Certificates, licences & health checks ──
   'Certificates, licences &amp; health checks': 'Chứng chỉ, giấy phép &amp; khám sức khoẻ',
   'Law on OSH 2015 Art. 21(1) — a health examination at least once a year, and every six months for hazardous work, minors, elderly and disabled workers · Decree 44/2016 Art. 24 — safety training valid 2 years, where the company has classified somebody into a group.':
-    'Luật ATVSLĐ 2015 Đ.21(1) — khám sức khoẻ định kỳ ít nhất 1 lần/năm, và 6 tháng/lần với công việc nặng nhọc độc hại, người chưa thành niên, người cao tuổi và người khuyết tật · NĐ 44/2016 Đ.24 — chứng chỉ huấn luyện an tòan có giá trị 2 năm, với những người đã được phân nhóm.',
+    'Luật ATVSLĐ 2015 Đ.21(1) — khám sức khoẻ định kỳ ít nhất 1 lần/năm, và 6 tháng/lần với công việc nặng nhọc độc hại, người chưa thành niên, người cao tuổi và người khuyết tật · NĐ 44/2016 Đ.24 — chứng chỉ huấn luyện an toàn có giá trị 2 năm, với những người đã được phân nhóm.',
   'person(s) not fully covered': 'người chưa đủ điều kiện',
   'Missing and expired first. A certificate on file that lapsed is not cover.': 'Thiếu và hết hạn xếp trước. Chứng chỉ có trong hồ sơ nhưng đã hết hạn thì không còn giá trị.',
   'Everybody is covered.': 'Tất cả đều đủ điều kiện.',
@@ -39257,7 +39257,7 @@ const _VI = {
   'Est. cost': 'Chi phí ước tính',
   'Evaluate': 'Đánh giá',
   'Evening Shift 14:00 – 22:00': 'Ca chiều 14:00 – 22:00',
-  'Every employee is entitled to a safe, respectful workplace.': 'Mọi nhân viên đều có quyền được làm việc trong môi trường an tòan và tôn trọng.',
+  'Every employee is entitled to a safe, respectful workplace.': 'Mọi nhân viên đều có quyền được làm việc trong môi trường an toàn và tôn trọng.',
   'Exit Clearance Checklist (FRM-014) — attach proof for returned assets': 'Danh mục bàn giao khi nghỉ việc (FRM-014) — đính kèm bằng chứng cho tài sản đã trả',
   'Exit Register': 'Sổ đăng ký nghỉ việc',
   'Exit type': 'Loại hình nghỉ việc',
@@ -39288,7 +39288,7 @@ const _VI = {
   'Final Settlement (Article 46)': 'Quyết toán cuối cùng (Điều 46)',
   'Final rating': 'Đánh giá cuối cùng',
   'Final rating (1–5)': 'Đánh giá cuối cùng (1–5)',
-  'Finalized': 'Đã hòan tất',
+  'Finalized': 'Đã hoàn tất',
   'Finance': 'Tài chính',
   'Finance Lead': 'Trưởng nhóm Tài chính',
   'Find on map': 'Tìm trên bản đồ',
@@ -39299,7 +39299,7 @@ const _VI = {
   'From': 'Từ',
   'Full Guide (DOCX)': 'Hướng dẫn đầy đủ (DOCX)',
   'Full Name': 'Họ và tên',
-  'Full Time': 'Tòan thời gian',
+  'Full Time': 'Toàn thời gian',
   'Full name': 'Họ và tên',
   'G1 · Intern': 'G1 · Thực tập sinh',
   'G10 · Executive / MD': 'G10 · Điều hành / Tổng giám đốc',
@@ -39325,7 +39325,7 @@ const _VI = {
   'GPS-verified attendance · OpenStreetMap': 'Chấm công xác minh bằng GPS · OpenStreetMap',
   'Gender': 'Giới tính',
   'Getting GPS…': 'Đang lấy GPS…',
-  'Global Offices': 'Văn phòng tòan cầu',
+  'Global Offices': 'Văn phòng toàn cầu',
   'Go Live!': 'Phát hành!',
   'Go to': 'Đi đến',
   'Go to Approval Inbox': 'Đi đến Hộp thư phê duyệt',
@@ -39506,8 +39506,8 @@ const _VI = {
   'Add row': 'Thêm dòng',
   'Save all': 'Lưu tất cả',
   'Delivery': 'Tiến độ',
-  'Actual finish': 'Hòan thành thực tế',
-  'Finish (target)': 'Hòan thành (mục tiêu)',
+  'Actual finish': 'Hoàn thành thực tế',
+  'Finish (target)': 'Hoàn thành (mục tiêu)',
   'New employee onboarding reminder': 'Nhắc nhở nhập việc nhân viên mới',
   'Next →': 'Tiếp →',
   'No': 'Không',
@@ -39516,13 +39516,13 @@ const _VI = {
   'No active PIPs': 'Không có kế hoạch cải thiện hiệu suất nào đang hoạt động',
   'No activity yet': 'Chưa có hoạt động nào',
   'No assessments yet': 'Chưa có đánh giá nào',
-  'No assigned devices to return.': 'Không có thiết bị được giao để hòan trả.',
+  'No assigned devices to return.': 'Không có thiết bị được giao để hoàn trả.',
   'No attendance history yet': 'Chưa có lịch sử chấm công',
   'No benefit grades defined': 'Chưa định nghĩa bậc phúc lợi nào',
   'No bribery, kickbacks or facilitation payments.': 'Không hối lộ, lại quả hoặc chi phí bôi trơn.',
   'No check-ins yet': 'Chưa có lượt chấm vào nào',
   'No check-ins yet today.': 'Hôm nay chưa có lượt chấm vào nào.',
-  'No claims': 'Không có yêu cầu hòan ứng',
+  'No claims': 'Không có yêu cầu hoàn ứng',
   'No company devices are currently assigned to you.': "Hiện chưa có thiết bị công ty nào được cấp cho bạn.",
   'No competency data': 'Không có dữ liệu năng lực',
   'No courses yet': 'Chưa có khóa học nào',
@@ -39564,7 +39564,7 @@ const _VI = {
   'Notice (days)': 'Thời gian báo trước (ngày)',
   'Notification Channels': 'Kênh thông báo',
   'Notified': 'Đã thông báo',
-  'Notify all staff on Jan 1 balance reset': 'Thông báo cho tòan bộ nhân viên khi đặt lại số dư phép ngày 1/1',
+  'Notify all staff on Jan 1 balance reset': 'Thông báo cho toàn bộ nhân viên khi đặt lại số dư phép ngày 1/1',
   'Objective': 'Mục tiêu',
   'On new attendance · If Out-of-Zone → Teams alert': 'Khi có chấm công mới · Nếu ngoài vùng → cảnh báo Teams',
   'On new leave item · Adaptive Card → Manager → HR': 'Khi có yêu cầu nghỉ phép mới · Adaptive Card → Quản lý → HR',
@@ -39573,7 +39573,7 @@ const _VI = {
   'On-time % vs Late %': '% Đúng giờ vs % Đi trễ',
   'Onboard Date': 'Ngày vào làm',
   'Onboarding activities': 'Hoạt động nhập việc',
-  'One place to action everything pending across HR': 'Một nơi để xử lý mọi việc đang chờ trên tòan bộ HR',
+  'One place to action everything pending across HR': 'Một nơi để xử lý mọi việc đang chờ trên toàn bộ HR',
   'Open payroll →': 'Mở bảng lương →',
   'Open position': 'Vị trí đang tuyển',
   'Openings': 'Vị trí tuyển dụng',
@@ -39667,7 +39667,7 @@ const _VI = {
   'Remind manager of pending requests daily': 'Nhắc quản lý về các yêu cầu đang chờ hằng ngày',
   'Remove': 'Xóa',
   'Remove line': 'Xóa dòng',
-  'Report hazards, near-misses and incidents immediately.': 'Báo cáo ngay các mối nguy, sự cố súyt xảy ra và tai nạn.',
+  'Report hazards, near-misses and incidents immediately.': 'Báo cáo ngay các mối nguy, sự cố suýt xảy ra và tai nạn.',
   'Report lost devices or suspected breaches to IT immediately.': 'Báo cáo ngay cho IT về thiết bị bị mất hoặc nghi ngờ vi phạm bảo mật.',
   'Reports to': "Báo cáo cho",
   'Request · Track · Balance · Calendar': 'Yêu cầu · Theo dõi · Số dư · Lịch',
@@ -39683,7 +39683,7 @@ const _VI = {
   'Run Now': 'Chạy ngay',
   'Running': 'Đang chạy',
   'SLA tier': 'Mức SLA',
-  'Safety first — on every site, every day.': 'An tòan là trên hết — tại mọi công trường, mỗi ngày.',
+  'Safety first — on every site, every day.': 'An toàn là trên hết — tại mọi công trường, mỗi ngày.',
   'Sales': 'Kinh doanh',
   'Sales Executive': 'Chuyên viên kinh doanh',
   'Save Changes': 'Lưu thay đổi',
@@ -39730,7 +39730,7 @@ const _VI = {
   'Start Date': 'Ngày bắt đầu',
   'Start PIP': 'Bắt đầu PIP',
   'Start date': 'Ngày bắt đầu',
-  'Stop work if conditions are unsafe.': 'Dừng công việc nếu điều kiện không an tòan.',
+  'Stop work if conditions are unsafe.': 'Dừng công việc nếu điều kiện không an toàn.',
   'Strong Hire': 'Rất nên tuyển',
   'Submit Request': 'Gửi yêu cầu',
   'Submit a Claim': 'Gửi đề nghị chi phí',
@@ -39761,14 +39761,14 @@ const _VI = {
   'Could not open the SharePoint folder — check the link and your access.': 'Không mở được thư mục SharePoint — hãy kiểm tra đường dẫn và quyền truy cập.',
   'SharePoint folders ready': 'Thư mục SharePoint đã sẵn sàng',
   'Created': 'Đã tạo', 'already existed': 'đã tồn tại',
-  'Open the library in SharePoint to see the full structure.': 'Mở thư viện trong SharePoint để xem tòan bộ cấu trúc.',
+  'Open the library in SharePoint to see the full structure.': 'Mở thư viện trong SharePoint để xem toàn bộ cấu trúc.',
   // empty states
   'No projects yet': 'Chưa có dự án',
   'You are not assigned to any projects yet': 'Bạn chưa được phân công dự án nào',
   // ── toast long-tail: error prefixes (now routed through _t) ──
   'Could not save': "Không lưu được", 'Could not update': 'Không cập nhật được',
   'Could not delete': 'Không xóa được', 'Could not create': 'Không tạo được',
-  'Could not complete': "Không hòan tất được", 'Could not close': 'Không đóng được',
+  'Could not complete': "Không hoàn tất được", 'Could not close': 'Không đóng được',
   'Could not remove': 'Không gỡ được', 'Could not load': 'Không tải được',
   'Could not send': 'Không gửi được', 'Could not generate': 'Không tạo được',
   'Network error': 'Lỗi mạng', 'Upload failed': 'Tải lên thất bại',
@@ -39928,7 +39928,7 @@ const _VI = {
   'Weekly check-ins': 'Chấm công hàng tuần',
   'Weighted score': 'Điểm có trọng số',
   'Welcome to Humiley. This handbook sets out how we work together.': 'Chào mừng bạn đến với Humiley. Cẩm nang này trình bày cách chúng ta làm việc cùng nhau.',
-  'What each of the five access levels can do across the portal': 'Khả năng của từng cấp trong năm cấp truy cập trên tòan cổng thông tin',
+  'What each of the five access levels can do across the portal': 'Khả năng của từng cấp trong năm cấp truy cập trên toàn cổng thông tin',
   'When': 'Khi nào',
   'Where are you checking in from?': 'Bạn đang chấm vào từ đâu?',
   'Who': 'Ai',
@@ -39985,7 +39985,7 @@ const _VI = {
   'Code of Conduct & Anti-Harassment': 'Quy tắc ứng xử & Chống quấy rối',
   'IT Acceptable Use Policy': 'Chính sách sử dụng CNTT',
   'Confidentiality, IP & Data': 'Bảo mật, Sở hữu trí tuệ & Dữ liệu',
-  'HSE / Site Safety': 'HSE / An tòan công trường',
+  'HSE / Site Safety': 'HSE / An toàn công trường',
   'C&B Policy (HML-CB-001)': 'Chính sách lương thưởng (HML-CB-001)',
   'Read & acknowledge': 'Đọc & xác nhận',
   'Acknowledged': 'Đã xác nhận',
@@ -40066,12 +40066,12 @@ const _VI = {
   'Reference': 'Tham chiếu',
   '✓ Close today': '✓ Đóng hôm nay',
   'Closed on': 'Ngày đóng',
-  'Closed today — completion date set automatically': 'Đã đóng hôm nay — ngày hòan thành được ghi tự động',
+  'Closed today — completion date set automatically': 'Đã đóng hôm nay — ngày hoàn thành được ghi tự động',
   'Files': 'Tệp',
   /* — QA i18n pass: bulk EN→VN for Invoice Tracking, toasts, nav, placeholders, empty-states — */
   "Loading invoice tracking…": "Đang tải theo dõi hóa đơn…",
   "Invoice Tracking": "Theo dõi hóa đơn",
-  "Every invoice & email captured in the shared mailbox": "Tòan bộ hóa đơn & email thu thập trong hòm thư dùng chung",
+  "Every invoice & email captured in the shared mailbox": "Toàn bộ hóa đơn & email thu thập trong hòm thư dùng chung",
   "Get all tracks": "Lấy tất cả hóa đơn",
   "Import export file": "Nhập tệp dữ liệu",
   "Fill missing": "Điền số còn thiếu",
@@ -40142,7 +40142,7 @@ const _VI = {
   "No emails.": "Không có email.",
   "Connecting to hd@humiley.com…": "Đang kết nối tới hd@humiley.com…",
   "Reading": "Đang đọc",
-  "Mailbox sync complete": "Đồng bộ hòm thư hòan tất",
+  "Mailbox sync complete": "Đồng bộ hòm thư hoàn tất",
   "new": "mới",
   "need a portal lookup": "cần tra cứu cổng",
   "Sync failed": "Đồng bộ không thành công",
@@ -40178,7 +40178,7 @@ const _VI = {
   "Opening SharePoint list setup guide…": "Đang mở hướng dẫn thiết lập danh sách SharePoint…",
   "Testing Maps API key…": "Đang kiểm tra khóa API Maps…",
   "Sending test notification to Teams channel…": "Đang gửi thông báo thử đến kênh Teams…",
-  "Exporting all attendance data to Excel…": "Đang xuất tòan bộ dữ liệu chấm công sang Excel…",
+  "Exporting all attendance data to Excel…": "Đang xuất toàn bộ dữ liệu chấm công sang Excel…",
   "Exporting leave requests to Excel…": "Đang xuất đơn nghỉ phép sang Excel…",
   "Exporting employee list to Excel…": "Đang xuất danh sách nhân viên sang Excel…",
   "Opening full Integration Guide PDF…": "Đang mở PDF Hướng dẫn tích hợp đầy đủ…",
@@ -40202,8 +40202,8 @@ const _VI = {
   "This resource will be linked by your administrator.": "Tài nguyên này sẽ được quản trị viên liên kết.",
   "Enter the new hire's name": "Nhập tên nhân sự mới",
   "Enter an objective": "Nhập một mục tiêu",
-  "Course completed — manager & HR notified": "Đã hòan thành khóa học — đã thông báo cho quản lý & nhân sự",
-  "Already completed": "Đã hòan thành trước đó",
+  "Course completed — manager & HR notified": "Đã hoàn thành khóa học — đã thông báo cho quản lý & nhân sự",
+  "Already completed": "Đã hoàn thành trước đó",
   "Spreadsheet engine still loading — please try again": "Bộ xử lý bảng tính vẫn đang tải — vui lòng thử lại",
   "No rows found in the first sheet": "Không tìm thấy dòng nào trong trang tính đầu tiên",
   "Template downloaded — fill it in, then Import": "Đã tải mẫu — điền vào rồi Nhập",
@@ -40460,7 +40460,7 @@ const _VI = {
   "Personal info, bank, tax code & SI registration": "Thông tin cá nhân, ngân hàng, mã số thuế & đăng ký BHXH",
   "IT account, email & company ID / access card": "Tài khoản CNTT, email & thẻ nhân viên / thẻ ra vào",
   "Issue company device(s) & sign asset handover": "Cấp thiết bị công ty & ký biên bản bàn giao tài sản",
-  "EHS induction & Code of Conduct": "Đào tạo an tòan — sức khỏe — môi trường (EHS) & Quy tắc ứng xử",
+  "EHS induction & Code of Conduct": "Đào tạo an toàn — sức khỏe — môi trường (EHS) & Quy tắc ứng xử",
   "IT security & expense system training": "Đào tạo an ninh CNTT & hệ thống chi phí",
   "Benefits & welfare enrollment (insurance, allowances)": "Đăng ký phúc lợi (bảo hiểm, phụ cấp)",
   "Add to Teams / email lists & org chart": "Thêm vào Teams / danh sách email & sơ đồ tổ chức",
@@ -40521,7 +40521,7 @@ const _VI = {
      Audit Pack), most table headers, and the legal sentences a Vietnamese reader needs
      most. Translated in 14 batches against the glossary above, each batch then reviewed
      by a second pass for correctness and consistency. ── */
-  "Accidents & Safety": "Tai nạn & An tòan",
+  "Accidents & Safety": "Tai nạn & An toàn",
   "Asset": "Tài sản",
   "Attach bank payment slip": "Đính kèm ủy nhiệm chi",
   "Audit Pack": "Bộ hồ sơ kiểm toán",
@@ -40582,7 +40582,7 @@ const _VI = {
   "No documents published yet": "Chưa ban hành tài liệu nào",
   "Publish a document and everyone it applies to will be asked to sign it.": "Ban hành một tài liệu và tất cả những người thuộc phạm vi áp dụng sẽ được yêu cầu ký.",
   "pages": "trang",
-  "Open the full document": "Mở tòan bộ tài liệu",
+  "Open the full document": "Mở toàn bộ tài liệu",
   /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
   "Access restricted — this section requires Approver level.": "Hạn chế truy cập — mục này yêu cầu cấp Phê duyệt.",
   "Cryptographic tamper-evidence: each entry is HMAC-chained to the previous one.": "Chống sửa đổi bằng mật mã: mỗi bản ghi được móc xích HMAC với bản ghi liền trước.",
@@ -40615,7 +40615,7 @@ const _VI = {
   "Filter by month": "Lọc theo tháng",
   "Filter by exact date": "Lọc theo ngày cụ thể",
   "Clear date filters": "Xóa bộ lọc ngày",
-  "The whole company on one screen — people, approvals, finance & projects": "Tòan công ty trên một màn hình — nhân sự, phê duyệt, tài chính & dự án",
+  "The whole company on one screen — people, approvals, finance & projects": "Toàn công ty trên một màn hình — nhân sự, phê duyệt, tài chính & dự án",
   "For accounting": "Dành cho kế toán",
   "Loading company summary…": "Đang tải tổng quan công ty…",
   "Company documents you need to read and sign": "Tài liệu công ty bạn cần đọc và ký",
@@ -40634,7 +40634,7 @@ const _VI = {
   "AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix": "AHU-SOP-MASTER-001 đúng như nhà máy đang áp dụng — công đoạn, trạm làm việc, điểm dừng kiểm tra và ma trận thử nghiệm",
   "What a job will cost us, and what we should therefore charge for it": "Công trình sẽ tốn của chúng ta bao nhiêu, và vì vậy nên chào giá bao nhiêu",
   "The prices you estimate with — copied into a tender, never referenced live": "Bộ đơn giá dùng để lập dự toán — được sao chép vào hồ sơ thầu, không tham chiếu động",
-  "HRBP process · one hub for the whole employee lifecycle": "Quy trình HRBP · một đầu mối cho tòan bộ vòng đời nhân viên",
+  "HRBP process · one hub for the whole employee lifecycle": "Quy trình HRBP · một đầu mối cho toàn bộ vòng đời nhân viên",
   "Overview & stats": "Tổng quan & số liệu",
   "Job openings & candidate pipeline": "Vị trí tuyển dụng & luồng ứng viên",
   "New-hire checklists & first-week readiness": "Danh mục việc cho nhân sự mới & mức sẵn sàng tuần đầu",
@@ -40644,7 +40644,7 @@ const _VI = {
   "Review cycles, ratings & company goals": "Chu kỳ đánh giá, xếp hạng & mục tiêu công ty",
   "9-box grid, high potentials & succession": "Ma trận 9 ô, nhân sự tiềm năng cao & kế nhiệm",
   "Course catalog & enrollment": "Danh mục khóa học & đăng ký",
-  "Who has enrolled a signing PIN, and the full electronic-signature audit trail": "Ai đã đăng ký mã PIN chữ ký, và tòan bộ nhật ký kiểm toán chữ ký điện tử",
+  "Who has enrolled a signing PIN, and the full electronic-signature audit trail": "Ai đã đăng ký mã PIN chữ ký, và toàn bộ nhật ký kiểm toán chữ ký điện tử",
   "Grant each employee their access level — User · Contributor · Approver · Editor · Admin": "Cấp cho từng nhân viên cấp truy cập — Người dùng · Cộng tác viên · Người duyệt · Người chỉnh sửa · Quản trị",
   "Master data & governance for the Procurement app — administered here, alongside access & permissions.": "Dữ liệu chuẩn & quản trị cho ứng dụng Mua hàng — quản lý tại đây, cùng với phân quyền truy cập.",
   "Real-time attendance, lateness & GPS oversight (approvals are in the Inbox)": "Chấm công thời gian thực, đi muộn & giám sát GPS (phê duyệt nằm ở Hộp phê duyệt)",
@@ -40675,7 +40675,7 @@ const _VI = {
   "adds": "thêm quyền",
   "to that — use it for the HR officer who writes the policies, so she gets": "— dùng cho cán bộ nhân sự soạn chính sách, để họ có",
   "+ Publish a document": "+ Ban hành tài liệu",
-  "and the Edit / Re-issue / Archive controls without being promoted to Editor. Several addresses may be listed, separated by commas. A department manager still cannot publish: committing every employee to signing something is not something you inherit by running a department. Leave blank and it falls back to “Approver (Management) or above”.": "và các thao tác Sửa / Ban hành lại / Lưu trữ mà không cần nâng lên cấp Người chỉnh sửa. Có thể liệt kê nhiều địa chỉ, phân tách bằng dấu phẩy. Trưởng phòng vẫn không được ban hành: buộc tòan bộ nhân viên phải ký một tài liệu không phải quyền mặc nhiên có khi phụ trách một phòng ban. Để trống thì áp dụng mặc định “cấp Phê duyệt (Ban quản lý) trở lên”.",
+  "and the Edit / Re-issue / Archive controls without being promoted to Editor. Several addresses may be listed, separated by commas. A department manager still cannot publish: committing every employee to signing something is not something you inherit by running a department. Leave blank and it falls back to “Approver (Management) or above”.": "và các thao tác Sửa / Ban hành lại / Lưu trữ mà không cần nâng lên cấp Người chỉnh sửa. Có thể liệt kê nhiều địa chỉ, phân tách bằng dấu phẩy. Trưởng phòng vẫn không được ban hành: buộc toàn bộ nhân viên phải ký một tài liệu không phải quyền mặc nhiên có khi phụ trách một phòng ban. Để trống thì áp dụng mặc định “cấp Phê duyệt (Ban quản lý) trở lên”.",
   "Reconstructs each employee's dated salary, grade, title and department history from the pay runs a Director has": "Dựng lại lịch sử lương, bậc, chức danh và phòng ban có ngày hiệu lực của từng nhân viên từ các bảng lương đã được Giám đốc",
   ". Rows somebody recorded by hand are never touched — only the reconstruction is rebuilt, and what it removes is written to the audit trail. Safe to run more than once. Run this if the portal's employment history was ever built by an earlier version, which read the payslip total as salary.": ". Các dòng do người dùng tự nhập không bao giờ bị đụng tới — chỉ phần suy luận được dựng lại, và phần bị xóa được ghi vào nhật ký kiểm toán. Có thể chạy lại nhiều lần. Hãy chạy nếu lịch sử công tác trong cổng từng được dựng bởi phiên bản cũ, vốn đọc nhầm tổng phiếu lương thành mức lương.",
   "Rebuild from signed pay runs": "Dựng lại từ bảng lương đã ký",
@@ -40713,7 +40713,7 @@ const _VI = {
   "(0 = off)": "(0 = tắt)",
   "on the nudge.": "trong nội dung nhắc.",
   "Weekly digest — summary email to managers & leadership": "Bản tin tuần — email tổng hợp gửi quản lý & ban lãnh đạo",
-  "Once a week, each manager gets what’s awaiting their review; leadership gets a company‑wide roll‑up (pending · overdue · total value). Uses the same Mail.Send as above.": "Mỗi tuần một lần, từng quản lý nhận danh sách việc đang chờ họ xem xét; ban lãnh đạo nhận bản tổng hợp tòan công ty (đang chờ · quá hạn · tổng giá trị). Dùng chung quyền Mail.Send ở trên.",
+  "Once a week, each manager gets what’s awaiting their review; leadership gets a company‑wide roll‑up (pending · overdue · total value). Uses the same Mail.Send as above.": "Mỗi tuần một lần, từng quản lý nhận danh sách việc đang chờ họ xem xét; ban lãnh đạo nhận bản tổng hợp toàn công ty (đang chờ · quá hạn · tổng giá trị). Dùng chung quyền Mail.Send ở trên.",
   "Send every": "Gửi vào",
   "Monday": "Thứ Hai",
   "Tuesday": "Thứ Ba",
@@ -40725,7 +40725,7 @@ const _VI = {
   "· Leadership email": "· Email ban lãnh đạo",
   "Send me a test digest": "Gửi tôi bản tin thử",
   "Monthly report pack — month-end summary to leadership": "Bộ báo cáo tháng — tổng hợp cuối tháng gửi ban lãnh đạo",
-  "On the chosen day each month, emails leadership a branded summary of the closed month (payments, invoices & VAT, approvals, headcount) with a link to open & export the full pack in the portal.": "Vào ngày đã chọn mỗi tháng, gửi ban lãnh đạo bản tổng hợp tháng đã chốt theo nhận diện thương hiệu (thanh toán, hóa đơn & thuế GTGT, phê duyệt, nhân sự) kèm liên kết mở & xuất tòan bộ hồ sơ trong cổng.",
+  "On the chosen day each month, emails leadership a branded summary of the closed month (payments, invoices & VAT, approvals, headcount) with a link to open & export the full pack in the portal.": "Vào ngày đã chọn mỗi tháng, gửi ban lãnh đạo bản tổng hợp tháng đã chốt theo nhận diện thương hiệu (thanh toán, hóa đơn & thuế GTGT, phê duyệt, nhân sự) kèm liên kết mở & xuất toàn bộ hồ sơ trong cổng.",
   "Send on day": "Gửi vào ngày",
   "Send me a test pack": "Gửi tôi bộ báo cáo thử",
   "Timekeeping nudges — remind staff to check in / out": "Nhắc chấm công — nhắc nhân viên chấm vào / chấm ra",
@@ -40805,15 +40805,15 @@ const _VI = {
   "Heavy / hazardous / dangerous — 14 days": "Nặng nhọc / độc hại / nguy hiểm — 14 ngày",
   "Especially heavy / hazardous / dangerous — 16 days": "Đặc biệt nặng nhọc / độc hại / nguy hiểm — 16 ngày",
   "Labour Code Art. 113(1). A classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties. It also sets the health-check cadence to every 6 months instead of 12.": "Bộ luật Lao động Điều 113(1). Đây là phân loại do doanh nghiệp tự xác định theo danh mục nghề của Bộ LĐ-TB&XH — không suy ra từ chức danh, vì hai người cùng chức danh có thể làm công việc khác nhau. Phân loại này cũng chuyển chu kỳ khám sức khoẻ từ 12 tháng xuống 6 tháng một lần.",
-  "Occupational safety & health group": "Nhóm huấn luyện an tòan, vệ sinh lao động",
+  "Occupational safety & health group": "Nhóm huấn luyện an toàn, vệ sinh lao động",
   "— None (office duties) —": "— Không thuộc nhóm nào (công việc văn phòng) —",
   "Group 1 — managers responsible for OSH": "Nhóm 1 — người quản lý phụ trách công tác ATVSLĐ",
   "Group 2 — OSH officers": "Nhóm 2 — người làm công tác ATVSLĐ",
   "Group 3 — workers on jobs with strict OSH requirements": "Nhóm 3 — người làm công việc có yêu cầu nghiêm ngặt về ATVSLĐ",
   "Group 4 — other workers": "Nhóm 4 — người lao động khác",
   "Group 5 — occupational health staff": "Nhóm 5 — người làm công tác y tế",
-  "Group 6 — safety & health network members": "Nhóm 6 — an tòan, vệ sinh viên",
-  "Decree 44/2016 Art. 24. Safety training is only required — and only chased — where a group is set. Leaving this blank asserts the training requirement for nobody.": "Nghị định 44/2016 Điều 24. Huấn luyện an tòan chỉ bắt buộc — và chỉ được nhắc — khi đã phân nhóm. Để trống nghĩa là không đặt yêu cầu huấn luyện cho ai cả.",
+  "Group 6 — safety & health network members": "Nhóm 6 — an toàn, vệ sinh viên",
+  "Decree 44/2016 Art. 24. Safety training is only required — and only chased — where a group is set. Leaving this blank asserts the training requirement for nobody.": "Nghị định 44/2016 Điều 24. Huấn luyện an toàn chỉ bắt buộc — và chỉ được nhắc — khi đã phân nhóm. Để trống nghĩa là không đặt yêu cầu huấn luyện cho ai cả.",
   "Person with disabilities": "Người khuyết tật",
   "Raises the annual-leave base to at least 14 days (Art. 113(1)(b)), as does being under 18 — which is taken from the date of birth.": "Nâng mức phép năm cơ sở lên ít nhất 14 ngày (Điều 113(1)(b)), tương tự trường hợp người chưa đủ 18 tuổi — được xác định theo ngày sinh.",
   "Exempt from the fixed-term renewal limit": "Được loại trừ khỏi giới hạn ký lại hợp đồng xác định thời hạn",
@@ -40835,7 +40835,7 @@ const _VI = {
   "Terms & conditions": "Điều khoản & điều kiện",
   "Headcount & Turnover": "Nhân sự & Biến động",
   "duty, not something everyone with an access level inherits. Only these people see": "— không phải quyền mặc nhiên có theo cấp truy cập. Chỉ những người này nhìn thấy",
-  "Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365": "Gửi email cho người xem xét, người phê duyệt và người đề nghị ở từng bước của quy trình phê duyệt (gửi → xem xét → duyệt / từ chối / đã chi). Quyết định vẫn được thực hiện trong cổng bằng chữ ký điện tử — email chỉ mang nút “Xem xét trong cổng” an tòan, không bao giờ có liên kết duyệt một chạm. Yêu cầu quyền Microsoft 365",
+  "Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365": "Gửi email cho người xem xét, người phê duyệt và người đề nghị ở từng bước của quy trình phê duyệt (gửi → xem xét → duyệt / từ chối / đã chi). Quyết định vẫn được thực hiện trong cổng bằng chữ ký điện tử — email chỉ mang nút “Xem xét trong cổng” an toàn, không bao giờ có liên kết duyệt một chạm. Yêu cầu quyền Microsoft 365",
   "Built in": "Tích hợp sẵn",
   "Register Azure AD App": "Đăng ký ứng dụng Azure AD",
   "portal.azure.com → App Registrations → New → add API permissions (Sites.ReadWrite.All, User.Read)": "portal.azure.com → App Registrations → New → thêm API permissions (Sites.ReadWrite.All, User.Read)",
@@ -40896,14 +40896,14 @@ const _VI = {
   "More chart": "Mở rộng biểu đồ",
   "from sub-tasks": "từ công việc con",
   "rolled up": "tổng hợp lên",
-  "No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.": "Chưa có dự báo: dự báo chi phí khi hòan thành cần giá trị thu được, mà dự án này chưa ghi nhận giá trị nào.",
+  "No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.": "Chưa có dự báo: dự báo chi phí khi hoàn thành cần giá trị thu được, mà dự án này chưa ghi nhận giá trị nào.",
   "consultant time and expenses": "thời gian và chi phí của tư vấn",
   "effective day rate": "đơn giá ngày thực tế",
   "Not stated": "Chưa nêu",
   "As low as": "Thấp nhất",
   "Quoted": "Đã chào giá",
   "As high as": "Cao nhất",
-  "Maturity": "Mức độ hòan thiện",
+  "Maturity": "Mức độ hoàn thiện",
   "Accuracy not stated": "Chưa nêu cấp độ chính xác",
   "Could not save the accuracy class": "Không lưu được cấp độ chính xác",
   "Click to write": "Bấm để nhập",
@@ -40935,7 +40935,7 @@ const _VI = {
   "no effort priced": "chưa định giá khối lượng công việc",
   "travel": "đi lại",
   "hotel": "lưu trú",
-  "per diem": "công tác phí khóan",
+  "per diem": "công tác phí khoán",
   "No work packages yet. A services tender is priced one package at a time — scope, deliverables, and the days behind them.": "Chưa có gói công việc nào. Hồ sơ thầu dịch vụ được định giá theo từng gói — phạm vi, sản phẩm bàn giao và số ngày công đứng sau chúng.",
   "Add work package": "Thêm gói công việc",
   "Signed pay runs": "Bảng lương đã ký",
@@ -40943,7 +40943,7 @@ const _VI = {
   "run(s)": "bảng lương",
   "Cost model, not a payroll": "Mô hình chi phí, không phải bảng lương",
   "no finalised pay run covers this period, so these figures are computed from today’s employee records. They exclude overtime, unpaid leave and manual adjustments, and are not what anybody was paid.": "không có bảng lương đã chốt nào bao trùm kỳ này, nên các số liệu được tính từ hồ sơ nhân viên hiện tại. Chúng không gồm tiền lương làm thêm giờ, nghỉ không lương và các điều chỉnh thủ công, và không phải là số tiền đã trả cho bất kỳ ai.",
-  "Not the whole company": "Không phải tòan công ty",
+  "Not the whole company": "Không phải toàn công ty",
   "active employees appear in the signed run(s) for this period. The totals below are for those people only.": "nhân viên đang làm việc có mặt trong (các) bảng lương đã ký của kỳ này. Các tổng số bên dưới chỉ tính cho những người đó.",
   "Overlapping pay runs": "Bảng lương trùng kỳ",
   "the same person appears in more than one finalised run for this period, so only their first line is counted here": "cùng một người xuất hiện trong nhiều hơn một bảng lương đã chốt của kỳ này, nên ở đây chỉ tính dòng đầu tiên của họ",
@@ -40990,10 +40990,10 @@ const _VI = {
   "Clear day range": "Xóa khoảng ngày",
   "Critical path": "Đường găng",
   "Record the disposition, then sign the verification of closure": "Ghi hướng xử lý, sau đó ký xác minh đóng hồ sơ",
-  "Download a PnP PowerShell script that creates every empty folder in SharePoint": "Tải script PnP PowerShell tạo tòan bộ thư mục rỗng trên SharePoint",
+  "Download a PnP PowerShell script that creates every empty folder in SharePoint": "Tải script PnP PowerShell tạo toàn bộ thư mục rỗng trên SharePoint",
   "Create the folders directly in SharePoint via Microsoft 365": "Tạo thư mục trực tiếp trên SharePoint qua Microsoft 365",
   "Upload a file straight into the project SharePoint folder": "Tải tệp thẳng vào thư mục SharePoint của dự án",
-  "Copy the full folder list": "Sao chép tòan bộ danh sách thư mục",
+  "Copy the full folder list": "Sao chép toàn bộ danh sách thư mục",
   "Design & Development Plan (ISO 9001 8.3.2)": "Kế hoạch thiết kế và phát triển (ISO 9001 8.3.2)",
   "Design status report": "Báo cáo tình trạng thiết kế",
   "Mandatory": "Bắt buộc",
@@ -41005,7 +41005,7 @@ const _VI = {
   "Signed records cannot be edited — issue a superseding revision": "Hồ sơ đã ký không sửa được — hãy phát hành phiên bản thay thế",
   "a newer edition has been published — moving to it needs a change": "đã có ấn bản mới hơn — chuyển sang dùng nó phải lập yêu cầu thay đổi",
   "the originating discipline": "bộ môn phát sinh",
-  "Download a PnP PowerShell script that creates every folder": "Tải script PnP PowerShell tạo tòan bộ thư mục",
+  "Download a PnP PowerShell script that creates every folder": "Tải script PnP PowerShell tạo toàn bộ thư mục",
   "Create the folders directly in SharePoint": "Tạo thư mục trực tiếp trên SharePoint",
   "A printable card with a scannable code beside every remaining step, so sign-offs happen at the machine.": "Phiếu in được, có mã quét bên cạnh từng bước còn lại, để việc ký duyệt diễn ra ngay tại máy.",
   "Re-read the route from the standard after a specification change. Signatures and readings are carried forward.": "Đọc lại lộ trình từ tiêu chuẩn sau khi thay đổi quy cách. Chữ ký và số liệu đo được giữ nguyên.",
@@ -41122,7 +41122,7 @@ const _VI = {
   "Scores are": "Điểm được",
   "computed": "tính toán",
   "from likelihood × severity, initial and residual. A rating somebody typed is a number that can disagree with its own inputs.": "từ khả năng xảy ra × mức độ nghiêm trọng, cả ban đầu và tồn dư. Một mức điểm do người dùng gõ tay là con số có thể mâu thuẫn với chính đầu vào của nó.",
-  "commission-wide": "tòan hợp đồng",
+  "commission-wide": "toàn hợp đồng",
   "Until that is written down the risk is still ours, and any drawing they sit on will not issue for construction.": "Chừng nào điều đó chưa được ghi lại thì rủi ro vẫn là của chúng ta, và bản vẽ liên quan sẽ không được phát hành thi công.",
   "deviation": "sai lệch",
   "is asked for before the fact: the design cannot meet a clause and proposes something else, with the reasoning that makes it acceptable. A": "được xin trước khi làm: thiết kế không đáp ứng được một điều khoản và đề xuất phương án khác, kèm lập luận cho thấy phương án đó chấp nhận được. Một",
@@ -41171,7 +41171,7 @@ const _VI = {
   "behind": "chậm tiến độ",
   "not started": "chưa bắt đầu",
   "Why": "Lý do",
-  "Completion": "Mức hòan thành",
+  "Completion": "Mức hoàn thành",
   "State": "Trạng thái",
   "Not measured": "Chưa đo",
   "No data yet": "Chưa có dữ liệu",
@@ -41207,7 +41207,7 @@ const _VI = {
   "No packing record yet.": "Chưa có hồ sơ đóng gói.",
   "Packaging configurations": "Cấu hình đóng gói",
   "SOP section 12.3": "SOP mục 12.3",
-  "Everything this unit is: what it was built against, what went into it, who signed each step and what was measured.": "Tòan bộ hồ sơ của sản phẩm này: được chế tạo theo tài liệu nào, dùng những gì, ai ký từng bước và đã đo được gì.",
+  "Everything this unit is: what it was built against, what went into it, who signed each step and what was measured.": "Toàn bộ hồ sơ của sản phẩm này: được chế tạo theo tài liệu nào, dùng những gì, ai ký từng bước và đã đo được gì.",
   "Nothing measured yet.": "Chưa đo gì.",
   "(setting": "(thiết lập",
   "). Require a current qualification:": "). Yêu cầu chứng nhận năng lực còn hiệu lực:",
@@ -41245,7 +41245,7 @@ const _VI = {
   "Used in calibration meetings to ensure ratings are fair and consistent across teams.": "Dùng trong các buổi hiệu chỉnh để bảo đảm việc xếp hạng công bằng và nhất quán giữa các nhóm.",
   ". Assign goals, score 1–5; weighted total drives the rating. Weight total:": ". Giao mục tiêu, chấm điểm 1–5; tổng có trọng số quyết định mức xếp hạng. Tổng trọng số:",
   "You have no course enrolments yet. Your manager will enroll you, or check the course catalog.": "Bạn chưa đăng ký khóa học nào. Quản lý sẽ đăng ký cho bạn, hoặc bạn có thể xem danh mục khóa học.",
-  "Tick each step as you complete it — once ticked it is locked and your HR / Manager is updated.": "Đánh dấu từng bước khi hòan thành — đã đánh dấu là khóa lại và Nhân sự / Quản lý của bạn được cập nhật.",
+  "Tick each step as you complete it — once ticked it is locked and your HR / Manager is updated.": "Đánh dấu từng bước khi hoàn thành — đã đánh dấu là khóa lại và Nhân sự / Quản lý của bạn được cập nhật.",
   "Remove device": "Gỡ thiết bị",
   "One card per item, then “Save all”. Same item ×10? put 10 in Quantity.": "Mỗi thiết bị một thẻ, rồi bấm “Lưu tất cả”. Cùng một loại ×10? Hãy nhập 10 vào ô Số lượng.",
   "Good / New": "Tốt / Mới",
@@ -41274,7 +41274,7 @@ const _VI = {
   "Taxi / Grab": "Taxi / Grab",
   "assets ✓": "tài sản ✓",
   ". Severance = ½ month × years not covered by unemployment insurance (often 0 for service since 2009).": ". Trợ cấp thôi việc = ½ tháng lương × số năm không được bảo hiểm thất nghiệp chi trả (thường bằng 0 với thời gian làm việc từ 2009).",
-  "Save & Complete": "Lưu & Hòan tất",
+  "Save & Complete": "Lưu & Hoàn tất",
   "Allowances & benefits are defined per": "Phụ cấp & phúc lợi được quy định theo",
   ". Each employee sees the package for their derived grade in": ". Mỗi nhân viên xem gói đãi ngộ theo bậc của mình tại",
   ". Lunch/phone/transport stay consistent with payroll welfare.": ". Ăn trưa/điện thoại/đi lại thống nhất với phần phúc lợi trên bảng lương.",
@@ -41318,7 +41318,7 @@ const _VI = {
   "Edit scope text via the project": "Sửa nội dung phạm vi bằng nút",
   "button.": "của dự án.",
   "= each deliverable’s relative contribution to the project’s": "= mức đóng góp tương đối của mỗi sản phẩm bàn giao vào",
-  "weighted % complete": "% hòan thành có trọng số",
+  "weighted % complete": "% hoàn thành có trọng số",
   "— a deliverable with weight 2 advances overall progress twice as much as one with weight 1.": "— một sản phẩm có trọng số 2 làm tiến độ chung tăng gấp đôi so với sản phẩm trọng số 1.",
   "Portfolio Calendar": "Lịch danh mục dự án",
   "· every project on one month": "· mọi dự án trên cùng một tháng",
@@ -41400,7 +41400,7 @@ const _VI = {
   "Applies from stage": "Áp dụng từ giai đoạn",
   "Approve (discipline)": "Phê duyệt (bộ môn)",
   "Architectural": "Kiến trúc",
-  "As-built drawing": "Bản vẽ hòan công",
+  "As-built drawing": "Bản vẽ hoàn công",
   "Assumption": "Giả định",
   "Avoid": "Né tránh",
   "BOM Line": "Dòng BOM",
@@ -41535,7 +41535,7 @@ const _VI = {
   "File (image or PDF)": "Tệp (ảnh hoặc PDF)",
   "Financial": "Tài chính",
   "Findings": "Phát hiện",
-  "Finish / damage": "Hòan thiện / hư hỏng",
+  "Finish / damage": "Hoàn thiện / hư hỏng",
   "Finish date": "Ngày kết thúc",
   "Float": "Thời gian dự trữ",
   "Flow meter": "Lưu lượng kế",
@@ -41670,7 +41670,7 @@ const _VI = {
   "PAYMENT REQUEST": "ĐỀ NGHỊ THANH TOÁN",
   "PMC Fee (% of CapEx)": "Phí PMC (% vốn đầu tư)",
   "PORTFOLIO CALENDAR": "LỊCH DANH MỤC DỰ ÁN",
-  "PPE / Safety": "Bảo hộ lao động / An tòan",
+  "PPE / Safety": "Bảo hộ lao động / An toàn",
   "Packing & Dispatch": "Đóng gói & Giao hàng",
   "Packing list": "Phiếu đóng gói",
   "Part number": "Mã linh kiện",
@@ -41729,7 +41729,7 @@ const _VI = {
   "Representative title": "Chức danh người đại diện",
   "Requests": "Đề nghị",
   "Required quantity": "Số lượng yêu cầu",
-  "Requires safety review": "Cần rà soát an tòan",
+  "Requires safety review": "Cần rà soát an toàn",
   "Residual likelihood": "Khả năng xảy ra còn lại",
   "Residual severity": "Mức nghiêm trọng còn lại",
   "Resistant": "Phản đối",
@@ -41748,8 +41748,8 @@ const _VI = {
   "Risk register started": "Đã khởi tạo sổ rủi ro",
   "Role at the account": "Vai trò tại khách hàng",
   "SIM / Phone Plan": "SIM / Gói cước",
-  "Safety / HSE": "An tòan / HSE",
-  "Safety": "An tòan",
+  "Safety / HSE": "An toàn / HSE",
+  "Safety": "An toàn",
   "Sales owner": "Nhân viên phụ trách",
   "Satisfactory": "Đạt yêu cầu",
   "Scope creep": "Phình phạm vi",
@@ -41760,7 +41760,7 @@ const _VI = {
   /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
   "8.3.4 — Design review": "8.3.4 — Rà soát thiết kế",
   "8.3.6 — Change review": "8.3.6 — Rà soát thay đổi",
-  "AB — As-Built / Record": "AB — Hòan công / Lưu hồ sơ",
+  "AB — As-Built / Record": "AB — Hoàn công / Lưu hồ sơ",
   "ASSET & EQUIPMENT HANDOVER": "BIÊN BẢN BÀN GIAO TÀI SẢN & THIẾT BỊ",
   "Approve (all disciplines)": "Phê duyệt (tất cả bộ môn)",
   "Assumptions / qualifications": "Giả định / điều kiện kèm theo",
@@ -41796,7 +41796,7 @@ const _VI = {
   "Duration (days, optional)": "Thời gian (ngày, không bắt buộc)",
   "Export wooden case (ISPM-15)": "Thùng gỗ xuất khẩu (ISPM-15)",
   "FAT sold with this order": "FAT đã bán kèm đơn hàng này",
-  "FINANCE CONTROL — COMPANY": "KIỂM SOÁT TÀI CHÍNH — TÒAN CÔNG TY",
+  "FINANCE CONTROL — COMPANY": "KIỂM SOÁT TÀI CHÍNH — TOÀN CÔNG TY",
   "Facility / plant / site": "Nhà máy / công trình / công trường",
   "Form / standard reference": "Số hiệu biểu mẫu / tiêu chuẩn",
   "Gate record (PDF / image)": "Hồ sơ cổng (PDF / ảnh)",
@@ -41807,7 +41807,7 @@ const _VI = {
   "IFT — Issued for Tender": "IFT — Phát hành để đấu thầu",
   "INVOICE TRACKING REGISTER": "SỔ THEO DÕI HÓA ĐƠN",
   "Impact if it happens (₫)": "Tác động nếu xảy ra (₫)",
-  "Impact on safety / statutory": "Tác động tới an tòan / pháp quy",
+  "Impact on safety / statutory": "Tác động tới an toàn / pháp quy",
   "Impact — design hours": "Tác động — giờ thiết kế",
   "Impact — programme (days)": "Tác động — tiến độ (ngày)",
   "Incomplete client brief": "Yêu cầu của khách hàng chưa đầy đủ",
@@ -41850,7 +41850,7 @@ const _VI = {
   "Signing authority": "Thẩm quyền ký",
   "Site Condition": "Điều kiện công trường",
   "Site contact": "Đầu mối tại công trường",
-  "Site safety incident": "Sự cố an tòan công trường",
+  "Site safety incident": "Sự cố an toàn công trường",
   "Site": "Công trường",
   "Software License": "Bản quyền phần mềm",
   "Solid Performer": "Nhân sự ổn định",
@@ -42003,7 +42003,7 @@ const _VI = {
   "If it is being closed with no response — what happened": "Nếu đóng mà không có phản hồi — chuyện gì đã xảy ra",
   "If it is carried by somebody else — how they were told": "Nếu rủi ro do người khác gánh — họ đã được thông báo bằng cách nào",
   "Import VAT % (recoverable — never enters the cost)": "Thuế GTGT nhập khẩu % (được khấu trừ — không bao giờ vào giá vốn)",
-  "Import complete — ": "Nhập hòan tất — ",
+  "Import complete — ": "Nhập hoàn tất — ",
   "Import failed: ": "Nhập dữ liệu thất bại: ",
   "Imported ": "Đã nhập ",
   "Importing ": "Đang nhập ",
@@ -42020,7 +42020,7 @@ const _VI = {
   "Mark-up % — blank uses the cost centre default": "Tỷ lệ cộng giá % — để trống sẽ dùng mặc định của trung tâm chi phí",
   "Mark-up % — blank uses the default": "Tỷ lệ cộng giá % — để trống sẽ dùng mặc định",
   "Marked-up extract (PDF / image)": "Trích lục có đánh dấu (PDF / ảnh)",
-  "Microsoft 365 sync complete — ": "Đồng bộ Microsoft 365 hòan tất — ",
+  "Microsoft 365 sync complete — ": "Đồng bộ Microsoft 365 hoàn tất — ",
   "Mitigation / response actions": "Biện pháp giảm thiểu / ứng phó",
   "Mitigation — what we do about it": "Biện pháp giảm thiểu — chúng ta làm gì với rủi ro đó",
   "Native file / model reference": "Số hiệu tệp gốc / mô hình",
@@ -42081,7 +42081,7 @@ const _VI = {
   "Project Status Report (cont.)": "Báo cáo tình trạng dự án (tiếp)",
   "Project code (used in every document number)": "Mã dự án (dùng trong mọi số hiệu tài liệu)",
   "Project name (on the quotation)": "Tên dự án (ghi trên báo giá)",
-  "Q2 Town Hall — Project Highlights": "Họp tòan công ty quý 2 — Điểm nổi bật các dự án",
+  "Q2 Town Hall — Project Highlights": "Họp toàn công ty quý 2 — Điểm nổi bật các dự án",
   "Quality — ITP / quality plan": "Chất lượng — ITP / kế hoạch chất lượng",
   "Quantity per unit of work (hours, for labour)": "Định mức cho một đơn vị công việc (giờ, với nhân công)",
   "Quotation No. (as the customer will cite it)": "Số báo giá (đúng như khách hàng sẽ trích dẫn)",
@@ -42209,8 +42209,8 @@ const _VI = {
   "typed": "nhập tay",
   "Typed by hand — no master activity is linked to this package yet": "Nhập tay — chưa có công việc nào trong Tiến độ tổng gắn với gói này",
   "Nothing is linked to the Master Schedule yet.": "Chưa có liên kết nào với Tiến độ tổng.",
-  "Use Link on a row to choose the activities that deliver it — progress, due date and status then follow the schedule.": "Bấm Gắn trên một dòng để chọn các công việc tạo ra gói đó — tiến độ, hạn hòan thành và trạng thái sẽ bám theo tiến độ.",
-  "Progress, due date and status are read from the master-schedule activities linked to each package. A package with none keeps the values typed on it.": "Tiến độ, hạn hòan thành và trạng thái được lấy từ các công việc trong Tiến độ tổng gắn với từng gói. Gói chưa gắn công việc nào vẫn giữ số liệu nhập tay.",
+  "Use Link on a row to choose the activities that deliver it — progress, due date and status then follow the schedule.": "Bấm Gắn trên một dòng để chọn các công việc tạo ra gói đó — tiến độ, hạn hoàn thành và trạng thái sẽ bám theo tiến độ.",
+  "Progress, due date and status are read from the master-schedule activities linked to each package. A package with none keeps the values typed on it.": "Tiến độ, hạn hoàn thành và trạng thái được lấy từ các công việc trong Tiến độ tổng gắn với từng gói. Gói chưa gắn công việc nào vẫn giữ số liệu nhập tay.",
   // ── Geofence zones: the Active toggle and the Department scope, now that they decide something ──
   "Switch this zone off to stop it authorising check-in": "Tắt khu vực này để không còn cho phép chấm công tại đây",
   "Zone switched on": "Đã bật khu vực",
@@ -42219,7 +42219,7 @@ const _VI = {
   // ── Fields the forms collected and no screen printed, now that a screen prints them ─────────────
   "Mitigation / actions": "Biện pháp xử lý",
   // ── Advance recovery: the two rules that had no input ───────────────────────────────────────────
-  "Recover nothing until the works reach": "Chưa khấu trừ cho đến khi hòan thành",
+  "Recover nothing until the works reach": "Chưa khấu trừ cho đến khi hoàn thành",
   // "% complete" is NOT repeated here — it is already defined once, and _VI is one object where a
   // later duplicate silently wins. tests/vi_duplicate_keys.js caught this addition.
   "Advance recovered on this claim": "Khấu trừ tạm ứng đợt này",
@@ -45038,7 +45038,7 @@ async function tkLabourReport() {
    safety-training evidence is exactly what a client's social-compliance audit asks for. */
 const _CERT_KINDS = [
   { k: 'health_check', label: 'Periodic health examination', labelVn: 'Khám sức khỏe định kỳ' },
-  { k: 'osh_training', label: 'Occupational safety training', labelVn: 'Huấn luyện an tòan lao động' },
+  { k: 'osh_training', label: 'Occupational safety training', labelVn: 'Huấn luyện an toàn lao động' },
   { k: 'other', label: 'Other certificate or licence', labelVn: 'Chứng chỉ / giấy phép khác' },
 ];
 
