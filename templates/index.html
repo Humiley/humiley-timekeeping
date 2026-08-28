@@ -14,6 +14,16 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
 <style>
+@font-face{font-family:'Poppins';font-style:normal;font-weight:300;font-display:swap;src:url(/static/vendor/fonts/poppins-300-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:300;font-display:swap;src:url(/static/vendor/fonts/poppins-300-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:400;font-display:swap;src:url(/static/vendor/fonts/poppins-400-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:400;font-display:swap;src:url(/static/vendor/fonts/poppins-400-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:500;font-display:swap;src:url(/static/vendor/fonts/poppins-500-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:500;font-display:swap;src:url(/static/vendor/fonts/poppins-500-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:600;font-display:swap;src:url(/static/vendor/fonts/poppins-600-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:600;font-display:swap;src:url(/static/vendor/fonts/poppins-600-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:700;font-display:swap;src:url(/static/vendor/fonts/poppins-700-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:700;font-display:swap;src:url(/static/vendor/fonts/poppins-700-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 *{margin:0;padding:0;box-sizing:border-box}
 /* `inherit`, not a family. Browsers do NOT inherit the page font into form controls, so this rule
    has to exist — but naming a family here meant every button, input, select and textarea in the
@@ -701,11 +711,28 @@ select.form-control{cursor:pointer}
 </style>
 <!-- External CSS loads WITHOUT blocking first paint (media=print → all swap). Poppins uses
      display=swap so text renders instantly in the system font and upgrades when ready. -->
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"></noscript>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"></noscript>
+<!-- Poppins, served from our own origin. It used to come from Google: a request to
+     fonts.googleapis.com for the CSS, and only once THAT arrived could the browser learn the font
+     URLs and open a second connection to fonts.gstatic.com — two sequential round trips to two
+     third-party origins, each with its own DNS lookup and TLS handshake, before any text could be
+     drawn in the brand face.
+     The @font-face rules are inline below rather than in a stylesheet of their own, so there is no
+     CSS request at all now: the browser reads them with the document it already has and asks our
+     origin for the one file it needs, on a connection that is already open.
+     Google's unicode-range declarations are kept verbatim, so a browser still downloads only the
+     subset the page actually uses. Devanagari is not vendored — Google offers 192 KB of it and this
+     app never renders a single character of it.
+     NOTE, and it is the reason the Vietnamese text on this page looks the way it does: Poppins has
+     NO Vietnamese subset. It never did, on Google either. Vietnamese diacritics have always fallen
+     back to a system face, and vendoring changes nothing about that either way. -->
+<link rel="preload" href="/static/vendor/fonts/poppins-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/vendor/fonts/poppins-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+<!-- Leaflet used to be fetched here, from unpkg.com, on EVERY page load: 147 KB of JS and 15 KB of
+     CSS, plus a DNS lookup, a TCP connection and a TLS handshake to a third-party origin — for a map
+     that only the GPS check-in screen opens. It is vendored under /static/vendor/leaflet/ now and
+     loaded on demand by _tkLoadLeaflet(), so a session that never opens a map never pays for it, and
+     one that does gets it from our own origin. That also means it works where unpkg is slow, blocked
+     or simply unreachable, and the service worker can cache it for offline use. -->
 <!-- ════════ CREXTIO-INSPIRED THEME (Humiley navy + emerald) ════════ -->
 <style id="crextio-theme">
 
@@ -1131,7 +1158,14 @@ window.addEventListener('orientationchange', _setLoginBg);
     <img class="sidebar-logo-full" src="/static/brand/portal-logo-login.png"
            alt="Humiley Engineering &amp; Solutions"
            style="height:34px;width:auto;max-width:172px;display:block">
-    <img class="sidebar-logo-mark" src="/static/brand/H-mark-color.png"
+    <!-- data-src, not src. `display:none` on an image element does NOT stop the browser fetching it — only a
+         CSS background on a hidden element is skipped — so this 228 KB mark was downloaded by every
+         session, and being ~94 KB into the document the preload scanner queued it AHEAD of the vendor
+         JS and the login photo. It is only ever seen after sign-in AND after the sidebar is collapsed,
+         drawn at 34px. _sbMarkSrc() gives it its src the first time that happens.
+         Safe for the letterhead at _lhLogo: `querySelector('.sidebar-logo img')` returns the FIRST
+         match, which is .sidebar-logo-full above, not this one. -->
+    <img class="sidebar-logo-mark" data-src="/static/brand/H-mark-color.png"
            alt="Humiley" style="display:none">
   </div>
 
@@ -3294,7 +3328,6 @@ window.addEventListener('orientationchange', _setLoginBg);
      SRI + crossorigin because its CSS pulls marker images by relative path. -->
 <script defer src="/static/vendor/chart.umd.min.js" integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD"></script>
 <script defer src="/static/vendor/msal-browser.min.js" integrity="sha384-hhkHFODse2T75wPL7oJ0RZ+0CgRa74LNPhgx6wO6DMNEhU3/fSbTZdVzxsgyUelp"></script>
-<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
 <script>
 (function () {
   const HEAVY = [
@@ -5101,7 +5134,40 @@ function tkReject(id, btn) {
 /* ── Interactive map pin picker ──
    Uses Google Maps when a Maps API key is configured (TK_MAPS_KEY), and falls
    back to OpenStreetMap (Leaflet) when no key is set, so it always works. */
-let _tkMap = null, _tkMarker = null, _tkCircle = null, _tkMapProvider = null, _tkGmapsPromise = null;
+let _tkMap = null, _tkMarker = null, _tkCircle = null, _tkMapProvider = null, _tkGmapsPromise = null, _tkLeafletPromise = null;
+
+/* Leaflet, fetched the first time a map is actually opened. Same shape as _tkLoadGoogleMaps below,
+   including resolving FALSE rather than rejecting on failure — the caller decides what to do without
+   a map, and an unhandled rejection here would surface as an error the user cannot act on.
+   The CSS is loaded too: Leaflet is unusable without it (the tile layer is absolutely positioned by
+   its own stylesheet, so without it every tile stacks at the origin). Its marker images resolve
+   RELATIVE to the stylesheet, which is why the vendored copy keeps Leaflet's own images/ layout
+   under /static/vendor/leaflet/ rather than being flattened into the vendor folder. */
+function _tkLoadLeaflet() {
+  if (typeof L !== 'undefined') return Promise.resolve(true);
+  if (_tkLeafletPromise) return _tkLeafletPromise;
+  _tkLeafletPromise = new Promise(resolve => {
+    if (!document.getElementById('tk-leaflet-css')) {
+      const c = document.createElement('link');
+      c.id = 'tk-leaflet-css'; c.rel = 'stylesheet'; c.href = '/static/vendor/leaflet/leaflet.css';
+      /* The same sha384 pins the <link> and <script> tags carried before they were removed, verified
+         byte-for-byte against what unpkg was serving. Injecting a script is not a reason to drop the
+         pin: it is the check that the file on our own disk is still the reviewed one. */
+      c.integrity = 'sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H';
+      c.crossOrigin = 'anonymous';
+      document.head.appendChild(c);
+    }
+    const s = document.createElement('script');
+    s.src = '/static/vendor/leaflet/leaflet.js';
+    s.integrity = 'sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH';
+    s.crossOrigin = 'anonymous';
+    s.async = true;
+    s.onload = () => resolve(typeof L !== 'undefined');
+    s.onerror = () => { _tkLeafletPromise = null; resolve(false); };   // let a later open retry
+    document.head.appendChild(s);
+  });
+  return _tkLeafletPromise;
+}
 
 function _tkLoadGoogleMaps() {
   if (window.google && window.google.maps) return Promise.resolve(true);
@@ -5169,7 +5235,9 @@ async function _tkInitMap(centerLat, centerLon, zoom) {
       _tkMapProvider = 'google'; _tkMarker = null; _tkCircle = null;
     } else { _tkMap.setCenter({ lat: centerLat, lng: centerLon }); }
   } else {
-    if (typeof L === 'undefined') return;
+    /* Was `if (typeof L === 'undefined') return;` — a silent no-op back when Leaflet was always in the
+       page and this only guarded against the CDN having failed. Now it is the load point. */
+    if (!(await _tkLoadLeaflet())) return;
     if (_tkMapProvider !== 'leaflet' || !_tkMap) {
       el.innerHTML = '';
       _tkMap = L.map(el).setView([centerLat, centerLon], zoom || 12);
@@ -36688,6 +36756,15 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('collapsed');
   document.getElementById('main').classList.toggle('expanded');
   try { _sbSyncCollapseBtn(); } catch (e) {}
+  try { _sbMarkSrc(); } catch (e) {}
+}
+/* The collapsed-sidebar mark, fetched the first time it can actually be seen rather than on every
+   boot. Idempotent and cheap to call again — after the first assignment there is no data-src left. */
+function _sbMarkSrc() {
+  const m = document.querySelector('.sidebar-logo-mark[data-src]');
+  if (!m) return;
+  m.src = m.dataset.src;
+  m.removeAttribute('data-src');
 }
 function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 

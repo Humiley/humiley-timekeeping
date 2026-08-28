@@ -65,6 +65,42 @@ Then, because the file is a new cache key for nobody and an old one for everybod
   anywhere a user would see; the browser silently refuses the script and the feature that needed
   it goes quietly dead. `window.jspdf`, `window.XLSX`, `window.html2canvas`, `window.pdfjsLib`.
 
+## leaflet/ and fonts/ — vendored to get them off the boot path
+
+Two things used to be fetched from someone else's server on **every page load**:
+
+| was | now | why |
+|---|---|---|
+| `unpkg.com` Leaflet js+css | `leaflet/` | 162 KB downloaded by every session for a map only the GPS check-in screen opens |
+| `fonts.googleapis.com` + `fonts.gstatic.com` Poppins | `fonts/` | a request for the CSS, and only once it arrived could the browser learn the font URLs and open a second connection to a second origin |
+
+Both were costing a DNS lookup, a TCP connection and a TLS handshake to an origin the browser had no
+connection to yet — and on the network these users are actually on, an origin that is sometimes slow
+and sometimes unreachable. `tests/boot_no_third_party.js` fails if either comes back.
+
+**Leaflet** is loaded by `_tkLoadLeaflet()` the first time a map opens, not by a `<script>` tag. It
+keeps Leaflet's own `images/` folder layout, because `leaflet.css` asks for `images/marker-icon.png`
+**relative to itself** — flatten it and every default marker 404s while the map still looks fine
+otherwise. Both files carry the same sha384 pins the old CDN tags did, set as properties on the
+injected elements; `tests/test_shell.py` checks the loader carries exactly two.
+
+**Poppins** is `latin` + `latin-ext` only, five weights, with Google's `unicode-range` declarations
+kept verbatim so a browser still downloads only the subset the page's characters need. Google also
+offers `devanagari` — 192 KB this app never renders — and it is deliberately not here.
+
+Two things to know before touching the font:
+
+- Poppins has **no Vietnamese subset**, and never did on Google either. Vietnamese diacritics have
+  always fallen back to a system face. Vendoring did not change that and re-pointing at Google would
+  not fix it; only a different typeface would.
+- `.woff2` must stay in `CONTENT_TYPES` and **out of** `GZIP_TYPES` in `app.py`. Served as
+  `application/octet-stream` the `<link rel=preload as=font>` becomes a type mismatch and the browser
+  throws the preload away and fetches the file a second time; gzipped, it spends CPU to grow, because
+  woff2 is already Brotli-compressed inside.
+
+To refresh either, download, **verify the sha384 against the pin already in the tree**, and only then
+replace the bytes — the pins in `index.html` are the record of what was reviewed.
+
 ## Why not npm
 
 There is no build step here — `templates/index.html` is served as authored, and `mobile/` is the only

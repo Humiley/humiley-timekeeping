@@ -130,6 +130,10 @@ CONTENT_TYPES = {
     ".js": "application/javascript; charset=utf-8", ".png": "image/png",
     ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon",
     ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8",
+    # Serving a font as application/octet-stream makes `<link rel=preload as=font>` a type mismatch,
+    # and the browser throws the preload away and fetches it a second time. Not in GZIP_TYPES on
+    # purpose: woff2 is already Brotli-compressed inside, so gzipping it spends CPU to add bytes.
+    ".woff2": "font/woff2",
 }
 
 
@@ -1974,10 +1978,14 @@ _CSP = (
     # static/vendor/VENDOR.md). They used to be pulled from that CDN at runtime with no integrity,
     # so anything it returned ran with full page privileges here. Nothing loads from it now, so the
     # origin comes out of script-src, connect-src and worker-src rather than being left standing.
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com "
+    # Same reasoning as the cdnjs note above, applied again: Leaflet moved to /static/vendor/leaflet/
+    # and Poppins to /static/vendor/fonts/, so unpkg.com, fonts.googleapis.com and fonts.gstatic.com
+    # load nothing here. An allow-listed origin that nothing uses is pure attack surface — it is the
+    # standing permission for injected markup to fetch from somewhere we do not control.
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
     "https://alcdn.msauth.net https://*.msftauth.net https://login.microsoftonline.com https://maps.googleapis.com; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
-    "font-src 'self' data: https://fonts.gstatic.com; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
     "img-src 'self' data: blob: https:; "
     "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.msftauth.net "
     "https://nominatim.openstreetmap.org https://*.sharepoint.com https://*.webhook.office.com "
@@ -3736,7 +3744,7 @@ class Handler(BaseHTTPRequestHandler):
     def _emit_sec_headers(self, ctype):
         """Baseline security headers for EVERY response, plus CSP + Permissions-Policy on HTML
         documents only (both are meaningless on JSON/static assets). The CSP allowlists exactly the
-        CDNs/APIs the app really loads (MSAL, Graph, Google Fonts, unpkg/Leaflet, OSM/Nominatim,
+        CDNs/APIs the app really loads (MSAL, Graph, OSM tiles/Nominatim,
         SharePoint, Teams webhook) and locks down object-src / base-uri / form-action / frame-ancestors
         — defence-in-depth on top of the output-escaping. 'unsafe-inline'/'unsafe-eval' stay until the
         inline scripts move to nonces (a modularisation follow-up). HSTS is added at the TLS edge by
