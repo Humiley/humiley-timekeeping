@@ -66,7 +66,12 @@ def _guard_families(pattern):
 #           name), and it is replaced by the project-visibility scope — the same test the read path
 #           uses. That is looser than "only the creator" and much tighter than "any staff account",
 #           which is what the second test below is really asking about.
+# gl_     — gl_periods is FROZEN, so _coll_delete refuses it on its first line, before ownership is
+#           ever considered. A closed month is not deleted by anybody, owner or not; re-opening it
+#           goes through /api/gl/reopen, which checks the level and records who did it and why.
 EXEMPT_FROM_DELETE_OWNERSHIP = {
+    "gl_": ("FROZEN — refused on the first line of _coll_delete, stricter than ownership",
+            "self.FROZEN_MSGS.get(name, self.FROZEN_MSG)"),
     "hrdoc_": ("refused outright earlier in _coll_delete — stricter than ownership",
                "A signed acknowledgement is a permanent record"),
     "review_": ("review_cycles is manager-level configuration, not a per-person record", None),
