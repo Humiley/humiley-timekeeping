@@ -18700,7 +18700,7 @@ const _CN_REASONS = [['over_certified', 'Over-certified in error', 'Nghiệm thu
                      ['rejected_work', 'Work rejected or not accepted', 'Công việc bị từ chối / không được nghiệm thu'],
                      ['descoped', 'Scope removed after certification', 'Cắt giảm phạm vi sau khi đã nghiệm thu'],
                      ['pricing', 'Pricing corrected', 'Điều chỉnh đơn giá'],
-                     ['goodwill', 'Commercial settlement', 'Thoả thuận thương mại']];
+                     ['goodwill', 'Commercial settlement', 'Thỏa thuận thương mại']];
 
 async function crmOpenCredit(applicationId, id) {
   await tkLoadColl('sales_credits'); await tkLoadColl('sales_applications');
@@ -19053,7 +19053,7 @@ function _ctDepositBlock(c, id, draft) {
             (String(r.basis) === 'fixed' ? _crmMoney(r.value) : (+r.value || 0) + '%') + '</b></div>').join('') +
         '</div>') +
     '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.5px;display:flex;gap:18px;flex-wrap:wrap">' +
-      '<div><span style="color:var(--text-light)">' + _t2('Agreed', 'Đã thoả thuận') + '</span> <b style="font-variant-numeric:tabular-nums">' + _crmMoney(agreed) + '</b></div>' +
+      '<div><span style="color:var(--text-light)">' + _t2('Agreed', 'Đã thỏa thuận') + '</span> <b style="font-variant-numeric:tabular-nums">' + _crmMoney(agreed) + '</b></div>' +
       '<div><span style="color:var(--text-light)">' + _t2('Received', 'Đã nhận') + '</span> <b style="font-variant-numeric:tabular-nums;color:' + (got ? 'var(--emerald)' : '#B45309') + '">' + _crmMoney(got) + '</b></div>' +
       '<div><span style="color:var(--text-light)">' + _t2('Still to recover', 'Còn phải khấu trừ') + '</span> <b style="font-variant-numeric:tabular-nums">' + _crmMoney(held) + '</b></div>' +
       (vatGot > 0.005 ? '<div><span style="color:var(--text-light)">' + _t2('VAT inside the deposit', 'Thuế GTGT trong tạm ứng') +
@@ -19119,7 +19119,7 @@ async function crmDepositReceived(id) {
     dep = await tkApi('/api/sales/receipt', { method: 'POST', body: body });
   } catch (e) {
     if (!/say why/i.test(_errMsg(e))) { toast(_errMsg(e), 'error', 9000); return; }
-    const why = await tkPrompt({ title: _t2('That is more than was agreed', 'Nhiều hơn số đã thoả thuận'), body: _errMsg(e) });
+    const why = await tkPrompt({ title: _t2('That is more than was agreed', 'Nhiều hơn số đã thỏa thuận'), body: _errMsg(e) });
     if (!why) return;
     body.overReason = why;
     try { dep = await tkApi('/api/sales/receipt', { method: 'POST', body: body }); }
@@ -19680,7 +19680,7 @@ const _TR_GAP = {
     en: 'Retention due back now', vn: 'Tiền giữ lại đã đến hạn hoàn trả',
     enWhy: '%m of retention is due back from the customer.', vnWhy: 'Khách hàng phải hoàn trả %m tiền giữ lại.' },
   'deposit-not-received': {
-    en: 'The agreed deposit has not arrived', vn: 'Tạm ứng đã thoả thuận chưa về',
+    en: 'The agreed deposit has not arrived', vn: 'Tạm ứng đã thỏa thuận chưa về',
     enWhy: '%m of the deposit has not arrived. That part is not recovered out of any claim until it does.',
     vnWhy: 'Còn %m tạm ứng chưa về. Phần đó chưa được khấu trừ vào đợt nào cho tới khi nhận được.' },
   'no-po': {
@@ -37645,7 +37645,7 @@ const _VI = {
   'Push notifications stopped': 'Đã ngừng thông báo đẩy',
   'Microsoft 365 sign-in sessions revoked': 'Đã thu hồi phiên đăng nhập Microsoft 365',
   'Microsoft 365 sign-in blocked': 'Đã chặn đăng nhập Microsoft 365',
-  'Mailbox delegated to their manager': 'Đã uỷ quyền hộp thư cho quản lý',
+  'Mailbox delegated to their manager': 'Đã ủy quyền hộp thư cho quản lý',
   'Microsoft 365 licence released': 'Đã thu hồi bản quyền Microsoft 365',
   'They can still sign in to the portal and read HR, payroll and project records.':
     'Họ vẫn đăng nhập được vào cổng và xem hồ sơ nhân sự, lương và dự án.',
@@ -38326,7 +38326,7 @@ const _VI = {
   'File too large': 'Tệp quá lớn',
   'max': 'tối đa',
   'File too large (max 15 MB)': 'Tệp quá lớn (tối đa 15 MB)',
-  'File too large — the bank slip must be under 15 MB.': 'Tệp quá lớn — uỷ nhiệm chi phải dưới 15 MB.',
+  'File too large — the bank slip must be under 15 MB.': 'Tệp quá lớn — ủy nhiệm chi phải dưới 15 MB.',
   'Tip: link the project to SharePoint to store large files there.': 'Mẹo: liên kết dự án với SharePoint để lưu tệp lớn ở đó.',
   'This project has no SharePoint folder linked — link one and the limit becomes 100 MB.': 'Dự án này chưa liên kết thư mục SharePoint — liên kết vào thì giới hạn thành 100 MB.',
   'Sign in to Microsoft 365 to upload straight to SharePoint (limit 100 MB).': 'Đăng nhập Microsoft 365 để tải thẳng lên SharePoint (giới hạn 100 MB).',
@@ -39150,9 +39150,9 @@ const _VI = {
   'Nothing was changed': 'Không có thay đổi nào', 'Attendance corrected': 'Đã sửa chấm công',
   'overtime sent back for approval': 'giờ làm thêm được gửi lại để duyệt',
   // ── Certificates, licences & health checks ──
-  'Certificates, licences &amp; health checks': 'Chứng chỉ, giấy phép &amp; khám sức khoẻ',
+  'Certificates, licences &amp; health checks': 'Chứng chỉ, giấy phép &amp; khám sức khỏe',
   'Law on OSH 2015 Art. 21(1) — a health examination at least once a year, and every six months for hazardous work, minors, elderly and disabled workers · Decree 44/2016 Art. 24 — safety training valid 2 years, where the company has classified somebody into a group.':
-    'Luật ATVSLĐ 2015 Đ.21(1) — khám sức khoẻ định kỳ ít nhất 1 lần/năm, và 6 tháng/lần với công việc nặng nhọc độc hại, người chưa thành niên, người cao tuổi và người khuyết tật · NĐ 44/2016 Đ.24 — chứng chỉ huấn luyện an toàn có giá trị 2 năm, với những người đã được phân nhóm.',
+    'Luật ATVSLĐ 2015 Đ.21(1) — khám sức khỏe định kỳ ít nhất 1 lần/năm, và 6 tháng/lần với công việc nặng nhọc độc hại, người chưa thành niên, người cao tuổi và người khuyết tật · NĐ 44/2016 Đ.24 — chứng chỉ huấn luyện an toàn có giá trị 2 năm, với những người đã được phân nhóm.',
   'person(s) not fully covered': 'người chưa đủ điều kiện',
   'Missing and expired first. A certificate on file that lapsed is not cover.': 'Thiếu và hết hạn xếp trước. Chứng chỉ có trong hồ sơ nhưng đã hết hạn thì không còn giá trị.',
   'Everybody is covered.': 'Tất cả đều đủ điều kiện.',
@@ -39192,7 +39192,7 @@ const _VI = {
   'These people have no usable bank details, so the file would be missing them:': 'Những người sau chưa có thông tin ngân hàng hợp lệ nên sẽ bị thiếu trong file:',
   'A file missing one row uploads cleanly and looks correct. Add their bank details on the employee record, then try again.':
     'File thiếu một dòng vẫn tải lên bình thường và trông vẫn đúng. Vui lòng bổ sung thông tin ngân hàng trên hồ sơ nhân viên rồi thử lại.',
-  'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
+  'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thỏa thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
   'Overtime &amp; statutory limits': 'Làm thêm giờ &amp; giới hạn luật định',
@@ -40564,7 +40564,7 @@ const _VI = {
   "Sales Compliance": "Tuân thủ bán hàng",
   "Statutory Returns": "Báo cáo, tờ khai bắt buộc",
   "Testing…": "Đang kiểm tra…",
-  "Upload the bank transfer confirmation (proof of payment) for": "Tải lên uỷ nhiệm chi (chứng từ thanh toán) cho",
+  "Upload the bank transfer confirmation (proof of payment) for": "Tải lên ủy nhiệm chi (chứng từ thanh toán) cho",
   "When (UTC)": "Thời gian (UTC)",
   "Work email (login)": "Email công ty (đăng nhập)",
   "Wt": "Tr.số",
@@ -40624,7 +40624,7 @@ const _VI = {
   "What has to be true before you can bill a customer — and what this portal will never claim": "Những điều kiện phải đủ trước khi xuất hóa đơn cho khách hàng — và những gì cổng này sẽ không bao giờ tự khẳng định",
   "The 5% your customers are holding, when each slice falls due, and the ones nothing can date yet": "Khoản 5% khách hàng đang giữ lại, thời điểm đến hạn từng phần, và những phần chưa xác định được ngày",
   "Progress claims, the invoice your provider issued, and who owes you what — on three separate clocks": "Hồ sơ thanh toán theo tiến độ, hóa đơn nhà cung cấp đã phát hành, và ai còn nợ bạn khoản nào — theo ba mốc thời gian riêng biệt",
-  "What was agreed, what is still to bill, and what is being held back": "Những gì đã thoả thuận, còn phải xuất hóa đơn, và phần đang bị giữ lại",
+  "What was agreed, what is still to bill, and what is being held back": "Những gì đã thỏa thuận, còn phải xuất hóa đơn, và phần đang bị giữ lại",
   "Every quotation you have issued, what happened to it, and why": "Mọi báo giá bạn đã phát hành, kết quả ra sao và vì sao",
   "Every engineering design commission — stage, progress, and what is holding each one up": "Mọi hợp đồng thiết kế kỹ thuật — giai đoạn, tiến độ và vướng mắc đang giữ lại từng hợp đồng",
   "Conceptual, basic and detailed design — deliverables, drawings, revisions and the control around them": "Thiết kế ý tưởng, cơ sở và chi tiết — sản phẩm, bản vẽ, phiên bản và cơ chế kiểm soát đi kèm",
@@ -40691,10 +40691,10 @@ const _VI = {
   "Disbursement segregation of duties — a different person pays than approved": "Phân tách trách nhiệm khi chi tiền — người chi phải khác người duyệt",
   "When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least": "Khi bật (khuyến nghị), người chi tiền không được là người đã phê duyệt lần cuối — và không ai được chi cho đề nghị của chính mình. Cần ít nhất",
   "two": "hai",
-  "authorised payers. Turn OFF only if your finance function is a single person; paying your": "người được uỷ quyền chi. Chỉ TẮT nếu bộ phận tài chính chỉ có một người; việc chi cho đề nghị của",
+  "authorised payers. Turn OFF only if your finance function is a single person; paying your": "người được ủy quyền chi. Chỉ TẮT nếu bộ phận tài chính chỉ có một người; việc chi cho đề nghị của",
   "own": "chính mình",
   "request stays blocked either way.": "vẫn luôn bị chặn trong mọi trường hợp.",
-  "Authorised payers — who may mark a request paid": "Người được uỷ quyền chi — ai được đánh dấu đã thanh toán",
+  "Authorised payers — who may mark a request paid": "Người được ủy quyền chi — ai được đánh dấu đã thanh toán",
   "Releasing money is a": "Chi tiền là một nhiệm vụ",
   "named": "được giao đích danh",
   ". Being listed is the grant, so a payer does not need Editor/Admin — but they do need access to the Finance page. Leave blank to fall back to “any Editor or Admin”. The rules above still apply on top: never your own request, and never one you approved.": ". Có tên trong danh sách chính là được cấp quyền, nên người chi không cần cấp Người chỉnh sửa/Quản trị — nhưng vẫn cần quyền vào trang Tài chính. Để trống sẽ áp dụng mặc định “bất kỳ Người chỉnh sửa hoặc Quản trị viên nào”. Các quy tắc trên vẫn được áp dụng chồng lên: không bao giờ chi cho đề nghị của chính mình, và không bao giờ chi cho đề nghị mình đã duyệt.",
@@ -40764,13 +40764,13 @@ const _VI = {
   "Required SharePoint Lists:": "Các danh sách SharePoint bắt buộc:",
   "Test SharePoint": "Kiểm tra SharePoint",
   "Google Maps API": "Google Maps API",
-  "Used for reverse geocoding (address lookup from GPS coordinates). The browser's native Geolocation API is used for GPS — no Maps API key required for that.": "Dùng để tra ngược địa chỉ từ toạ độ GPS. Việc định vị GPS dùng Geolocation API sẵn có của trình duyệt — phần đó không cần khóa Maps API.",
+  "Used for reverse geocoding (address lookup from GPS coordinates). The browser's native Geolocation API is used for GPS — no Maps API key required for that.": "Dùng để tra ngược địa chỉ từ tọa độ GPS. Việc định vị GPS dùng Geolocation API sẵn có của trình duyệt — phần đó không cần khóa Maps API.",
   "Enable: Geocoding API + Maps JavaScript API. Restrict to your domain.": "Cần bật: Geocoding API + Maps JavaScript API. Giới hạn theo tên miền của bạn.",
   "Notifications and approval routing are built into the portal — leave, claim and payment requests notify the chosen approver automatically by": "Thông báo và định tuyến phê duyệt đã tích hợp sẵn trong cổng — đề nghị nghỉ phép, chi phí và thanh toán tự động báo cho người duyệt đã chọn qua",
   "web push": "thông báo đẩy",
   "Microsoft 365 email": "email Microsoft 365",
   ", and reminders are handled server-side. No external Power Automate flows are required.": ", và việc nhắc nhở do máy chủ xử lý. Không cần luồng Power Automate bên ngoài.",
-  "Approved GPS zones where employees can check in and out. All zones are validated against the device's real GPS coordinates.": "Các vùng GPS đã duyệt, nơi nhân viên được chấm vào và chấm ra. Mọi vùng đều được đối chiếu với toạ độ GPS thật của thiết bị.",
+  "Approved GPS zones where employees can check in and out. All zones are validated against the device's real GPS coordinates.": "Các vùng GPS đã duyệt, nơi nhân viên được chấm vào và chấm ra. Mọi vùng đều được đối chiếu với tọa độ GPS thật của thiết bị.",
   "Your current location has been added as an approved zone for testing. You can now check in/out from where you are.": "Vị trí hiện tại của bạn đã được thêm làm vùng đã duyệt để thử nghiệm. Bây giờ bạn có thể chấm vào/ra ngay tại chỗ.",
   "Block check-in if GPS accuracy > threshold": "Chặn chấm vào nếu sai số GPS vượt ngưỡng",
   "Annual Leave (days/yr)": "Phép năm (ngày/năm)",
@@ -40804,7 +40804,7 @@ const _VI = {
   "Normal — 12 days annual leave": "Bình thường — 12 ngày phép năm",
   "Heavy / hazardous / dangerous — 14 days": "Nặng nhọc / độc hại / nguy hiểm — 14 ngày",
   "Especially heavy / hazardous / dangerous — 16 days": "Đặc biệt nặng nhọc / độc hại / nguy hiểm — 16 ngày",
-  "Labour Code Art. 113(1). A classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties. It also sets the health-check cadence to every 6 months instead of 12.": "Bộ luật Lao động Điều 113(1). Đây là phân loại do doanh nghiệp tự xác định theo danh mục nghề của Bộ LĐ-TB&XH — không suy ra từ chức danh, vì hai người cùng chức danh có thể làm công việc khác nhau. Phân loại này cũng chuyển chu kỳ khám sức khoẻ từ 12 tháng xuống 6 tháng một lần.",
+  "Labour Code Art. 113(1). A classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties. It also sets the health-check cadence to every 6 months instead of 12.": "Bộ luật Lao động Điều 113(1). Đây là phân loại do doanh nghiệp tự xác định theo danh mục nghề của Bộ LĐ-TB&XH — không suy ra từ chức danh, vì hai người cùng chức danh có thể làm công việc khác nhau. Phân loại này cũng chuyển chu kỳ khám sức khỏe từ 12 tháng xuống 6 tháng một lần.",
   "Occupational safety & health group": "Nhóm huấn luyện an toàn, vệ sinh lao động",
   "— None (office duties) —": "— Không thuộc nhóm nào (công việc văn phòng) —",
   "Group 1 — managers responsible for OSH": "Nhóm 1 — người quản lý phụ trách công tác ATVSLĐ",
@@ -41297,7 +41297,7 @@ const _VI = {
   "Quotation": "Báo giá",
   "This file type can’t preview inline.": "Không xem trước trực tiếp được loại tệp này.",
   "Open / Download": "Mở / Tải về",
-  "Portfolio Health": "Sức khoẻ danh mục dự án",
+  "Portfolio Health": "Sức khỏe danh mục dự án",
   "My Project Actions": "Việc dự án của tôi",
   "You’re all caught up — no tasks, RFIs, risks, issues or approvals are waiting on you.": "Bạn đã xử lý hết — không còn công việc, RFI, rủi ro, vấn đề hay phê duyệt nào đang chờ bạn.",
   "Project not found.": "Không tìm thấy dự án.",
@@ -41889,7 +41889,7 @@ const _VI = {
   "Tendered": "Đã dự thầu",
   "Test Instrument": "Thiết bị đo kiểm",
   "Test certificate": "Chứng chỉ thử nghiệm",
-  "The agreement (PDF)": "Bản thoả thuận (PDF)",
+  "The agreement (PDF)": "Bản thỏa thuận (PDF)",
   "The issued file (PDF)": "Tệp đã phát hành (PDF)",
   "Thermometer / data logger": "Nhiệt kế / thiết bị ghi dữ liệu",
   "Threat": "Nguy cơ",
@@ -41932,7 +41932,7 @@ const _VI = {
   "Charter — objectives, scope & success criteria": "Điều lệ — mục tiêu, phạm vi & tiêu chí thành công",
   "Client internal approval only": "Chỉ phê duyệt nội bộ của khách hàng",
   "Conditions / actions carried out of the gate": "Điều kiện / hành động chuyển tiếp khỏi cổng",
-  "Confirm benefits start & health top-up on confirmation": "Xác nhận thời điểm bắt đầu phúc lợi & bảo hiểm sức khoẻ bổ sung khi vào chính thức",
+  "Confirm benefits start & health top-up on confirmation": "Xác nhận thời điểm bắt đầu phúc lợi & bảo hiểm sức khỏe bổ sung khi vào chính thức",
   "Cost impact (₫) — for EMV": "Tác động chi phí (₫) — để tính EMV",
   "Costing model — decides which tabs this tender has": "Mô hình tính giá — quyết định hồ sơ thầu này có những tab nào",
   "Could not add goal: ": "Không thêm được mục tiêu: ",
