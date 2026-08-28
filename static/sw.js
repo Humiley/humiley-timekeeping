@@ -13,9 +13,16 @@
    Re-read main immediately before merging and bump again if someone got there first. And verify a
    deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
    against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
-const CACHE = 'hml-pwa-v493';
+const CACHE = 'hml-pwa-v497';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
-  '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js'];   // self-hosted libs — precache for offline
+  '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js',   // self-hosted libs — precache for offline
+  // The two weights the document preloads. Poppins came from Google until now, which meant the brand
+  // face was the one asset a PWA could never have offline. The other weights and the latin-ext files
+  // are left to the cache-first handler below: they are fetched the first time a glyph needs them and
+  // cached from then on, so precaching all ten would quadruple install cost for no first-paint gain.
+  // Leaflet is deliberately NOT here — it is loaded only when a map opens, and precaching it would
+  // put back exactly the boot cost that moving it off the critical path just removed.
+  '/static/vendor/fonts/poppins-400-latin.woff2', '/static/vendor/fonts/poppins-600-latin.woff2'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
