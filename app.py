@@ -4043,6 +4043,13 @@ class Handler(BaseHTTPRequestHandler):
                                 self._resp_status or 200, (time.time() - _t0) * 1000.0)
             except Exception:
                 pass
+            # This thread's database connection is reused across the whole request rather than
+            # reopened per query. Hand it back here, at the one place every verb passes through, so
+            # an unbalanced get_conn() somewhere costs this request and not the thread.
+            try:
+                db.end_thread_conn()
+            except Exception:
+                pass
 
     def _do_get(self):
         p = urlparse(self.path)
