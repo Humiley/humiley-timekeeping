@@ -17433,14 +17433,14 @@ class Handler(BaseHTTPRequestHandler):
                        or _rec.get("adoptedBy") or _rec.get("signedOffBy") or _rec.get("authorisedBy")
                        or _rec.get("chasedBy"))
             if _sigs or _signer:
-                _when = ""
-                for _k in ("issuedOn", "gateSignedOn", "decidedOn", "approvedOn", "closedOn",
-                           "checkedOn", "adoptedOn", "signedOffOn", "authorisedOn", "chasedOn",
-                           "revDate", "date"):
-                    if str(_rec.get(_k) or "").strip():
-                        _when = str(_rec.get(_k)).strip()[:10]
-                        break
+                # The clock runs from when the COMMISSION closed, not from when the individual
+                # record was signed. A drawing signed in year one of a four-year job would
+                # otherwise fall out of retention while the project it belongs to is still being
+                # argued about — and the records are only useful as a set: the drawing, the check,
+                # the deviation that permitted it and the gate that accepted it all answer the same
+                # question together.
                 _proj = self._eng_project_of(_rec) or {}
+                _when = str(_proj.get("closedOn") or "").strip()[:10]
                 _years = 10
                 try:
                     _y = int(str(_proj.get("retentionYears") or "").strip() or 10)
@@ -17453,12 +17453,21 @@ class Handler(BaseHTTPRequestHandler):
                     _until = str(int(_when[:4]) + _years) + _when[4:]
                 _today = time.strftime("%Y-%m-%d")
                 if not _until or _today < _until:
+                    # An open commission has no close date, so its records are protected with no
+                    # end in sight — which is right: the work is live. It also gives somebody a
+                    # reason to record the close date, because until they do the clock never
+                    # starts.
+                    _why = ((" — until %s, %d years after this commission closed on %s"
+                             % (_until, _years, _when)) if _until
+                            else ", counted from the day the commission closes. This one has no "
+                                 "close date recorded yet, so the clock has not started")
                     return self._err(
                         "This is a signed design record and it is kept for %d years%s. Design "
-                        "liability outlives the tidying up, and the signature is the thing that "
-                        "answers who checked what, against which edition. Supersede it or mark it "
-                        "void — both keep the record and both say it no longer applies."
-                        % (_years, (" — until %s" % _until) if _until else ""), 409)
+                        "liability outlives the tidying up, and these records only answer the "
+                        "question as a set — the drawing, the check, the deviation that permitted "
+                        "it and the gate that accepted it. Supersede it or mark it void — both "
+                        "keep the record and both say it no longer applies."
+                        % (_years, _why), 409)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and self._app_blocked(u, _app):
