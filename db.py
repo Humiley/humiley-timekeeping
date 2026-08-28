@@ -32,21 +32,141 @@ AUDIT_KEY   = os.environ.get("TK_AUDIT_PEPPER", "").encode("utf-8")
 _AUDIT_LOCK = threading.Lock()   # serialize read-head -> insert -> advance-head so concurrent writers can't fork the chain
 
 
+# ── One connection per thread, not one per query ────────────────────────────────────────────────
+#
+# Every db.* read used to open a SQLite connection, run one statement and close it again. The
+# statement is the cheap part: on an open connection a read is ~0.01-0.05 ms, and opening the
+# connection to do it costs more than the read itself.
+#
+# Measured through the real server on a throwaway database, 40 units / 1,360 steps, best of 12,
+# reproduced across runs:
+#
+#     GET /api/ahu/board    9 connections -> 1     17.5 ms -> 13.9 ms   (-21%)
+#     GET /api/ahu/kpi     12 connections -> 1     13.2 ms ->  9.8 ms   (-26%)
+#     GET /api/coll/...     2 connections -> 1      1.5 ms ->  1.1 ms
+#
+# A fifth to a quarter off a read endpoint, and it scales with how many collections the endpoint
+# touches, which is the shape of most screens here.
+#
+# Beware measuring this: an isolated open/query/close loop reports a far bigger number, because a
+# close that happens to be the LAST connection makes SQLite checkpoint and delete the WAL — work a
+# real server with other threads in flight would not usually be doing. Reuse removes that churn too,
+# but the honest figure to quote is the one above, taken through actual requests.
+#
+# `close()` therefore does not close: it hands the connection back, having first restored everything
+# a caller could have changed. The server sets no protocol_version, so BaseHTTPRequestHandler speaks
+# HTTP/1.0 and gives each request its own thread — this is one connection per REQUEST, not a
+# cross-request pool.
+#
+# THE TWO THINGS THIS HAS TO GET RIGHT, both of which were silently free when every caller got its
+# own connection:
+#
+#   Nesting. Two paths hold BEGIN IMMEDIATE open and then call something that does its own
+#   get_conn/close INSIDE it: `next_doc_no` calls a caller-supplied `floor_fn` that scans a whole
+#   collection, and `gl_post` calls `gl_is_closed`, which reads the period register. If that inner
+#   close released, it would roll back the document-number allocation and, worse, the ledger post.
+#   Hence the depth count: only the outermost release actually releases.
+#
+#   State left behind. `_coll_write` sets `isolation_level = None` and never puts it back, which was
+#   harmless when the connection was thrown away and is poison when it is reused — every later write
+#   on that thread would silently lose its implicit transaction. Release restores it, and rolls back
+#   anything uncommitted, so a reused connection is indistinguishable from a fresh one.
+_local = threading.local()
+
+
+class _ReusableConn(sqlite3.Connection):
+    """A connection whose close() returns it to this thread instead of closing it.
+
+    Subclassing rather than wrapping so that execute/commit/rollback/in_transaction and everything
+    else stay the real C implementations — a proxy would have to forward each one, and the one it
+    forgot would be the one that mattered.
+    """
+
+    def close(self):
+        _release(self)
+
+    def _close_for_real(self):
+        sqlite3.Connection.close(self)
+
+
 def get_conn():
     # WAL lets readers and a writer work concurrently (the stdlib server is multi-threaded), and
     # busy_timeout makes a contended write WAIT briefly instead of raising "database is locked".
     # synchronous=NORMAL is durable under WAL and much faster. These are the biggest cheap wins for
     # SQLite under real concurrent use.
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    st = _local.__dict__
+    conn = st.get("conn")
+    # DB_PATH is not a constant: several tests point it at a scratch file and then put it back, and
+    # a cached connection to the previous file would quietly answer from the wrong database.
+    if conn is not None and st.get("path") != DB_PATH:
+        _drop(conn)
+        conn = None
+    if conn is None:
+        conn = sqlite3.connect(DB_PATH, timeout=30, factory=_ReusableConn)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        # journal_mode is DELIBERATELY not here. It is persisted in the database header, so it
+        # survives every connection — but re-asserting it takes a lock. _enable_wal() sets it once,
+        # at startup.
+        st["conn"], st["path"], st["depth"] = conn, DB_PATH, 0
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    # journal_mode is DELIBERATELY not here. It is persisted in the database header, so it survives
-    # every connection — but re-asserting it takes a lock, and this function runs once per query.
-    # Opening a project fires a dozen collection reads at once; that is a dozen needless lock waits
-    # on the hot path. _enable_wal() sets it once, at startup.
+    st["depth"] = st.get("depth", 0) + 1
     return conn
+
+
+def _drop(conn):
+    """Forget this connection and really close it."""
+    st = _local.__dict__
+    if st.get("conn") is conn:
+        st["conn"], st["path"], st["depth"] = None, None, 0
+    try:
+        conn._close_for_real()
+    except Exception:
+        pass
+
+
+def _release(conn):
+    """A caller is done with the connection. Only the outermost caller actually releases it."""
+    st = _local.__dict__
+    if st.get("conn") is not conn:
+        # Not this thread's connection — it belongs to a thread that has since ended, and is being
+        # finalised here. Close it for real; there is nothing to hand back to.
+        try:
+            conn._close_for_real()
+        except Exception:
+            pass
+        return
+    depth = st.get("depth", 0) - 1
+    st["depth"] = max(0, depth)
+    if depth > 0:
+        return                     # an inner read finished; the transaction above it still owns this
+    try:
+        if conn.in_transaction:
+            conn.rollback()        # exactly what closing a connection used to do with uncommitted work
+        conn.isolation_level = ""  # undo _coll_write's isolation_level = None
+    except Exception:
+        _drop(conn)                # cannot be restored to a known state, so do not hand it back
+
+
+def end_thread_conn():
+    """Force this thread's connection back to depth 0, whatever the call sites did.
+
+    The depth count is only as good as the balance between get_conn() and close(), and one function
+    that takes a connection down an exception path without giving it back would pin the depth above
+    zero for the rest of the thread's life — no rollback, no isolation_level restore, for every
+    request that thread went on to serve. That is too sharp an edge to leave resting on the
+    discipline of 40-odd call sites.
+
+    app.py calls this in the `finally` of every request, so a leak can cost at most the request it
+    happened in. Safe to call when nothing is open.
+    """
+    st = _local.__dict__
+    conn = st.get("conn")
+    if conn is None:
+        return
+    st["depth"] = 1                # so the release below is the outermost one
+    _release(conn)
 
 
 def _enable_wal():
