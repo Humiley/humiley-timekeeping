@@ -271,14 +271,54 @@ jobs:
             exit 1
           fi
           m=${mine#hml-pwa-v}; t=${theirs#hml-pwa-v}
-          if [ "$m" = "$t" ]; then
-            echo "::error::static/sw.js is still $theirs, the same version ${{ github.base_ref }} is on."
-            echo "::error::Bump it — otherwise /api/build cannot tell this build from the one before it."
-            exit 1
-          fi
-          # Numeric, not lexical: v1000 must beat v999.
-          if [ "$(printf '%s\n%s\n' "$m" "$t" | sort -n | tail -1)" != "$m" ]; then
-            echo "::error::$mine is LOWER than ${{ github.base_ref }}'s $theirs. The version only goes up."
+
+          # Say which number to use, rather than only that this one is wrong.
+          #
+          # The guard has always rejected a stale version without suggesting a fresh one, so every
+          # author re-derives it by hand from whatever branches they happen to think of — and races
+          # the peers doing the same thing. That has cost four collisions in a single day, and twice
+          # reached production, where two builds answered /api/build with the same string and a
+          # deploy check went green on a deploy that had not happened.
+          #
+          # The claims come from the API, not from git: actions/checkout makes a SHALLOW clone, so
+          # `git branch -r` here sees almost nothing and a scan over it would confidently recommend
+          # a number several peers already hold. Reading each open PR's head is a handful of calls
+          # and sees what git cannot.
+          #
+          # A GAP, not +1. The scan is a snapshot of a moving thing: the number is free when it is
+          # read and taken by the time CI runs. The gap costs nothing — the version is opaque and
+          # only has to increase — and it buys the minutes between picking and merging.
+          #
+          # This is ADVICE. Every call is best-effort and the whole block is wrapped so that it can
+          # never change whether the guard passes or fails: a failing suggestion must not turn a
+          # correct version into a red tick, which would be a worse bug than the one being fixed.
+          suggest() {
+            hi=$1
+            for br in $(gh api --paginate "repos/${{ github.repository }}/pulls?state=open" \
+                          --jq '.[].head.ref' 2>/dev/null || true); do
+              raw=$(gh api -H "Accept: application/vnd.github.raw" \
+                      "repos/${{ github.repository }}/contents/static/sw.js?ref=$br" 2>/dev/null || true)
+              v=$(printf '%s' "$raw" | grep -oE 'hml-pwa-v[0-9]+' | head -1 || true)
+              [ -z "$v" ] && continue
+              n=${v#hml-pwa-v}
+              case "$n" in ''|*[!0-9]*) continue ;; esac
+              [ "$n" -gt "$hi" ] && hi=$n
+            done
+            echo $((hi + 3))
+          }
+
+          if [ "$m" = "$t" ] || [ "$(printf '%s\n%s\n' "$m" "$t" | sort -n | tail -1)" != "$m" ]; then
+            pick=$(suggest "$t" 2>/dev/null || echo $((t + 3)))
+            if [ "$m" = "$t" ]; then
+              echo "::error::static/sw.js is still $theirs, the same version ${{ github.base_ref }} is on."
+              echo "::error::Otherwise /api/build cannot tell this build from the one before it."
+            else
+              # Numeric, not lexical: v1000 must beat v999.
+              echo "::error::$mine is LOWER than ${{ github.base_ref }}'s $theirs. The version only goes up."
+            fi
+            echo "::error::Use hml-pwa-v$pick — the highest claimed on any open PR, plus a gap so a"
+            echo "::error::peer merging while this runs does not take it from under you."
+            echo "::error::  sed -i '' \"s/hml-pwa-v$m/hml-pwa-v$pick/\" static/sw.js"
             exit 1
           fi
           echo "OK: $mine is newer than $theirs."
