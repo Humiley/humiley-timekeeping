@@ -5899,10 +5899,11 @@ class Handler(BaseHTTPRequestHandler):
             weeks = 8
         today = (qs.get("today") or [""])[0].strip() or time.strftime("%Y-%m-%d")
         rows = []
-        for unit in db.list_collection("ahu_units"):
+        idx = ahu.ctx_index()
+        for unit in idx["units"].values():
             if str(unit.get("status") or "").strip().lower() in ("dispatched", "cancelled", "closed"):
                 continue
-            ctx = ahu.load_ctx(unit.get("id"))
+            ctx = ahu.load_ctx(unit.get("id"), idx)
             rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "order": ctx["order"]})
         chart = ahu_capacity.load_by_week(rows, today, weeks)
         try:
@@ -6260,8 +6261,9 @@ class Handler(BaseHTTPRequestHandler):
         # elapsed-between-signoffs otherwise — carried with the row so the two never merge into a
         # number that is neither.
         rows, delayed = [], []
-        for unit in db.list_collection("ahu_units"):
-            ctx = ahu.load_ctx(unit.get("id"))
+        idx = ahu.ctx_index()
+        for unit in idx["units"].values():
+            ctx = ahu.load_ctx(unit.get("id"), idx)
             spec_by = {s["code"]: s for s in ahu.safe_build_for(unit, ctx.get("order"))[0]}
             elapsed = {e["code"]: e for e in
                        ahu_capacity.elapsed_between_signoffs(unit, ctx["steps"])}
@@ -6310,8 +6312,9 @@ class Handler(BaseHTTPRequestHandler):
             return blocked
         since = (qs.get("since") or [""])[0].strip()
         rows = []
-        for unit in db.list_collection("ahu_units"):
-            ctx = ahu.load_ctx(unit.get("id"))
+        idx = ahu.ctx_index()
+        for unit in idx["units"].values():
+            ctx = ahu.load_ctx(unit.get("id"), idx)
             if since:
                 # Filter on the DISPATCH date, not on when the record was created: the question a
                 # period KPI answers is "what did we ship in this window".
