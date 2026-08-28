@@ -5150,6 +5150,35 @@ class Handler(BaseHTTPRequestHandler):
                 # authorises the release. ISO 9001 8.3.4 asks for the verification, not only the
                 # authorisation, and a consultancy is audited on being able to show who checked.
                 chk = rec.get("checkedBy")
+                # Recording WHO checked is worth what the office's word about them is worth. The
+                # register has said "checked by" since the module shipped and never once said
+                # whether that person was held competent to check THAT discipline — the question an
+                # auditor asks immediately after "who checked this?".
+                #
+                # Advisory, never a block. Competence records lag reality in a small office, and
+                # refusing an issue because the paperwork about the checker is behind would stop
+                # real work over an administrative gap — which is how a register earns the
+                # reputation that gets it ignored. The note goes to the refusal log so the gap is
+                # countable instead of invisible.
+                if str(chk or "").strip():
+                    _chkn = str(chk).strip().lower()
+                    _auth = [c for c in db.list_collection("eng_competence")
+                             if (str(c.get("person") or "").strip().lower() == _chkn
+                                 or self._pm_same_person(c.get("person"), chk))
+                             and str(c.get("status") or "").strip().lower() in
+                                 ("authorised", "confirmed")]
+                    _disc = str(deliv.get("discipline") or "").strip().lower()
+                    if _auth and _disc and not any(
+                            _disc in str(c.get("scope") or "").strip().lower()
+                            or str(c.get("scope") or "").strip().lower() in ("all", "any", "")
+                            for c in _auth):
+                        try:
+                            self._eng_log_refusal(
+                                u, "eng_revisions", "check-competence-advisory", rec,
+                                "%s is authorised to check, but not for %s."
+                                % (chk, deliv.get("discipline")), source="advisory")
+                        except Exception:
+                            pass
                 if not str(chk or "").strip():
                     return ("Record who checked this document before issuing it outside the "
                             "office. Checking and approving are separate acts — the checker "
@@ -5281,6 +5310,20 @@ class Handler(BaseHTTPRequestHandler):
                         "inside the office: record the authority's or client's written agreement "
                         "in 'External approval reference' first." %
                         (_std.get("code") or "That standard"))
+            return None
+
+        if coll == "eng_competence":
+            if t not in ("authorised", "confirmed", "withdrawn"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("Who may check or approve what is set by the Design Manager or Lead "
+                        "Engineer — an authority nobody else grants, and nobody grants to "
+                        "themselves.")
+            _who = rec.get("person") or ""
+            if _who and (self._pm_same_person(_who, u.get("name"))
+                         or str(_who).strip().lower() == str(u.get("name") or "").strip().lower()):
+                return ("You cannot authorise yourself. Somebody else records what you are "
+                        "competent to check — that is the whole content of the word.")
             return None
 
         if coll == "eng_standards":
@@ -7108,6 +7151,9 @@ class Handler(BaseHTTPRequestHandler):
                 item["decision"] = set_status
                 item["decidedBy"] = signer_name
                 item.setdefault("decidedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_competence" and set_status in ("Authorised", "Confirmed", "Withdrawn"):
+                item["authorisedBy"] = signer_name
+                item.setdefault("authorisedOn", time.strftime("%Y-%m-%d"))
             if coll == "eng_standards" and set_status in ("Adopted", "Superseded", "Withdrawn"):
                 item["adoptedBy" if set_status == "Adopted" else "retiredBy"] = signer_name
                 item.setdefault("adoptedOn" if set_status == "Adopted" else "retiredOn",
@@ -9249,9 +9295,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -10531,6 +10577,9 @@ class Handler(BaseHTTPRequestHandler):
                     item.pop(_k, None)
             if name == "eng_standards":
                 for _k in ("adoptedBy", "adoptedOn", "retiredBy", "retiredOn"):
+                    item.pop(_k, None)
+            if name == "eng_competence":
+                for _k in ("authorisedBy", "authorisedOn"):
                     item.pop(_k, None)
             if name == "eng_deviations":
                 for _k in ("decision", "decidedBy", "decidedOn"):
