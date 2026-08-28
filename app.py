@@ -53,6 +53,7 @@ import ahu_eurovent     # Eurovent 6/18-2022: what the industry recommends, as r
 import ahu_calibration  # what measured the number, and whether it was fit to (pure)
 import ahu_recall       # which units got this component — the recall question (pure)
 import ahu_competence   # was the person who signed it qualified to (pure)
+import ahu_labour       # where the labour goes: tact bands, touch time, critical path (pure)
 import qr               # ISO/IEC 18004 byte-mode QR symbols, for the traveller card (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
@@ -4271,6 +4272,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._ahu_instruments_ep(u, qs))
         if path == "/api/ahu/recall":
             return self._guard(lambda u: self._ahu_recall_ep(u, qs))
+        if path == "/api/ahu/labour":
+            return self._guard(lambda u: self._ahu_labour_ep(u, qs))
         if path.startswith("/api/ahu/instrument/") and path.endswith("/affected"):
             _iid = path[len("/api/ahu/instrument/"):-len("/affected")]
             return self._guard(lambda u: self._ahu_affected_ep(u, urllib.parse.unquote(_iid)))
@@ -4492,6 +4495,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._me_update(u, body))
         if path == "/api/ahu/settings":
             return self._guard(lambda u: self._ahu_settings_set(u, body), manager=True)
+        if path.startswith("/api/ahu/step/") and path.endswith("/start"):
+            _sid = path[len("/api/ahu/step/"):-len("/start")]
+            return self._guard(lambda u: self._ahu_step_start(u, urllib.parse.unquote(_sid)))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_update(u, body), manager=True)
         if path.startswith("/api/coll/"):
@@ -6154,6 +6160,97 @@ class Handler(BaseHTTPRequestHandler):
             "matches": matches,
             "units": grouped,
             "summary": ahu_recall.summarise(matches, dispatch),
+        }))
+
+    def _ahu_step_start(self, u, step_id):
+        """Stamp the moment work on this step actually started.
+
+        The instant comes from the SERVER, never from the browser. A client-supplied start could be
+        backdated, and the whole value of this stamp is that the gap between it and the signature is
+        real hands-on duration — a number somebody will eventually cost work with.
+
+        Idempotent: pressing Start twice keeps the FIRST stamp. The second press is somebody
+        returning to a job, and moving the start forward would quietly shorten the very measurement
+        this exists to take.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        step = db.get_collection_item("ahu_steps", step_id)
+        if not step:
+            return self._err("Unknown step.", 404)
+        if step.get("signedBy"):
+            return self._err("This step is already signed. Starting it again would rewrite a "
+                             "signed record.", 409)
+        if step.get("startedAt"):
+            return self._json({"ok": True, "startedAt": step["startedAt"], "already": True})
+        step["startedAt"] = self._utc_now()
+        step["startedBy"] = u.get("name")
+        out = db.put_collection_item("ahu_steps", step)
+        _ahu_touch()
+        return self._json({"ok": True, "startedAt": out.get("startedAt")})
+
+    def _ahu_labour_ep(self, u, qs):
+        """Where the labour goes, and why the same unit varies by 2.5x.
+
+        Three separate questions, kept separate because they have different answers and different
+        owners: how each station runs against its own tact band (production), what the route forces
+        to happen one-after-another (the production lead), and what a unit costs in fixed versus
+        per-section hours (sales).
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        try:
+            sections = int((qs.get("sections") or ["4"])[0])
+        except (TypeError, ValueError):
+            sections = 4
+        family = (qs.get("family") or ["modular"])[0].strip().lower()
+        try:
+            specs = ahu_route.build_route(family, {})
+        except ValueError:
+            return self._err("Unknown product family.", 400)
+
+        # Measured runs, per station, across every live unit. Touch time where a start was recorded;
+        # elapsed-between-signoffs otherwise — carried with the row so the two never merge into a
+        # number that is neither.
+        rows, delayed = [], []
+        for unit in db.list_collection("ahu_units"):
+            ctx = ahu.load_ctx(unit.get("id"))
+            spec_by = {s["code"]: s for s in ahu.safe_build_for(unit, ctx.get("order"))[0]}
+            elapsed = {e["code"]: e for e in
+                       ahu_capacity.elapsed_between_signoffs(unit, ctx["steps"])}
+            for st in ctx["steps"]:
+                spec = spec_by.get(st.get("code"))
+                if not spec or spec.get("kind") != "op":
+                    continue
+                if st.get("delayReason"):
+                    delayed.append(st)
+                touch = ahu_labour.touch_hours(st)
+                hours, source = (touch, "touch") if touch is not None else (
+                    (elapsed.get(st.get("code")) or {}).get("elapsedH"), "elapsed")
+                if hours is None:
+                    continue
+                rows.append({"code": st.get("code"), "tact": spec.get("tact"), "hours": hours,
+                             "sections": unit.get("sectionCount"), "unitId": unit.get("id"),
+                             "pin": unit.get("pin"), "source": source})
+
+        return self._json(self._ahu_json_safe({
+            "family": family, "sections": sections,
+            "criticalPath": ahu_labour.critical_path(specs, sections),
+            "spread": ahu_labour.spread(specs, sections),
+            "cost": ahu_labour.fixed_vs_variable(specs, sections),
+            "stations": ahu_labour.station_performance(rows),
+            "measuredRuns": len(rows),
+            "touchRuns": len([r for r in rows if r["source"] == "touch"]),
+            "delayCauses": ahu_labour.delay_causes(delayed),
+            "delayReasons": ahu_labour.DELAY_REASONS,
+            # Priced, not proposed. Whether a control panel can be built alongside the casing is
+            # knowledge held on the floor, not in this module.
+            "parallelOptions": [
+                ahu_labour.parallel_floor(specs, sections, independent=[c])
+                for c in ("WS-08", "WS-06", "WS-01")
+            ],
         }))
 
     def _ahu_kpi_ep(self, u, qs):

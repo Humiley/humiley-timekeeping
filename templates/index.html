@@ -1233,6 +1233,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="13" y="5" width="3" height="13"/></svg></span>
     <span class="nav-label">Capacity &amp; Load</span>
   </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-labour',this,'Labour &amp; Flow')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span>
+    <span class="nav-label">Labour &amp; Flow</span>
+  </div>
   <div class="nav-item" data-app="ahu" onclick="showView('ahu-evidence',this,'Quality Evidence')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
     <span class="nav-label">Quality Evidence</span>
@@ -1633,6 +1637,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-ahu-units" class="view"><div class="page-header"><div><h1>AHU Register</h1><p>Every unit by its Production Identification Number, from order to dispatch</p></div></div><div id="ahu-units-root"></div></div>
 <div id="view-ahu-orders" class="view"><div class="page-header"><div><h1>Orders &amp; Contracts</h1><p>Customer purchase orders and contracts, and the units built against each</p></div></div><div id="ahu-orders-root"></div></div>
 <div id="view-ahu-standard" class="view"><div class="page-header"><div><h1>Production Standard</h1><p>AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix</p></div></div><div id="ahu-standard-root"></div></div>
+<div id="view-ahu-labour" class="view"><div class="page-header"><div><h1>Labour &amp; Flow</h1><p>Where the hours go, why the same unit varies by two and a half times, and what the route forces to happen one after another</p></div></div><div id="ahu-labour-root"></div></div>
 <div id="view-ahu-evidence" class="view"><div class="page-header"><div><h1>Quality Evidence</h1><p>Whether the measurements this factory has signed can be defended &mdash; the instruments, the people, and which units got a given part</p></div></div><div id="ahu-evidence-root"></div></div>
 <div id="view-ahu-capacity" class="view"><div class="page-header"><div><h1>Capacity &amp; Load</h1><p>The rolling load chart AHU-SOP-MASTER-001 &sect;6.7 calls for &mdash; hours of committed work against the weeks they fall in</p></div></div><div id="ahu-capacity-root"></div></div>
 <div id="view-ahu-unit" class="view"><div id="ahu-unit-root"></div></div>
@@ -7436,6 +7441,7 @@ const _PENCIL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" str
    Use tkIcon('name') in JS-rendered markup; stroke=currentColor inherits the button colour. */
 const TK_ICON = {
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
   qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="17" y1="17" x2="21" y2="17"/><line x1="17" y1="21" x2="17" y2="21.01"/><line x1="21" y1="21" x2="21" y2="21.01"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
@@ -34762,6 +34768,46 @@ function _ahuInstrumentRow(s) {
     '</select></div></div>';
 }
 
+/* When work actually STARTED. Only on workstations — a gate is a decision, not a job with a
+   duration, and asking somebody to "start" one would collect a number that means nothing.
+
+   The stamp comes from the server: a browser-supplied time could be backdated, and the entire value
+   of this field is that the gap to the signature is real hands-on duration. Pressing Start twice
+   keeps the first stamp, because the second press is somebody coming back to a job. */
+function _ahuStartRow(s) {
+  if (s.kind !== 'op') return '';
+  if (s.startedAt) {
+    return '<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;' +
+      'border-bottom:1px solid var(--line);font-size:11.5px;color:var(--text-light)">' +
+      '<span style="font-weight:600;color:var(--emerald)">Started</span>' +
+      '<span style="font-variant-numeric:tabular-nums">' + _ahuEsc(s.startedAt.replace('T', ' ').replace('Z', '')) +
+      '</span>' + (s.startedBy ? '<span>by ' + _ahuEsc(s.startedBy) + '</span>' : '') +
+      '<span style="margin-left:auto">Signing now records the real time on the job.</span></div>';
+  }
+  return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;' +
+    'border-bottom:1px solid var(--line)">' +
+    '<button class="btn btn-outline btn-sm" style="font-size:12px" onclick="ahuStartStep(\'' +
+    _ahuA(s.code) + '\')">' + tkIcon('play', 12) + ' Start work</button>' +
+    '<span style="font-size:11px;color:var(--text-light)">Optional. Without it only the gap since ' +
+    'the previous sign-off can be known, which includes queueing and overnight.</span></div>';
+}
+
+/* Why a step ran past its tact. Asked only where it can be answered — on a workstation, once work
+   has started — because a dropdown offered on every step trains people to leave it blank. */
+function _ahuDelayRow(s) {
+  if (s.kind !== 'op' || !s.startedAt) return '';
+  const opts = ['<option value="">— not recorded —</option>'].concat(
+    (_AHU.delayReasons || []).map(r => '<option value="' + _ahuA(r) + '"' +
+      (s.delayReason === r ? ' selected' : '') + '>' + _ahuEsc(r) + '</option>')).join('');
+  return '<div style="display:grid;grid-template-columns:1fr 240px;gap:8px;align-items:center;' +
+    'padding:6px 0;border-bottom:1px solid var(--line)">' +
+    '<div><div style="font-size:12.5px;font-weight:600">If this ran long, why?</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">The number tells you WHERE time goes. ' +
+    'This is the only thing that tells you why.</div></div>' +
+    '<div><select class="form-input" data-delay="1" style="font-size:12.5px">' + opts +
+    '</select></div></div>';
+}
+
 function _ahuStepPanel(s, gateBlockers) {
   const checks = s.checks || [];
   const inputs = checks.map(c => {
@@ -34798,7 +34844,7 @@ function _ahuStepPanel(s, gateBlockers) {
   return '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)" data-step="' + _ahuA(s.code) + '">' +
     (s.activity ? '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">' + _ahuEsc(s.activity) + '</div>' : '') +
     (s.sampling ? '<div style="font-size:11.5px;color:#A16207;margin-bottom:8px">' + _ahuEsc(s.sampling) + '</div>' : '') +
-    _ahuInstrumentRow(s) +
+    _ahuStartRow(s) + _ahuDelayRow(s) + _ahuInstrumentRow(s) +
     (checks.length ? inputs : '<div style="font-size:12px;color:var(--text-light)">No measured check on this step — signing it records that it was done.</div>') +
     held +
     '<div style="display:flex;gap:7px;margin-top:11px;flex-wrap:wrap">' +
@@ -34811,6 +34857,16 @@ function _ahuStepPanel(s, gateBlockers) {
     tkIcon('x', 12) + ' Record a failure</button></div>' +
     '<div style="font-size:11px;color:var(--text-light);margin-top:7px">' +
     'Every limit above comes from the server. Signing re-checks them there — what you see here is what it will decide.</div></div>';
+}
+
+async function ahuStartStep(code) {
+  const s = _ahuStep(code); if (!s) return;
+  try {
+    const r = await tkApi('/api/ahu/step/' + encodeURIComponent(s.id) + '/start',
+                          { method: 'PATCH' });
+    toast(r.already ? 'Already started at ' + (r.startedAt || '') : 'Started. The clock is running.');
+    ahuRenderTraveller();
+  } catch (e) { toast('Could not start: ' + e.message, 'warn'); }
 }
 
 function ahuStepOpen(code) { _AHU.openStep = (_AHU.openStep === code) ? null : code; ahuTab('route'); }
@@ -34847,6 +34903,9 @@ async function ahuSaveReadings(code, quiet) {
   // record, which is the one thing this module will not do.
   const instr = _ahuInstrumentOf(code);
   if (instr !== null) body.instrumentId = instr;
+  const panel = document.querySelector('#ahu-tab-body [data-step="' + code + '"]');
+  const dl = panel && panel.querySelector('[data-delay]');
+  if (dl) body.delayReason = dl.value || '';
   try {
     await tkApi('/api/coll/ahu_steps/' + encodeURIComponent(s.id), { method: 'PATCH', body: body });
     if (!quiet) toast('Readings saved.');
@@ -34859,7 +34918,9 @@ async function ahuSignStep(code) {
   // Save when there are readings OR when an instrument was picked. A test with a single yes/no
   // check still names the instrument that confirmed it, and without this that choice would be
   // discarded at the moment it is needed.
-  const needsSave = (s.checks || []).length || _ahuInstrumentOf(code) !== null;
+  const panel0 = document.querySelector('#ahu-tab-body [data-step="' + code + '"]');
+  const needsSave = (s.checks || []).length || _ahuInstrumentOf(code) !== null ||
+    !!(panel0 && panel0.querySelector('[data-delay]'));
   if (needsSave && !await ahuSaveReadings(code, true)) return;
   const status = s.kind === 'op' ? 'Complete' : 'Passed';
   tkESign({
@@ -35549,6 +35610,137 @@ async function ahuAffected(id) {
         'against any signed measurement.</div>'));
 }
 
+/* ── Where the labour goes, and why the same unit varies by 2.5x ────────────────────────────────
+   AHU-SOP-MASTER-001 quotes a band for every workstation, and the bands are wide — WS-04 Section
+   Assembly is "1 - 4 h / section". Summed over a four-section unit the SAME unit is somewhere
+   between 19 and 49 hours. That gap is not physics; it is kitting, interruption and rework, and it
+   is worth more than any machine.
+
+   Three questions with three different owners, kept apart on purpose:
+     - how each station runs against its own band          -> production
+     - what the route forces to happen one after another   -> the production lead
+     - fixed versus per-section hours                      -> sales
+
+   The parallel figures are PRICED, not proposed. Whether a control panel can be built alongside the
+   casing is knowledge held on the floor; this only says what the answer would be worth. */
+const _AHU_BAND_TONE = { FAST: '#00B060', MID: 'var(--emerald)', SLOW: '#A16207',
+                         OVER: '#DC2626', UNKNOWN: '#94A3B8' };
+
+async function ahuRenderLabour() {
+  const root = document.getElementById('ahu-labour-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  let d;
+  try { d = await tkApi('/api/ahu/labour?sections=4&family=modular'); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000">Could not load the labour analysis: ' +
+      _ahuEsc(e.message) + '</div>');
+    return;
+  }
+  _AHU.delayReasons = d.delayReasons || [];
+  const sp = d.spread || {}, cp = d.criticalPath || {}, co = d.cost || {};
+
+  const headline = _ahuCard(
+    '<div style="font-weight:800;color:var(--navy)">The same unit, twice the hours</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' +
+    'A four-section modular unit, priced from the two ends of the SOP\'s own tact bands.</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">' +
+    [['Best case', sp.bestH + ' h', 'var(--emerald)', 'every station at its quick end'],
+     ['Worst case', sp.worstH + ' h', '#DC2626', 'every station at its slow end'],
+     ['The gap', sp.spreadH + ' h', '#A16207', (sp.spreadPct || 0) + '% of the total'],
+     ['Fixed per unit', co.fixedH + ' h', 'var(--navy)', 'the same on a 1-section unit'],
+     ['Per section', co.perSectionH + ' h', 'var(--navy)', 'scales with size']
+    ].map(k =>
+      '<div style="border:1px solid var(--line);border-radius:9px;padding:9px 11px">' +
+      '<div style="font-size:11px;color:var(--text-light);font-weight:600">' + _ahuEsc(k[0]) + '</div>' +
+      '<div style="font-size:20px;font-weight:800;color:' + k[2] + ';line-height:1.2;' +
+      'font-variant-numeric:tabular-nums">' + _ahuEsc(k[1]) + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light)">' + _ahuEsc(k[3]) + '</div></div>').join('') +
+    '</div>' +
+    '<div style="margin-top:10px;font-size:11.5px;color:var(--text-light)">That gap is the prize. ' +
+    'It is the same unit and the same standard — the difference is method, not physics.</div>');
+
+  const worst = _ahuCard(
+    '<div style="font-weight:800;color:var(--navy)">What the spread costs, station by station</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+    'Hours between the quick end and the slow end of each station\'s own band.</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:620px"><thead><tr>' +
+    '<th>Station</th><th></th><th>Quick</th><th>Slow</th><th>Band</th><th>At stake</th>' +
+    '</tr></thead><tbody>' +
+    (sp.stations || []).map(r =>
+      '<tr><td style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' +
+      _ahuEsc(r.code) + '</td><td style="font-size:12px">' + _ahuEsc(r.title || '') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.fastH) + ' h</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.slowH) + ' h</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.ratio) + '&times;</td>' +
+      '<td style="font-weight:700;color:#DC2626;font-variant-numeric:tabular-nums">' +
+      _ahuEsc(r.costH) + ' h</td></tr>').join('') +
+    '</tbody></table></div>');
+
+  const measured = (d.stations || []).length
+    ? _ahuCard(
+      '<div style="font-weight:800;color:var(--navy)">Where you actually run</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+      _ahuEsc(d.measuredRuns) + ' measured run(s), ' + _ahuEsc(d.touchRuns) +
+      ' of them real touch time. The rest are gaps between sign-offs, which include queueing and ' +
+      'overnight — useful for finding where units SIT, not for costing a job.</div>' +
+      '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:640px"><thead><tr>' +
+      '<th>Station</th><th>Runs</th><th>Over tact</th><th>Median vs tact</th><th>Worst</th>' +
+      '</tr></thead><tbody>' +
+      d.stations.map(g =>
+        '<tr><td style="font-weight:700;color:var(--navy)">' + _ahuEsc(g.code) + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(g.n) + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;color:' + (g.over ? '#DC2626' : 'inherit') +
+        '">' + _ahuEsc(g.over) + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums">' +
+        (g.median == null ? '<span style="color:var(--text-light)">' + _ahuEsc(g.note || 'not judged') +
+          '</span>' : _ahuEsc(g.median) + '&times;') + '</td>' +
+        '<td style="font-size:11.5px">' + (g.worst ? _ahuEsc(g.worst.pin + ' — ' + g.worst.hours + ' h')
+          : '') + '</td></tr>').join('') +
+      '</tbody></table></div>')
+    : _ahuCard('<div style="font-weight:800;color:var(--navy)">Where you actually run</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:5px">Nothing measured yet. ' +
+      'Press <b>Start work</b> on a workstation step before signing it and this fills in — until ' +
+      'then the bands above are what the SOP claims, not what the floor does.</div>');
+
+  const causes = (d.delayCauses || []).length
+    ? _ahuCard('<div style="font-weight:800;color:var(--navy)">Why steps ran long</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:6px">' +
+      'The numbers say where. Only this says why.</div>' +
+      d.delayCauses.map(c =>
+        '<div style="display:flex;justify-content:space-between;padding:5px 0;' +
+        'border-bottom:1px solid var(--line);font-size:12.5px">' +
+        '<span>' + _ahuEsc(c.reason) + '</span>' +
+        '<b style="font-variant-numeric:tabular-nums">' + _ahuEsc(c.count) + '</b></div>').join(''))
+    : '';
+
+  const flow = _ahuCard(
+    '<div style="font-weight:800;color:var(--navy)">The route runs ' +
+    _ahuEsc(cp.serialShare) + '% one-after-another</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:9px">' +
+    _ahuEsc(cp.criticalPathH) + ' h of critical path out of ' + _ahuEsc(cp.totalWorkH) +
+    ' h of work. Where that is 100%, one unit takes the whole time however many people are on it.' +
+    '</div>' +
+    '<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:4px">' +
+    'If these were declared independent</div>' +
+    (d.parallelOptions || []).map(p =>
+      '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;' +
+      'border-bottom:1px solid var(--line);font-size:12.5px">' +
+      '<span style="font-variant-numeric:tabular-nums">' + _ahuEsc((p.lifted || []).join(', ')) + '</span>' +
+      '<span style="font-variant-numeric:tabular-nums">' + _ahuEsc(p.before) + ' h &rarr; ' +
+      _ahuEsc(p.after) + ' h <b style="color:' + (p.savedH > 0 ? 'var(--emerald)' : 'var(--text-light)') +
+      '">saves ' + _ahuEsc(p.savedH) + ' h</b></span></div>').join('') +
+    '<div style="margin-top:9px;padding:8px 10px;border-radius:8px;background:#A1620710;' +
+    'border:1px solid #A1620730;font-size:11.5px;color:#7A4E05">' +
+    'This prices the answer; it does not give it. Whether a control panel can be built while the ' +
+    'casing is assembled is knowledge held on the floor. Ask the production lead, then change the ' +
+    'route&rsquo;s predecessors to match what is really true.</div>');
+
+  root.innerHTML = headline + '<div style="height:12px"></div>' + worst +
+    '<div style="height:12px"></div>' + measured +
+    (causes ? '<div style="height:12px"></div>' + causes : '') +
+    '<div style="height:12px"></div>' + flow;
+}
+
 /* ───────────────────────── Capacity & load (SOP §6.7) ─────────────────────────
    The SOP names a rolling 8-week load chart as the CONTROL against the risk "delivery date shorter
    than feasible", and nothing computed it. Every unit's route already carries the SOP tact per
@@ -36038,6 +36230,7 @@ function showView(id, navEl, title) {
   if (id === 'ahu-standard') { try { ahuRenderStandard(); } catch (e) { console.warn('ahu-standard:', e.message); } }
   if (id === 'ahu-capacity') { try { ahuRenderCapacity(); } catch (e) { console.warn('ahu-capacity:', e.message); } }
   if (id === 'ahu-evidence') { try { ahuRenderEvidence(); } catch (e) { console.warn('ahu-evidence:', e.message); } }
+  if (id === 'ahu-labour') { try { ahuRenderLabour(); } catch (e) { console.warn('ahu-labour:', e.message); } }
   if (id === 'est-projects') { try { estRenderProjects(); } catch (e) { console.warn('est-projects:', e.message); } }
   if (id === 'est-rates') { try { estRenderRates(); } catch (e) { console.warn('est-rates:', e.message); } }
   if (id === 'est-estimate') { try { estRenderWorkspace(); } catch (e) { console.warn('est-estimate:', e.message); } }
@@ -36809,6 +37002,14 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Labour & Flow': 'Giờ công & Dòng chảy',
+  'The same unit, twice the hours': 'Cùng một sản phẩm, gấp đôi số giờ',
+  'What the spread costs, station by station': 'Chênh lệch tốn bao nhiêu, theo từng trạm',
+  'Where you actually run': 'Thực tế đang chạy ở mức nào',
+  'Why steps ran long': 'Vì sao các bước bị kéo dài',
+  'Start work': 'Bắt đầu làm',
+  'If this ran long, why?': 'Nếu bước này kéo dài, vì sao?',
+  'If these were declared independent': 'Nếu khai báo các bước này là độc lập',
   'How an AHU gets built': 'Quy trình sản xuất một AHU',
   'Seven stages. Each ends at a gate that will not pass until its conditions are met, so a unit can only move forward in order. Click a stage to see the units in it.': 'Bảy công đoạn. Mỗi công đoạn kết thúc bằng một cổng chỉ mở khi đủ điều kiện, nên sản phẩm chỉ tiến theo đúng thứ tự. Bấm vào một công đoạn để xem sản phẩm đang ở đó.',
   'Show all stages': 'Xem tất cả công đoạn',
