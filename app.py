@@ -17359,6 +17359,54 @@ class Handler(BaseHTTPRequestHandler):
         # The audit trail is append-only (21 CFR Part 11) — never deletable via the generic store.
         if name == "audit":
             return self._err("Audit-trail entries cannot be deleted.", 403)
+        # ---- Design records outlive the people tidying up -------------------------------------
+        # Construction liability in Vietnam runs long past handover, and the document that answers
+        # "who checked this, against which edition, and what did they know" is the signed record in
+        # here. Ten years, counted from the signature.
+        #
+        # The rule is deliberately narrow: only a SIGNED eng_ record is protected. A commission that
+        # was set up wrong, a duplicate, a test — none of those carry a signature, and refusing to
+        # delete them would train people to work around the guard on the records that matter. The
+        # signature is what turns a row into evidence, so the signature is what starts the clock.
+        #
+        # No admin exemption, and that is the point rather than an oversight. An admin is exactly
+        # who would be asked to "just remove it", usually years later, usually by somebody who has
+        # forgotten why it was kept. Everywhere else in this file an admin steps over a freeze
+        # because a freeze stops accidents; this one stops a decision.
+        if name.startswith("eng_"):
+            _rec = db.get_collection_item(name, iid) or {}
+            _sigs = _rec.get("signatures") or []
+            _signer = (_rec.get("issuedBy") or _rec.get("gateSignedBy") or _rec.get("decidedBy")
+                       or _rec.get("approvedBy") or _rec.get("closedBy") or _rec.get("checkedBy")
+                       or _rec.get("adoptedBy") or _rec.get("signedOffBy") or _rec.get("authorisedBy")
+                       or _rec.get("chasedBy"))
+            if _sigs or _signer:
+                _when = ""
+                for _k in ("issuedOn", "gateSignedOn", "decidedOn", "approvedOn", "closedOn",
+                           "checkedOn", "adoptedOn", "signedOffOn", "authorisedOn", "chasedOn",
+                           "revDate", "date"):
+                    if str(_rec.get(_k) or "").strip():
+                        _when = str(_rec.get(_k)).strip()[:10]
+                        break
+                _proj = self._eng_project_of(_rec) or {}
+                _years = 10
+                try:
+                    _y = int(str(_proj.get("retentionYears") or "").strip() or 10)
+                    if _y > 0:
+                        _years = _y
+                except Exception:
+                    pass
+                _until = ""
+                if len(_when) >= 4 and _when[:4].isdigit():
+                    _until = str(int(_when[:4]) + _years) + _when[4:]
+                _today = time.strftime("%Y-%m-%d")
+                if not _until or _today < _until:
+                    return self._err(
+                        "This is a signed design record and it is kept for %d years%s. Design "
+                        "liability outlives the tidying up, and the signature is the thing that "
+                        "answers who checked what, against which edition. Supersede it or mark it "
+                        "void — both keep the record and both say it no longer applies."
+                        % (_years, (" — until %s" % _until) if _until else ""), 409)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and self._app_blocked(u, _app):
