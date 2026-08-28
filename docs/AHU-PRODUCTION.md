@@ -208,7 +208,12 @@ the next revision rather than quietly diverging.
   It is idempotent: re-running adds nothing.
 
   The seeded examples are deliberately **not** all healthy — one instrument is out of calibration,
-  one has no due date at all, one qualification has expired, and two units share a fan batch. Those
-  are the states the screens exist to separate, and a demo where everything is green demonstrates
-  nothing. An empty screen also cannot be told apart from a broken one, which is why the registers
-  are seeded at all.
+  one has no due date at all, one qualification has expired, two units share a fan batch, and one
+  workstation ran past its tact with the reason recorded. Those are the states the screens exist to
+  separate, and a demo where everything is green demonstrates nothing. An empty screen also cannot
+  be told apart from a broken one, which is why the registers are seeded at all.
+
+  Two of the three units carry a section count and the third deliberately does not. Five of the nine
+  workstations are quoted per section, so a unit without a count cannot have its tact bands scaled to
+  it — the capacity chart and the labour analysis both refuse to judge it rather than assuming one
+  section. That refusal is a feature, and it is worth being able to see it.

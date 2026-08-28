@@ -38,16 +38,21 @@ if not db.list_collection("ahu_orders"):
         "productionLead": "Tran Van Long", "qcInspector": "Pham Thi Mai"})
     print("seeded order", order["poNumber"])
 
-    for i, (pin, tag, fam, cr) in enumerate([
-            ("PIN-2026-0417-01", "AHU-B-01", "hygienic", "ISO7"),
-            ("PIN-2026-0417-02", "AHU-B-02", "modular", None),
-            ("PIN-2026-0417-03", "AHU-B-03", "outdoor", None)]):
+    # Section counts on two of the three, and deliberately NOT on the third. Five of the nine
+    # workstations are quoted per section, so a unit without a count cannot have its tact bands
+    # scaled to it — the capacity chart and the labour analysis both refuse to judge it rather than
+    # assuming one section. That refusal is a feature worth being able to see, so one unit keeps it.
+    for i, (pin, tag, fam, cr, secs) in enumerate([
+            ("PIN-2026-0417-01", "AHU-B-01", "hygienic", "ISO7", 4),
+            ("PIN-2026-0417-02", "AHU-B-02", "modular", None, 6),
+            ("PIN-2026-0417-03", "AHU-B-03", "outdoor", None, None)]):
         unit = db.put_collection_item("ahu_units", {
             "id": "ahu-unit-demo-%d" % (i + 1), "orderId": "ahu-ord-demo",
             "pin": pin, "tag": tag, "family": fam,
             "model": "AeroSmart AS-%d" % (18 + i * 6),
             "airflow": 12000 + i * 4000, "esp": 450, "voltage": 400, "coilDesignBar": 16,
-            "cleanroom": cr, "selectionRef": "AS-2026-%03d" % (410 + i),
+            "cleanroom": cr, "sectionCount": secs,
+            "selectionRef": "AS-2026-%03d" % (410 + i),
             "fatRequired": "Yes" if i == 0 else "", "bomStatus": "Draft",
             "productionLead": "Tran Van Long", "qcInspector": "Pham Thi Mai",
             "status": "In production"})
@@ -65,6 +70,31 @@ if not db.list_collection("ahu_orders"):
             s["signedBy"] = who
             s["signedOn"] = "2026-08-01"
             db.put_collection_item("ahu_steps", s)
+    # Two workstations actually worked, with a START as well as a signature — the only way real
+    # touch time can be known, and without it the Labour & Flow screen has nothing but the SOP's
+    # claims. One runs inside its band and one over it, with the reason recorded, because a demo
+    # where everything is on time demonstrates nothing and teaches nobody what the screen is for.
+    #
+    # WS-01 is "20 - 60 min / panel set" — over 4 sections a band of 1.3 to 4.0 h. 2.5 h is inside.
+    # WS-02 is "30 - 90 min / section"   — over 4 sections a band of 2.0 to 6.0 h. 9.0 h is over,
+    # which is what the delay reason is there to explain.
+    for code, a, b, why in [
+            ("WS-01", "2026-08-04T08:00:00Z", "2026-08-04T10:30:00Z", ""),
+            ("WS-02", "2026-08-05T08:00:00Z", "2026-08-05T17:00:00Z",
+             "Waiting for material or a part")]:
+        s = db.get_collection_item("ahu_steps", "ahu-unit-demo-1-" + code)
+        if s:
+            s["status"] = "Complete"
+            s["signedBy"] = "Tran Van Long"
+            s["signedOn"] = b[:10]
+            s["startedAt"] = a
+            s["startedBy"] = "Tran Van Long"
+            if why:
+                s["delayReason"] = why
+            s["signatures"] = [{"name": "Tran Van Long", "ts": b, "meaning": code + " complete"}]
+            db.put_collection_item("ahu_steps", s)
+    print("seeded 2 worked stations on the first unit (one over tact, with the reason)")
+
     db.put_collection_item("ahu_docs", {
         "id": "ahu-doc-demo-1", "unitId": "ahu-unit-demo-1", "kind": "GA drawing",
         "docNo": "HML-AHU-GA-HYG-0417-01", "title": "General arrangement — AHU-B-01",
