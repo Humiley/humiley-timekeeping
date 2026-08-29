@@ -88,9 +88,15 @@ def test_admin_sees_both(api, tokens, two_commissions):
     assert two_commissions["theirDoc"]["id"] in ids
 
 
-def test_the_refusal_log_is_not_readable_by_staff(api, tokens, two_commissions):
-    """One boundary that IS already enforced, and the shape a client boundary should copy:
-    the log refuses the write and the read is management-only."""
+def test_the_refusal_log_write_is_refused(api, tokens, two_commissions):
+    """This test used to be called ...is_not_readable_by_staff, and its docstring claimed "the log
+    refuses the write and the read is management-only". Only the first half was ever asserted. The
+    second half was false: /api/coll reads are default-allow, eng_refusals had no READ_MIN entry,
+    and every account with the ENG app was served every commission's refusals.
+
+    A sentence in a docstring is not a boundary. The read is now scoped by design authority and
+    tested for it in tests/test_eng_refusal_log.py; what belongs HERE is only the claim this test
+    actually makes."""
     st, b = api("POST", "/api/coll/eng_refusals", tokens["staff"],
                 {"projectId": two_commissions["ours"]["id"], "rule": "invented"})
     assert st != 200, "a staff account wrote to the refusal log"
