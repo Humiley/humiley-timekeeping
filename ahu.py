@@ -535,15 +535,18 @@ def unit_state(ctx):
     }
 
 
-def board():
+def board(idx=None):
     """Every unit not yet dispatched, with where it is — the shop-floor board.
+
+    `idx` is an optional `ctx_index()` snapshot, so a caller that needs the same index for something
+    else — the no-movement sweep on the same screen — pays for it once rather than twice.
 
     A unit that cannot be summarised at all still gets a row saying so. This screen is the one
     people leave open on a wall, and it must not be the thing that breaks when a single record is
     malformed.
     """
     out = []
-    idx = ctx_index()
+    idx = idx or ctx_index()
     for unit in idx["units"].values():
         if _norm(unit.get("status")) in ("dispatched", "cancelled", "closed"):
             continue

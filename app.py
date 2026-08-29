@@ -1452,6 +1452,80 @@ def _ahu_ncr_sweep(notify, today, threshold):
     return sent
 
 
+_AHU_STALL_REPEAT_DAYS = 7
+_AHU_STALL_DEFAULT_DAYS = 7
+
+
+def _ahu_stall_days(setting_value):
+    """The configured no-movement threshold in days, or the stated default.
+
+    A zero or a negative is refused rather than honoured: a threshold of 0 would report every unit
+    in the factory as stalled the moment it was signed, which is a way of turning the alert off by
+    making it worthless.
+    """
+    try:
+        n = int(str(setting_value).strip())
+    except (TypeError, ValueError):
+        return _AHU_STALL_DEFAULT_DAYS
+    return n if n > 0 else _AHU_STALL_DEFAULT_DAYS
+
+
+def _ahu_stall_sweep(notify, today, threshold):
+    """Tell somebody about units nobody has touched.
+
+    The only alert in this module that fires on an ABSENCE. Every other one needs an event to hang
+    off — a failed reading, a refused gate, a raised non-conformance. A unit that has simply stopped
+    produces no record at all, which is exactly why it goes unnoticed.
+
+    Dispatched, cancelled and closed units are excluded: "stopped" is only a problem while the unit
+    is still supposed to be moving.
+
+    Units that cannot be aged are counted into the audit log rather than alerted on individually,
+    the same way the NCR sweep handles a non-conformance with no readable raised date. An alert per
+    undateable record would punish whoever has to fix the data; a standing count says the same thing
+    once. Never-started units are not alerted at all — that is a planning question, and the capacity
+    chart already shows them.
+    """
+    try:
+        seen = json.loads(db.get_setting("_ahuStallChased") or "{}")
+    except Exception:
+        seen = {}
+    now = time.time()
+    # ctx_index() so the sweep reads each collection ONCE. Building a context per unit here is the
+    # quadratic shape that made the board take four seconds at 87 units.
+    idx = ahu.ctx_index()
+    rows = []
+    for unit in idx["units"].values():
+        if ahu._norm(unit.get("status")) in ("dispatched", "cancelled", "closed"):
+            continue
+        rows.append({"unit": unit, "steps": idx["steps"].get(unit.get("id")) or []})
+
+    out = ahu_capacity.stalled_units(rows, today, threshold)
+    sent = 0
+    for r in out["stalled"]:
+        key = str(r.get("unitId") or "")
+        last = seen.get(key)
+        if last and (now - float(last)) < _AHU_STALL_REPEAT_DAYS * 86400:
+            continue
+        ctx = ahu.load_ctx(key, idx)
+        if notify(ctx, ahu_notify.unit_stalled(ctx, r["days"], threshold, r.get("lastCode"))):
+            sent += 1
+        seen[key] = now
+
+    if out["undateable"]:
+        db.put_collection_item("audit", {
+            "actor": "System", "action": "AHU alert — no-movement sweep",
+            "target": "ahu_units",
+            "detail": ("%d unit(s) carry a signature with no readable instant and could not be "
+                       "aged. Nobody is being told if they have stopped."
+                       % len(out["undateable"])),
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+
+    seen = {k: v for k, v in seen.items() if v and (now - float(v)) < 90 * 86400}
+    db.set_setting("_ahuStallChased", json.dumps(seen))
+    return sent
+
+
 def _ahu_ncr_scheduler():
     """Hourly wake; runs the aging sweep once a day at 08:00 ICT."""
     while True:
@@ -1466,6 +1540,14 @@ def _ahu_ncr_scheduler():
                     continue
                 threshold = ahu_notify.aging_threshold(db.get_setting("ahu_ncr_aging_days"))
                 _ahu_ncr_sweep(Handler._ahu_notify_send, now_vn.date(), threshold)
+                # Same morning pass: one wake, both sweeps. Deliberately not its own thread and its
+                # own hour — two separate 08:00 alerts about the same factory is how people start
+                # filtering the mail.
+                try:
+                    _ahu_stall_sweep(Handler._ahu_notify_send, day,
+                                     _ahu_stall_days(db.get_setting("ahu_stall_days")))
+                except Exception:
+                    pass          # a failing stall sweep must not stop the NCR day being marked
                 db.set_setting("_ahuNcrSweptDay", day)
         except Exception:
             pass
@@ -6380,7 +6462,19 @@ class Handler(BaseHTTPRequestHandler):
         blocked = self._ahu_gate(u)
         if blocked:
             return blocked
-        return self._json(self._ahu_json_safe({"units": ahu.board()}))
+        # ONE index for both answers. board() and the no-movement pass read the same collections,
+        # and building the index twice would put back half the cost that made this screen slow.
+        idx = ahu.ctx_index()
+        threshold = _ahu_stall_days(db.get_setting("ahu_stall_days"))
+        rows = [{"unit": x, "steps": idx["steps"].get(x.get("id")) or []}
+                for x in idx["units"].values()
+                if ahu._norm(x.get("status")) not in ("dispatched", "cancelled", "closed")]
+        # On the screen as well as in the mail. An alert nobody can see the standing state of is one
+        # people learn to delete: the board should answer "what has stopped?" without a search.
+        return self._json(self._ahu_json_safe({
+            "units": ahu.board(idx),
+            "stalled": ahu_capacity.stalled_units(rows, self._vn_day(), threshold),
+        }))
 
     def _ahu_unit_ep(self, u, uid):
         """One unit's live picture: every step with its verdict, and why each gate is held."""

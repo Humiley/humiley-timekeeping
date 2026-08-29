@@ -254,6 +254,87 @@ def elapsed_between_signoffs(unit, steps):
     return out
 
 
+# ── Units that have stopped moving ──────────────────────────────────────────────────────────────
+# Every alert this module's callers raise fires on something that went WRONG: a step failed, a gate
+# was held, a non-conformance aged. None of them fires on work that simply STOPPED. A unit can sit
+# untouched for a fortnight and nobody is told, because nothing failed and no gate refused it — and
+# on a board, a unit stuck at 40% looks identical on Monday to how it looked last Monday.
+#
+# Silence is the commonest failure mode on a shop floor, and it is the one the screens hide.
+
+MOVING = "MOVING"            # signed something recently enough
+STALLED = "STALLED"          # nothing signed for longer than the threshold
+NEVER_STARTED = "NEVER_STARTED"   # route exists, nothing signed on it, ever
+UNDATEABLE = "UNDATEABLE"    # something is signed but no signature carries a readable instant
+
+
+def stall_state(steps, today, threshold_days):
+    """How long since anything on this unit was signed. {status, days, lastCode, lastAt}.
+
+    Three refusals, and they are the whole point of the function:
+
+    NEVER_STARTED is not "stalled for N days". A unit nobody has begun and a unit abandoned midway
+    are different problems with different owners — the first belongs to planning, the second to the
+    floor — and folding them together sends the wrong person to look. It carries no day count,
+    because there is no signature to count from and the order date is not a promise that work began.
+
+    UNDATEABLE is not zero days. A signature whose instant cannot be read means the clock cannot be
+    started, and reporting that as "0 days since last movement" would present the unit as the
+    healthiest on the board. Same rule as the ncr sweep's unaged count.
+
+    `days` is ELAPSED calendar days, weekends and holidays included. That is deliberate: a unit does
+    not care why nobody touched it, and a working-day calendar this module does not have would be
+    invented arithmetic. State it plainly wherever the number is shown.
+    """
+    signed = [s for s in (steps or []) if _ts(s)]
+    if not signed:
+        # Distinguish "nothing signed and no signature attempted" from "signed but undateable".
+        any_signature = any((s.get("signatures") or s.get("signedBy") or s.get("signedOn"))
+                            for s in (steps or []))
+        return {"status": UNDATEABLE if any_signature else NEVER_STARTED,
+                "days": None, "lastCode": None, "lastAt": None}
+    last = max(signed, key=lambda s: _ts(s))
+    at = _ts(last)
+    d = _d(today)
+    if d is None:
+        return {"status": UNDATEABLE, "days": None,
+                "lastCode": last.get("code"), "lastAt": at.isoformat()}
+    days = (d - at.date()).days
+    if days < 0:
+        # A signature stamped in the future cannot be aged. Refuse rather than report a negative.
+        return {"status": UNDATEABLE, "days": None,
+                "lastCode": last.get("code"), "lastAt": at.isoformat()}
+    return {"status": STALLED if days >= threshold_days else MOVING, "days": days,
+            "lastCode": last.get("code"), "lastAt": at.isoformat()}
+
+
+def stalled_units(rows, today, threshold_days):
+    """Every live unit that has stopped, longest-stopped first, plus what could not be judged.
+
+    `rows` is [{unit, steps}] for the units the caller considers live — dispatched and cancelled
+    ones are the caller's to exclude, because "live" is a status question and this module is pure.
+
+    Returns {threshold, stalled: [...], neverStarted: [...], undateable: [...]}. The last two are
+    SEPARATE lists rather than a silent omission: a unit nobody can age is exactly the unit most
+    worth looking at, and dropping it would make the alert quieter the worse the data got.
+    """
+    out = {"threshold": threshold_days, "stalled": [], "neverStarted": [], "undateable": []}
+    for r in rows or []:
+        unit = r.get("unit") or {}
+        st = stall_state(r.get("steps"), today, threshold_days)
+        row = {"unitId": unit.get("id"), "pin": unit.get("pin"), "tag": unit.get("tag"),
+               "orderId": unit.get("orderId"), "days": st["days"],
+               "lastCode": st["lastCode"], "lastAt": st["lastAt"]}
+        if st["status"] == STALLED:
+            out["stalled"].append(row)
+        elif st["status"] == NEVER_STARTED:
+            out["neverStarted"].append(row)
+        elif st["status"] == UNDATEABLE:
+            out["undateable"].append(row)
+    out["stalled"].sort(key=lambda r: -(r["days"] or 0))
+    return out
+
+
 def cycle_note():
     """Why elapsed is the honest measure today, and what would make touch time possible."""
     return ("A step records the instant it was SIGNED and never the instant it was STARTED, so what "

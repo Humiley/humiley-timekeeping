@@ -187,6 +187,36 @@ Also: `ahu_complaints` gives the eighth SOP KPI a source (a rate over **delivere
 EN ISO 12944 corrosivity on the unit; the spare parts list and name plate on the dossier as
 conditional entries.
 
+### Added after that: the alert that fires on an absence
+
+Every alert this module had fired on something that went **wrong** — a step failed, a gate was held,
+a non-conformance aged. None fired on work that simply **stopped**. A unit could sit untouched for a
+fortnight and nobody was told, because nothing failed and no gate refused it; on the board, a unit
+stuck at 40% looks identical this Monday to how it looked last Monday.
+
+That is the commonest way a delivery slips, and it was the one thing no screen reported.
+
+`ahu_capacity.stall_state` / `stalled_units` answer it, and they draw three distinctions the
+arithmetic would otherwise blur:
+
+* **never started is not "stalled for N days".** A unit nobody has begun belongs to planning; a unit
+  abandoned midway belongs to the floor. Folding them together sends the wrong person to look, and
+  there is no signature to count days from anyway.
+* **a signature nobody can date is not "0 days".** That would rank the unit with the worst record as
+  the healthiest on the board. It is reported separately and counted into the audit log — the same
+  rule the NCR sweep applies to a non-conformance with no readable raised date.
+* **a future-stamped signature is refused**, not reported as negative days.
+
+`ahu_stall_days` sets the threshold (default 7). A zero or negative is refused rather than honoured,
+because zero would flag every unit in the factory the moment it was signed — a way of turning the
+alert off by making it worthless. The number is **calendar** days, weekends included, and the message
+says so: a unit does not care why nobody touched it, and a working-day calendar the module does not
+have would be invented arithmetic.
+
+It runs in the existing 08:00 ICT pass rather than its own — two separate morning alerts about the
+same factory is how people start filtering the mail — and it is suppressed for 7 days per unit once
+sent. `/api/ahu/board` also returns the standing state, so the alert is not the only way to see it.
+
 ### Still open
 
 * Nobody has entered a real instrument or qualification yet. The screen is empty until they do, and
