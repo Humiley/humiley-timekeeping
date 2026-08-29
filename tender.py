@@ -36,6 +36,7 @@ the FTA column.
 that the achieved margin is always reported.
 """
 
+import fx_quote          # presenting a quotation in a currency other than the dong (pure)
 import estimating
 from estimating import vnd, MARKUP, MARGIN, apply_profit, achieved_margin
 # The cost-element vocabulary, taken from `estimating` rather than restated. A tender priced
@@ -1848,6 +1849,20 @@ def issue_check(tender, quote, sign_threshold=0):
     # A STALE signature is treated as no signature, which is the part that is easy to get wrong.
     # Somebody signs at ₫900m, then a line is re-priced to ₫1.4bn. The signature is still there,
     # with a real name and a real timestamp, now standing behind a number nobody approved.
+    # A CURRENCY NAMED WITH NO RATE.
+    #
+    # `document()` refuses outright rather than defaulting the rate to 1 — dong figures printed
+    # under a dollar sign is the worst outcome this feature has. But a refusal thrown while
+    # BUILDING the letter reads as a crash; this says the same thing in the one place a tender
+    # already lists what is missing, so the estimator sees it before pressing anything.
+    _cur = fx_quote.normalise(tender.get("presentCurrency"))
+    if _cur and _cur != "VND":
+        try:
+            fx_quote.check(_cur, tender.get("presentFx"))
+        except fx_quote.FxError:
+            missing.append("The %s exchange rate — this quotation is set to be presented in %s"
+                           % (_cur, _cur))
+
     sign = issue_signature_state(tender, quote, sign_threshold)
     if sign["required"] and not sign["signed"]:
         missing.append("An electronic signature to issue — this quotation is %s VND, at or above "
@@ -2018,8 +2033,20 @@ COLUMNS_SERVICES = [
 
 
 def columns(tender):
+    """The priced table's headings — with the currency the document is actually stated in.
+
+    The labels carry "(VND)" because that is what a Humiley quotation almost always says. When the
+    tender is presented in another currency the heading has to follow, or the workbook prints a
+    dollar figure under a column headed "Amount (VND)" — a contradiction on the customer's own copy,
+    and the sort a contract argument is made of. Renamed here, once, because all three surfaces read
+    these labels from this function.
+    """
     ctype = str(tender.get("costingType") or TRADING).strip().lower()
-    return COLUMNS_SERVICES if ctype == SERVICES else COLUMNS_DEFAULT
+    cols = COLUMNS_SERVICES if ctype == SERVICES else COLUMNS_DEFAULT
+    code = fx_quote.normalise(tender.get("presentCurrency"))
+    if not code or code == "VND":
+        return cols
+    return [dict(c, label=c["label"].replace("(VND)", "(%s)" % code)) for c in cols]
 
 
 def _prose_lines(v):
@@ -2062,7 +2089,7 @@ def document(tender, quote, company=None):
     a = assumptions(tender.get("assump"))
     company = company or {}
     terms = tender.get("terms") if isinstance(tender.get("terms"), list) and tender.get("terms") else None
-    return {
+    doc = {
         "quoteNo": tender.get("quoteNo") or tender.get("estNo") or "",
         "issueDate": tender.get("issueDate") or "",
         "validUntil": tender.get("validUntil") or "",
@@ -2170,4 +2197,57 @@ def document(tender, quote, company=None):
                                        + " (Excel / PDF)"),
         "discountPct": _num(tender.get("discountPct")),
         "vatPct": a["outputVatPct"],
+        # How every renderer should format the money it is handed. VND until the tender says
+        # otherwise; see _present() below.
+        "money": {"code": "VND", "symbol": "\u20ab", "places": 0},
     }
+    return _present(doc, tender)
+
+
+def _present(doc, tender):
+    """Restate the customer's copy in another currency, if the tender asks for one.
+
+    Applied HERE, at the single point every customer surface is built from, so the on-screen
+    letter, the PDF and the Excel workbook cannot end up in different currencies. Converting in
+    the renderers instead would mean three conversions and three chances for one of them to be
+    missed — and a quotation that states its total in USD and its lines in dong is worse than one
+    that was never converted, because it looks finished.
+
+    The dong figures stay on the document under `vnd`, so the record can always be traced back to
+    what the company actually priced.
+
+    A currency set with no rate RAISES. FxError is a ValueError, which the endpoints already turn
+    into a 400 carrying its message — so the estimator is told what is missing instead of being
+    handed a document with dong figures under a dollar sign.
+    """
+    code = fx_quote.normalise(tender.get("presentCurrency"))
+    if not code or code == "VND":
+        return doc
+    r = fx_quote.restate(
+        {"lines": doc["lines"], "subtotal": doc["totals"]["subtotal"],
+         "discount": doc["totals"]["discount"], "discountPct": doc["totals"]["discountPct"],
+         "net": doc["totals"]["net"], "vat": doc["totals"]["vat"], "gross": doc["totals"]["gross"]},
+        code, tender.get("presentFx"),
+        on=tender.get("presentFxOn"), source=tender.get("presentFxSource"))
+    doc["lines"] = r["lines"]
+    doc["totals"] = dict(r["totals"], lineCount=doc["totals"]["lineCount"])
+    doc["currency"] = r["currency"]
+    doc["money"] = {"code": r["currency"], "symbol": r["symbol"], "places": r["places"]}
+    doc["fx"] = {"rate": r["rate"], "on": r["rateOn"], "source": r["rateSource"],
+                 "note": r["note"], "vnd": r["vnd"]}
+    # The amount in words was written against a DONG total. It cannot be reused for a different
+    # currency, and a sentence saying two billion dong under a dollar total is the kind of
+    # contradiction a contract is argued over. Dropped rather than translated.
+    doc["amountInWords"] = ""
+    # The standard conditions open with "All prices are in Vietnamese Dong". Left alone, the letter
+    # would contradict its own table on the page below it. Only the DEFAULT wording is rewritten —
+    # a tender that stores its own terms has had somebody choose those words, and silently editing
+    # them is worse than leaving a sentence that can at least be seen and fixed.
+    if not (isinstance(tender.get("terms"), list) and tender.get("terms")):
+        doc["terms"] = [
+            dict(t, text=("All prices are in %s, converted at %s VND per 1 %s%s."
+                          % (code, format(int(r["rate"]), ","), code,
+                             (" as at " + r["rateOn"]) if r["rateOn"] else "")))
+            if t.get("label") == "Currency" else t
+            for t in doc["terms"]]
+    return doc

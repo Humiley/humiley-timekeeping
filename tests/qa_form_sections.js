@@ -107,6 +107,7 @@ const EXPECTED = [
   'quoteNo', 'issueDate', 'validUntil', 'validityDays', 'amountInWords', 'intro',
   'preparedBy', 'approvedBy',
   'bankName', 'bankAccount', 'bankSwift',
+  'presentCurrency', 'presentFx', 'presentFxOn', 'presentFxSource',
   'outcomeReason', 'decidedOn', 'quotedPrice', 'winningPrice',
   'estNo', 'status', 'dateIssued', 'note',
 ];
