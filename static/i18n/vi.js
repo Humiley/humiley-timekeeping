@@ -5576,4 +5576,21 @@ window._VI = {
   "Local content / origin": "Tỷ lệ nội địa / xuất xứ",
   "Client cancelled or deferred": "Khách hàng huỷ hoặc hoãn",
   "No bid submitted": "Không nộp thầu",
+
+  // ── Re-pricing a tender against the rate library ──────────────────────────────────────────────
+  "Re-price against the library…": "Cập nhật đơn giá theo thư viện…",
+  "Re-price against the library": "Cập nhật đơn giá theo thư viện",
+  "Re-price": "Cập nhật đơn giá",
+  "Re-priced": "Đã cập nhật đơn giá",
+  "Could not work out the re-price": "Không tính được phương án cập nhật đơn giá",
+  "Could not re-price": "Không thể cập nhật đơn giá",
+  "Every library rate on this tender is already up to date.":
+    "Mọi đơn giá lấy từ thư viện trên hồ sơ này đều đã là mới nhất.",
+  "rate(s) would change": "đơn giá sẽ thay đổi",
+  "hand-priced build-up(s) left alone": "đơn giá tự nhập được giữ nguyên",
+  "no longer in the library, left as priced": "không còn trong thư viện, giữ nguyên giá đã chào",
+  "margin now": "biên lợi nhuận hiện là",
+  "rate(s)": "đơn giá",
+  "This tender is a live project budget — it can be previewed but not re-priced.":
+    "Hồ sơ này đang là ngân sách của dự án đang chạy — chỉ xem thử, không cập nhật được.",
 };

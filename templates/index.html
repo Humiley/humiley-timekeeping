@@ -32042,7 +32042,54 @@ function _estDrift() {
   return '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--warning)">' +
     '<div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:4px">' + _t('Prices have moved since this was estimated') + '</div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' + _t('This estimate still prices at what it was priced at — that is deliberate. Re-pricing is a decision you make, not something that happens to a submitted tender.') + '</div>' +
-    '<ul style="font-size:12px;color:var(--text-dark);padding-left:18px;margin:0">' + rows + (d.length > 8 ? '<li>' + _t('and') + ' ' + (d.length - 8) + ' ' + _t('more') + '</li>' : '') + '</ul></div>';
+    '<ul style="font-size:12px;color:var(--text-dark);padding-left:18px;margin:0">' + rows + (d.length > 8 ? '<li>' + _t('and') + ' ' + (d.length - 8) + ' ' + _t('more') + '</li>' : '') + '</ul>' +
+    /* Until now this panel listed things that were wrong with the tender and offered no way to put
+       them right: an estimator with eleven drifted rates on a forty-line bill had to open each
+       build-up and retype. So in practice nobody did. */
+    (_estCanPrice() ? '<div style="margin-top:10px"><button class="btn btn-outline btn-sm" onclick="estReprice()">' +
+      _t('Re-price against the library…') + '</button></div>' : '') + '</div>';
+}
+
+/* RE-PRICE AGAINST TODAY'S RATE LIBRARY.
+
+   Two round trips on purpose. The first asks the server what WOULD change and what it does to the
+   margin; only if somebody accepts that does the second write it. The server computes both from the
+   same plan, so the preview cannot promise one number and the write produce another.
+
+   Hand-priced build-ups — a supplier quote, a negotiated figure — are never touched. They are
+   usually the most reliable numbers on a bill and the ones nobody could reconstruct. */
+async function estReprice() {
+  const e = _estById(_estCur); if (!e) return;
+  let p;
+  try { p = await tkApi('/api/est/reprice', { method: 'POST', body: { estId: _estCur } }); }
+  catch (x) { toast(_t('Could not work out the re-price') + ': ' + _errMsg(x), 'error', 6000); return; }
+  if (!p.counts.changed) {
+    toast(_t('Every library rate on this tender is already up to date.'), 'info', 5000);
+    return;
+  }
+  const pct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + _estNum(v, 1) + '%');
+  const top = p.changes.slice(0, 6).map(c =>
+    '· ' + (c.code || c.desc) + ': ' + _estMoney(c.was) + ' → ' + _estMoney(c.now) +
+    ' (' + pct(c.deltaPct) + ')').join('\n');
+  const ok = await tkConfirm({
+    title: _t('Re-price against the library'),
+    body: p.counts.changed + ' ' + _t('rate(s) would change') +
+      (p.counts.handPriced ? ' · ' + p.counts.handPriced + ' ' + _t('hand-priced build-up(s) left alone') : '') +
+      (p.counts.goneFromLibrary ? ' · ' + p.counts.goneFromLibrary + ' ' + _t('no longer in the library, left as priced') : '') +
+      '\n\n' + top + (p.changes.length > 6 ? '\n' + _t('and') + ' ' + (p.changes.length - 6) + ' ' + _t('more') : '') +
+      '\n\n' + _t('Direct cost') + ': ' + _estMoney(p.before.directCost) + ' → ' + _estMoney(p.after.directCost) +
+      '\n' + _t('Margin') + ': ' + pct(p.before.achievedMarginPct) + ' → ' + pct(p.after.achievedMarginPct) +
+      (p.frozen ? '\n\n' + _t('This tender is a live project budget — it can be previewed but not re-priced.') : ''),
+    confirmText: _t('Re-price')
+  });
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/est/reprice', { method: 'POST', body: { estId: _estCur, apply: true } });
+    tkCollInvalidate('est_resources');
+    toast(_t('Re-priced') + ' — ' + r.counts.changed + ' ' + _t('rate(s)') + ', ' +
+          _t('margin now') + ' ' + pct(r.after.achievedMarginPct), 'success', 6000);
+    await estReload();
+  } catch (x) { toast(_t('Could not re-price') + ': ' + _errMsg(x), 'error', 6000); }
 }
 
 function estTab(k) {

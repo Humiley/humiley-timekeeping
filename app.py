@@ -82,6 +82,7 @@ import labour_cost       # what each project cost in people, and on what basis (
 import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
 import est_copy         # duplicating a tender: the bill travels, the original's history does not (pure)
 import tender_outcome   # why a tender was won or lost, and the hit rate that follows (pure)
+import rate_reprice     # bringing a tender's copied rates up to today's library (pure)
 import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
 import quote_xlsx        # the quotation as the real Excel letterhead, filled (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
@@ -4482,6 +4483,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._supplier_link_ep(u, body), manager=True)
         if path == "/api/tender/revise":
             return self._guard(lambda u: self._tender_revise_ep(u, body), manager=True)
+        if path == "/api/est/reprice":
+            return self._guard(lambda u: self._est_reprice_ep(u, body), manager=True)
         if path == "/api/est/duplicate":
             return self._guard(lambda u: self._est_duplicate_ep(u, body), manager=True)
         if path == "/api/est/adopt":
@@ -9156,6 +9159,74 @@ class Handler(BaseHTTPRequestHandler):
             return float(raw.replace(",", "").replace(" ", "").strip() or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def _est_reprice_ep(self, u, body):
+        """Re-price a tender against today's rate library — preview, or apply.
+
+        `stale_rates` has always said WHICH rates moved. Acting on it meant opening each build-up
+        and retyping, so on a forty-line bill nobody did, and the drift panel became a list of
+        things wrong with a tender rather than something you can fix.
+
+        ONE computation serves both the preview and the write. `rate_reprice.plan` produces the new
+        rows; both the current and the planned set are priced through `estimating`, and applying
+        saves the very rows the preview was costed from. A preview produced by different code from
+        the change is a preview that can lie — and this one decides whether somebody re-prices a bid.
+        """
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank(self.EST_MIN):
+            return self._err("Manager access required — an estimate holds the company's cost and margin.", 403)
+        if "est" in self._apps_denied(u):
+            return self._err("Access restricted — Estimating is not enabled for your account.", 403)
+        est_id = str(body.get("estId") or "").strip()
+        e = self._est_get(est_id)
+        if not e:
+            return self._err("Estimate not found.", 404)
+        apply = bool(body.get("apply"))
+        # A live project is measured against these numbers. Re-pricing would move the baseline
+        # under a running job — the same rule the adopt endpoint enforces, for the same reason.
+        if apply and e.get("adoptedProjectId"):
+            return self._err("This tender is the budget of project %s. Re-pricing it would move the "
+                             "baseline under a running job — raise a revised tender instead."
+                             % e.get("adoptedProjectId"), 409)
+
+        items, res = self._est_rows(est_id)
+        markups = self._est_markups(e)
+        new_res, changes, counts = rate_reprice.plan(
+            res, db.list_collection("est_rates"), _now_iso()[:10])
+        try:
+            before = estimating.summarise(items, res, markups)
+            after = estimating.summarise(items, new_res, markups)
+        except (ValueError, AssertionError) as ex:
+            return self._err(str(ex), 400)
+
+        rows = rate_reprice.changed_rows(new_res, changes)
+        if apply and rows:
+            for row in rows:
+                db.put_collection_item("est_resources", row)
+            try:
+                db.put_collection_item("audit", {
+                    "ts": _now_iso(), "by": u.get("email"), "actor": u.get("name") or u.get("email"),
+                    "action": "Tender re-priced against the rate library",
+                    "target": e.get("estNo") or est_id,
+                    "detail": "%d rate(s) updated \u00b7 direct cost %s \u2192 %s \u00b7 margin %.1f%% \u2192 %.1f%%"
+                              % (len(rows), _money_vnd(before["directCost"]),
+                                 _money_vnd(after["directCost"]),
+                                 before["achievedMarginPct"], after["achievedMarginPct"])})
+            except Exception:
+                pass
+
+        return self._json({
+            "ok": True,
+            "applied": bool(apply and rows),
+            "changes": changes,
+            "counts": counts,
+            # Both sides, always — "the cost went up 4%" is only actionable next to what it does to
+            # the margin, which is the number somebody is defending.
+            "before": {"directCost": before["directCost"], "price": before["price"],
+                       "achievedMarginPct": before["achievedMarginPct"]},
+            "after": {"directCost": after["directCost"], "price": after["price"],
+                      "achievedMarginPct": after["achievedMarginPct"]},
+            "frozen": bool(e.get("adoptedProjectId")),
+        })
 
     def _est_duplicate_ep(self, u, body):
         """Copy a tender — the bill, the build-ups and the pricing — into a new draft.
