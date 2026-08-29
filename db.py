@@ -570,12 +570,27 @@ def init_db():
     # Deliberate operator recovery: TK_AUDIT_RESEAL=1 re-seals the whole chain under the CURRENT pepper
     # (for first-time keying or a key rotation, which otherwise makes verify report every link altered).
     if os.environ.get("TK_AUDIT_RESEAL") == "1":
+        # Every path through here gives the connection back exactly once, then takes a fresh one.
+        # `close()` no longer closes — it hands the connection back to this thread — so opening one
+        # without releasing it pins the thread above depth 0 permanently: no rollback of uncommitted
+        # work and no isolation_level restore, for the rest of that thread's life.
+        #
+        # The old shape released INSIDE the try (`conn.commit(); conn.close()`), so a commit that
+        # raised jumped to the except and took a second connection without ever giving the first one
+        # back. Rare — this branch needs an operator to set TK_AUDIT_RESEAL — but it is the main
+        # thread, which never calls end_thread_conn(), so nothing would ever have cleaned it up.
+        committed = True
         try:
-            conn.commit(); conn.close()
-            reseal_audit_chain()
-            conn = get_conn()
+            conn.commit()
         except Exception:
-            conn = get_conn()
+            committed = False      # a failed commit must not abort startup...
+        conn.close()               # ...and must not cost the release either
+        if committed:
+            try:
+                reseal_audit_chain()
+            except Exception:
+                pass               # nor must a failed reseal. Same rule as the backfill above.
+        conn = get_conn()
     # Schema version marker (PRAGMA user_version): lets ops/tests read the applied schema version and
     # gives future ordered migrations a value to branch on. The ALTERs above are idempotent, so this
     # is a marker today, not a gate.
