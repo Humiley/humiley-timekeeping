@@ -22,6 +22,7 @@ import base64
 import hmac
 import re
 import secrets
+import uuid
 import time
 import urllib.request
 import urllib.error
@@ -79,6 +80,7 @@ import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
+import est_copy         # duplicating a tender: the bill travels, the original's history does not (pure)
 import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
 import quote_xlsx        # the quotation as the real Excel letterhead, filled (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
@@ -4477,6 +4479,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._supplier_link_ep(u, body), manager=True)
         if path == "/api/tender/revise":
             return self._guard(lambda u: self._tender_revise_ep(u, body), manager=True)
+        if path == "/api/est/duplicate":
+            return self._guard(lambda u: self._est_duplicate_ep(u, body), manager=True)
         if path == "/api/est/adopt":
             return self._guard(lambda u: self._est_adopt_ep(u, body), manager=True)
         if path == "/api/push/subscribe":
@@ -9073,6 +9077,63 @@ class Handler(BaseHTTPRequestHandler):
         overrides = [r for r in db.list_collection("est_quote") if r.get("estId") == tid]
         quote = tender.quotation(e, master=master, rollup=rollup, overrides=overrides)
         return tender.budget_lines(e, quote, master=master, rollup=rollup)
+
+    def _est_duplicate_ep(self, u, body):
+        """Copy a tender — the bill, the build-ups and the pricing — into a new draft.
+
+        Almost no quotation is written from nothing: it is last year's job for the same customer, the
+        same scope at a different site, or the same tender after the client moved the goalposts. The
+        only way to produce one was to open the old tender on a second screen and retype the bill,
+        and a forty-line bill retyped is a forty-line bill with a typo in it.
+
+        The rules live in `est_copy` because two of them fail SILENTLY if they are written as a loop
+        here — a build-up left pointing at the original's bill line, and a copy that inherits
+        `adoptedProjectId` and is therefore frozen from the moment it exists. That module is tested
+        against both; this method is the plumbing around it.
+        """
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank(self.EST_MIN):
+            return self._err("Manager access required — an estimate holds the company's cost and margin.", 403)
+        if "est" in self._apps_denied(u):
+            return self._err("Access restricted — Estimating is not enabled for your account.", 403)
+        est_id = str(body.get("estId") or "").strip()
+        src = self._est_get(est_id)
+        if not src:
+            return self._err("Estimate not found.", 404)
+
+        # Read each child collection ONCE. `est_copy` does its own filtering by estId, so a read per
+        # collection is a read per collection — not one per row, which is how the AHU board came to
+        # take four seconds.
+        rows = {c: db.list_collection(c) for c in est_copy.CHILDREN}
+        new_id = "est-" + uuid.uuid4().hex[:8]
+        try:
+            head, made, report = est_copy.duplicate(
+                src, rows, new_id, lambda: uuid.uuid4().hex[:12],
+                title=body.get("title"), today=_now_iso()[:10])
+        except ValueError as ex:
+            return self._err(str(ex), 400)
+
+        # The head goes in FIRST. If a child write fails afterwards the copy exists and is visibly
+        # short, which somebody can see and fix; the reverse leaves orphaned rows belonging to a
+        # tender that never appears on any screen.
+        db.put_collection_item("est_projects", head)
+        written = 0
+        for coll in est_copy.CHILDREN:
+            for row in made.get(coll) or []:
+                db.put_collection_item(coll, row)
+                written += 1
+        try:
+            db.put_collection_item("audit", {
+                "ts": _now_iso(), "by": u.get("email"), "actor": u.get("name") or u.get("email"),
+                "action": "Tender duplicated", "target": head.get("title") or new_id,
+                "detail": "from %s (%s) \u2192 %s \u00b7 %d row(s), %d bill line(s)%s"
+                          % (src.get("estNo") or src.get("quoteNo") or est_id,
+                             src.get("title") or "", new_id, written, report["lines"],
+                             (" \u00b7 %d orphaned build-up(s) dropped" % report["orphansDropped"])
+                             if report["orphansDropped"] else "")})
+        except Exception:
+            pass
+        return self._json({"ok": True, "id": new_id, "title": head.get("title"),
+                           "rows": written, "report": report})
 
     def _est_adopt_ep(self, u, body):
         """Hand a won estimate to a project as its budget.

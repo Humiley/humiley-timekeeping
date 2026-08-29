@@ -418,6 +418,19 @@ body.exporting .table-wrap,body.exporting .table-wrap thead th{box-shadow:none !
 
 /* ── FORM ── */
 .form-group{margin-bottom:14px}
+/* A long form's collapsed sections (see _qaGroup). The summary has to read as a control, not as a
+   paragraph — a heading nobody realises is clickable is a form with fields that appear to be gone. */
+.qa-sec{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:var(--soft-bg)}
+.qa-sec-h{cursor:pointer;padding:10px 12px;font-size:12px;font-weight:800;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--navy);list-style:none;display:flex;align-items:center;gap:8px;
+  min-height:40px}
+.qa-sec-h::-webkit-details-marker{display:none}
+.qa-sec-h::before{content:'\25B8';font-size:11px;transition:transform .15s;display:inline-block}
+.qa-sec[open]>.qa-sec-h::before{transform:rotate(90deg)}
+.qa-sec-h:hover{color:var(--navy);text-decoration:underline}
+.qa-sec-b{padding:2px 12px 4px;background:var(--card);border-top:1px solid var(--border);
+  border-radius:0 0 8px 8px}
+.qa-sec-b .form-group:last-child{margin-bottom:12px}
 .form-label{font-size:12px;font-weight:700;color:var(--text-dark);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:.4px}
 .form-control{width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-dark);background:var(--card);outline:none;transition:border .15s}
 .form-control:focus{border-color:var(--navy)}
@@ -7508,6 +7521,7 @@ const _PENCIL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" str
 /* Shared inline-SVG icon registry — keeps every button/link/tab on one icon+text style.
    Use tkIcon('name') in JS-rendered markup; stroke=currentColor inherits the button colour. */
 const TK_ICON = {
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   play: '<polygon points="6 3 20 12 6 21 6 3"/>',
   qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="17" y1="17" x2="21" y2="17"/><line x1="17" y1="21" x2="17" y2="21.01"/><line x1="21" y1="21" x2="21" y2="21.01"/>',
@@ -17005,6 +17019,38 @@ const _QA_SPECS = {
 let _qaType = null, _qaEditId = null;
 function _qaMoneyFmt(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 function _qaMoney(el) { const p = el.selectionStart, n0 = el.value.length; el.value = _qaMoneyFmt(el.value); try { el.selectionStart = el.selectionEnd = Math.max(0, p + (el.value.length - n0)); } catch (e) {} }
+/* A LONG FORM, IN THE ORDER SOMEBODY ACTUALLY FILLS IT.
+
+   The Estimate form asks forty-one questions. Every one of them is a real question, and asking all
+   forty-one at once — one flat column, no grouping — makes creating a tender look like a
+   bureaucratic exercise before any pricing has happened. An estimator opening it at the start of a
+   bid knows five things: the job, the customer, how it will be costed, when it is due, and who is
+   pricing it. The rest arrives over the following days.
+
+   So: fields before the first `{ sec: ... }` marker render at the top, always visible. Everything
+   after one lives in a titled section that starts COLLAPSED. Nothing is hidden — a section says
+   what it holds and opens on one click — and nothing is optional that was not optional before.
+   This is layout, not validation.
+
+   `<details>` rather than a bespoke accordion: its content stays in the DOM while closed, so
+   getElementById at save time still finds every field, and the browser gives keyboard and
+   screen-reader behaviour for free. */
+function _qaGroup(fields, html) {
+  var out = '', open = false;
+  fields.forEach(function (f, i) {
+    if (f.sec) {
+      if (open) out += '</div></details>';
+      out += '<details class="qa-sec"' + (f.open ? ' open' : '') + '>' +
+        '<summary class="qa-sec-h">' + _crmEsc(_t(f.sec)) + '</summary>' +
+        '<div class="qa-sec-b">';
+      open = true;
+      return;
+    }
+    out += html[i];
+  });
+  return out + (open ? '</div></details>' : '');
+}
+
 function tkQuickAdd(type, id, seed) {
   _qaType = type; _qaEditId = id || null;
   const spec = _QA_SPECS[type]; if (!spec) return;
@@ -17070,7 +17116,8 @@ function tkQuickAdd(type, id, seed) {
   const _titleEl = document.getElementById('qa-modal-title');
   if (id) { _titleEl.innerHTML = '<span>Edit —</span> '; _titleEl.appendChild(document.createTextNode(spec.title)); }
   else { _titleEl.textContent = spec.title; }   // split so both prefix + title translate in VN
-  document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
+  document.getElementById('qa-fields').innerHTML = _qaGroup(spec.fields, spec.fields.map(f => {
+    if (f.sec) return '';        // a heading, not a field — _qaGroup turns it into the section
     const fid = 'qa-' + f.k; const val = _qaSeed ? (_qaSeed[f.k] == null ? '' : _qaSeed[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => { const _v = (o && typeof o === 'object') ? o.v : o, _l = (o && typeof o === 'object') ? o.l : o; return '<option value="' + _crmEsc(_v) + '"' + (String(val) === String(_v) ? ' selected' : '') + '>' + _crmEsc(_l) + '</option>'; }).join('') + '</select></div>'; }
@@ -17110,7 +17157,7 @@ function tkQuickAdd(type, id, seed) {
     }
     if (f.type === 'textarea') return '<div class="form-group"><label class="form-label">' + f.label + '</label><textarea class="form-control" id="' + fid + '" rows="3" style="resize:vertical">' + _crmEsc(val) + '</textarea></div>';
     return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"' + (f.type === 'url' ? ' placeholder="https://…"' : '') + '></div>';
-  }).join('');
+  }));
   openModal('quickAddModal');
   try { spec.fields.forEach(f => { if (f.type === 'files') _qaRenderFiles(f.k); }); } catch (e) {}   // show existing files on edit
   // Belt-and-suspenders: translate the modal now if in VN (don't depend on observer timing).
@@ -17302,6 +17349,7 @@ async function tkQuickAddSave() {
   if (_pending.length) { try { await Promise.all(_pending); } catch (e) { } }
   const data = {};
   spec.fields.forEach(f => {
+    if (f.sec) return;   // a section heading has no `k`; without this every save writes data[undefined]
     if (f.type === 'files') {   // multi-file: persist the list + mirror the first file into the legacy single-attachment fields
       const arr = (_qaFilesStore[f.k] || []).slice();
       const legacy = f.k.replace(/s$/, '');
@@ -17341,7 +17389,10 @@ async function tkQuickAddSave() {
     if (!data.qty || data.qty < 1) data.qty = 1;      // a blank Quantity box must not mean "we own none"
     if (!_qaEditId) _devSeedAssignments(data, _em);   // a NEW row records its holder properly
   }
-  if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
+  // The first field is the required one. Take the first REAL field: a spec that opened with a
+  // section marker would otherwise test data[undefined] and let a blank record through.
+  const _req = spec.fields.filter(f => !f.sec)[0];
+  if (_req && !data[_req.k]) { toast('Please fill in ' + _req.label, 'warn'); return; }
   const _prevSpUrl = (_qaType === 'pm_projects' && _qaEditId) ? (((_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {}).sharepointUrl || '') : '';
   // Several 15 MB files in one save can exceed what the server will accept. Catch it here, where we
   // can say something useful, rather than letting the request be rejected with nothing to act on.
@@ -20947,6 +20998,12 @@ function _tndFillCustomer(name) {
     .filter(k => (document.getElementById('qa-' + k) || {}).dataset &&
                  document.getElementById('qa-' + k).dataset.tndFilled === '1').length;
   if (filled) {
+    /* Those fields now live in a collapsed section, so a toast alone would announce a change
+       nobody can see. Open the section that was written to — filling a form silently and telling
+       somebody it happened is worse than not filling it. */
+    const _first = document.getElementById('qa-clientAddress') || document.getElementById('qa-clientTaxCode');
+    const _sec = _first && _first.closest && _first.closest('details.qa-sec');
+    if (_sec) _sec.open = true;
     toast(_t('Filled from the customer register') + ' — ' + _crmEsc(co.name || n) +
           ' (' + filled + ' ' + _t('field(s)') + ')', 'success', 4000);
   }
@@ -31794,7 +31851,10 @@ async function estRenderProjects() {
       '<td>' + _estBadge(_t(e.status || 'Draft'), hex) + '</td>' +
       '<td style="font-size:12px;color:var(--text-light)">' + _estEsc((e.dueDate || '').slice(0, 10) || '—') + '</td>' +
       '<td style="text-align:right;font-size:12px">' + (e.adoptedProjectId ? _estBadge(_t('Budget set'), '#00B060') : '') + '</td>' +
-      '<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">' + _hrEditDel('est_projects', e.id, 'est_projects') + '</td></tr>';
+      '<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">' +
+      (_estCanPrice() ? '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Duplicate this tender')) +
+        '" onclick="estDuplicate(\'' + e.id + '\')">' + tkIcon('copy') + '</button>' : '') +
+      _hrEditDel('est_projects', e.id, 'est_projects') + '</td></tr>';
   }).join('') : tkEmptyRow(7, _t('No estimates yet. Create one to start pricing a tender.'), { icon: 'inbox' });
 
   root.innerHTML = head +
@@ -32208,6 +32268,45 @@ function estTabHandover() {
     '<div class="card" style="padding:16px 18px">' + action + '</div>');
 }
 
+/* DUPLICATE A TENDER.
+
+   Almost no quotation is written from nothing: it is last year's job for the same customer, the
+   same scope at a different site, or the same tender after the client moved the goalposts. Until
+   now the only way to produce one was to open the old tender on a second screen and retype the
+   bill — and a forty-line bill retyped is a forty-line bill with a typo in it.
+
+   The copying itself is done SERVER-side (est_copy.py). Two of its rules fail silently if written
+   as a loop in the browser: a build-up left pointing at the original's bill line, and a copy that
+   inherits `adoptedProjectId` and so is frozen from the moment it exists. Doing it here would also
+   mean one write per row over the network, with a half-copied tender if the tab is closed. */
+async function estDuplicate(id) {
+  const e = _estById(id); if (!e) return;
+  const ok = await tkConfirm({
+    title: _t('Duplicate this tender'),
+    body: _t('This copies the bill, the build-ups, the mark-ups, the scope and the exclusions of') +
+      ' ' + (e.estNo ? e.estNo + ' — ' : '') + (e.title || '') + ' ' +
+      _t('into a new draft.') + '\n\n' +
+      _t('The new tender gets its own numbers and dates — the estimate number, the quotation number, the issue and validity dates and the approval are NOT carried over, because they belong to the document that was actually sent.'),
+    confirmText: _t('Duplicate')
+  });
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/est/duplicate', { method: 'POST', body: { estId: id } });
+    ['est_projects', 'est_items', 'est_resources', 'est_landed', 'est_local',
+     'est_bom', 'est_wbs', 'est_quote', 'est_risks'].forEach(c => tkCollInvalidate(c));
+    const rep = r.report || {};
+    /* Say what was dropped. A copy that quietly loses rows is one somebody prices a job from
+       without knowing the bill is short. */
+    const lost = rep.orphansDropped
+      ? ' · ' + rep.orphansDropped + ' ' + _t('build-up(s) attached to a deleted line were not copied')
+      : '';
+    toast(_t('Duplicated') + ' — ' + (rep.lines || 0) + ' ' + _t('bill line(s)') + ', ' +
+          (r.rows || 0) + ' ' + _t('row(s) in total') + lost, 'success', 7000);
+    await estReload();
+    estOpen(r.id);
+  } catch (x) { toast(_t('Could not duplicate this tender') + ': ' + _errMsg(x), 'error', 6000); }
+}
+
 async function estAdopt() {
   const e = _estById(_estCur); if (!e) return;
   const pid = (document.getElementById('est-adopt-proj') || {}).value;
@@ -32234,42 +32333,37 @@ async function estAdopt() {
 Object.assign(_QA_SPECS, {
   est_projects: {
     title: 'Estimate', coll: 'est_projects', reload: 'est_projects', fields: [
+      /* THE FIVE THINGS SOMEBODY KNOWS WHEN A BID STARTS.
+         This form asks forty-one questions and used to ask all of them in one flat column, which
+         made opening a tender look like paperwork before any pricing had happened. These five are
+         answerable on day one; everything below arrives over the following days, in the section it
+         belongs to. Layout only — nothing here became optional that was not optional before, and
+         `title` stays first because the save guard treats the first real field as required. */
       { k: 'title', label: 'Tender / job name' },
-      { k: 'estNo', label: 'Estimate No.' },
       { k: 'client', label: 'Client', type: 'combo', dyn: 'companies', onchange: '_tndFillCustomer(this.value)' },
-      { k: 'clientRef', label: 'Client tender reference' },
       { k: 'costingType', label: 'Costing model — decides which tabs this tender has', type: 'select', options: TND_TYPES.map(x => x.k) },
-      { k: 'contractType', label: 'Contract type', type: 'select', options: PM_CONTRACT_TYPE },
-      { k: 'status', label: 'Status', type: 'select', options: _EST_STATUS },
-      { k: 'quoteNo', label: 'Quotation No. (as the customer will cite it)' },
+      { k: 'dueDate', label: 'Submission due', type: 'date' },
+      { k: 'estimator', label: 'Estimator', type: 'select', options: 'employees' },
+
+      /* Picking the client above fills these from crm_companies — blanks only, never over a typed
+         value. They stay editable because a quotation occasionally goes to a different site
+         address or a different named person. */
+      { sec: 'The customer' },
       { k: 'clientAddress', label: 'Customer address' },
       { k: 'clientTaxCode', label: 'Customer tax code (MST)' },
       { k: 'clientAttn', label: 'Attn. — name and title' },
       { k: 'clientContact', label: 'Customer email / phone' },
+      { k: 'clientRef', label: 'Client tender reference' },
+
+      { sec: 'The job' },
       { k: 'projectName', label: 'Project name (on the quotation)' },
       { k: 'projectCode', label: 'Project code' },
       { k: 'site', label: 'Site' },
-      { k: 'issueDate', label: 'Issue date', type: 'date' },
-      { k: 'validUntil', label: 'Valid until', type: 'date' },
-      { k: 'amountInWords', label: 'Amount in words (stated on the quotation)' },
-      { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
-      { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' },
-      { k: 'bankName', label: 'Bank' },
-      { k: 'bankAccount', label: 'Bank account No.' },
-      { k: 'bankSwift', label: 'SWIFT' },
-      { k: 'intro', label: 'Opening paragraph (blank uses the standard wording)', type: 'textarea' },
-      { k: 'dateIssued', label: 'Priced on', type: 'date' },
-      { k: 'dueDate', label: 'Submission due', type: 'date' },
-      { k: 'validityDays', label: 'Price validity (days)', type: 'number' },
-      { k: 'estimator', label: 'Estimator', type: 'select', options: 'employees' },
-      /* The commercial decisions. They are on the estimate, not buried in a settings page,
-         because they are what somebody signing the tender is actually approving. */
-      { k: 'siteOverhead', label: 'Preliminaries / site overhead (₫ lump)', type: 'money' },
-      { k: 'overheadPct', label: 'Company overhead (%)', type: 'number' },
-      { k: 'riskPct', label: 'Risk / contingency (%)', type: 'number' },
-      { k: 'profitPct', label: 'Profit (%)', type: 'number' },
-      { k: 'profitBasis', label: 'Profit basis — mark-up ON cost, or margin OF price', type: 'select', options: ['markup', 'margin'] },
+      { k: 'contractType', label: 'Contract type', type: 'select', options: PM_CONTRACT_TYPE },
       { k: 'pmProjectId', label: 'Linked project (optional)', type: 'ref', src: 'pm_projects' },
+
+      /* The half of the proposal a dispute is argued over. Both print on the quotation. */
+      { sec: 'What the price covers' },
       { k: 'scope', label: 'Scope of supply — printed on the quotation, one item per line', type: 'textarea' },
       { k: 'exclusions', label: 'Excluded from this price — printed on the quotation, one item per line', type: 'textarea' },
       /* A quotation with no exclusions is either one that genuinely excludes nothing or one where
@@ -32279,6 +32373,37 @@ Object.assign(_QA_SPECS, {
       { k: 'exclusionsNone', label: 'If nothing is excluded, say so here', type: 'select',
         options: ['', 'Nothing is excluded from this price'] },
       { k: 'assumptions', label: 'Assumptions / qualifications', type: 'textarea' },
+
+      /* The commercial decisions. They are on the estimate, not buried in a settings page,
+         because they are what somebody signing the tender is actually approving. */
+      { sec: 'Mark-up, risk and profit' },
+      { k: 'siteOverhead', label: 'Preliminaries / site overhead (₫ lump)', type: 'money' },
+      { k: 'overheadPct', label: 'Company overhead (%)', type: 'number' },
+      { k: 'riskPct', label: 'Risk / contingency (%)', type: 'number' },
+      { k: 'profitPct', label: 'Profit (%)', type: 'number' },
+      { k: 'profitBasis', label: 'Profit basis — mark-up ON cost, or margin OF price', type: 'select', options: ['markup', 'margin'] },
+
+      { sec: 'The quotation document' },
+      { k: 'quoteNo', label: 'Quotation No. (as the customer will cite it)' },
+      { k: 'issueDate', label: 'Issue date', type: 'date' },
+      { k: 'validUntil', label: 'Valid until', type: 'date' },
+      { k: 'validityDays', label: 'Price validity (days)', type: 'number' },
+      { k: 'amountInWords', label: 'Amount in words (stated on the quotation)' },
+      { k: 'intro', label: 'Opening paragraph (blank uses the standard wording)', type: 'textarea' },
+      { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
+      { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' },
+
+      /* Blank uses the company record, which is the one place to change when the bank changes.
+         Fill these only for a project paid into a dedicated account. */
+      { sec: 'Where the customer pays — only to override the company account' },
+      { k: 'bankName', label: 'Bank' },
+      { k: 'bankAccount', label: 'Bank account No.' },
+      { k: 'bankSwift', label: 'SWIFT' },
+
+      { sec: 'Reference and status' },
+      { k: 'estNo', label: 'Estimate No.' },
+      { k: 'status', label: 'Status', type: 'select', options: _EST_STATUS },
+      { k: 'dateIssued', label: 'Priced on', type: 'date' },
       { k: 'note', label: 'Notes', type: 'textarea' }]
   },
   est_items: {

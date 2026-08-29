@@ -218,6 +218,14 @@ jobs:
       - name: The Ledger screen actually renders
         run: node tests/ledger_screen_renders.js
 
+      # Grouping a 39-field form into collapsed sections is layout, but THREE places walk
+      # spec.fields assuming every entry is a field: the renderer, the save loop (data[undefined]
+      # into every record) and the required-field gate. None of them would throw. This runs
+      # _qaGroup for real and reads the Estimate spec back out of the page, so a field lost in a
+      # reshuffle — one that silently stops being saved — fails here instead of in production.
+      - name: A sectioned form still collects every field
+        run: node tests/qa_form_sections.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the
