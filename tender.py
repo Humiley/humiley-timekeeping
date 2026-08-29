@@ -1701,7 +1701,49 @@ REQUIRED_TO_ISSUE = [
 ]
 
 
-def issue_check(tender, quote):
+#: The meaning stamped on the signature that authorises a quotation to leave the building.
+#: Matched exactly, so a signature applied for some other purpose can never be mistaken for this one.
+ISSUE_MEANING = "Issued to customer"
+
+
+def issue_signature(t):
+    """The signature authorising this quotation to be sent, if one has been given.
+
+    Read off the Part 11 signature list that /api/esign appends, rather than a boolean somebody
+    could set — a flag saying `signed: true` is not a signature, it is a claim that one exists.
+    """
+    for sig in (t.get("signatures") or []):
+        if str(sig.get("meaning") or "").strip().lower() == ISSUE_MEANING.lower():
+            return sig
+    return None
+
+
+def issue_signature_state(t, quote, threshold=0):
+    """Does this quotation need a signature to go out, and does the one it has still cover it?
+
+    A signature signs a PRICE. Sign at ₫900m, then re-price a line to ₫1.4bn, and the document that
+    leaves is not the document anybody approved — the signature is still on the record, still with
+    a real name and a real timestamp, and now covering a number nobody agreed to. The gross the
+    signature was given for is stamped by the server at signing time, and compared here. This is
+    the same shape as `amountInWordsFor`: two numbers that must still agree.
+    """
+    need = _num(threshold) > 0 and _num(quote.get("gross")) >= _num(threshold)
+    sig = issue_signature(t)
+    signed_for = sig.get("signedFor") if sig else None
+    stale = bool(sig) and signed_for is not None and _num(signed_for) != _num(quote.get("gross"))
+    return {
+        "required": need,
+        "signed": bool(sig),
+        "stale": stale,
+        "signer": (sig or {}).get("name") or "",
+        "signedAt": (sig or {}).get("ts") or "",
+        "signedFor": _num(signed_for) if signed_for is not None else None,
+        "threshold": _num(threshold),
+        "meaning": ISSUE_MEANING,
+    }
+
+
+def issue_check(tender, quote, sign_threshold=0):
     """What still has to be filled in, and what is merely worth a second look.
 
     Blocking and advisory are kept apart on purpose. A quotation with no validity date should not
@@ -1796,7 +1838,29 @@ def issue_check(tender, quote):
     if zero:
         warnings.append("Priced with no cost behind it: " + ", ".join(str(z) for z in zero[:4])
                         + ("" if len(zero) <= 4 else " and %d more" % (len(zero) - 4)))
-    return {"canIssue": not missing, "missing": missing, "warnings": warnings}
+    # A PRICE THIS SIZE LEAVES THE BUILDING ONLY WITH A NAME ON IT.
+    #
+    # Above the threshold the company sets, a quotation needs an electronic signature before it can
+    # be issued — the same Part 11 signature the portal already uses for a pay run or an approval,
+    # not a tick box. Below it, nothing changes: most quotations are routine and a control that
+    # fires on all of them is one people route around.
+    #
+    # A STALE signature is treated as no signature, which is the part that is easy to get wrong.
+    # Somebody signs at ₫900m, then a line is re-priced to ₫1.4bn. The signature is still there,
+    # with a real name and a real timestamp, now standing behind a number nobody approved.
+    sign = issue_signature_state(tender, quote, sign_threshold)
+    if sign["required"] and not sign["signed"]:
+        missing.append("An electronic signature to issue — this quotation is %s VND, at or above "
+                       "the %s VND the company requires one for"
+                       % (format(int(_num(quote.get("gross"))), ","),
+                          format(int(sign["threshold"]), ",")))
+    elif sign["required"] and sign["stale"]:
+        missing.append("A fresh electronic signature — the one on file was given for a total of "
+                       "%s VND and the total is now %s VND"
+                       % (format(int(sign["signedFor"]), ","),
+                          format(int(_num(quote.get("gross"))), ",")))
+
+    return {"canIssue": not missing, "missing": missing, "warnings": warnings, "signature": sign}
 
 
 # The conditions a quotation goes out under. These are DEFAULTS, not a fixed set: a tender that

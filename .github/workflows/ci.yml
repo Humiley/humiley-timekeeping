@@ -226,6 +226,13 @@ jobs:
       - name: A sectioned form still collects every field
         run: node tests/qa_form_sections.js
 
+      # The win/loss reason list exists twice — Python (which REFUSES an unknown reason) and the
+      # page (which offers the dropdown). One option the page offers and the server does not know
+      # turns every save from that dropdown into a 400 the estimator cannot act on, and neither
+      # side's own tests would see it.
+      - name: The reasons the form offers are the reasons the server accepts
+        run: node tests/tender_reasons_cross_language.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the

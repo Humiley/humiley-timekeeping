@@ -81,6 +81,7 @@ import access_revoke     # what access has to be cut when somebody leaves, and w
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
 import est_copy         # duplicating a tender: the bill travels, the original's history does not (pure)
+import tender_outcome   # why a tender was won or lost, and the hit rate that follows (pure)
 import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
 import quote_xlsx        # the quotation as the real Excel letterhead, filled (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
@@ -4269,6 +4270,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_doc_file_ep(u, urllib.parse.unquote(_did)))
         if path == "/api/myspace/summary":
             return self._guard(lambda u: self._myspace_summary(u))
+        if path == "/api/tender/outcomes":
+            return self._guard(lambda u: self._tender_outcomes_ep(u), manager=True)
         if path == "/api/est/summary":
             return self._guard(lambda u: self._est_summary_ep(u, qs))
         if path == "/api/tender/summary":
@@ -7062,6 +7065,24 @@ class Handler(BaseHTTPRequestHandler):
             sig["undoRev"] = int(item.get("_rev") or 0) + 1
         elif not set_status:
             sig["undoKind"] = "submission" if not (item.get("signatures") or []) else "amendment"
+        # WHAT PRICE THIS SIGNATURE STANDS BEHIND.
+        #
+        # A signature on a quotation signs a NUMBER, and the number can move afterwards: sign at
+        # ₫900m, re-price a line to ₫1.4bn, and the signature is still on the record with a real
+        # name and a real timestamp, now standing behind a total nobody approved. So the total is
+        # stamped onto the signature and `tender.issue_check` refuses a stale one.
+        #
+        # Computed from the SOURCE — the tender's own rows, re-priced here — never taken from the
+        # request body. A client-supplied figure would let the signer decide what they had signed
+        # for, which is the whole thing this is meant to prevent.
+        if coll == "est_projects" and \
+                str(meaning).strip().lower() == tender.ISSUE_MEANING.lower():
+            try:
+                sig["signedFor"] = float(self._tender_gross(item))
+            except Exception:
+                # Better an unstamped signature than a wrong stamp: issue_check treats a missing
+                # stamp as "cannot tell", not as "matches".
+                pass
         item.setdefault("signatures", []).append(sig)
         # The status BEFORE this signature. Everything below runs after `item["status"]` has been
         # overwritten, so any branch that needs to know what the record WAS — rather than what this
@@ -8679,6 +8700,9 @@ class Handler(BaseHTTPRequestHandler):
             if self._caller_level(u) == "admin" else ""
         out["canPublishDocs"] = self._is_hr_admin(u)
         out["otAnnualCap"] = str(int(_ot_annual_cap()))   # the ceiling everyone's OT is measured against
+        # Read back as the STRING it was stored as, so the field redraws with what is actually in
+        # force. A number here would be re-sent as a number on the next save and silently dropped.
+        out["tenderSignThreshold"] = str(db.get_setting("portal_tenderSignThreshold", "") or "")
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -8906,7 +8930,7 @@ class Handler(BaseHTTPRequestHandler):
                 out["budget"] = {"lines": [], "total": 0, "error": str(ex)}
             out["milestones"] = (e.get("milestones") if isinstance(e.get("milestones"), list)
                                  and e.get("milestones") else tender.DEFAULT_MILESTONES)
-            out["issue"] = tender.issue_check(e, quote)
+            out["issue"] = tender.issue_check(e, quote, self._tender_sign_threshold())
             # The customer's copy. Assembled server-side from the same figures as the totals above,
             # so the preview, the PDF and the P&L cannot be three different documents.
             out["document"] = tender.document(e, quote, self._company_identity())
@@ -8945,7 +8969,7 @@ class Handler(BaseHTTPRequestHandler):
             quote = tender.quotation(
                 e, master=master, rollup=rollup,
                 overrides=[r for r in db.list_collection("est_quote") if r.get("estId") == tid])
-            chk = tender.issue_check(e, quote)
+            chk = tender.issue_check(e, quote, self._tender_sign_threshold())
             if not chk["canIssue"]:
                 # A workbook is a document that leaves the building. The same gate the Send button
                 # applies has to apply here, or the gate is decoration.
@@ -9077,6 +9101,61 @@ class Handler(BaseHTTPRequestHandler):
         overrides = [r for r in db.list_collection("est_quote") if r.get("estId") == tid]
         quote = tender.quotation(e, master=master, rollup=rollup, overrides=overrides)
         return tender.budget_lines(e, quote, master=master, rollup=rollup)
+
+    def _tender_outcomes_ep(self, u):
+        """The hit rate, the loss reasons and the price gap — the record read back at the company.
+
+        Manager-and-above, the same gate as any other view of the tender book: a hit rate by value
+        is a statement of what the company wins and at what price.
+        """
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank(self.EST_MIN):
+            return self._err("Manager access required — the tender book holds the company's cost and margin.", 403)
+        if "est" in self._apps_denied(u):
+            return self._err("Access restricted — Estimating is not enabled for your account.", 403)
+        rows = db.list_collection("est_projects")
+        return self._json(tender_outcome.summary(rows))
+
+    def _tender_gross(self, e):
+        """What this tender's quotation totals, right now, priced from its own rows.
+
+        Used to stamp the total an issue signature stands behind. It re-runs the same engines the
+        summary endpoint does rather than reading a stored figure, because a stored total is only
+        as fresh as the last time somebody opened the screen — and the entire point of the stamp is
+        to catch a price that moved.
+        """
+        tid = e.get("id")
+        a = tender.assumptions(e.get("assump"))
+        ctype = str(e.get("costingType") or "").strip().lower()
+        master = rollup = None
+        if ctype == tender.EPC:
+            rollup = tender.bom_rollup(
+                [r for r in db.list_collection("est_bom") if r.get("estId") == tid],
+                a, e.get("bomConfig") or {})
+        elif ctype == tender.SERVICES:
+            rollup = tender.services_rollup(
+                [r for r in db.list_collection("est_wbs") if r.get("estId") == tid],
+                a, e.get("wbsConfig") or {})
+        else:
+            master = tender.cost_master(
+                [r for r in db.list_collection("est_landed") if r.get("estId") == tid],
+                [r for r in db.list_collection("est_local") if r.get("estId") == tid], a)
+        quote = tender.quotation(
+            e, master=master, rollup=rollup,
+            overrides=[r for r in db.list_collection("est_quote") if r.get("estId") == tid])
+        return quote.get("gross") or 0
+
+    def _tender_sign_threshold(self):
+        """Above this quotation total, issuing needs an electronic signature. 0 = off.
+
+        Read here rather than at each call site so the workbook export and the on-screen Issue
+        panel can never disagree about what the company requires — a gate applied on one path and
+        not the other is not a gate.
+        """
+        try:
+            raw = str(db.get_setting("portal_tenderSignThreshold", "") or "")
+            return float(raw.replace(",", "").replace(" ", "").strip() or 0)
+        except (TypeError, ValueError):
+            return 0.0
 
     def _est_duplicate_ep(self, u, body):
         """Copy a tender — the bill, the build-ups and the pricing — into a new draft.
@@ -9383,7 +9462,13 @@ class Handler(BaseHTTPRequestHandler):
                       # NAMED people rather than a level: "who may read a harassment report" is a
                       # decision about individuals, not a side effect of a role.
                       ("speakupHandlers", "portal_speakupHandlers"),
-                      ("otAnnualCap", "portal_otAnnualCap")):   # Art. 107(3) 300h election
+                      ("otAnnualCap", "portal_otAnnualCap"),   # Art. 107(3) 300h election
+                      # Above this quotation total (VND), issuing needs an electronic signature.
+                      # Blank or 0 turns it off — the control must not fire on every quotation by
+                      # default, or it becomes something people route around. Stored as a STRING:
+                      # the loop below drops any non-string outright, so a JSON number would save
+                      # nothing at all while the screen said "Saved".
+                      ("tenderSignThreshold", "portal_tenderSignThreshold")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -17142,6 +17227,20 @@ class Handler(BaseHTTPRequestHandler):
             _dup = self._invtrack_dup_error(body)
             if _dup:
                 return self._err(_dup, 400)
+        # A TENDER MAY NOT BE MARKED WON OR LOST WITHOUT SAYING WHY.
+        #
+        # Enforced HERE, on the generic collection route, and not only in the browser — this route
+        # takes a full record and overwrites the stored one, so a rule that lives only in the form
+        # is a rule anyone can skip by PATCHing. That is exactly how the HR decision checks came to
+        # be optional.
+        #
+        # "Lost" on its own cannot answer the one question worth asking — price, lead time, or
+        # terms? Each has a different fix and two of them are free.
+        if name == "est_projects":
+            _miss = tender_outcome.decision_check(body)
+            if _miss:
+                return self._err("Before a tender can be marked %s it needs: %s."
+                                 % (str(body.get("status") or "").lower(), "; ".join(_miss)), 400)
         # Travel/claim/payment write scope: a LEADER (manager) may only edit records they own or that
         # belong to a direct report — mirrors the read scope so a manager can't rewrite another team's
         # finance record via a guessed id. Management+ (Finance/Editor/Admin) edit any.
