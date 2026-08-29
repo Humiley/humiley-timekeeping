@@ -72,6 +72,7 @@ import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlem
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import gl               # the general ledger: what balances, what posts, what closes (pure)
 import sales_journal    # the entries a certified claim, a receipt and a credit note make (pure)
+import purchase_journal # the entries a PAID payment request makes — cash out (pure)
 import demo_data         # which rows came from the shipped sample, and which only look like it (pure)
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
@@ -15807,6 +15808,19 @@ class Handler(BaseHTTPRequestHandler):
             return None, str(ex)
         return batch, None
 
+    def _gl_purchase_accounts(self):
+        """The company's own account numbers for the buy side, over purchase_journal's documented
+        defaults. Some of those defaults are genuinely contestable for a contractor — subcontract
+        cost in 627 against 632, freight in 641 against capitalised into 156 — which is exactly why
+        they are a setting and not a decision baked into the code."""
+        try:
+            acc = db.get_setting("portal_purchaseAccounts") or {}
+            if isinstance(acc, str):
+                acc = json.loads(acc or "{}") or {}
+        except Exception:
+            acc = {}
+        return acc if isinstance(acc, dict) else {}
+
     def _gl_sales_accounts(self):
         """The company's own account numbers for the sell side, over sales_journal's documented
         defaults. Same shape and same reasoning as portal_payrollAccounts: a company on Circular 133
@@ -15846,6 +15860,20 @@ class Handler(BaseHTTPRequestHandler):
             "detail": lambda d: _money_vnd(float(d.get("amount") or 0)),
             "not_ready": "",
         },
+        gl.PURCHASE: {
+            "coll": "payments", "status": "paid",
+            # `paidOn` is stamped by the server when the disbursement is e-signed; the rest are
+            # fallbacks for records that predate it.
+            "dates": ("paidOn", "dueDate", "ts"),
+            "entries": lambda d, a: purchase_journal.entries(d, a),
+            "warnings": lambda d: purchase_journal.warnings(d),
+            "label": lambda d: "Payment %s" % (d.get("reqNo") or d.get("id") or ""),
+            "detail": lambda d: "%s · %s" % (_money_vnd(float(d.get("amount") or 0)),
+                                             d.get("category") or "-"),
+            "not_ready": "Only a PAID payment posts. An approved request is a commitment; the money "
+                         "has not left, and the disbursement is e-signed with a bank slip — that "
+                         "signature is what makes it a cash movement.",
+        },
         gl.CREDIT_NOTE: {
             "coll": "sales_credits", "status": "issued",
             "dates": ("issuedOn", "issuedAt", "ts"),
@@ -15883,8 +15911,13 @@ class Handler(BaseHTTPRequestHandler):
             return None, ("This document carries no date, so there is no month to file it in. A "
                           "posting dated by the day somebody pressed the button is money in a "
                           "period it never happened in.")
+        # Each side has its own map: a category means something different on the buy side from a
+        # revenue account on the sell side, and one shared dict would let an override for one leak
+        # into the other.
+        accounts = (self._gl_purchase_accounts() if source == gl.PURCHASE
+                    else self._gl_sales_accounts())
         try:
-            lines = spec["entries"](doc, self._gl_sales_accounts())
+            lines = spec["entries"](doc, accounts)
             batch = gl.batch(source, "%s:%s" % (source, doc_id), date, lines,
                              memo=spec["label"](doc), actor=actor)
         except gl.LedgerError as ex:
@@ -15938,6 +15971,7 @@ class Handler(BaseHTTPRequestHandler):
                 pending.append({"source": src, "sourceId": sid, "id": d.get("id"),
                                 "label": spec["label"](d), "detail": spec["detail"](d),
                                 "warnings": spec["warnings"](d)})
+
 
         return self._json({
             "ok": True,
@@ -16029,9 +16063,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err(err, 409)
         else:
             return self._err(
-                "Payroll, claims, receipts and credit notes post to the ledger. Purchases follow — "
-                "they need their own rules about what they debit, and guessing would be worse than "
-                "waiting.", 400)
+                "Payroll, claims, receipts, credit notes and paid payments post to the ledger. "
+                "'%s' is not one of them." % (source or "(none)"), 400)
         try:
             bid = db.gl_post(batch, posted_by=u.get("name") or u.get("email") or "",
                              posted_by_id=u.get("id") or "")

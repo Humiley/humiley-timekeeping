@@ -119,12 +119,14 @@ def test_a_draft_pay_run_does_not_post(api, tokens):
 
 
 def test_a_source_the_ledger_cannot_price_is_refused_and_says_so(api, tokens):
-    """Payroll, claims, receipts and credit notes post. A purchase does not yet — it needs its own
-    rules about what it debits, and the refusal says that rather than accepting it and guessing."""
+    """Payroll, claims, receipts, credit notes and paid payments post. A MANUAL journal does not —
+    it would let a caller write arbitrary entries, which is the one thing the "built from the source
+    document" rule exists to prevent. The refusal names the source rather than failing vaguely."""
     s, r = api("POST", "/api/gl/post", tokens["management"],
-               {"source": "purchase", "period": PERIOD})
+               {"source": "manual", "period": PERIOD})
     assert s == 400
-    assert "guessing would be worse" in r.get("error", "")
+    assert "manual" in r.get("error", ""), r
+    assert "not one of them" in r.get("error", "")
 
 
 def test_a_sell_side_document_must_name_WHICH_document(api, tokens):
