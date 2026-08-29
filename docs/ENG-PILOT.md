@@ -61,8 +61,18 @@ rule that was adjusted on day three. Write down complaints as they come; do not 
 
 ## Then read the log
 
-Everything the module refused is in **`eng_refusals`** — the rule, the record, who was stopped, and
-the message they saw. Sort by rule. Three outcomes, three different meanings:
+Open the commission and go to **Change & control → Refusal Log**. It is offered to the Design
+Manager, the Lead Engineer and the QA approver named on the commission, and to portal managers —
+the same people the server lets read it. Everyone else does not see the tab, and would get nothing
+if they called the API directly.
+
+The top table is the one to start on: **every rule that fired, most-fired first**, with how many
+times, how many different people, and how many different records. Those three columns are not the
+same number and the difference is the point — one engineer retrying one drawing four times is
+somebody stuck, not a rule firing across the office. **Export CSV** takes the fortnight away with
+you.
+
+Three outcomes, three different meanings:
 
 **Refused → record fixed → action completed.** The rule worked. Leave it alone.
 
@@ -96,8 +106,15 @@ because it is the only thing that can tell you whether the first eleven were rig
 
 ## What is deliberately not built yet
 
-**The reading screen for the log.** It should be designed against real rows, not imagined ones —
-what a design manager needs to see depends on what the log actually contains.
+**Any judgement about what a refusal MEANT.** The Refusal Log screen exists now — it had to, or
+the fortnight would have ended with the evidence collected and unreadable — but it deliberately
+stops at what the data supports: the rule, the record, the person, the message. It has no outcome
+column, because the three outcomes above are not something a refusal knows about itself. Which of
+the three happened comes from asking the person, and that is the half of the pilot no screen can
+do for you.
+
+The screen will want a second pass after the pilot, against real rows rather than imagined ones.
+Note what you wanted to see and could not.
 
 **The client comment view.** It is the only proposed feature that fails in the dangerous direction:
 every rule here fails safe, but an access boundary that leaks shows one client another client's
