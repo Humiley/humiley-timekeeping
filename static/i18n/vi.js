@@ -5593,4 +5593,14 @@ window._VI = {
   "rate(s)": "đơn giá",
   "This tender is a live project budget — it can be previewed but not re-priced.":
     "Hồ sơ này đang là ngân sách của dự án đang chạy — chỉ xem thử, không cập nhật được.",
+
+
+  // ── Quoting in a currency other than the dong ──────────────────────────────────────────────────
+  "Quote the customer in another currency": "Báo giá cho khách bằng ngoại tệ",
+  "Present the price in — blank means Vietnamese Dong": "Trình bày giá bằng — để trống là Đồng Việt Nam",
+  "VND per 1 unit of that currency (required if one is chosen)": "Số VND cho 1 đơn vị ngoại tệ đó (bắt buộc nếu đã chọn)",
+  "Rate taken on": "Tỷ giá lấy ngày",
+  "Rate source (e.g. Vietcombank selling)": "Nguồn tỷ giá (ví dụ: Vietcombank bán ra)",
+  "Priced in VND and presented in": "Định giá bằng VND và trình bày bằng",
+  "VND per 1": "VND cho 1",
 };

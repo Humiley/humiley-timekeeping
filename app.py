@@ -83,6 +83,7 @@ import estimating        # a tender price built from its parts: rates, mark-ups,
 import est_copy         # duplicating a tender: the bill travels, the original's history does not (pure)
 import tender_outcome   # why a tender was won or lost, and the hit rate that follows (pure)
 import rate_reprice     # bringing a tender's copied rates up to today's library (pure)
+import fx_quote         # presenting a quotation in a currency other than the dong (pure)
 import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
 import quote_xlsx        # the quotation as the real Excel letterhead, filled (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
@@ -9018,6 +9019,20 @@ class Handler(BaseHTTPRequestHandler):
             # How good this number is, and what it was a price FOR. Both computed for every
             # tender rather than only when set, so the screen can say "not stated" — which is
             # the answer that matters.
+            # WHAT QUOTING IN A FOREIGN CURRENCY COSTS YOU IF THE RATE MOVES.
+            #
+            # The price is fixed in the customer's currency; the COST stays in dong. So a dong that
+            # strengthens takes the difference straight out of the margin, and a contractor who has
+            # not seen that number has taken a position without deciding to. Computed only when a
+            # currency is actually set — an exposure table on a plain VND quotation is noise.
+            try:
+                _cur = fx_quote.normalise(e.get("presentCurrency"))
+                if _cur and _cur != "VND":
+                    out["fxExposure"] = fx_quote.exposure(quote, _cur, e.get("presentFx"))
+            except fx_quote.FxError:
+                # issue_check already reports a missing rate in the place people look. Failing the
+                # whole summary over an advisory panel would hide every other figure on the screen.
+                pass
             out["accuracy"] = tender.accuracy(e, quote)
             out["basis"] = tender.basis_of_estimate(e)
             out["accuracyClasses"] = [

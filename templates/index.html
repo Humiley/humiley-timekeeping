@@ -32521,6 +32521,20 @@ Object.assign(_QA_SPECS, {
          collection route too, not only here, because that route takes a whole record and
          overwrites the stored one. "Lost" on its own cannot answer the only question worth
          asking: price, lead time, or terms? Each has a different fix and two of them are free. */
+      /* QUOTING THE CUSTOMER IN THEIR OWN CURRENCY.
+         The tender is priced in dong and stays priced in dong — cost, margin and everything the
+         ledger sees. This only changes the customer's copy, and it changes ALL of it at once: the
+         letter, the PDF and the Excel workbook are three renderings of one document.
+         Leave the currency blank for an ordinary VND quotation. Naming a currency WITHOUT a rate
+         is refused rather than defaulted: a rate of 1 would print dong figures under a dollar
+         sign, which is the worst thing this feature could do. */
+      { sec: 'Quote the customer in another currency' },
+      { k: 'presentCurrency', label: 'Present the price in — blank means Vietnamese Dong',
+        type: 'select', options: ['', 'USD', 'EUR', 'JPY', 'GBP', 'SGD', 'AUD', 'CNY', 'KRW', 'THB', 'MYR', 'HKD'] },
+      { k: 'presentFx', label: 'VND per 1 unit of that currency (required if one is chosen)', type: 'money' },
+      { k: 'presentFxOn', label: 'Rate taken on', type: 'date' },
+      { k: 'presentFxSource', label: 'Rate source (e.g. Vietcombank selling)' },
+
       { sec: 'The outcome — needed to mark this Won or Lost' },
       { k: 'outcomeReason', label: 'Why we won or lost', type: 'select',
         options: [''].concat(_EST_REASONS) },
@@ -32749,6 +32763,32 @@ function _tndTabs() {
    An empty exclusions list still prints, saying so. "This quotation excludes nothing" is a real
    commercial statement, and a silent gap where exclusions should be reads as an oversight to the
    person on the other side of the table. */
+/* Money on the CUSTOMER'S copy, in whatever currency the document is stated in.
+
+   `doc.money` is set by the server (tender._present) — VND until the tender names another
+   currency. Both renderers below take their format from it rather than deciding for themselves,
+   because a letter whose total is in dollars and whose lines are in dong is worse than one that
+   was never converted: it looks finished.
+
+   The places matter and are not cosmetic. VND and JPY have no minor unit, so a price printed with
+   two decimals in either is not a price anybody can pay. */
+function _qtMoney(d, n) {
+  const m = (d && d.money) || { code: 'VND', places: 0 };
+  return _tndNum(n, m.places || 0);
+}
+
+/* The rate a converted quotation was priced at — printed on the document itself.
+   A converted price whose rate is not stated cannot be checked, cannot be reproduced, and cannot
+   be argued about six months later when the dong has moved. */
+function _qtFxNote(d) {
+  const f = d && d.fx;
+  if (!f) return '';
+  const code = (d.money || {}).code || '';
+  return _t('Priced in VND and presented in') + ' ' + code + ' ' + _t('at') + ' ' +
+    _tndNum(f.rate, 0) + ' ' + _t('VND per 1') + ' ' + code +
+    (f.on ? ' ' + _t('on') + ' ' + f.on : '') + (f.source ? ' (' + f.source + ')' : '') + '.';
+}
+
 function _qtScopeBlock(d) {
   const scope = (d && d.scope) || [];
   const excl = (d && d.exclusions) || [];
@@ -33729,7 +33769,7 @@ function _tndQuoteSheet(doc, q) {
   if (!doc) return '';
   const co = doc.company || {}, client = doc.client || {}, tot = doc.totals || {};
   const sig = (doc.signatures || [])[0] || {};
-  const money = n => _tndNum(n, 0);
+  const money = n => _qtMoney(doc, n);   // the document's currency, not an assumed VND
   const blankRows = Math.max(0, 8 - (doc.lines || []).length);
 
   const line = (l, i) => '<tr>' +
@@ -33821,6 +33861,13 @@ function _tndQuoteSheet(doc, q) {
 
     '<div style="font-size:12.5px;margin-top:10px"><span style="color:var(--text-light)">' + _t('Amount in words') + ': </span><i>' +
     _qtEd('amountInWords', doc.amountInWords) + '</i></div>' +
+
+    /* THE RATE THIS PRICE WAS CONVERTED AT, on the document itself.
+       A converted price whose rate is not stated cannot be checked, cannot be reproduced, and
+       cannot be argued about six months later when the dong has moved. Empty string for an
+       ordinary VND quotation, so nothing changes for the documents that are not converted. */
+    (doc.fx ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:4px">' +
+      _estEsc(_qtFxNote(doc)) + '</div>' : '') +
 
     /* WHAT THE PRICE COVERS, AND WHAT IT DOES NOT.
 
@@ -33977,7 +34024,7 @@ function tndQuotePDF() {
   const doc = new J('p', 'mm', 'a4');
   const co = d.company || {}, client = d.client || {}, tot = d.totals || {};
   const sig = (d.signatures || [])[0] || {};
-  const W = _qtColMm(), money = n => _pmPdfTxt(_tndNum(n, 0));
+  const W = _qtColMm(), money = n => _pmPdfTxt(_qtMoney(d, n));   // same currency as the letter
   let page = 1;
   // Pages are stamped ONCE, at the end, when the real total is known.
   const newPage = () => { doc.addPage(); page++; _qtBar(doc); return 24; };
