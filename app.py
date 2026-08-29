@@ -56,6 +56,7 @@ import ahu_competence   # was the person who signed it qualified to (pure)
 import ahu_labour       # where the labour goes: tact bands, touch time, critical path (pure)
 import qr               # ISO/IEC 18004 byte-mode QR symbols, for the traveller card (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
+import supplier         # the supplier as one identity, and the bank account it owns (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
 import sales_variation  # the phụ lục: what a variation does to a contract (pure)
@@ -4143,6 +4144,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._gl_entries_ep(u, qs), manager=True)
         if path == "/api/gl/statements":
             return self._guard(lambda u: self._gl_statements_ep(u, qs), manager=True)
+        if path == "/api/suppliers/review":
+            return self._guard(lambda u: self._supplier_review_ep(u, qs), manager=True)
+        if path == "/api/suppliers/bank-check":
+            return self._guard(lambda u: self._supplier_bank_check_ep(u, qs), manager=True)
         if path == "/api/procurement/sso":
             # Mint a signed SSO token for the current user to open the Procurement app seamlessly.
             return self._guard(lambda u: self._procurement_sso_token(u))
@@ -4468,6 +4473,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._gl_close_ep(u, body), manager=True)
         if path == "/api/gl/reopen":
             return self._guard(lambda u: self._gl_reopen_ep(u, body), manager=True)
+        if path == "/api/suppliers/link":
+            return self._guard(lambda u: self._supplier_link_ep(u, body), manager=True)
         if path == "/api/tender/revise":
             return self._guard(lambda u: self._tender_revise_ep(u, body), manager=True)
         if path == "/api/est/adopt":
@@ -9314,7 +9321,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -9428,6 +9435,10 @@ class Handler(BaseHTTPRequestHandler):
     # which is where a won estimate lands.
     EST_MIN = "manager"
     READ_MIN = {
+                # Who the company pays, and the bank account it pays them at. That second half is
+                # why this is not a general directory: a supplier record is the control that a
+                # changed bank account is measured against, so it sits with the money.
+                "suppliers": "management",
                 # The close register: who declared which month final, and the totals they asserted.
                 # Readable at management so the Ledger screen can show it; WRITES never come through
                 # the generic API (FROZEN), only through /api/gl/close and /api/gl/reopen, which are
@@ -10898,6 +10909,117 @@ class Handler(BaseHTTPRequestHandler):
     # The ONLY fields the backfill endpoint may touch. Everything else in the request is ignored — the
     # whole point of a narrow endpoint is that it can never become a second full-document PATCH.
     PAY_BANK_FIELDS = ("payeeCompany", "payeeMst", "bankName", "bankAcc", "bankHolder", "bankBranch")
+
+    def _supplier_review_ep(self, u, qs):
+        """The state of the supplier register: duplicates, what is unlinked, and what is spent.
+
+        Deliberately one endpoint. The three questions are the same question — "is this register
+        telling the truth about who we pay" — and answering them on three screens is how two of them
+        stop being looked at.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — the supplier "
+                             "register holds the bank accounts the company pays into.", 403)
+        suppliers = db.list_collection("suppliers")
+        payments = db.list_collection("payments")
+
+        plan = supplier.backfill_plan(payments, suppliers)
+        spend = supplier.spend_by_supplier(payments, suppliers)
+        dupes = supplier.duplicate_groups(suppliers)
+
+        # Every PAID payment whose bank account is not the one on file. This is the register's
+        # reason to exist, so it is computed here rather than left for somebody to notice per
+        # payment: a change nobody looked at is the case the control is for.
+        by_id = {x.get("id"): x for x in suppliers if x.get("id")}
+        changed = []
+        for p in payments:
+            sid = str(p.get("supplierId") or "").strip()
+            if not sid:
+                continue
+            v = supplier.bank_verdict(by_id.get(sid), p)
+            if v["status"] == supplier.CHANGED:
+                changed.append({"paymentId": p.get("id"), "reqNo": p.get("reqNo"),
+                                "payee": p.get("payeeCompany") or p.get("payee") or "",
+                                "status": p.get("status") or "", "amount": p.get("amount") or 0,
+                                "message": v["message"]})
+
+        return self._json({
+            "ok": True,
+            "suppliers": len(suppliers),
+            "duplicates": [{"reason": g["reason"], "key": g["key"],
+                            "suppliers": [{"id": a.get("id"), "name": a.get("name"),
+                                           "mst": a.get("mst")} for a in g["accounts"]]}
+                           for g in dupes],
+            "backfill": plan,
+            "spend": spend,
+            "bankChanges": changed,
+        })
+
+    def _supplier_bank_check_ep(self, u, qs):
+        """Is THIS payment going to the account this supplier is known by?
+
+        Read-only and advisory by design. The answer belongs to a person who can ring the supplier on
+        a number they already had — a system that refused the payment would be worked around, and
+        the fraud this exists to catch is defeated by a phone call, not by a 403.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Finance (Editor) access is required.", 403)
+        pid = str(qs.get("id", [""])[0] or "").strip()
+        pay = db.get_collection_item("payments", pid) if pid else None
+        if not pay:
+            return self._err("No such payment.", 404)
+        sid = str(pay.get("supplierId") or "").strip()
+        sup = db.get_collection_item("suppliers", sid) if sid else None
+        v = supplier.bank_verdict(sup, pay)
+        return self._json({"ok": True, "paymentId": pid, "supplierId": sid or "",
+                           "supplierName": (sup or {}).get("name") or "", "verdict": v})
+
+    def _supplier_link_ep(self, u, body):
+        """Link one payment to a supplier, or create the supplier the payment describes.
+
+        Never bulk, never automatic. `backfill_plan` says what COULD be linked and this applies one
+        decision at a time, because a wrong join here sends money to the wrong bank account — and a
+        confident wrong join is worse than the free text it replaces.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required.", 403)
+        pid = str(body.get("paymentId") or "").strip()
+        pay = db.get_collection_item("payments", pid) if pid else None
+        if not pay:
+            return self._err("No such payment.", 404)
+
+        sid = str(body.get("supplierId") or "").strip()
+        if sid:
+            sup = db.get_collection_item("suppliers", sid)
+            if not sup:
+                return self._err("No such supplier.", 404)
+        else:
+            seed = supplier.from_payment(pay)
+            if not seed["name"]:
+                return self._err("This payment names no payee, so there is no supplier to create "
+                                 "from it.", 400)
+            mst = seed.get("mst") or ""
+            if mst and not account.check_mst(mst)["ok"]:
+                return self._err("The tax code on this payment (%s) is not a usable MST, so the "
+                                 "supplier would be created with an identity nobody can verify. "
+                                 "Correct it first." % mst, 400)
+            sup = db.put_collection_item("suppliers", dict(
+                seed, createdFrom=pid, createdBy=u.get("name") or u.get("email"),
+                createdAt=self._utc_now()))
+            sid = sup.get("id")
+
+        # The link is stamped on the payment; the payment's own money fields are untouched.
+        db.put_collection_item("payments", dict(pay, supplierId=sid))
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Linked a payment to a supplier",
+            "target": pay.get("reqNo") or pid,
+            "detail": "%s -> %s (%s)" % (pay.get("payeeCompany") or pay.get("payee") or "",
+                                         sup.get("name") or "", sid),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "paymentId": pid, "supplierId": sid,
+                           "supplierName": sup.get("name") or "",
+                           "verdict": supplier.bank_verdict(sup, pay)})
 
     def _pay_bank_backfill(self, u, body):
         """Finance fills in the beneficiary bank details of an ALREADY-DECIDED payment.
