@@ -32711,6 +32711,7 @@ async function _tndLoad(id) {
 function _tndTabs() {
   const t = _tndType();
   if (t === 'trading') return [
+    { k: 'overview', label: 'Overview', fn: 'tndTabOverview' },
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
     { k: 'import', label: 'Import Costing', fn: 'tndTabImport' },
     { k: 'local', label: 'Local VN', fn: 'tndTabLocal' },
@@ -32723,6 +32724,7 @@ function _tndTabs() {
     { k: 'revs', label: 'Revisions', fn: 'tndTabRevs' }
   ];
   if (t === 'services') return [
+    { k: 'overview', label: 'Overview', fn: 'tndTabOverview' },
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
     { k: 'wbs', label: 'Work Packages', fn: 'tndTabWbs' },
     { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
@@ -32733,6 +32735,7 @@ function _tndTabs() {
     { k: 'revs', label: 'Revisions', fn: 'tndTabRevs' }
   ];
   if (t === 'epc') return [
+    { k: 'overview', label: 'Overview', fn: 'tndTabOverview' },
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
     { k: 'bom', label: 'Bill of Materials', fn: 'tndTabBom' },
@@ -33630,6 +33633,166 @@ function tndTabMargin() {
 }
 
 /* ── P&L ── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   THE TENDER ON ONE SCREEN
+
+   Everything a tender knows was already computed and every bit of it was on a tab: the price on
+   Quotation, the margin on P&L, the funding hole on Cash Flow, the exposure on Risk, the drift on
+   Cost Control. Nine tabs, and no page that answers "is this bid any good, and can it go out?"
+   Somebody deciding whether to send a quotation had to visit all of them and hold the answer in
+   their head.
+
+   Every number here is READ from the server summary — never recomputed. That is the rule the whole
+   module runs on: four surfaces once printed four different grand totals because each worked out
+   the discount for itself. A dashboard that derives its own figures is the fifth.
+
+   What it deliberately does NOT do is score the bid. There is no traffic light saying "good
+   tender". The judgement is the estimator's; this puts the facts that judgement needs in one
+   place, in the order somebody actually asks for them: what is the price, what do we make, can it
+   go out, and what could go wrong.
+   ══════════════════════════════════════════════════════════════════════════════ */
+function tndTabOverview() {
+  const S = _tndSum || {};
+  const q = S.quote, p = S.pnl, c = S.contribution;
+  if (!q) { _estSet('<div class="card" style="padding:18px;color:var(--text-light)">' +
+    _t('Nothing priced yet — add lines and this page fills in.') + '</div>'); return; }
+  const e = _estById(_estCur) || {};
+  const cur = (S.document && S.document.money) || null;
+  const M = v => (cur && cur.code !== 'VND') ? (cur.code + ' ' + _tndNum(v / (S.document.fx || {}).rate, cur.places)) : _tndMoney(v);
+
+  /* ── 1. the four numbers a bid is decided on ── */
+  const kpi = (lbl, val, hint, cls) =>
+    '<div class="kpi-card ' + (cls || 'c-navy') + '"><div class="kpi-label">' + _t(lbl) + '</div>' +
+    '<div class="kpi-value">' + val + '</div>' +
+    '<div class="kpi-delta neu">' + _estEsc(hint || '') + '</div></div>';
+  const margin = q.grossMarginPct;
+  const head = '<div class="kpi-grid" style="margin-bottom:16px">' +
+    kpi('Price to customer', _tndMoney(q.gross), _t('including VAT') + ' ' + _tndMoney(q.vat), 'c-navy') +
+    kpi('Direct cost', _tndMoney(q.cogs), q.lineCount + ' ' + _t('priced line(s)'), 'c-amber') +
+    kpi('Gross margin', margin == null ? '—' : _tndPct(margin),
+        _t('on the quoted price'), margin != null && margin < 10 ? 'c-rose' : 'c-emerald') +
+    /* The number that actually reaches the company. Gross margin flatters a job that overhead,
+       risk and tax then eat; this is what is left. */
+    kpi('Net profit after tax', p ? _tndMoney(p.netProfit) : '—',
+        p && p.netMarginPct != null ? _tndPct(p.netMarginPct) + ' ' + _t('of revenue') : '',
+        p && p.netProfit < 0 ? 'c-rose' : 'c-emerald') +
+    '</div>';
+
+  /* ── 2. can this go out? — the same issue_check the Send button and the workbook obey ── */
+  const iss = S.issue || {};
+  const miss = iss.missing || [], warn = iss.warnings || [];
+  const sig = iss.signature || {};
+  const gate = '<div class="card" style="margin-bottom:14px;border-left:3px solid ' +
+    (iss.canIssue ? 'var(--emerald)' : '#C00000') + '">' +
+    '<div style="font-weight:800;color:var(--navy);margin-bottom:6px">' +
+      (iss.canIssue ? '✓ ' + _t('This quotation can be issued') : _t('Not ready to issue')) + '</div>' +
+    (miss.length ? '<ul style="margin:0 0 8px;padding-left:18px;font-size:12.5px">' +
+      miss.map(m => '<li style="margin-bottom:2px">' + _estEsc(_t(m)) + '</li>').join('') + '</ul>' : '') +
+    (sig.required ? '<div style="font-size:12px;color:var(--text-light)">' +
+      (sig.signed && !sig.stale
+        ? _t('Signed by') + ' ' + _estEsc(sig.signer) + ' ' + _t('for') + ' ' + _tndMoney(sig.signedFor)
+        : (sig.stale ? _t('The signature on file was given for a different total — a fresh one is needed.')
+                     : _t('A signature is required to issue at this value.'))) + '</div>' : '') +
+    (warn.length ? '<div style="font-size:12px;color:var(--text-light);margin-top:6px">' +
+      warn.length + ' ' + _t('thing(s) worth a second look — see the tabs below.') + '</div>' : '') +
+    '</div>';
+
+  /* ── 3. where the money goes: cost → price, as the server built it ── */
+  const wf = (lbl, v, note) => '<tr><td style="font-weight:600">' + _t(lbl) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(v) + '</td>' +
+    '<td style="font-size:11.5px;color:var(--text-light)">' + _estEsc(_t(note || '')) + '</td></tr>';
+  const money = p ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div style="padding:12px 16px;font-weight:800;color:var(--navy)">' + _t('From cost to price') + '</div>' +
+    '<div class="table-wrap"><table style="min-width:420px"><tbody>' +
+    wf('Revenue (excl VAT)', p.revenue, 'What the lines add up to') +
+    wf('Cost of goods sold', p.goodsCost != null ? p.goodsCost : p.cogs, 'Landed cost of what is quoted') +
+    wf('Gross profit', p.grossProfit, 'Revenue less cost') +
+    wf('Operating expenses', p.opexTotal, 'The company overhead this job carries') +
+    wf('EBIT', p.ebit, 'Gross profit less opex') +
+    wf('Corporate income tax', p.cit, '') +
+    wf('Net profit after tax', p.netProfit, 'What the company keeps') +
+    '</tbody></table></div></div>' : '';
+
+  /* ── 4. WHICH LINES CARRY IT ──
+     A total cannot say that two lines of forty hold most of the margin. Those are the two a client
+     will negotiate, and the two whose cost estimate matters most. */
+  let lines = '';
+  if (c && c.rows && c.rows.length) {
+    const top = c.rows.slice(0, 6);
+    const lrow = r => '<tr>' +
+      '<td style="font-weight:600">' + _estEsc(r.itemCode || r.desc || '—') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.revenue) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px' +
+        (r.belowCost ? ';color:#C00000;font-weight:700' : '') + '">' + _tndMoney(r.profit) + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:var(--text-light)">' +
+        (r.marginPct == null ? '—' : _tndPct(r.marginPct)) + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:var(--text-light)">' +
+        (r.sharePct == null ? '—' : _tndPct(r.sharePct)) + '</td></tr>';
+    lines = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+      '<div style="padding:12px 16px"><span style="font-weight:800;color:var(--navy)">' +
+        _t('Where the profit is') + '</span>' +
+      (c.concentrated ? '<div style="font-size:12px;color:#B36B00;margin-top:4px">' +
+        c.carriers + ' ' + _t('of') + ' ' + c.carriersOf + ' ' + _t('line(s) carry') + ' ' +
+        _tndNum(c.topShare, 0) + '% ' + _t('of the profit — a client who negotiates those takes the margin with them.') +
+        '</div>' : '') +
+      (c.belowCostCount ? '<div style="font-size:12px;color:#C00000;margin-top:4px">' +
+        c.belowCostCount + ' ' + _t('line(s) are priced below what they cost to deliver.') + '</div>' : '') +
+      (!c.shareMeaningful ? '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' +
+        _t('This tender makes no profit overall, so a share of it would mean nothing — the shares are left blank.') +
+        '</div>' : '') + '</div>' +
+      '<div class="table-wrap"><table style="min-width:560px"><thead><tr>' +
+      ['Line', 'Revenue', 'Profit', 'Margin', 'Share of profit']
+        .map((h, i) => '<th style="text-align:' + (i ? 'right' : 'left') + '">' + _t(h) + '</th>').join('') +
+      '</tr></thead><tbody>' + top.map(lrow).join('') +
+      (c.rows.length > 6 ? '<tr><td colspan="5" style="font-size:11.5px;color:var(--text-light)">' +
+        _t('and') + ' ' + (c.rows.length - 6) + ' ' + _t('more') + '</td></tr>' : '') +
+      '</tbody></table></div></div>';
+  }
+
+  /* ── 5. what could go wrong ── */
+  const acc = S.accuracy || {}, cash = S.cash || {}, risk = S.risk || {}, drift = S.rateDrift || [];
+  const fx = S.fxExposure;
+  const fact = (lbl, val, note, hex) => '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' + _t(lbl) + '</div>' +
+    '<div style="font-weight:700;color:' + (hex || 'var(--navy)') + '">' + val + '</div>' +
+    (note ? '<div style="font-size:11.5px;color:var(--text-light)">' + _estEsc(note) + '</div>' : '') + '</div>';
+  const worst = fx && fx.rows && fx.rows.length ? fx.rows[0] : null;
+  const risks = '<div class="card" style="margin-bottom:14px">' +
+    '<div style="font-weight:800;color:var(--navy);margin-bottom:4px">' + _t('What could move this number') + '</div>' +
+    /* How good the price IS, stated before anything is read off it. */
+    fact('How firm is this estimate', acc.stated ? _estEsc(acc.label || '') : _t('Not stated'),
+         acc.stated && acc.low != null ? _t('could be') + ' ' + _tndMoney(acc.low) + ' – ' + _tndMoney(acc.high) : '',
+         acc.stated ? 'var(--navy)' : '#B36B00') +
+    /* `peakFunding`, not `peak` — the server reports it as a positive REQUIREMENT ("how much do we
+       need to fund this job"), which is how it will be asked for. Reading a key that does not
+       exist would have left this line silently absent rather than wrong, which is worse. */
+    (cash.peakFunding ? fact('Cash needed to fund this job', _tndMoney(cash.peakFunding),
+         _t('the deepest the company is out of pocket before the customer catches up') +
+         (cash.peakMonth ? ' · ' + _t('month') + ' ' + cash.peakMonth : '')) : '') +
+    (risk.expected ? fact('Risk exposure (expected value)', _tndMoney(risk.expected),
+         (risk.openCount || 0) + ' ' + _t('risk(s) still open')) : '') +
+    (drift.length ? fact('Library rates that have moved', drift.length + ' ' + _t('rate(s)'),
+         _t('re-price from Cost Control, or price it knowingly'), '#B36B00') : '') +
+    (worst ? fact('If the dong moves ' + _tndNum(worst.movePct, 0) + '%',
+         worst.marginPct == null ? '—' : _tndPct(worst.marginPct) + ' ' + _t('margin'),
+         _t('the price is fixed in') + ' ' + fx.currency + ', ' + _t('the cost is not')) : '') +
+    '</div>';
+
+  /* ── 6. the document itself ── */
+  const d = '<div class="card">' +
+    '<div style="font-weight:800;color:var(--navy);margin-bottom:6px">' + _t('The document') + '</div>' +
+    '<div style="font-size:12.5px;line-height:1.9">' +
+    '<div>' + _t('Quotation No.') + ': <b>' + _estEsc(e.quoteNo || '—') + '</b></div>' +
+    '<div>' + _t('Customer') + ': <b>' + _estEsc(e.client || '—') + '</b></div>' +
+    '<div>' + _t('Valid until') + ': <b>' + _estEsc((e.validUntil || '').slice(0, 10) || '—') + '</b></div>' +
+    '<div>' + _t('Status') + ': <b>' + _estEsc(_t(e.status || 'Draft')) + '</b></div>' +
+    (e.adoptedProjectId ? '<div style="color:var(--emerald)">' +
+      _t('Adopted as the budget of a live project — this tender is frozen.') + '</div>' : '') +
+    '</div></div>';
+
+  _estSet(head + gate + money + lines + risks + d);
+}
+
 function tndTabPnl() {
   const p = (_tndSum || {}).pnl, q = (_tndSum || {}).quote; if (!p) return;
   const row = (lbl, val, pct, note, strong, hex) => '<tr' + (strong ? ' style="background:var(--soft-bg)"' : '') + '>' +

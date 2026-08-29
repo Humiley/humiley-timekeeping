@@ -239,6 +239,13 @@ jobs:
       - name: The reasons the form offers are the reasons the server accepts
         run: node tests/tender_reasons_cross_language.js
 
+      # A dashboard reads a dozen server fields. One read under the wrong name is `undefined`,
+      # every guard skips it, and the panel renders FINE with a fact quietly missing — `cash.peak`
+      # did exactly that (the server calls it `peakFunding`). This drives the screen and asserts the
+      # key names against the Python that produces them.
+      - name: The tender Overview screen renders
+        run: node tests/tender_overview_renders.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the
