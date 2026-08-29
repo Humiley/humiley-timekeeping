@@ -94,6 +94,12 @@ jobs:
       - name: In/Out Log Date column
         run: node tests/inout_day_column.js
 
+      # The board RECEIVES a `stalled` block; this asserts it SHOWS it. A JSON field nobody renders
+      # makes nothing easier to monitor, which was the whole point of adding it — and a render that
+      # throws leaves an empty panel nobody reports, as the Stages & Gates tab did for weeks.
+      - name: The production board shows what has stopped
+        run: node tests/ahu_board_shows_stalled.js
+
       # A staff account opening ANY project met "Could not load this tab — check your connection",
       # on the Overview it lands on by default and on Schedule, because both listed the
       # manager-only pm_costs in `need` and pmTab treated a 403 as a fetch failure. Retrying a

@@ -34882,9 +34882,19 @@ async function ahuRenderBoard() {
   const sel = _AHU.stageFilter || 0;
   const shown = sel ? units.filter(u => (u.stage || 1) === sel) : units;
   const held = units.filter(u => (u.failed || []).length || u.openNcr > 0);
+  // What has STOPPED. The other three counters describe units that are moving or that something
+  // was done to; this one is the only figure on the screen that comes from an absence, and it is
+  // the one a delivery usually slips behind. `days` per unit so a row can say how long.
+  const stall = (data && data.stalled) || {};
+  const stalledDays = {};
+  (stall.stalled || []).forEach(s => { stalledDays[s.unitId] = s.days; });
+  const stalledN = (stall.stalled || []).length;
+
   const kpi = [
     ['In production', units.length, 'var(--navy)'],
     ['Held or failed', held.length, held.length ? '#DC2626' : 'var(--emerald)'],
+    ['No movement ' + (stall.threshold ? '(' + stall.threshold + 'd+)' : ''), stalledN,
+     stalledN ? '#DC2626' : 'var(--emerald)'],
     ['Average completion', Math.round(units.reduce((a, u) => a + (u.progress || 0), 0) / units.length) + '%', 'var(--emerald)'],
     ['Awaiting a signature', units.filter(u => (u.next || []).length).length, '#F59E0B']
   ];
@@ -34910,7 +34920,12 @@ async function ahuRenderBoard() {
       '<div style="font-size:11px;color:var(--text-light);margin-top:3px;font-variant-numeric:tabular-nums">' +
       (u.progress || 0) + '% · ' + (u.signed || 0) + '/' + (u.total || 0) + ' steps</div></td>' +
       '<td>' + nxt + (u.openNcr ? ' ' + _ahuBadge(u.openNcr + ' NCR', '#DC2626') : '') +
-      ((u.running || []).length ? ' ' + _ahuBadge('Running: ' + u.running.join(', '), '#F59E0B') : '') + '</td></tr>';
+      ((u.running || []).length ? ' ' + _ahuBadge('Running: ' + u.running.join(', '), '#F59E0B') : '') +
+      // On the ROW, not only in the counter: a total tells you something is wrong, a badge tells
+      // you which unit to go and look at.
+      (stalledDays[u.unitId] != null
+        ? ' ' + _ahuBadge('No movement ' + stalledDays[u.unitId] + 'd', '#DC2626') : '') +
+      '</td></tr>';
   }).join('');
 
   const stages = ((_AHU.process || {}).stages) || [];
