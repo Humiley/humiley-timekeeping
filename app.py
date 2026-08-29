@@ -84,6 +84,7 @@ import est_copy         # duplicating a tender: the bill travels, the original's
 import tender_outcome   # why a tender was won or lost, and the hit rate that follows (pure)
 import rate_reprice     # bringing a tender's copied rates up to today's library (pure)
 import fx_quote         # presenting a quotation in a currency other than the dong (pure)
+import tender_contribution   # which lines of a quotation carry the profit (pure)
 import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
 import quote_xlsx        # the quotation as the real Excel letterhead, filled (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
@@ -9033,6 +9034,11 @@ class Handler(BaseHTTPRequestHandler):
                 # issue_check already reports a missing rate in the place people look. Failing the
                 # whole summary over an advisory panel would hide every other figure on the screen.
                 pass
+            # WHICH LINES CARRY THE PROFIT. The P&L gives totals; a total cannot say that two
+            # lines of forty hold 80% of the margin — which is the pair a client will negotiate,
+            # and the pair whose cost estimate matters most. Read off the lines quotation() already
+            # produced, so this screen and the P&L cannot state different profits.
+            out["contribution"] = tender_contribution.contribution(quote)
             out["accuracy"] = tender.accuracy(e, quote)
             out["basis"] = tender.basis_of_estimate(e)
             out["accuracyClasses"] = [
