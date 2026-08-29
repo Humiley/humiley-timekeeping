@@ -1405,6 +1405,15 @@ window._VI = {
   'Design Commission': 'Hợp đồng thiết kế',
   'New Commission': 'Hợp đồng mới',
   'Commission': 'Hợp đồng',
+  // The six process groups the design workspace's tabs sit under. 'Planning' and 'Verification'
+  // are already in this file above and carry the right sense; these are the four that were not.
+  // Deliberately NOT the short forms — 'Issue' is already 'Vấn đề' (a problem, from the risk
+  // registers), which over a transmittal register would say the opposite of what is meant.
+  'Requirements': 'Yêu cầu',
+  'Production': 'Sản xuất',
+  'Issue & response': 'Phát hành & phản hồi',
+  'Change & control': 'Thay đổi & kiểm soát',
+  'Refusal Log': 'Nhật ký từ chối',
   'Stages & Gates': 'Giai đoạn & Cổng phê duyệt',
   'Design Inputs': 'Đầu vào thiết kế',
   'Design Input': 'Dữ liệu đầu vào thiết kế',

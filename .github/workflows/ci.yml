@@ -196,6 +196,13 @@ jobs:
       - name: The refusal log renders and counts honestly
         run: node tests/eng_refusal_view.js
 
+      # Twenty-one registers now sit under six process groups. A tab whose group key does not match
+      # any group is filtered out of the navigation and becomes unreachable while still existing —
+      # no error, just an absence, which reads as "there is nothing here". Every tab must land in a
+      # real group and every group must hold at least one tab.
+      - name: Every design register is reachable from the tab bar
+        run: node tests/eng_tab_groups.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops

@@ -29339,35 +29339,72 @@ function engGuideToggle(k) {
 }
 
 /* ============================ workspace shell ============================ */
+/* ── ENG TAB NAV ── (tests/eng_tab_groups.js extracts to the END marker; keep both) */
 const _ENG_TABS = [
-  { k: 'overview', label: 'Overview', fn: 'engRenderOverview', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_stages', 'eng_comments', 'eng_changes', 'eng_tq', 'eng_inputs'] },
-  { k: 'stages', label: 'Stages & Gates', fn: 'engRenderStages', need: ['eng_projects', 'eng_stages', 'eng_deliverables'] },
-  { k: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
-  { k: 'standards', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
-  { k: 'deviations', label: 'Deviations', fn: 'engRenderDeviations', need: ['eng_projects', 'eng_deviations', 'eng_standards', 'eng_deliverables'] },
-  { k: 'risks', label: 'Design Risk', fn: 'engRenderRisks', need: ['eng_projects', 'eng_risks', 'eng_deliverables'] },
-  { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
-  { k: 'effort', label: 'Effort & Earned Value', fn: 'engRenderEffort', need: ['eng_projects', 'eng_deliverables', 'eng_timelogs'] },
-  { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
-  { k: 'check', label: 'Register Check', fn: 'engRenderCheck', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
-  { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
-  { k: 'idc', label: 'IDC Matrix', fn: 'engRenderIdc', need: ['eng_projects', 'eng_idc', 'eng_deliverables'] },
-  { k: 'holds', label: 'Holds & Assumptions', fn: 'engRenderHolds', need: ['eng_projects', 'eng_holds', 'eng_deliverables'] },
-  { k: 'comments', label: 'Comments (CRS)', fn: 'engRenderComments', need: ['eng_projects', 'eng_comments', 'eng_deliverables'] },
-  { k: 'changes', label: 'Change Control', fn: 'engRenderChanges', need: ['eng_projects', 'eng_changes', 'eng_deliverables'] },
-  { k: 'queries', label: 'Technical Queries', fn: 'engRenderTq', need: ['eng_projects', 'eng_tq'] },
-  { k: 'transmittals', label: 'Transmittals', fn: 'engRenderTransmittals', need: ['eng_projects', 'eng_transmittals', 'eng_deliverables', 'eng_revisions'] },
-  { k: 'awaiting', label: 'Awaiting Response', fn: 'engRenderAwaiting', need: ['eng_projects', 'eng_transmittals', 'eng_chases'] },
-  { k: 'team', label: 'Team & Authority', fn: 'engRenderTeam', need: ['eng_projects', 'eng_team', 'eng_deliverables'] },
-  { k: 'documents', label: 'Document Structure', fn: 'engRenderDocuments', need: ['eng_projects'] },
+  { k: 'overview', g: 'plan', label: 'Overview', fn: 'engRenderOverview', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_stages', 'eng_comments', 'eng_changes', 'eng_tq', 'eng_inputs'] },
+  { k: 'stages', g: 'plan', label: 'Stages & Gates', fn: 'engRenderStages', need: ['eng_projects', 'eng_stages', 'eng_deliverables'] },
+  { k: 'inputs', g: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
+  { k: 'standards', g: 'inputs', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
+  { k: 'deviations', g: 'verify', label: 'Deviations', fn: 'engRenderDeviations', need: ['eng_projects', 'eng_deviations', 'eng_standards', 'eng_deliverables'] },
+  { k: 'risks', g: 'inputs', label: 'Design Risk', fn: 'engRenderRisks', need: ['eng_projects', 'eng_risks', 'eng_deliverables'] },
+  { k: 'mdr', g: 'produce', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
+  { k: 'effort', g: 'produce', label: 'Effort & Earned Value', fn: 'engRenderEffort', need: ['eng_projects', 'eng_deliverables', 'eng_timelogs'] },
+  { k: 'drawings', g: 'produce', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
+  { k: 'check', g: 'produce', label: 'Register Check', fn: 'engRenderCheck', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
+  { k: 'reviews', g: 'verify', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
+  { k: 'idc', g: 'verify', label: 'IDC Matrix', fn: 'engRenderIdc', need: ['eng_projects', 'eng_idc', 'eng_deliverables'] },
+  { k: 'holds', g: 'verify', label: 'Holds & Assumptions', fn: 'engRenderHolds', need: ['eng_projects', 'eng_holds', 'eng_deliverables'] },
+  { k: 'comments', g: 'issue', label: 'Comments (CRS)', fn: 'engRenderComments', need: ['eng_projects', 'eng_comments', 'eng_deliverables'] },
+  { k: 'changes', g: 'control', label: 'Change Control', fn: 'engRenderChanges', need: ['eng_projects', 'eng_changes', 'eng_deliverables'] },
+  { k: 'queries', g: 'issue', label: 'Technical Queries', fn: 'engRenderTq', need: ['eng_projects', 'eng_tq'] },
+  { k: 'transmittals', g: 'issue', label: 'Transmittals', fn: 'engRenderTransmittals', need: ['eng_projects', 'eng_transmittals', 'eng_deliverables', 'eng_revisions'] },
+  { k: 'awaiting', g: 'issue', label: 'Awaiting Response', fn: 'engRenderAwaiting', need: ['eng_projects', 'eng_transmittals', 'eng_chases'] },
+  { k: 'team', g: 'plan', label: 'Team & Authority', fn: 'engRenderTeam', need: ['eng_projects', 'eng_team', 'eng_deliverables'] },
+  { k: 'documents', g: 'plan', label: 'Document Structure', fn: 'engRenderDocuments', need: ['eng_projects'] },
   /* Restricted. The log names a colleague and repeats what they were told when they were stopped,
      so it is for the people who run the commission — the Design Manager, the Lead Engineer, the QA
      approver — and for portal managers. The server scopes the read exactly the same way; this
      predicate only keeps the tab from appearing to somebody who would get an empty register and
      read it as "nothing ever happened here". */
-  { k: 'refusals', label: 'Refusal Log', fn: 'engRenderRefusals', need: ['eng_projects', 'eng_refusals'], when: p => _engIsLead(p) }
+  { k: 'refusals', g: 'control', label: 'Refusal Log', fn: 'engRenderRefusals', need: ['eng_projects', 'eng_refusals'], when: p => _engIsLead(p) }
+];
+/* Twenty-one registers reached through twenty-one flat buttons is not a design process, it is a
+   pile. Wrapped to three rows on a laptop and five on a phone, it gave a design manager no way to
+   see what the module covers, and no way to guess where anything lives.
+
+   The groups are the process, in the order it runs, keyed to the ISO 9001 clause each one answers.
+   That is the whole point: the navigation should teach what stage of design control you are in,
+   not just get you to a table. */
+/* The labels are also translation keys — _VI is one shared dictionary and the DOM walker matches on
+   the whole string, so a short generic word takes whatever meaning some other screen gave it. The
+   obvious pill label here was "Issue", and 'Issue' is already in the dictionary as 'Vấn đề' — a
+   problem, from the risk registers. The Vietnamese tab bar would have read "Problem" over the
+   transmittals. Each label below is a phrase that means one thing across the whole portal. */
+const _ENG_TAB_GROUPS = [
+  { k: 'plan', label: 'Planning', tip: 'ISO 9001 §8.3.2 — what stages this commission has, who decides them, and how documents are named' },
+  { k: 'inputs', label: 'Requirements', tip: 'ISO 9001 §8.3.3 — what the design is measured against: the client\'s requirements, the codes in force, and the consequences of failure' },
+  { k: 'produce', label: 'Production', tip: 'ISO 9001 §8.3.5 — the documents themselves, their revisions, and the progress they have earned' },
+  { k: 'verify', label: 'Verification', tip: 'ISO 9001 §8.3.4 — reviews, the independent and interdisciplinary check, and everything still unresolved' },
+  { k: 'issue', label: 'Issue & response', tip: 'What leaves the office, and what has to come back before the next gate' },
+  { k: 'control', label: 'Change & control', tip: 'ISO 9001 §8.3.6 — changes after issue, and the record of what the rules stopped' }
 ];
 function _engTabsFor(p) { return _ENG_TABS.filter(t => !t.when || t.when(p)); }
+/* A tab whose group key does not match any group would vanish from the navigation entirely, and
+   nothing would say so — the register would simply be unreachable while still existing, which is
+   the failure mode that hid a blank Stages & Gates tab for weeks. tests/eng_tab_groups.js fails the
+   build on one; this puts any straggler in the LAST group so production never silently loses a
+   register while somebody fixes the key. */
+function _engGroupOf(t) {
+  const g = t && t.g;
+  return _ENG_TAB_GROUPS.some(x => x.k === g) ? g : _ENG_TAB_GROUPS[_ENG_TAB_GROUPS.length - 1].k;
+}
+function _engGroupTabs(p, gk) { return _engTabsFor(p).filter(t => _engGroupOf(t) === gk); }
+/* Derived from the open tab, never stored. Two sources of truth for "which group am I in" is how a
+   deep link lands on a tab while the bar highlights a different group. */
+function _engActiveGroup(p) {
+  const t = _engTabsFor(p).find(x => x.k === _engTabK);
+  return t ? _engGroupOf(t) : _ENG_TAB_GROUPS[0].k;
+}
 function engOpenProject(id) { _engCurrentProject = id; try { sessionStorage.setItem('eng_proj', id); } catch (e) { } _engTabK = 'overview'; showView('eng-project', null, 'Design Workspace'); }
 function engGoto(id, tabK) { _engCurrentProject = id; try { sessionStorage.setItem('eng_proj', id); } catch (e) { } _engTabK = _ENG_TABS.some(t => t.k === tabK) ? tabK : 'overview'; showView('eng-project', null, 'Design Workspace'); }
 async function engRenderWorkspace() {
@@ -29391,12 +29428,40 @@ async function engRenderWorkspace() {
     '<button class="btn btn-ghost btn-sm" onclick="engStatusPDF(\'' + p.id + '\')" style="font-size:11px" title="Design status report">' + tkIcon('download', 12) + ' Status</button>' +
     _engSpBtn(p) +
     (_engCanEdit(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'eng_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
-    '<div id="eng-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
-    _engTabsFor(p).map(t => '<button class="tab" data-k="' + t.k + '" onclick="engTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _engTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _engTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
+    _engTabBar(p) + '</div>';
   root.innerHTML = hdr + '<div id="eng-tab-body"></div>';
   engTab(_engTabK);
   try { document.querySelector('#eng-tabbar .tab[data-k="' + _engTabK + '"]')?.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) { }
 }
+/* Two rows: the process on top, that stage's registers underneath. At most six pills and five tabs
+   are on screen at once instead of twenty-one wrapping, and the top row is the same six words on
+   every commission, so people learn where things live instead of scanning. */
+function _engGroupRow(p) {
+  const active = _engActiveGroup(p);
+  return _ENG_TAB_GROUPS.filter(g => _engGroupTabs(p, g.k).length).map(g => {
+    const on = g.k === active;
+    return '<button class="eng-grp" data-g="' + g.k + '" title="' + _tkEscA(g.tip) + '" onclick="engTabGroup(\'' + g.k + '\')" ' +
+      'style="border:1px solid ' + (on ? 'var(--navy)' : 'var(--border)') + ';background:' + (on ? 'var(--navy)' : 'transparent') + ';color:' + (on ? '#fff' : 'var(--text-light)') +
+      ';font-size:11.5px;font-weight:700;letter-spacing:.2px;padding:5px 13px;border-radius:20px;cursor:pointer">' + g.label + '</button>';
+  }).join('');
+}
+function _engTabRow(p) {
+  return _engGroupTabs(p, _engActiveGroup(p)).map(t =>
+    '<button class="tab" data-k="' + t.k + '" onclick="engTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _engTabK ? 'var(--emerald)' : 'transparent') +
+    ';color:' + (t.k === _engTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('');
+}
+function _engTabBar(p) {
+  return '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
+    '<div id="eng-grpbar" style="display:flex;gap:5px;flex-wrap:wrap">' + _engGroupRow(p) + '</div>' +
+    '<div id="eng-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">' + _engTabRow(p) + '</div></div>';
+}
+/* Opening a group opens its first register. A group pill that selected a heading and left the body
+   showing the previous group's table would be a navigation that lies about where you are. */
+function engTabGroup(gk) {
+  const first = _engGroupTabs(_engProj(), gk)[0];
+  if (first) engTab(first.k);
+}
+/* ── END ENG TAB NAV ── */
 function _engSpBtn(p) {
   const base = (typeof _pmSpBase === 'function') ? _pmSpBase(p) : (p && p.sharepointUrl);
   if (!base) return '';
@@ -29410,7 +29475,13 @@ async function engTab(k) {
   // happened here" — the most misleading thing this particular screen could say.
   if (t.when && !t.when(_engProj())) { t = _ENG_TABS[0]; k = t.k; }
   _engTabK = k;
-  document.querySelectorAll('#eng-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
+  // Both rows are redrawn, not just re-highlighted. A tab can be opened from outside its group —
+  // the Overview's "Needs attention" links jump straight to a register, and engGoto deep-links from
+  // the portfolio — and repainting only the tab row would leave the process pill pointing at the
+  // group you came from. Both rows derive from _engTabK, so they cannot disagree.
+  const _p = _engProj();
+  const _gb = document.getElementById('eng-grpbar'); if (_gb) _gb.innerHTML = _engGroupRow(_p);
+  const _tb = document.getElementById('eng-tabbar'); if (_tb) _tb.innerHTML = _engTabRow(_p);
   const body = document.getElementById('eng-tab-body');
   const missing = (t.need || []).filter(c => !Array.isArray(_HR[c]));
   if (missing.length && body) body.innerHTML = tkSkeleton();
