@@ -50,6 +50,21 @@ FIELDS = (
     {"key": "siCode", "label": "Social insurance unit code", "labelVn": "Mã đơn vị BHXH",
      "why": "The employer's code with the social insurance agency. Appears on insurance filings; "
             "not part of the contract itself."},
+    # WHERE CUSTOMERS PAY US. Previously typed onto every quotation, which meant three retyped
+    # fields per quote and no single place to change when the bank changed — so a quotation could
+    # go out with last year's account on it and nothing would notice.
+    {"key": "bankName", "label": "Bank", "labelVn": "Ngân hàng",
+     "why": "The bank a customer transfers to. Printed on every quotation and invoice; a wrong or "
+            "stale one delays payment and looks careless on a document a customer files."},
+    {"key": "bankAccount", "label": "Account number", "labelVn": "Số tài khoản",
+     "why": "The company's own receiving account. One place to hold it, so a quotation cannot "
+            "carry a copy that was correct when somebody last typed it."},
+    {"key": "bankSwift", "label": "SWIFT / BIC", "labelVn": "Mã SWIFT",
+     "why": "Needed for an inbound international transfer. Blank is fine for a domestic-only "
+            "company — it simply does not print."},
+    {"key": "bankBeneficiary", "label": "Beneficiary name", "labelVn": "Tên thụ hưởng",
+     "why": "Only when the account is not held in the company's own legal name. Blank means the "
+            "legal name is used, which is the normal case."},
 )
 
 FIELD_KEYS = tuple(f["key"] for f in FIELDS)

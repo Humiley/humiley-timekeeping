@@ -223,7 +223,11 @@ def test_the_rollup_is_ordered_the_way_the_plant_is_built_not_alphabetically():
 
 def _trading_tender(**kw):
     d = {"id": "T1", "costingType": t.TRADING, "quoteNo": "QT-2026-001", "client": "ABC Co",
-         "clientTaxCode": "0123456789", "issueDate": "2026-08-20", "validUntil": "2026-09-19"}
+         "clientTaxCode": "0123456789", "issueDate": "2026-08-20", "validUntil": "2026-09-19",
+         # A quotation cannot be issued without saying what the price excludes — either a list, or
+         # a deliberate "nothing". This fixture stands for a COMPLETE tender, so it says one.
+         # See tests/test_tender_proposal.py for the rule itself.
+         "exclusions": "Crane hire\nCivil works by others"}
     d.update(kw); return d
 
 

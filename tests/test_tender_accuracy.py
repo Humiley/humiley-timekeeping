@@ -29,7 +29,9 @@ def _q(net=NET):
 
 def _issuable(**kw):
     return dict({"costingType": tender.EPC, "quoteNo": "Q1", "client": "X", "clientTaxCode": "1",
-                 "issueDate": "2026-01-01", "validUntil": "2026-02-01"}, **kw)
+                 "issueDate": "2026-01-01", "validUntil": "2026-02-01",
+                 # `_issuable` means issuable, and that now includes saying what is excluded.
+                 "exclusions": "Crane hire"}, **kw)
 
 
 # --- the class, and what it means in money ------------------------------------------------------
