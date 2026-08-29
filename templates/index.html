@@ -28867,6 +28867,89 @@ function _engOverdue(rows, asOf) {
   return (rows || []).filter(d => _engInScope(d) && d.plannedIssue && String(d.plannedIssue).slice(0, 10) < asOf && _engDelivCredit(d) < 100);
 }
 
+/* ── ENG BASELINE ── (tests/eng_baseline_drift.js extracts to the END marker; keep both)
+
+   Everything above this line answers "are we on schedule?" from the LIVE plannedIssue dates, which
+   is the field an engineer edits when a drawing slips. Move one date and the deliverable stops
+   being overdue, _engPlanned falls, SPI returns to 1.00 and the Needs-attention line clears — with
+   nothing anywhere recording that the plan moved. The measure erased by the act it should detect.
+
+   A baseline is a server-written photograph of those dates. These two functions are what the
+   screens read.
+
+   ONE DELIBERATE ASYMMETRY, and it is the crux. The baseline supplies DATES, never scope: planned
+   percentage is computed over the deliverables present in BOTH the baseline and the register
+   today, using the baseline's dates and the CURRENT weights. Mixing a baseline denominator with a
+   live numerator would make scope growth quietly deflate SPI, and a manager would go hunting for a
+   schedule problem that is really a scope problem. Growth and loss are reported separately, by
+   name, because they are different questions. `coverage` says how much of today's register the
+   comparison actually covers, so a figure drawn from a third of the scope cannot pass for the
+   whole. */
+function _engBaselineOf(pid, all) {
+  /* The newest baseline governs. Older ones are the record of how often the plan was re-cut. */
+  const mine = (all || []).filter(b => b && b.projectId === pid);
+  if (!mine.length) return null;
+  return mine.slice().sort((a, b) => (+a.seq || 0) - (+b.seq || 0))[mine.length - 1];
+}
+function _engBaselinePlanned(rows, baseline, asOf) {
+  asOf = asOf || _engToday();
+  if (!baseline || !Array.isArray(baseline.lines) || !baseline.lines.length) return { pct: null, coverage: 0, n: 0 };
+  const was = {};
+  baseline.lines.forEach(l => { if (l && l.deliverableId) was[l.deliverableId] = String(l.plannedIssue || '').slice(0, 10); });
+  let wsum = 0, dated = 0, plan = 0, n = 0;
+  (rows || []).forEach(d => {
+    if (!_engInScope(d)) return;
+    const w = Math.max(0, +d.weight || 0) || 1;
+    wsum += w;
+    if (!(d.id in was)) return;             // added since the baseline — scope, not schedule
+    n++;
+    const pd = was[d.id];
+    if (!pd) return;                        // in the baseline but undated then: nothing to plan against
+    dated += w;
+    if (pd <= asOf) plan += w * 100;
+  });
+  return { pct: dated ? plan / dated : null, coverage: wsum ? dated / wsum : 0, n: n };
+}
+function _engBaselineSpi(rows, baseline) {
+  const e = _engProgress(rows), p = _engBaselinePlanned(rows, baseline);
+  if (p.pct == null || p.pct <= 0) return null;
+  return e.pct / p.pct;
+}
+function _engBaselineDrift(rows, baseline) {
+  /* Five outcomes, and they are kept apart because they mean five different things. Folding
+     "added since" into "moved" would report a commission that doubled in scope as one whose dates
+     all slipped, and send somebody to argue with the wrong person. */
+  const out = { moved: [], added: [], dated: [], undated: [], gone: [], daysLater: 0, daysEarlier: 0 };
+  if (!baseline || !Array.isArray(baseline.lines)) return out;
+  const was = {}, seen = {};
+  baseline.lines.forEach(l => { if (l && l.deliverableId) was[l.deliverableId] = l; });
+  (rows || []).forEach(d => {
+    if (!_engInScope(d)) return;
+    const l = was[d.id];
+    const now = String(d.plannedIssue || '').slice(0, 10);
+    if (!l) { out.added.push({ d: d, now: now }); return; }
+    seen[d.id] = 1;
+    const then = String(l.plannedIssue || '').slice(0, 10);
+    if (then === now) return;
+    if (!then && now) { out.dated.push({ d: d, now: now }); return; }
+    if (then && !now) { out.undated.push({ d: d, then: then }); return; }
+    const days = Math.round((new Date(now) - new Date(then)) / 86400000);
+    if (!isFinite(days)) return;            // an unparseable date is not a movement anybody can act on
+    out.moved.push({ d: d, then: then, now: now, days: days });
+    if (days > 0) out.daysLater += days; else out.daysEarlier += -days;
+  });
+  /* Gone = in the baseline, not in the register today OR no longer in scope. Cancelling a
+     deliverable removes it from the plan just as surely as deleting it, and counting a cancelled
+     one as still-planned would leave the programme permanently late by work nobody will ever do. */
+  baseline.lines.forEach(l => {
+    if (!l || !l.deliverableId || seen[l.deliverableId]) return;
+    out.gone.push(l);
+  });
+  out.moved.sort((a, b) => b.days - a.days);
+  return out;
+}
+/* ── END ENG BASELINE ── */
+
 /* ============================ derived fields, computed on save ============================
    Never trusted from the client, and never a field somebody has to remember to keep in step. */
 function _engDerive(coll, data, editId) {
@@ -29341,7 +29424,7 @@ function engGuideToggle(k) {
 /* ============================ workspace shell ============================ */
 /* ── ENG TAB NAV ── (tests/eng_tab_groups.js extracts to the END marker; keep both) */
 const _ENG_TABS = [
-  { k: 'overview', g: 'plan', label: 'Overview', fn: 'engRenderOverview', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_stages', 'eng_comments', 'eng_changes', 'eng_tq', 'eng_inputs'] },
+  { k: 'overview', g: 'plan', label: 'Overview', fn: 'engRenderOverview', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_stages', 'eng_comments', 'eng_changes', 'eng_tq', 'eng_inputs', 'eng_baselines'] },
   { k: 'stages', g: 'plan', label: 'Stages & Gates', fn: 'engRenderStages', need: ['eng_projects', 'eng_stages', 'eng_deliverables'] },
   { k: 'inputs', g: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
   { k: 'standards', g: 'inputs', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
@@ -29585,8 +29668,111 @@ function engRenderOverview(pid) {
     (p.scopeSummary ? '<div style="margin-top:10px;font-size:12.5px"><div style="font-weight:700;color:var(--navy);margin-bottom:3px">Scope of design services</div><div style="color:var(--text-light);line-height:1.6;white-space:pre-wrap">' + _engEsc(p.scopeSummary) + '</div></div>' : '') +
     (p.exclusions ? '<div style="margin-top:9px;font-size:12.5px"><div style="font-weight:700;color:var(--navy);margin-bottom:3px">Exclusions</div><div style="color:var(--text-light);line-height:1.6;white-space:pre-wrap">' + _engEsc(p.exclusions) + '</div></div>' : '') + '</div>';
 
-  _engSet(kpis + _engOverviewSpCard(p) + stripCard + curve + attnCard + discCard + factCard);
+  _engSet(kpis + _engOverviewSpCard(p) + stripCard + curve + _engBaselinePanel(pid) + attnCard + discCard + factCard);
 }
+
+/* ── ENG BASELINE PANEL ── (tests/eng_markup.js extracts to the END marker; keep both)
+   The panel that makes a moved plan visible.
+   Both SPIs are shown side by side on purpose. Either one alone can be read as a verdict on the
+   work; together, the GAP between them is a verdict on the plan, and that is the fact this whole
+   feature exists to surface. */
+function _engBaselinePanel(pid) {
+  const p = _engProj(pid); if (!p) return '';
+  const dels = _engScopeFor('eng_deliverables', pid);
+  const bl = _engBaselineOf(pid, _HR.eng_baselines || []);
+  const canTake = _engIsLead(p);
+  const takeBtn = canTake ? '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="engTakeBaseline(\'' + pid + '\')">' + tkIcon('check', 12) + (bl ? ' Take a new baseline' : ' Take baseline') + '</button>' : '';
+
+  if (!bl) {
+    return '<div class="card" style="padding:15px 18px;margin-bottom:14px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:7px">' +
+      '<div class="card-title">Schedule baseline</div>' + takeBtn + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' +
+      '<b style="color:#B45309">No baseline on this commission.</b> Progress above is measured against the <b>current</b> planned dates — the same field somebody edits when a drawing slips. Move a date and the deliverable stops being overdue and the index goes back to 1.00, with nothing recording that the plan moved. Until a baseline exists, SPI cannot tell a commission that is on plan from one whose plan has been re-cut.' +
+      '<div style="margin-top:6px">One is taken automatically the next time a stage gate is signed. Take one now if the commission is already past its gates.</div></div></div>';
+  }
+
+  const bp = _engBaselinePlanned(dels, bl), bspi = _engBaselineSpi(dels, bl);
+  const lspi = _engSpi(dels), prog = _engProgress(dels);
+  const dr = _engBaselineDrift(dels, bl);
+  const hex = s => s == null ? 'var(--navy)' : s < 0.9 ? '#EF4444' : s < 0.98 ? '#F59E0B' : '#00B060';
+  const gap = (bspi != null && lspi != null) ? lspi - bspi : null;
+
+  const head = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+    '<div class="card-title">Schedule against the baseline</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+    '<span style="font-size:11px;color:var(--text-light)">Baseline ' + (+bl.seq || 1) + ' · ' + _engEsc([bl.stage, _engFmt(bl.takenOn), bl.takenBy].filter(Boolean).join(' · ')) + '</span>' + takeBtn + '</div></div>';
+
+  const tiles = _engTiles([
+    _engTile('Earned', prog.pct.toFixed(1) + '%', 'var(--emerald)', 'rule of credit'),
+    _engTile('Planned — baseline', bp.pct == null ? '—' : bp.pct.toFixed(1) + '%', 'var(--navy)', 'the dates as agreed'),
+    _engTile('SPI — baseline', bspi == null ? 'Not measured' : bspi.toFixed(2), hex(bspi), 'against the agreed plan'),
+    _engTile('SPI — current plan', lspi == null ? 'Not measured' : lspi.toFixed(2), hex(lspi), 'against today’s dates')
+  ]);
+
+  /* The one sentence a design manager needs. Only shown when the two indices actually disagree —
+     on a commission whose plan has not moved they are the same number and saying so twice is
+     noise. */
+  const gapNote = (gap != null && Math.abs(gap) >= 0.05)
+    ? '<div style="font-size:12.5px;background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;border-radius:8px;padding:9px 12px;margin-bottom:9px;line-height:1.6">' +
+      'Against today’s dates this commission reads <b>' + lspi.toFixed(2) + '</b>. Against the plan that was agreed it reads <b>' + bspi.toFixed(2) + '</b>. ' +
+      (gap > 0 ? 'The difference is the plan moving, not work being done.' : 'The plan has been pulled in since it was agreed.') + '</div>'
+    : '';
+
+  const bit = (n, one, many, hexc) => n ? '<span style="color:' + hexc + ';font-weight:700">' + n + '</span> ' + (n === 1 ? one : many) : '';
+  const parts = [
+    bit(dr.moved.length, 'planned date has moved', 'planned dates have moved', '#B45309'),
+    bit(dr.added.length, 'deliverable added since', 'deliverables added since', '#205090'),
+    bit(dr.gone.length, 'gone from the register', 'gone from the register', '#64748B'),
+    bit(dr.dated.length, 'given a date since', 'given a date since', '#205090'),
+    bit(dr.undated.length, 'has had its date removed', 'have had their dates removed', '#EF4444')
+  ].filter(Boolean);
+  const days = dr.moved.length
+    ? ' — ' + (dr.daysLater ? dr.daysLater + ' days later' : '') + (dr.daysLater && dr.daysEarlier ? ', ' : '') + (dr.daysEarlier ? dr.daysEarlier + ' days earlier' : '') + ' in total'
+    : '';
+  const drift = parts.length
+    ? '<div style="font-size:12.5px;line-height:1.7">Since this baseline: ' + parts.join(' · ') + days + '.</div>'
+    : '<div style="font-size:12.5px;color:var(--text-light)">Nothing has moved since this baseline.</div>';
+
+  const worst = dr.moved.slice(0, 5).map(m =>
+    '<tr><td style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(m.d.docNo || '—') + '</td>' +
+    '<td style="max-width:230px">' + _engEsc(m.d.title || '') + '</td>' +
+    '<td style="white-space:nowrap;font-size:11.5px;color:var(--text-light)">' + _engFmt(m.then) + '</td>' +
+    '<td style="white-space:nowrap;font-size:11.5px">' + _engFmt(m.now) + '</td>' +
+    '<td style="text-align:right;font-weight:700;color:' + (m.days > 0 ? '#B45309' : '#047857') + ';font-variant-numeric:tabular-nums">' + (m.days > 0 ? '+' : '') + m.days + 'd</td></tr>').join('');
+  const worstTbl = worst
+    ? '<div class="table-wrap" style="margin-top:9px"><table style="min-width:560px"><thead><tr><th>Document</th><th>Title</th><th>Was</th><th>Now</th><th style="text-align:right">Move</th></tr></thead><tbody>' + worst + '</tbody></table></div>' +
+      (dr.moved.length > 5 ? '<div style="font-size:11px;color:var(--text-light);margin-top:5px">' + (dr.moved.length - 5) + ' more not shown.</div>' : '')
+    : '';
+
+  const cov = (bp.coverage != null && bp.coverage < 0.9)
+    ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">The baseline comparison covers ' + bp.n + ' of ' + dels.filter(_engInScope).length + ' deliverables (' + Math.round(bp.coverage * 100) + '% by weight). The rest joined the register after it was taken, so they are scope rather than schedule and are counted above instead.</div>'
+    : '';
+
+  return '<div class="card" style="padding:15px 18px;margin-bottom:14px">' + head + tiles + gapNote + drift + worstTbl + cov + '</div>';
+}
+async function engTakeBaseline(pid) {
+  const p = _engProj(pid); if (!p) return;
+  const had = _engBaselineOf(pid, _HR.eng_baselines || []);
+  const reason = await tkPrompt({
+    title: had ? _t('Re-cut the baseline') : _t('Take the baseline'),
+    body: had
+      ? 'This freezes today\'s planned dates as the new plan. The previous baseline is kept — how often a plan is re-cut is part of the record, and every re-baseline is counted on this screen.'
+      : 'This freezes today\'s planned dates as the plan progress is measured against. It cannot be edited or deleted afterwards; taking another one supersedes it.\n\nWhy is the plan being set now?',
+    placeholder: 'Programme agreed with the client at the kick-off meeting'
+  });
+  if (reason == null) return;
+  if (!String(reason).trim()) { toast(_t('A baseline needs a reason on it.'), 'warn', 6000); return; }
+  try {
+    const res = await tkApi('/api/eng/baseline', { method: 'POST', body: { projectId: pid, reason: String(reason).trim() } });
+    try { tkAudit('Design baseline taken', p.name || '', String(reason).trim()); } catch (e) { }
+    toast('Baseline taken — ' + (res.dated || 0) + ' of ' + (res.count || 0) + ' deliverables carry a planned date', 'success', 7000);
+    try { delete _HR.eng_baselines; } catch (e) { }
+    await _engNeed(['eng_baselines']);
+    engTab('overview');
+  } catch (e) { toast(_t('Could not take the baseline') + ': ' + _errMsg(e), 'error', 7000); }
+}
+/* ── END ENG BASELINE PANEL ── */
 
 /* SharePoint link + folder build, same mechanism the PMC module uses (the commission record carries
    `sharepointUrl`, so _graphUploadFile / _pmSpEnsureDir work on it unchanged). */
