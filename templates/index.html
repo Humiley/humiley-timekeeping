@@ -3405,7 +3405,18 @@ window.addEventListener('orientationchange', _setLoginBg);
   window.tkEnsureExportLibs = loadHeavy;   // exposed so an export can force the load — and AWAIT it
   const _c = navigator.connection || {};
   const _saveData = _c.saveData === true || /(^|-)2g$/.test(_c.effectiveType || '');
-  window.addEventListener('load', function () {
+  /* AFTER SIGN-IN, NEVER BEFORE.
+     Measured on production: these five files are 609 KB and they all started at DOMContentLoaded on
+     the LOGIN SCREEN — xlsx 309 KB, jsPDF 113 KB, pdf.js 87 KB, the PDF font 55 KB, html2canvas
+     45 KB — for a person who cannot reach a single feature that uses them yet, and who may never
+     sign in on this device at all. On the way in they were also competing for bandwidth with the
+     thing that actually matters: the sign-in redirect and /api/config.
+     Nothing about the warm-up's purpose changes. A real session still gets the engines long before
+     anyone opens an export, and tkEnsureExportLibs() remains the on-demand path that every caller
+     already awaits — so an export works whether or not the warm-up ever ran. */
+  let _scheduled = false;
+  function schedule() {
+    if (_scheduled) return; _scheduled = true;
     if (_saveData) {
       // Metered / slow link: don't auto-pull ~2.5 MB of export engines for a check-in-and-leave
       // session. Load on the first real interaction (likely a step toward exporting), with a
@@ -3415,7 +3426,20 @@ window.addEventListener('orientationchange', _setLoginBg);
       setTimeout(loadHeavy, 15000);
     } else if ('requestIdleCallback' in window) requestIdleCallback(loadHeavy, { timeout: 4000 });
     else setTimeout(loadHeavy, 2500);
-  });
+  }
+  /* Storage, not TK.token: this block runs before the TK object is declared further down. A token in
+     storage is not proof of a LIVE session — the server may have expired it — but it is exactly the
+     right question here, because it distinguishes "someone who uses this app on this device" from
+     "someone looking at a login form". A stale token costs one early warm-up, which is what the
+     warm-up is for. */
+  function _hasSession() {
+    try { return !!(localStorage.getItem('tk_token') || sessionStorage.getItem('tk_token')); }
+    catch (e) { return false; }
+  }
+  // Called by tkLoginDemo / tkLoginM365 so a FIRST sign-in on a device does not have to wait for the
+  // next page load to get its engines.
+  window.tkWarmExportLibs = schedule;
+  window.addEventListener('load', function () { if (_hasSession()) schedule(); });
 })();
 </script>
 <script>
@@ -3547,6 +3571,9 @@ async function tkLoginDemo(role) {
   const d = await tkApi('/api/auth/demo', { method: 'POST', body: { role } });
   TK.token = d.token; TK.user = d.user;
   localStorage.setItem('tk_token', TK.token); try { sessionStorage.removeItem('tk_token'); } catch (e) {}
+  // There is a session now, so the export engines may warm up. Scheduled, not awaited — it must
+  // never delay the screen the person signed in to see.
+  try { if (window.tkWarmExportLibs) window.tkWarmExportLibs(); } catch (e) {}
   return d;
 }
 
@@ -3555,6 +3582,9 @@ async function tkLoginM365(accessToken) {
   const d = await tkApi('/api/auth/m365', { method: 'POST', body: { accessToken } });
   TK.token = d.token; TK.user = d.user;
   localStorage.setItem('tk_token', TK.token); try { sessionStorage.removeItem('tk_token'); } catch (e) {}
+  // There is a session now, so the export engines may warm up. Scheduled, not awaited — it must
+  // never delay the screen the person signed in to see.
+  try { if (window.tkWarmExportLibs) window.tkWarmExportLibs(); } catch (e) {}
   return d;
 }
 
