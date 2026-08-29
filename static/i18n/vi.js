@@ -5514,4 +5514,37 @@ window._VI = {
   "Advance recovered on this claim": "Khấu trừ tạm ứng đợt này",
   // ── Work schedules: the Active toggle, now that retiring a pattern means something ──────────────
   "retired": "đã ngừng",
+
+  // ── The quotation says what it covers, and what it does not (#166) ─────────────────────────────
+  "Scope of supply": "Phạm vi cung cấp",
+  "Excluded from this price": "Không bao gồm trong giá này",
+  "Nothing is excluded from this price.": "Giá này không loại trừ hạng mục nào.",
+  "Nothing is excluded from this price": "Giá này không loại trừ hạng mục nào",
+  "Filled from the customer register": "Đã điền từ danh mục khách hàng",
+  "field(s)": "trường",
+
+  // ── Duplicating a tender, and the Estimate form split into sections ────────────────────────────
+  "Duplicate this tender": "Nhân bản hồ sơ thầu này",
+  "Duplicate": "Nhân bản",
+  "Duplicated": "Đã nhân bản",
+  "This copies the bill, the build-ups, the mark-ups, the scope and the exclusions of":
+    "Thao tác này sao chép bảng khối lượng, đơn giá chi tiết, các khoản cộng thêm, phạm vi và phần loại trừ của",
+  "into a new draft.": "sang một bản nháp mới.",
+  "The new tender gets its own numbers and dates — the estimate number, the quotation number, the issue and validity dates and the approval are NOT carried over, because they belong to the document that was actually sent.":
+    "Hồ sơ mới sẽ có số và ngày riêng — số dự toán, số báo giá, ngày phát hành, hiệu lực và phê duyệt KHÔNG được sao chép, vì chúng thuộc về văn bản đã thực sự gửi đi.",
+  "bill line(s)": "dòng khối lượng",
+  "row(s) in total": "dòng tổng cộng",
+  "build-up(s) attached to a deleted line were not copied":
+    "đơn giá chi tiết gắn với dòng đã xoá không được sao chép",
+  "Could not duplicate this tender": "Không thể nhân bản hồ sơ thầu này",
+
+  // Section headings on the Estimate form
+  "The customer": "Khách hàng",
+  "The job": "Công trình",
+  "What the price covers": "Giá này bao gồm những gì",
+  "Mark-up, risk and profit": "Cộng thêm, rủi ro và lợi nhuận",
+  "The quotation document": "Văn bản báo giá",
+  "Where the customer pays — only to override the company account":
+    "Nơi khách hàng thanh toán — chỉ điền khi khác tài khoản công ty",
+  "Reference and status": "Số hiệu và trạng thái",
 };
