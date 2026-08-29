@@ -14,7 +14,9 @@ def _trading(tid="TND-TR"):
         "costingType": "trading", "status": "Draft",
         "client": "ABC Manufacturing Co., Ltd.", "clientTaxCode": "0123456789",
         "clientAddress": "Lot A1, VSIP II-A, Binh Duong", "clientAttn": "Mr. Nguyen Van A",
-        "issueDate": "2026-08-20", "validUntil": "2026-09-19"})
+        "issueDate": "2026-08-20", "validUntil": "2026-09-19",
+        # Issuing needs the exclusions stated — see tests/test_tender_proposal.py.
+        "exclusions": "Crane hire"})
     db.put_collection_item("est_landed", {
         "id": tid + "-i1", "estId": tid, "itemCode": "IMP-001", "hsCode": "8413.70",
         "desc": "Industrial Centrifugal Pump 50HP", "unit": "PCS", "qty": 2, "exwUnit": 8500,
@@ -32,7 +34,7 @@ def _epc(tid="TND-EPC"):
         "id": tid, "estNo": "EST-2026-200", "quoteNo": "QT-2026-200",
         "title": "EU-GMP manufactory", "costingType": "epc", "status": "Draft",
         "client": "Client Pharma", "clientTaxCode": "9999", "issueDate": "2026-08-20",
-        "validUntil": "2026-10-20"})
+        "validUntil": "2026-10-20", "exclusions": "Crane hire"})
     for i, (centre, qty, cost) in enumerate([("CIV", 1000, 100), ("CLR", 500, 200),
                                              ("OSD", 2, 150000), ("SVP", 1, 90000)]):
         db.put_collection_item("est_bom", {

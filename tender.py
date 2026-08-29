@@ -1710,6 +1710,16 @@ def issue_check(tender, quote):
     """
     missing = [label for key, label in REQUIRED_TO_ISSUE if not str(tender.get(key) or "").strip()]
     warnings = []
+
+    # WHAT THE PRICE DOES NOT COVER — blocking, and the only field here that is.
+    #
+    # A quotation with no exclusions is either a quotation that genuinely excludes nothing, or one
+    # where nobody wrote them down. Those are completely different documents to defend, and the
+    # difference cannot be recovered afterwards. So the estimator says which: write them, or tick
+    # "nothing excluded" deliberately. This is the same shape as the accuracy class — the module's
+    # job is to make sure a decision was taken knowingly, not to take it.
+    if not _prose_lines(tender.get("exclusions")) and not tender.get("exclusionsNone"):
+        missing.append("What the price excludes (or tick \u2018nothing excluded\u2019)")
     if not quote["lineCount"]:
         missing.append("At least one priced line")
     if quote["lineCount"] and quote["grossMarginPct"] < 10:
@@ -1948,6 +1958,34 @@ def columns(tender):
     return COLUMNS_SERVICES if ctype == SERVICES else COLUMNS_DEFAULT
 
 
+def _prose_lines(v):
+    """A textarea into a list of items, the way a reader would see it.
+
+    Bullets people type ("- ", "• ", "* ", "1. ") are stripped, because the renderer draws its own
+    and two bullets on one line reads as a mistake in a document a customer is judging you by.
+    Blank lines separate items; a single paragraph stays one item.
+    """
+    out = []
+    for raw in str(v or "").replace("\r", "").split("\n"):
+        t = raw.strip()
+        if not t:
+            continue
+        for lead in ("- ", "– ", "— ", "• ", "* ", "· "):
+            if t.startswith(lead):
+                t = t[len(lead):].strip()
+                break
+        else:
+            # "1. ", "1) ", "1 - " — a typed number the renderer would double up on.
+            i = 0
+            while i < len(t) and t[i].isdigit():
+                i += 1
+            if i and i < len(t) and t[i] in ".):" and t[i + 1:i + 2] == " ":
+                t = t[i + 2:].strip()
+        if t:
+            out.append(t)
+    return out
+
+
 def document(tender, quote, company=None):
     """The quotation as the customer will read it — shaped as the LETTERHEAD, not as a data table.
 
@@ -1991,13 +2029,36 @@ def document(tender, quote, company=None):
                    "discountPct": quote["discountPct"],
                    "net": quote["net"], "vat": quote["vat"], "gross": quote["gross"],
                    "lineCount": quote["lineCount"]},
+        # WHAT THE PRICE COVERS, AND WHAT IT DOES NOT.
+        #
+        # Both were captured on the tender and neither reached this document, so the letter carried
+        # a generic "scope is strictly as described" describing nothing. For a contractor the
+        # exclusions paragraph is the most valuable commercial protection in the whole proposal —
+        # excludes crane, excludes civil works, excludes import duty — and a paragraph that does not
+        # print is one nobody can point at six months later.
+        #
+        # Split into lines here rather than in the renderers: the preview, the PDF and the workbook
+        # must show the same list, and three implementations of "split on newlines" is how they come
+        # to disagree about whether a blank line ends an item.
+        "scope": _prose_lines(tender.get("scope")),
+        "exclusions": _prose_lines(tender.get("exclusions")),
+        # An empty exclusions list is a DECISION, not an omission, once issue_check has made the
+        # estimator say so. The document records which it was.
+        "exclusionsNone": bool(tender.get("exclusionsNone")),
         "amountInWords": tender.get("amountInWords") or "",
         "terms": terms or [{"label": l, "text": t} for l, t in TERMS_DEFAULT],
+        # WHERE THE CUSTOMER PAYS. The COMPANY record first, the tender only as an override.
+        #
+        # These used to come from the tender alone, retyped per quotation, so changing bank meant
+        # finding every draft — and a quotation could carry an account that was correct months ago.
+        # A per-tender value still wins where it is set, because a project occasionally is paid into
+        # a dedicated account, but nobody has to type the normal case any more.
         "bank": {
-            "beneficiary": company.get("name") or tender.get("bankBeneficiary") or "",
-            "bank": tender.get("bankName") or "",
-            "account": tender.get("bankAccount") or "",
-            "swift": tender.get("bankSwift") or "",
+            "beneficiary": (tender.get("bankBeneficiary") or company.get("bankBeneficiary")
+                            or company.get("displayNameEn") or company.get("name") or ""),
+            "bank": tender.get("bankName") or company.get("bankName") or "",
+            "account": tender.get("bankAccount") or company.get("bankAccount") or "",
+            "swift": tender.get("bankSwift") or company.get("bankSwift") or "",
         },
         "signatures": [
             {"role": "Prepared by", "title": tender.get("preparedByTitle") or "Sales Representative",

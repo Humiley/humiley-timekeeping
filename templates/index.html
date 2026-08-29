@@ -20911,6 +20911,47 @@ function _qaRefOptions(src, ex) {
   }
   return [];
 }
+/* CHOOSING THE CUSTOMER FILLS WHAT THE REGISTER ALREADY KNOWS.
+
+   crm_companies is a real master — one record per legal entity, tax code validated, duplicates
+   detected. The tender form asked for the address, the MST, the contact name and the phone AGAIN,
+   by hand, on a document that goes to that same customer. Four retyped fields, and the tax code on
+   the quotation was whatever somebody typed today rather than the one that was checked.
+
+   Deliberately it only fills BLANKS. Overwriting something an estimator has already typed would be
+   worse than the retyping: a quotation occasionally goes to a different site address or a different
+   named person, and a helper that silently reverts that is one people learn to fight. */
+function _tndFillCustomer(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  const cos = _HR.crm_companies || [];
+  const fold = x => String(x || '').trim().toLowerCase();
+  let co = cos.find(c => fold(c.name) === fold(n))
+        || cos.find(c => fold(c.legalNameVn) === fold(n))
+        || cos.find(c => fold(c.legalNameEn) === fold(n));
+  if (!co) return;
+
+  const put = (fieldKey, value) => {
+    const el = document.getElementById('qa-' + fieldKey);
+    if (el && !String(el.value || '').trim() && String(value || '').trim()) {
+      el.value = value;
+      el.dataset.tndFilled = '1';        // so the hint below can say which ones came from the file
+    }
+  };
+  put('clientAddress', co.regAddress || co.address);
+  put('clientTaxCode', co.mst);
+  put('clientAttn', co.repName);
+  put('clientContact', [co.email, co.phone].filter(Boolean).join(' · '));
+
+  const filled = ['clientAddress', 'clientTaxCode', 'clientAttn', 'clientContact']
+    .filter(k => (document.getElementById('qa-' + k) || {}).dataset &&
+                 document.getElementById('qa-' + k).dataset.tndFilled === '1').length;
+  if (filled) {
+    toast(_t('Filled from the customer register') + ' — ' + _crmEsc(co.name || n) +
+          ' (' + filled + ' ' + _t('field(s)') + ')', 'success', 4000);
+  }
+}
+
 function _crmFillContacts(co) {
   const dl = document.getElementById('dl-contact'); if (!dl) return;
   const all = (_HR.crm_contacts || []);
@@ -32195,7 +32236,7 @@ Object.assign(_QA_SPECS, {
     title: 'Estimate', coll: 'est_projects', reload: 'est_projects', fields: [
       { k: 'title', label: 'Tender / job name' },
       { k: 'estNo', label: 'Estimate No.' },
-      { k: 'client', label: 'Client', type: 'combo', dyn: 'companies' },
+      { k: 'client', label: 'Client', type: 'combo', dyn: 'companies', onchange: '_tndFillCustomer(this.value)' },
       { k: 'clientRef', label: 'Client tender reference' },
       { k: 'costingType', label: 'Costing model — decides which tabs this tender has', type: 'select', options: TND_TYPES.map(x => x.k) },
       { k: 'contractType', label: 'Contract type', type: 'select', options: PM_CONTRACT_TYPE },
@@ -32229,8 +32270,14 @@ Object.assign(_QA_SPECS, {
       { k: 'profitPct', label: 'Profit (%)', type: 'number' },
       { k: 'profitBasis', label: 'Profit basis — mark-up ON cost, or margin OF price', type: 'select', options: ['markup', 'margin'] },
       { k: 'pmProjectId', label: 'Linked project (optional)', type: 'ref', src: 'pm_projects' },
-      { k: 'scope', label: 'Scope', type: 'textarea' },
-      { k: 'exclusions', label: 'Exclusions', type: 'textarea' },
+      { k: 'scope', label: 'Scope of supply — printed on the quotation, one item per line', type: 'textarea' },
+      { k: 'exclusions', label: 'Excluded from this price — printed on the quotation, one item per line', type: 'textarea' },
+      /* A quotation with no exclusions is either one that genuinely excludes nothing or one where
+         nobody wrote them down, and those are completely different documents to defend. The
+         estimator says which. A SELECT rather than a tick because the form renderer has no checkbox
+         type — and an invented one would render nothing at all. */
+      { k: 'exclusionsNone', label: 'If nothing is excluded, say so here', type: 'select',
+        options: ['', 'Nothing is excluded from this price'] },
       { k: 'assumptions', label: 'Assumptions / qualifications', type: 'textarea' },
       { k: 'note', label: 'Notes', type: 'textarea' }]
   },
@@ -32439,6 +32486,41 @@ function _tndTabs() {
    zero-rated export has no single rate, and printing the header's beside a blended amount gives
    the customer a letter whose own arithmetic does not check out. The workbook had the sharper
    version of this: it recomputed the tax from that one rate on open. See quote_xlsx.build(). */
+/* Scope and exclusions, as the customer reads them.
+
+   ONE renderer for the on-screen letter; the PDF walks the same `doc.scope` / `doc.exclusions`
+   arrays through its own text engine. What must never happen is two different ideas of what an
+   item is — the server already split the textarea into lines (tender._prose_lines) precisely so
+   that neither renderer has to guess where an item ends.
+
+   An empty exclusions list still prints, saying so. "This quotation excludes nothing" is a real
+   commercial statement, and a silent gap where exclusions should be reads as an oversight to the
+   person on the other side of the table. */
+function _qtScopeBlock(d) {
+  const scope = (d && d.scope) || [];
+  const excl = (d && d.exclusions) || [];
+  const none = !!(d && d.exclusionsNone);
+  if (!scope.length && !excl.length && !none) return '';
+
+  const list = (items, tone) =>
+    '<ul style="margin:4px 0 0;padding-left:20px;font-size:13px;line-height:1.6' +
+    (tone ? ';color:' + tone : '') + '">' +
+    items.map(x => '<li style="margin-bottom:3px">' + _estEsc(x) + '</li>').join('') + '</ul>';
+
+  const head = t =>
+    '<div style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;' +
+    'color:var(--navy);margin-top:14px">' + _t(t) + '</div>';
+
+  return (scope.length ? head('Scope of supply') + list(scope, '') : '') +
+    (excl.length
+      ? head('Excluded from this price') + list(excl, '')
+      : (none
+        ? head('Excluded from this price') +
+          '<div style="font-size:13px;line-height:1.6;margin-top:4px">' +
+          _t('Nothing is excluded from this price.') + '</div>'
+        : ''));
+}
+
 function _qtVatRow(d) {
   const rates = new Set(((d || {}).lines || []).map(l => Math.round((+l.vatPct || 0) * 1e4)));
   return rates.size > 1
@@ -33487,6 +33569,14 @@ function _tndQuoteSheet(doc, q) {
     '<div style="font-size:12.5px;margin-top:10px"><span style="color:var(--text-light)">' + _t('Amount in words') + ': </span><i>' +
     _qtEd('amountInWords', doc.amountInWords) + '</i></div>' +
 
+    /* WHAT THE PRICE COVERS, AND WHAT IT DOES NOT.
+
+       Both were captured on the tender and neither used to reach this page — the letter carried a
+       generic "scope is strictly as described" describing nothing. For a contractor the exclusions
+       paragraph is the most valuable commercial protection in the proposal, and a paragraph that
+       does not print is one nobody can point at six months later. */
+    _qtScopeBlock(doc) +
+
     /* Read-only on purpose: this paragraph is assembled from the Conditions below, which is where
        it is edited. Two places to change one sentence is how they come to disagree. */
     '<div style="font-size:13px;line-height:1.65;margin-top:16px" title="' + _tkEscA(_t('Edited in Conditions, below')) + '">' + _estEsc(doc.termsParagraph || '') + '</div>' +
@@ -33777,6 +33867,40 @@ function tndQuotePDF() {
     const w = doc.splitTextToSize(_pmPdfTxt('Amount in words: ' + d.amountInWords), _QT_TW);
     doc.text(w, _QT_ML, y); y += w.length * 4 + 3;
   }
+
+  /* WHAT THE PRICE COVERS, AND WHAT IT DOES NOT — on the page the customer keeps.
+
+     This is the half of the proposal a dispute is actually argued over, and until now it did not
+     print at all: the scope and exclusions were typed by the estimator, stored, and dropped before
+     the letter was assembled. Drawn from the SAME doc.scope / doc.exclusions arrays the on-screen
+     preview uses, so the two cannot describe different jobs.
+
+     Page-broken like the closing paragraphs below rather than truncated. An exclusions list cut off
+     at the bottom of page one is worse than none: it looks complete. */
+  const _qtBlock = (heading, items, fallback) => {
+    if (!items.length && !fallback) return;
+    if (y + 14 > 258) { y = newPage(); }
+    _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(32, 80, 144);
+    doc.text(_pmPdfTxt(heading), _QT_ML, y); y += 5;
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+    if (!items.length) {
+      const t = doc.splitTextToSize(_pmPdfTxt(fallback), _QT_TW);
+      if (y + t.length * 4.4 > 262) { y = newPage(); }
+      doc.text(t, _QT_ML, y); y += t.length * 4.4 + 3;
+      return;
+    }
+    items.forEach(it => {
+      const t = doc.splitTextToSize(_pmPdfTxt(it), _QT_TW - 5);
+      if (y + t.length * 4.4 > 262) { y = newPage(); }
+      doc.text('\u2022', _QT_ML, y);
+      doc.text(t, _QT_ML + 4.5, y);
+      y += t.length * 4.4 + 1.5;
+    });
+    y += 3;
+  };
+  _qtBlock('SCOPE OF SUPPLY', (d.scope || []), '');
+  _qtBlock('EXCLUDED FROM THIS PRICE', (d.exclusions || []),
+           d.exclusionsNone ? 'Nothing is excluded from this price.' : '');
 
   /* the closing paragraphs — the part a dispute is read against, so never truncated */
   [d.termsParagraph, d.closing, d.contactLine].forEach(par => {
