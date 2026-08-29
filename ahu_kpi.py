@@ -181,6 +181,116 @@ def on_time_delivery(units):
             "pct": round(100.0 * ontime / shipped, 1) if shipped else None}
 
 
+# ── The same two KPIs, month by month ───────────────────────────────────────────────────────────
+# A single figure says where you are. It cannot say whether you are getting better, which is the
+# only question a KPI is any use for. Eight numbers on a screen with no history is a dashboard
+# nobody returns to twice.
+#
+# Two decisions worth stating, because both could reasonably have gone the other way.
+#
+# EACH KPI IS BUCKETED BY ITS OWN EVENT, not by a single shared date. First-pass yield is bucketed
+# on the month the unit reached QC — the moment it became eligible to pass or fail — and on-time
+# delivery on the month it shipped. Bucketing both on dispatch would drop every unit that has been
+# inspected but not yet shipped out of the yield series, which is precisely the most recent and most
+# interesting data.
+#
+# A MONTH WITH TOO FEW UNITS IS LABELLED, NOT HIDDEN. One unit failing in a month of two is 50%, and
+# drawn on a chart next to a month of forty it looks like a collapse. The count travels with every
+# point and `enough` says whether the percentage can be read at all; suppressing the point entirely
+# would leave a gap that reads as "no problem" rather than "not enough evidence".
+
+MIN_N_TO_READ = 5      # below this a percentage is noise. Reported, and flagged as unreadable.
+
+
+def _month(v):
+    """The YYYY-MM a date string falls in, or None. Never guesses at an unparseable value."""
+    s = str(v or "").strip()[:7]
+    if len(s) == 7 and s[4] == "-" and s[:4].isdigit() and s[5:7].isdigit():
+        return s
+    return None
+
+
+def _step_month(steps, code):
+    """The month a named step was signed, from its date or its signature chain."""
+    for s in steps or []:
+        if s.get("code") != code or _norm(s.get("status")) not in PASSED:
+            continue
+        m = _month(s.get("signedOn"))
+        if m:
+            return m
+        for sig in reversed(s.get("signatures") or []):
+            m = _month(sig.get("ts"))
+            if m:
+                return m
+    return None
+
+
+def _series(buckets, months):
+    """Buckets to an ordered series, most recent `months` of them, oldest first."""
+    out = []
+    for m in sorted(buckets)[-months:] if months else sorted(buckets):
+        n, good = buckets[m]
+        out.append({"month": m, "n": n, "good": good,
+                    "pct": round(100.0 * good / n, 1) if n else None,
+                    "enough": n >= MIN_N_TO_READ})
+    return out
+
+
+def monthly(units, months=12):
+    """First-pass yield and on-time delivery as a series, oldest first.
+
+    Pure, like the rest of this module: the months come from the DATA, not from a clock, so the
+    series ends at the last month something actually happened rather than trailing empty months
+    that look like a stoppage.
+
+    `unbucketed` counts units that qualify for a KPI but carry no readable date to file them under.
+    They are named rather than dropped — a trend quietly computed over the subset with good dates
+    would move whenever the record-keeping changed, and would look like a change in performance.
+    """
+    fpy, otd = {}, {}
+    un_fpy = un_otd = 0
+
+    for u in units or []:
+        steps = u.get("steps") or []
+
+        # First-pass yield: bucketed on the month the unit reached QC.
+        if any(s.get("code") == "G4" and _norm(s.get("status")) in PASSED for s in steps):
+            m = _step_month(steps, "G4")
+            if m is None:
+                un_fpy += 1
+            else:
+                failed_step = any(_norm(s.get("status")) in FAILED
+                                  and s.get("kind") in ("ipqc", "test") for s in steps)
+                reworked = any(_norm(n.get("disposition")) in ("rework", "repair")
+                               for n in (u.get("ncr") or []))
+                n, good = fpy.get(m, (0, 0))
+                fpy[m] = (n + 1, good + (0 if (failed_step or reworked) else 1))
+
+        # On-time delivery: bucketed on the month it shipped.
+        disp = (u.get("dispatch") or [{}])[0] if u.get("dispatch") else {}
+        when = str(disp.get("dispatchedOn") or "").strip()
+        if when:
+            m = _month(when)
+            if m is None:
+                un_otd += 1
+            else:
+                due = str((u.get("order") or {}).get("deliveryDate") or "").strip()
+                n, good = otd.get(m, (0, 0))
+                # No contracted date means nothing to measure against — counted in n so the month's
+                # sample size is honest, never counted as on time.
+                otd[m] = (n + 1, good + (1 if (due and when <= due) else 0))
+
+    return {
+        "firstPassYield": _series(fpy, months),
+        "onTimeDelivery": _series(otd, months),
+        "minN": MIN_N_TO_READ,
+        "unbucketed": {"firstPassYield": un_fpy, "onTimeDelivery": un_otd},
+        "note": ("Each KPI is filed under its own event — yield under the month the unit reached QC, "
+                 "delivery under the month it shipped. A month below %d units is shown with its "
+                 "count and marked unreadable rather than hidden." % MIN_N_TO_READ),
+    }
+
+
 # ── The eight, as the SOP states them ────────────────────────────────────────────────────────────
 def customer_complaints(units, complaints):
     """Complaints per delivered unit, over the units this summary covers.

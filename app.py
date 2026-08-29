@@ -6435,10 +6435,16 @@ class Handler(BaseHTTPRequestHandler):
         if blocked:
             return blocked
         since = (qs.get("since") or [""])[0].strip()
-        rows = []
+        rows, all_rows = [], []
         idx = ahu.ctx_index()
         for unit in idx["units"].values():
             ctx = ahu.load_ctx(unit.get("id"), idx)
+            row = {"unit": ctx["unit"], "steps": ctx["steps"], "ncr": ctx["ncr"],
+                   "dispatch": ctx["dispatch"], "order": ctx["order"]}
+            # The TREND is deliberately built from every unit, before `since` is applied. A trend
+            # over the filtered window would drop exactly the earlier months it exists to compare
+            # against — asking "is this improving?" and answering only about the recent end.
+            all_rows.append(row)
             if since:
                 # Filter on the DISPATCH date, not on when the record was created: the question a
                 # period KPI answers is "what did we ship in this window".
@@ -6446,8 +6452,7 @@ class Handler(BaseHTTPRequestHandler):
                 when = str(d.get("dispatchedOn") or "")
                 if when and when < since:
                     continue
-            rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "ncr": ctx["ncr"],
-                         "dispatch": ctx["dispatch"], "order": ctx["order"]})
+            rows.append(row)
         incidents = db.list_collection("incidents")
         try:
             hours = float(db.get_setting("ahu_worked_hours") or 0) or None
@@ -6457,6 +6462,13 @@ class Handler(BaseHTTPRequestHandler):
                               complaints=db.list_collection("ahu_complaints"))
         out["units"] = len(rows)
         out["since"] = since or None
+        # Where the factory IS, and which way it is GOING. A dashboard with only the first is one
+        # nobody opens twice, because a number on its own cannot be acted on.
+        try:
+            months = max(1, min(36, int((qs.get("months") or ["12"])[0])))
+        except (TypeError, ValueError):
+            months = 12
+        out["trend"] = ahu_kpi.monthly(all_rows, months)
         return self._json(self._ahu_json_safe(out))
 
     def _ahu_board_ep(self, u):
