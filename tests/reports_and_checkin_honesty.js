@@ -233,9 +233,16 @@ ok('the flag is set where the sentence is written',
    /status\.dataset\.phase = 'locating';/.test(code));
 
 /* ── and no new _VI keys were needed, so nothing can shadow an existing one ─────────────────── */
-const viStart = src.indexOf('const _VI = {');
-const viEnd = src.indexOf('\n};', viStart);
-const vi = viStart > 0 ? src.slice(viStart, viEnd) : '';
+/* The dictionary moved to static/i18n/vi.js — it was 12% of the boot download and was built even
+   for English users, who are the default. */
+const viSrc = fs.readFileSync(path.join(__dirname, '..', 'static', 'i18n', 'vi.js'), 'utf8');
+const viStart = viSrc.indexOf('window._VI = {');
+const viEnd = viSrc.indexOf('\n};', viStart);
+const vi = viStart >= 0 ? viSrc.slice(viStart, viEnd) : '';
+/* Bail loudly rather than carrying on with an empty string: every assertion below asks whether a key
+   is ABSENT from `vi`, so an empty `vi` reports every key missing — a false alarm, but the same class
+   of instrument failure as a check that silently passes. */
+if (viStart < 0) { console.error('could not find window._VI in static/i18n/vi.js — update this test, do NOT delete it.'); process.exit(2); }
 ok('the _VI table was not touched by this change',
    vi.indexOf('You can check in now.') < 0 && vi.indexOf('Checking your location') < 0,
    '_VI is one shared object where a later duplicate key silently wins; _t2 is inline and cannot');
