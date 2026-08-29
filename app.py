@@ -10102,6 +10102,25 @@ class Handler(BaseHTTPRequestHandler):
             vis = self._pm_visible_projects(u)
             if vis is not None:
                 items = [it for it in items if it.get("projectId") in vis]
+        # The refusal log is a list of the times a NAMED colleague was stopped, and what they were
+        # told. tests/test_eng_commission_boundary.py asserted the WRITE was refused and then said in
+        # prose that "the read is management-only" — which was never true and never tested: there is
+        # no READ_MIN entry, so reads here are default-allow and every account with the ENG app was
+        # served every commission's refusals, including accounts on none of them.
+        #
+        # The scope deliberately does NOT copy the READ_MIN pattern of a portal access level. This
+        # module's whole authority model is that a Design Manager is usually an ordinary staff
+        # account (_eng_is_lead), and the person who has to READ this log to run the pilot is exactly
+        # that person. A level gate would have locked the log away from its only intended reader
+        # while leaving it open to a manager on some other job.
+        if name == "eng_refusals":
+            if self._level_rank(lvl) < self._level_rank("manager"):
+                # Resolved once, not per row: _eng_project_of does a full collection scan, and
+                # calling it inside the filter is the quadratic shape that took the AHU board to
+                # four seconds.
+                mine = {p.get("id") for p in db.list_collection("eng_projects")
+                        if self._eng_is_lead(u, p)}
+                items = [it for it in items if it.get("projectId") in mine]
         # staff see ONLY their own records in self-service collections (no cross-employee read)
         if lvl == "staff" and name in self.SELF_OWNED:
             myid, myname = u.get("id"), u.get("name")

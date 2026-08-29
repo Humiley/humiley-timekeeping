@@ -188,6 +188,14 @@ jobs:
       - name: Design earned value
         run: node tests/eng_earned_value.js
 
+      # The refusal log is the pilot's whole output, and it is the screen most able to fail
+      # silently: a render that throws leaves a blank panel that reads as "nothing was ever
+      # refused" — the single most misleading thing this particular tab could say. Driven here
+      # against stub helpers, including the counting rule that separates one person stuck on one
+      # drawing from a rule firing across the office.
+      - name: The refusal log renders and counts honestly
+        run: node tests/eng_refusal_view.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops

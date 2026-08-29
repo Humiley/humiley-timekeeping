@@ -29359,8 +29359,15 @@ const _ENG_TABS = [
   { k: 'transmittals', label: 'Transmittals', fn: 'engRenderTransmittals', need: ['eng_projects', 'eng_transmittals', 'eng_deliverables', 'eng_revisions'] },
   { k: 'awaiting', label: 'Awaiting Response', fn: 'engRenderAwaiting', need: ['eng_projects', 'eng_transmittals', 'eng_chases'] },
   { k: 'team', label: 'Team & Authority', fn: 'engRenderTeam', need: ['eng_projects', 'eng_team', 'eng_deliverables'] },
-  { k: 'documents', label: 'Document Structure', fn: 'engRenderDocuments', need: ['eng_projects'] }
+  { k: 'documents', label: 'Document Structure', fn: 'engRenderDocuments', need: ['eng_projects'] },
+  /* Restricted. The log names a colleague and repeats what they were told when they were stopped,
+     so it is for the people who run the commission — the Design Manager, the Lead Engineer, the QA
+     approver — and for portal managers. The server scopes the read exactly the same way; this
+     predicate only keeps the tab from appearing to somebody who would get an empty register and
+     read it as "nothing ever happened here". */
+  { k: 'refusals', label: 'Refusal Log', fn: 'engRenderRefusals', need: ['eng_projects', 'eng_refusals'], when: p => _engIsLead(p) }
 ];
+function _engTabsFor(p) { return _ENG_TABS.filter(t => !t.when || t.when(p)); }
 function engOpenProject(id) { _engCurrentProject = id; try { sessionStorage.setItem('eng_proj', id); } catch (e) { } _engTabK = 'overview'; showView('eng-project', null, 'Design Workspace'); }
 function engGoto(id, tabK) { _engCurrentProject = id; try { sessionStorage.setItem('eng_proj', id); } catch (e) { } _engTabK = _ENG_TABS.some(t => t.k === tabK) ? tabK : 'overview'; showView('eng-project', null, 'Design Workspace'); }
 async function engRenderWorkspace() {
@@ -29385,7 +29392,7 @@ async function engRenderWorkspace() {
     _engSpBtn(p) +
     (_engCanEdit(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'eng_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     '<div id="eng-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
-    _ENG_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="engTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _engTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _engTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
+    _engTabsFor(p).map(t => '<button class="tab" data-k="' + t.k + '" onclick="engTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _engTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _engTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
   root.innerHTML = hdr + '<div id="eng-tab-body"></div>';
   engTab(_engTabK);
   try { document.querySelector('#eng-tabbar .tab[data-k="' + _engTabK + '"]')?.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) { }
@@ -29397,7 +29404,12 @@ function _engSpBtn(p) {
   return '<a href="' + _tkEscA(ctx ? ctx.open : base) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' SharePoint</a>';
 }
 async function engTab(k) {
-  const t = _ENG_TABS.find(x => x.k === k); if (!t) return; _engTabK = k;
+  let t = _ENG_TABS.find(x => x.k === k); if (!t) return;
+  // A restricted tab reached by a remembered key or a deep link falls back to the overview. Showing
+  // it anyway would render a register the server scopes to empty, which reads as "nothing ever
+  // happened here" — the most misleading thing this particular screen could say.
+  if (t.when && !t.when(_engProj())) { t = _ENG_TABS[0]; k = t.k; }
+  _engTabK = k;
   document.querySelectorAll('#eng-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
   const body = document.getElementById('eng-tab-body');
   const missing = (t.need || []).filter(c => !Array.isArray(_HR[c]));
@@ -31356,6 +31368,125 @@ function _engHealth(p) {
   if ((spi != null && spi < 0.97) || overdue > 0 || holds > 0) return { rag: 'Amber', hex: '#F59E0B', why: overdue ? overdue + ' overdue issue' + (overdue === 1 ? '' : 's') : holds ? holds + ' on hold' : 'slightly behind plan' };
   return { rag: 'Green', hex: '#00B060', why: 'on plan' };
 }
+/* ── ENG REFUSAL LOG ── (tests/eng_refusal_view.js extracts to here; keep both markers)
+   ============================ Refusal log ============================
+   Eleven rules in this module can stop somebody, and until now the record of them firing existed
+   only as rows in a collection with no screen. The pilot's entire output was unreadable inside the
+   app that produced it.
+
+   Read-only on purpose. The log is written by the server (a browser that could add to it could
+   also bury the entry about itself), so there is no Add button and no edit column — `noActions`.
+
+   The screen deliberately does NOT try to classify outcomes. ENG-PILOT.md names three — refused
+   then fixed, refused then escaped, refused then abandoned — and the log records none of them,
+   because what happened AFTER a refusal is not something the refusal knows. Inventing a column for
+   it would put a confident label on a guess. The counts are what the data supports; the rest is a
+   conversation, and the guide says so. */
+function _engRefusalGroups(rows) {
+  /* Grouped by the (register, attempted status, rule) triple the server keys refusals on — the
+     same identity, so a rule that fires on two registers stays two lines rather than merging into
+     a total nobody can act on. */
+  const by = {};
+  (rows || []).forEach(r => {
+    const k = [r.coll || '', r.attempted || '', r.rule || ''].join('');
+    const g = by[k] || (by[k] = { coll: r.coll || '', attempted: r.attempted || '', rule: r.rule || '', n: 0, who: {}, last: '', recs: {} });
+    g.n++;
+    if (r.who) g.who[r.who] = 1;
+    if (r.recordId) g.recs[r.recordId] = 1;
+    if (String(r.at || '') > g.last) g.last = String(r.at || '');
+  });
+  return Object.keys(by).map(k => by[k]).sort((a, b) => b.n - a.n || String(a.rule).localeCompare(String(b.rule)));
+}
+function engRenderRefusals(pid) {
+  const p = _engProj(pid); if (!p) return;
+  const all = _engScopeFor('eng_refusals', pid);
+  const refusals = all.filter(r => String(r.source || '') !== 'advisory');
+  const advisory = all.filter(r => String(r.source || '') === 'advisory');
+  const recent = refusals.filter(r => { const d = _engDaysAgo(r.at); return d != null && d <= 14; });
+  const people = [...new Set(refusals.map(r => r.who).filter(Boolean))];
+  const groups = _engRefusalGroups(refusals);
+
+  const guide = _engGuide('refusals', 'What the rules stopped, and how to read it',
+    '<p>Every rule in this module that can refuse an action records the refusal here: which rule, on what record, who was stopped and the message they were shown. The rules were written against tests, not against an engineer trying to issue a drawing at five on a Friday — this is the register that closes that gap.</p>' +
+    '<p>Three things can follow a refusal, and they mean different things. <b>Refused, the record was fixed, the action went through</b> — the rule worked; leave it alone. <b>Refused, and an exit was used</b> — <i>Passed with actions</i>, <i>at our cost</i>, <i>IFR</i>, a closure note — also fine, that is what the exits are for; but a rule escaped <i>every single time</i> is set at the wrong threshold or fires at the wrong moment. <b>Refused, and nothing happened afterwards</b> — the work was abandoned. That is the one to investigate, and it needs a conversation rather than a change: was the rule wrong, the timing wrong, or the message unclear?</p>' +
+    '<p>The log cannot tell you which of the three happened, because what follows a refusal is not something the refusal knows. It gives you the rule, the record and the person; the rest comes from asking them.</p>' +
+    '<p><b>Also watch what does not appear.</b> A rule with no entries either protects something genuinely rare, or people have learned to avoid the path entirely. Those look identical here and only a person can tell them apart.</p>' +
+    '<p><b>Advisory notes are not refusals.</b> They are listed separately below: nothing was blocked, a gap was recorded. Today that is the competence check — a drawing checked by somebody the office has authorised for a different discipline.</p>');
+
+  const kpis = _hrKpiRow([
+    _hrKpi('Refusals recorded', refusals.length),
+    _hrKpi('In the last 14 days', recent.length, recent.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Rules that fired', groups.length, '#205090'),
+    _hrKpi('Advisory notes', advisory.length, '#8B5CF6')
+  ]);
+
+  if (!all.length) {
+    _engSet(kpis + guide + '<div class="card" style="padding:18px;font-size:12.5px;color:var(--text-light)">' +
+      '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">Nothing has been refused on this commission</div>' +
+      'That means one of two things, and this screen cannot tell them apart: the rules are protecting something genuinely rare, or nobody has taken the path where they fire. If this commission has not issued a document externally yet, it is almost certainly the second — nearly every rule here fires at external issue.</div>');
+    return;
+  }
+
+  const collLabel = c => ({
+    eng_revisions: 'Drawing issue', eng_stages: 'Stage gate', eng_deviations: 'Deviation',
+    eng_standards: 'Codes & standards', eng_holds: 'Holds', eng_risks: 'Design risk',
+    eng_changes: 'Change control', eng_idc: 'IDC', eng_transmittals: 'Transmittals',
+    eng_reviews: 'Reviews', eng_competence: 'Competence', eng_comments: 'Comments'
+  })[c] || String(c || '—').replace(/^eng_/, '');
+
+  const groupTbl = _engCard('Refusals by rule — most-fired first', null, null,
+    '<div class="table-wrap"><table style="min-width:900px"><thead><tr>' +
+    '<th>Rule</th><th>Register</th><th>Attempted</th><th style="text-align:right">Times</th><th style="text-align:right">People</th><th style="text-align:right">Records</th><th>Last</th></tr></thead><tbody>' +
+    groups.map(g => '<tr><td style="max-width:420px;font-weight:600">' + _engEsc(g.rule || '—') + '</td>' +
+      '<td style="white-space:nowrap">' + _engEsc(collLabel(g.coll)) + '</td>' +
+      '<td style="white-space:nowrap;font-size:11.5px;color:var(--text-light)">' + _engEsc(g.attempted || '—') + '</td>' +
+      '<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums">' + g.n + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + Object.keys(g.who).length + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + Object.keys(g.recs).length + '</td>' +
+      '<td style="white-space:nowrap;font-size:11.5px">' + _engFmt(String(g.last).slice(0, 10)) + '</td></tr>').join('') +
+    '</tbody></table></div>' +
+    '<div style="padding:9px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line-soft,#eef2f8)">' +
+    '<b>Times</b> counts refusals, not people or records: one engineer retrying the same drawing four times is four here and one of each in the columns beside it. A high count with one person and one record is somebody stuck, not a rule firing widely.</div>',
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="engRefusalsCSV(\'' + pid + '\')">' + tkIcon('download', 12) + ' Export CSV</button>');
+
+  const specs = [{ k: 'rule', label: 'Rule' }, { k: 'coll', label: 'Register' }, { k: 'who', label: 'Person' }, { k: 'attempted', label: 'Attempted' }];
+  const bar = _engFiltBar('eng_refusals', refusals, specs);
+  const rows = _engFiltApply('eng_refusals', refusals, specs).slice().sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  const detail = _engCard('Every refusal, newest first', null, null, bar + _engTable('eng_refusals', [
+    { label: 'When', sk: 'at', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(String(r.at || '').slice(0, 10)) + '</span><div style="font-size:10px;color:var(--text-light)">' + _engEsc(String(r.at || '').slice(11, 16)) + '</div>' },
+    { label: 'Person', k: 'who' },
+    { label: 'Register', sk: 'coll', render: r => _engBadge(collLabel(r.coll), '#205090') },
+    { label: 'Record', sk: 'recordRef', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(r.recordRef || '—') + '</span>' },
+    { label: 'Attempted', sk: 'attempted', render: r => '<span style="font-size:11.5px">' + _engEsc(r.attempted || '—') + '</span>' },
+    { label: 'What they were told', sk: 'message', render: r => '<div style="max-width:430px;font-size:11.5px;line-height:1.5">' + _engEsc(r.message || '') + '</div>' }
+  ], rows, { minw: 1040, noActions: true, empty: 'No refusals match these filters.' }));
+
+  const advTbl = advisory.length ? _engCard('Advisory notes — recorded, nothing blocked', null, null,
+    _engTable('eng_refusals_adv', [
+      { label: 'When', sk: 'at', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(String(r.at || '').slice(0, 10)) + '</span>' },
+      { label: 'Record', sk: 'recordRef', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(r.recordRef || '—') + '</span>' },
+      { label: 'Note', sk: 'message', render: r => '<div style="max-width:560px;font-size:11.5px;line-height:1.5">' + _engEsc(r.message || '') + '</div>' }
+    ], advisory.slice().sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))), { minw: 760, noActions: true })) : '';
+
+  _engSet(kpis + guide + groupTbl + detail + advTbl);
+}
+function engRefusalsCSV(pid) {
+  const p = _engProj(pid); if (!p) return;
+  const rows = _engScopeFor('eng_refusals', pid).slice().sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+  const head = ['When', 'Person', 'Register', 'Attempted', 'Record ref', 'Record id', 'Rule', 'Message', 'Source'];
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [head.map(esc).join(',')];
+  rows.forEach(r => lines.push([r.at, r.who, r.coll, r.attempted, r.recordRef, r.recordId, r.rule, r.message, r.source || 'sign'].map(esc).join(',')));
+  try {
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'Refusals_' + (p.code || p.name || 'design').replace(/[^A-Za-z0-9]+/g, '_') + '_' + _engToday() + '.csv';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    toast('Refusal log exported (' + rows.length + ' rows)', 'success');
+  } catch (e) { toast('Export failed: ' + _errMsg(e), 'error', 6000); }
+}
+/* ── END ENG REFUSAL LOG ── */
+
 async function engRenderProjects() {
   const root = document.getElementById('eng-projects-root'); if (!root) return;
   root.innerHTML = tkSkeleton();

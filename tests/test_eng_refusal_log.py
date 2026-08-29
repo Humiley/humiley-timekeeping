@@ -140,3 +140,75 @@ def test_the_log_says_which_record_was_stopped(api, tokens, commission):
     assert r["recordId"] == rev["id"]
     assert r["recordRef"] == "C01", "so a reader can find the thing that was stopped"
     assert r["projectId"] == commission["id"], "and which commission it belongs to"
+
+
+# ── who may read it ─────────────────────────────────────────────────────────────
+#
+# The log names a colleague and repeats what they were told when they were stopped. It was served
+# in full to every account with the ENG app, on every commission, because reads on /api/coll are
+# default-allow and nothing listed this collection. test_eng_commission_boundary.py even said in
+# prose that "the read is management-only" while only ever asserting the WRITE — the claim was
+# never true and was never checked.
+#
+# The scope is design authority, not portal level. A Design Manager here is normally an ordinary
+# staff account — that is the premise of _eng_is_lead and of the whole approval model — and they
+# are the person who has to read this log to run the pilot. Gating on `manager` would have hidden
+# it from its only intended reader while leaving it open to a manager on an unrelated job.
+
+def _second_commission(api, tokens):
+    return _mk(api, tokens["admin"], "eng_projects", {
+        "name": "Someone else's commission", "code": "OTH26", "client": "Another Client",
+        "designManager": "Other Staff", "leadEngineer": "Other Staff",
+        "status": "Active", "currentStage": "Detail", "members": "Other Staff"})
+
+
+def _provoke(api, token, proj, ref):
+    """Cause one real refusal on `proj` and return the record that was stopped."""
+    _mk(api, token, "eng_holds", {
+        "projectId": proj["id"], "kind": "hold", "ref": ref, "title": "Open", "status": "open"})
+    g = _mk(api, token, "eng_stages", {
+        "projectId": proj["id"], "stage": "Detail", "status": "At gate"})
+    st, _ = _sign(api, token, "eng_stages", g["id"], "Passed")
+    assert st != 200, "expected the open hold to stop this gate"
+    return g
+
+
+def test_a_staff_account_on_no_commission_sees_nothing(api, tokens, commission):
+    """Other Staff is on none of these commissions. Before the scope existed they were served
+    every refusal on every job in the office."""
+    _provoke(api, tokens["staff"], commission, "H-401")
+    assert _log(api, tokens["admin"]), "nothing to be scoped away — the test would prove nothing"
+    assert _log(api, tokens["other"]) == []
+
+
+def test_the_lead_engineer_reads_their_own_commission(api, tokens, commission):
+    """A staff account, and the only person the pilot expects to read this."""
+    g = _provoke(api, tokens["staff"], commission, "H-402")
+    rows = _log(api, tokens["staff"])
+    assert [x for x in rows if x.get("recordId") == g["id"]], \
+        "the Lead Engineer cannot read the refusals on their own commission"
+
+
+def test_a_lead_does_not_see_another_commission(api, tokens, commission):
+    other = _second_commission(api, tokens)
+    theirs = _provoke(api, tokens["other"], other, "H-403")
+    mine = _provoke(api, tokens["staff"], commission, "H-404")
+
+    ours = {x.get("recordId") for x in _log(api, tokens["staff"])}
+    assert mine["id"] in ours
+    assert theirs["id"] not in ours, "one commission's refusals reached another's lead"
+
+    theirs_view = {x.get("recordId") for x in _log(api, tokens["other"])}
+    assert theirs["id"] in theirs_view, "and the scope has not locked them out of their own"
+    assert mine["id"] not in theirs_view
+
+
+def test_a_manager_still_reads_the_whole_log(api, tokens, commission):
+    """Somebody has to be able to judge the rules across the office — that is the point of the
+    log. Manager and above, matching who runs the registers everywhere else in the portal."""
+    other = _second_commission(api, tokens)
+    a = _provoke(api, tokens["staff"], commission, "H-405")
+    b = _provoke(api, tokens["other"], other, "H-406")
+    for who in ("mgr", "admin"):
+        seen = {x.get("recordId") for x in _log(api, tokens[who])}
+        assert a["id"] in seen and b["id"] in seen, "%s cannot see the whole log" % who
