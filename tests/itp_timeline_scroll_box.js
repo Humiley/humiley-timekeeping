@@ -103,9 +103,13 @@ console.log('\nThe chart is in a scroll box\n');
   ok('the box is reachable from the keyboard', / tabindex="0"/.test(vp[0].rest),
      'a scroll region only a mouse wheel can move is unreachable for anyone tabbing');
   ok('and it is announced', / role="group"/.test(vp[0].rest) && /aria-label="[^"]+"/.test(vp[0].rest));
+  /* The dictionary moved out of index.html into static/i18n/vi.js, so look for the entry there.
+     Left pointing at index.html this regex would simply stop matching and report a missing
+     translation that is present — a false alarm is still a broken instrument. */
+  const VIJS = fs.readFileSync(path.join(__dirname, '..', 'static', 'i18n', 'vi.js'), 'utf8');
   ok('its label is translated, not left English-only',
-     /'Scroll the ITP timeline':\s*'[^']+'/.test(src),
-     'every other aria-label in this file has a _VI entry');
+     /'Scroll the ITP timeline':\s*'[^']+'|"Scroll the ITP timeline":\s*"[^"]+"/.test(VIJS),
+     'every other aria-label in this app has a _VI entry');
 }
 
 // ══ 2. one height for every scroll box in the app ══════════════════════════════════════════════

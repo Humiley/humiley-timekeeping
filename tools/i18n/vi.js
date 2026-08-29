@@ -1,4 +1,7 @@
-// Locate and parse the _VI dictionary out of templates/index.html.
+// Locate and parse the _VI dictionary out of static/i18n/vi.js.
+//
+// It used to live inline in templates/index.html and was moved out: 145 KB gzipped, ~12% of the boot
+// document, built on every load for an app whose default language is English.
 //
 // _VI mixes '...' and "..." quoting and carries comments between entries, so a regex over lines
 // mis-parses it — this walks the object literal properly and keeps each entry's source line.
@@ -8,12 +11,12 @@ const fs = require('fs');
 const path = require('path');
 
 const REPO = path.resolve(__dirname, '..', '..');
-const INDEX = path.join(REPO, 'templates', 'index.html');
+const INDEX = path.join(REPO, 'static', 'i18n', 'vi.js');
 
 function extractBlock(src) {
   const lines = src.split('\n');
-  const start = lines.findIndex(l => l === 'const _VI = {');
-  if (start < 0) throw new Error('could not find "const _VI = {" in templates/index.html');
+  const start = lines.findIndex(l => l === 'window._VI = {');
+  if (start < 0) throw new Error('could not find "window._VI = {" in static/i18n/vi.js');
   let end = -1;
   for (let i = start + 1; i < lines.length; i++) if (lines[i] === '};') { end = i; break; }
   if (end < 0) throw new Error('could not find the end of the _VI object literal');
@@ -72,7 +75,7 @@ function load() {
   const src = fs.readFileSync(INDEX, 'utf8');
   const block = extractBlock(src);
   const raw = parseVI(block.text);
-  // block.startLine is where "const _VI = {" sits; entry lines are relative to the block
+  // block.startLine is where "window._VI = {" sits; entry lines are relative to the block
   const entries = raw.map(e => ({
     key: unescape(e.key),
     val: unescape(e.val),

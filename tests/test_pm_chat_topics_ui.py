@@ -24,9 +24,18 @@ IDX = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 
 
+VI_JS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "static", "i18n", "vi.js")
+
+
 def _src():
+    # The _VI dictionary moved to static/i18n/vi.js (it was 12% of the boot download and was built
+    # even for English users, who are the default). test_every_topic_has_a_vietnamese_label looks up
+    # its keys in this string, so both files belong in it — the app loads both too.
     with open(IDX, encoding="utf-8") as fh:
-        return fh.read()
+        html = fh.read()
+    with open(VI_JS, encoding="utf-8") as fh:
+        return html + "\n" + fh.read()
 
 
 def _fn(src, name):

@@ -89,14 +89,18 @@ function scan(literal) {
   return pairs;
 }
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'templates', 'index.html'), 'utf8');
-const i = src.indexOf('const _VI = {');
+/* The dictionary moved to static/i18n/vi.js — it was 145 KB gzipped of the boot document, 12% of
+   everything a browser downloaded to show a login screen, built even for the English users who are
+   the default. It is fetched on demand now. This test follows it: pointed at index.html it would
+   find nothing and, without the explicit bail below, would have "passed" on an empty string. */
+const src = fs.readFileSync(path.join(__dirname, '..', 'static', 'i18n', 'vi.js'), 'utf8');
+const i = src.indexOf('window._VI = {');
 const j = src.indexOf('\n};', i);
 if (i < 0 || j <= i) {
-  console.error('Could not find the _VI dictionary in templates/index.html — update this test, do NOT delete it.');
+  console.error('Could not find the _VI dictionary in static/i18n/vi.js — update this test, do NOT delete it.');
   process.exit(2);
 }
-const literal = src.slice(i + 'const _VI = '.length, j + 2);
+const literal = src.slice(i + 'window._VI = '.length, j + 2);
 
 let evaluated;
 try { evaluated = new Function('return (' + literal + ');')(); }

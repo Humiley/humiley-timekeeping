@@ -14,14 +14,24 @@ HTML = os.path.join(ROOT, "templates", "index.html")
 MIN_COVERAGE = 0.92
 
 
+VI_JS = os.path.join(ROOT, "static", "i18n", "vi.js")
+
+
 def _load():
+    # The dictionary moved to static/i18n/vi.js — it was 145 KB gzipped of the boot document,
+    # 12% of everything a browser downloaded to show a login screen, and it was built even for
+    # the English users who are the default. The app loads both files, so this reads both.
+    # vi.js goes LAST on purpose: _vi_entries slices forward from the _VI match, so appending it
+    # at the end means the slice is the dictionary and nothing else.
     with open(HTML, encoding="utf-8") as f:
-        return f.read()
+        html = f.read()
+    with open(VI_JS, encoding="utf-8") as f:
+        return html + "\n" + f.read()
 
 
 def _vi_entries(src):
     """(key -> value) pairs from the _VI dict body, tolerating single/double quotes."""
-    m = re.search(r"const _VI\s*=\s*\{", src)
+    m = re.search(r"(?:const |window\.)_VI\s*=\s*\{", src)
     assert m, "could not locate the _VI dict"
     body = src[m.end():]
     pairs = []
