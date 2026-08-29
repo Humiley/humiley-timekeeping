@@ -100,6 +100,11 @@ jobs:
       - name: The production board shows what has stopped
         run: node tests/ahu_board_shows_stalled.js
 
+      # Same gap, the other screen: /api/ahu/kpi returns a `trend` series and the figure alone
+      # cannot say which way anything is going, which is the only reason a target exists.
+      - name: The KPI panel shows the trend
+        run: node tests/ahu_kpi_shows_trend.js
+
       # A staff account opening ANY project met "Could not load this tab — check your connection",
       # on the Overview it lands on by default and on Schedule, because both listed the
       # manager-only pm_costs in `need` and pmTab treated a 403 as a fetch failure. Retrying a

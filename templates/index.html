@@ -35119,6 +35119,31 @@ async function ahuRenderBoard() {
 
    Three of the eight cannot be computed at all, and say so. A dashboard quietly showing 100% for a
    class nobody tests would be worse than no dashboard. */
+/* A month-by-month strip for one KPI. Plain divs rather than a canvas: this panel re-renders on
+   every board refresh, and a chart object per refresh is a leak with a nice API.
+
+   A month with too few units to read is drawn HOLLOW and still occupies its slot. Dropping it would
+   leave a gap, and a gap in a series reads as "nothing went wrong then" rather than "we did not
+   build enough that month to tell". The count is in the tooltip of every bar, readable or not. */
+function _ahuTrendStrip(series, minN) {
+  if (!series || !series.length) return '';
+  const bar = p => {
+    const pct = p.pct == null ? 0 : p.pct;
+    const thin = !p.enough;
+    const tone = thin ? 'var(--text-light)' : (pct >= 95 ? '#00B060' : pct >= 85 ? '#F59E0B' : '#DC2626');
+    const tip = p.month + ' · ' + (p.pct == null ? 'no data' : p.pct + '%') +
+      ' · n=' + p.n + (thin ? ' (below ' + minN + ', too few to read)' : '');
+    return '<div title="' + _ahuA(tip) + '" style="flex:1;min-width:12px;display:flex;' +
+      'flex-direction:column;justify-content:flex-end;align-items:center;gap:3px">' +
+      '<div style="width:100%;height:' + Math.max(2, Math.round(pct * 0.42)) + 'px;border-radius:3px 3px 0 0;' +
+      (thin ? 'border:1px dashed ' + tone + ';background:transparent' : 'background:' + tone) + '"></div>' +
+      '<div style="font-size:9px;color:var(--text-light);font-variant-numeric:tabular-nums">' +
+      _ahuEsc(p.month.slice(5)) + '</div></div>';
+  };
+  return '<div style="display:flex;align-items:flex-end;gap:3px;height:60px;margin-top:6px">' +
+    series.map(bar).join('') + '</div>';
+}
+
 async function ahuRenderSopKpi() {
   const root = document.getElementById('ahu-sop-kpi'); if (!root) return;
   let d;
@@ -35128,6 +35153,11 @@ async function ahuRenderSopKpi() {
       'SOP KPIs: ' + _ahuEsc(e.message) + '</div>') + '<div style="height:12px"></div>';
     return;
   }
+  // Keyed on the server's stable `key`, never on the DISPLAY TITLE — a title is a label, it gets
+  // reworded, and on some screens it is translated. Only two KPIs have a series; the rest get none
+  // and simply show no strip.
+  const trendOf = kpiKey => (kpiKey && (d.trend || {})[kpiKey]) || null;
+
   const cell = k => {
     if (k.status === 'NOT_MEASURED') {
       return '<div style="border:1px dashed var(--line);border-radius:9px;padding:10px 12px;background:var(--soft-bg)">' +
@@ -35150,7 +35180,10 @@ async function ahuRenderSopKpi() {
         _ahuEsc(dist) + '</div>' : '') +
       (!has ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">No data yet</div>' : '') +
       ((k.late || []).length ? '<div style="font-size:10.5px;color:#DC2626;margin-top:2px">Late: ' +
-        _ahuEsc(k.late.slice(0, 3).map(l => l.pin).join(', ')) + '</div>' : '') + '</div>';
+        _ahuEsc(k.late.slice(0, 3).map(l => l.pin).join(', ')) + '</div>' : '') +
+      // The figure says where we are; the strip says which way it is going, which is the only
+      // question a target is any use for. Only the two KPIs the server computes a series for.
+      _ahuTrendStrip(trendOf(k.key), (d.trend || {}).minN) + '</div>';
   };
   root.innerHTML = _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +

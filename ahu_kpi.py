@@ -336,11 +336,13 @@ def summary(units, incidents=None, worked_hours=None, complaints=None):
                 "basis": "class achieved at test, from the signed reading"}
 
     out = [
-        {"kpi": "First-Pass Yield (FPY)", "target": ">= 97%", "owner": "QA/QC",
+        {"kpi": "First-Pass Yield (FPY)", "key": "firstPassYield",
+         "target": ">= 97%", "owner": "QA/QC",
          "n": fpy["n"], "pct": fpy["pct"],
          "met": fpy["pct"] is not None and fpy["pct"] >= 97.0,
          "basis": "units past gate G4 with no failed hold point or test and no rework NCR"},
-        {"kpi": "On-Time Delivery (OTD)", "target": ">= 95%", "owner": "PMO",
+        {"kpi": "On-Time Delivery (OTD)", "key": "onTimeDelivery",
+         "target": ">= 95%", "owner": "PMO",
          "n": otd["n"], "pct": otd["pct"], "late": otd["late"],
          "met": otd["pct"] is not None and otd["pct"] >= 95.0,
          "basis": "dispatched units against the order's contracted delivery date"},
