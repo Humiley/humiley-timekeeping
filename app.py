@@ -5647,6 +5647,19 @@ class Handler(BaseHTTPRequestHandler):
             return None
 
     @staticmethod
+    def _flagval(v, default=False):
+        """The on/off RULE, separated from the read so a caller that already has the value can apply
+        the same rule instead of copying it. _portal_get prefetches the whole portal_* prefix in one
+        query and would otherwise have to re-read a key it is already holding — or, worse, re-state
+        this logic and let the two drift.
+        """
+        if v is None or v == "":
+            return default
+        if isinstance(v, bool):
+            return v
+        return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+    @staticmethod
     def _flag(key, default=False):
         """A stored on/off switch. Anything unset reads as `default`.
 
@@ -5654,12 +5667,7 @@ class Handler(BaseHTTPRequestHandler):
         stored `false` comes back as the boolean False while a stored `"0"` comes back as a
         non-empty string that is truthy — and the second one would silently turn a rule ON.
         """
-        v = db.get_setting(key)
-        if v is None or v == "":
-            return default
-        if isinstance(v, bool):
-            return v
-        return str(v).strip().lower() in ("1", "true", "yes", "on")
+        return Handler._flagval(db.get_setting(key), default)
 
     def _ahu_notify_step_fail(self, before_readings, step):
         """Alert on a step that has JUST gone from not-failing to failing.
@@ -8584,70 +8592,86 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"token": p_b64 + "." + s_b64})
 
     def _portal_get(self, u):
-        out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
+        # ONE query for the whole portal_* prefix, then read from the dict.
+        #
+        # This read 35 settings one at a time — 35 SELECTs and 35 connection hand-outs for a 1.5 KB
+        # response — and it is awaited before the login overlay comes down, so every one of them sits
+        # between a user pressing sign-in and seeing the app.
+        #
+        # `_ps` matches get_setting's contract exactly, and that matters more than the saving: it
+        # returns `default` only when the key is ABSENT, so a setting stored as null or "" still
+        # comes back as null or "" and every `or "fallback"` below keeps behaving as it did. Plain
+        # `_S.get(k, d)` happens to agree here, but stops agreeing the moment someone stores a falsy
+        # value and expects it back.
+        _S = db.get_settings_prefix("portal_")
+
+        def _ps(key, default=None):
+            return _S[key] if key in _S else default
+
+        out = {k: _ps("portal_" + k) for k in self.PORTAL_KEYS}
         rank = self._level_rank(self._caller_level(u))
         # Integration endpoints are only sent to callers who actually use them, so a plain staff
         # account can't read the Teams webhook (a posting credential) or the Invoice-Tracking
         # SharePoint path. financeSpUrl + procurementUrl stay readable — staff legitimately open
         # bills in SharePoint and launch the granted Procurement app with them.
-        out["teamsWebhook"] = (db.get_setting("portal_teamsWebhook") or "") if rank >= self._level_rank("manager") else ""
-        out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
-        out["hrSpUrl"] = db.get_setting("portal_hrSpUrl", "") or ""
-        out["invtrackSpUrl"] = (db.get_setting("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
-        out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
+        out["teamsWebhook"] = (_ps("portal_teamsWebhook") or "") if rank >= self._level_rank("manager") else ""
+        out["financeSpUrl"] = _ps("portal_financeSpUrl", "") or ""
+        out["hrSpUrl"] = _ps("portal_hrSpUrl", "") or ""
+        out["invtrackSpUrl"] = (_ps("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
+        out["procurementUrl"] = _ps("portal_procurementUrl", "") or ""
         # The bank's column layout. Sent only to Editor+ (it describes a salary payment file), with
         # the shipped default echoed back when nothing is configured so the form always has
         # something real to show rather than an empty table the owner has to invent from nothing.
         if rank >= self._level_rank("editor"):
-            _bt = db.get_setting("portal_bankTemplate")
+            _bt = _ps("portal_bankTemplate")
             out["bankTemplate"] = _bt if isinstance(_bt, list) and _bt else list(bank_transfer.COLUMNS)
             out["bankTemplateIsDefault"] = not (isinstance(_bt, list) and _bt)
             out["bankTemplateKeys"] = [{"key": c["key"], "header": c["header"]}
                                        for c in bank_transfer.COLUMNS]
         # Approval-lifecycle email (department senders + on/off + last-send health for managers+).
-        out["apprEmail"] = db.get_setting("portal_apprEmail", "1") or "1"
-        out["apprSenderHr"] = db.get_setting("portal_apprSenderHr", "") or "hr@humiley.com"
-        out["apprSenderFinance"] = db.get_setting("portal_apprSenderFinance", "") or "finance@humiley.com"
-        out["apprSenderProc"] = db.get_setting("portal_apprSenderProc", "") or "procurement@humiley.com"
-        out["apprReminders"] = db.get_setting("portal_apprReminders", "1") or "1"
-        out["apprReminderDays"] = db.get_setting("portal_apprReminderDays", "2") or "2"
-        out["apprEscalateDays"] = db.get_setting("portal_apprEscalateDays", "0") or "0"
-        out["apprEscalateTo"] = db.get_setting("portal_apprEscalateTo", "") or ""
-        out["digestEnabled"] = db.get_setting("portal_digestEnabled", "0") or "0"
-        out["digestDay"] = db.get_setting("portal_digestDay", "0") or "0"
-        out["digestLeadTo"] = db.get_setting("portal_digestLeadTo", "") or ""
-        out["tkNudges"] = db.get_setting("portal_tkNudges", "0") or "0"
-        out["tkCheckinHour"] = db.get_setting("portal_tkCheckinHour", "10") or "10"
-        out["tkCheckoutHour"] = db.get_setting("portal_tkCheckoutHour", "19") or "19"
-        out["monthlyReports"] = db.get_setting("portal_monthlyReports", "0") or "0"
-        out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
-        out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
-        out["payerSeparation"] = db.get_setting("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
+        out["apprEmail"] = _ps("portal_apprEmail", "1") or "1"
+        out["apprSenderHr"] = _ps("portal_apprSenderHr", "") or "hr@humiley.com"
+        out["apprSenderFinance"] = _ps("portal_apprSenderFinance", "") or "finance@humiley.com"
+        out["apprSenderProc"] = _ps("portal_apprSenderProc", "") or "procurement@humiley.com"
+        out["apprReminders"] = _ps("portal_apprReminders", "1") or "1"
+        out["apprReminderDays"] = _ps("portal_apprReminderDays", "2") or "2"
+        out["apprEscalateDays"] = _ps("portal_apprEscalateDays", "0") or "0"
+        out["apprEscalateTo"] = _ps("portal_apprEscalateTo", "") or ""
+        out["digestEnabled"] = _ps("portal_digestEnabled", "0") or "0"
+        out["digestDay"] = _ps("portal_digestDay", "0") or "0"
+        out["digestLeadTo"] = _ps("portal_digestLeadTo", "") or ""
+        out["tkNudges"] = _ps("portal_tkNudges", "0") or "0"
+        out["tkCheckinHour"] = _ps("portal_tkCheckinHour", "10") or "10"
+        out["tkCheckoutHour"] = _ps("portal_tkCheckoutHour", "19") or "19"
+        out["monthlyReports"] = _ps("portal_monthlyReports", "0") or "0"
+        out["monthlyDay"] = _ps("portal_monthlyDay", "1") or "1"
+        out["monthlyTo"] = _ps("portal_monthlyTo", "") or ""
+        out["payerSeparation"] = _ps("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
         # The company's Decree 293/2025 wage region and the trained-worker uplift. These were
         # WRITEABLE (they are in _portal_update's whitelist) and never READ BACK, so the settings
         # form had no way to show what was stored — and once a field existed, loading blank and
         # saving would have silently cleared them. A write path without its matching read is how a
         # setting quietly resets itself.
-        out["wageRegion"] = db.get_setting("portal_wageRegion", "") or ""
+        out["wageRegion"] = _ps("portal_wageRegion", "") or ""
         # "1"/"0" both ways. Handing the form a bare stored value would send it a boolean on one
         # save and a string on the next, and `!!"0"` is true.
-        out["trainedUplift"] = "1" if self._flag("portal_trainedUplift") else "0"
+        out["trainedUplift"] = "1" if self._flagval(_ps("portal_trainedUplift")) else "0"
         # Read back to an admin only — like the payer allow-list, it is an authorization list, and
         # publishing who reads concerns tells everyone who to avoid raising one about.
         if self._caller_level(u) == "admin":
-            out["speakupHandlers"] = db.get_setting("portal_speakupHandlers", "") or ""
+            out["speakupHandlers"] = _ps("portal_speakupHandlers", "") or ""
         # The payer ALLOW-LIST is an authorization list, so only an admin (who can edit it) reads it
         # back. Everyone gets `canPay` instead — their OWN capability, computed by the same helper the
         # e-signature gate uses, so the Mark-paid button can never appear for someone the server will
         # refuse. (It reflects the list + level only; the per-request rules — not your own request, not
         # one you approved — are still decided per request at signing time.)
-        out["apprPayers"] = (db.get_setting("portal_apprPayers", "") or "") \
+        out["apprPayers"] = (_ps("portal_apprPayers", "") or "") \
             if self._caller_level(u) == "admin" else ""
         out["canPay"] = self._is_payer(u)
         # Same treatment for the HR list: it is an authorization list, so only an admin reads it
         # back. Everyone gets `canPublishDocs` — their OWN capability, from the same helper the write
         # gate uses, so the Publish button can never appear for somebody the server will refuse.
-        out["hrAdmins"] = (db.get_setting("portal_hrAdmins", "") or "") \
+        out["hrAdmins"] = (_ps("portal_hrAdmins", "") or "") \
             if self._caller_level(u) == "admin" else ""
         out["canPublishDocs"] = self._is_hr_admin(u)
         out["otAnnualCap"] = str(int(_ot_annual_cap()))   # the ceiling everyone's OT is measured against

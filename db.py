@@ -1839,6 +1839,31 @@ def get_setting(key, default=None):
     return json.loads(row["value"]) if row else default
 
 
+def get_settings_prefix(prefix):
+    """Every setting whose key starts with `prefix`, decoded, in ONE query.
+
+    /api/portal read 35 settings one at a time — 35 SELECTs and 35 connection hand-outs for a 1.5 KB
+    response, all of it before the login overlay comes down. They are one table and one prefix, so
+    they are one statement.
+
+    `_` and `%` are LIKE WILDCARDS, and the prefix this exists to serve is literally `portal_`.
+    Unescaped it also matches `portalXsomething`, which is a quiet correctness bug rather than a
+    crash: the caller gets a setting that is not theirs and cannot tell. Hence the ESCAPE clause.
+
+    A row whose value will not decode is SKIPPED rather than raising, so one corrupt setting cannot
+    take down every screen that reads its neighbours — the same thing get_setting's callers already
+    get from `default`.
+    """
+    esc = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    out = {}
+    for r in _rows("SELECT key, value FROM settings WHERE key LIKE ? ESCAPE '\\'", (esc + "%",)):
+        try:
+            out[r["key"]] = json.loads(r["value"])
+        except Exception:
+            continue
+    return out
+
+
 def set_setting(key, value):
     conn = get_conn()
     conn.execute("INSERT INTO settings (key,value) VALUES (?,?) "

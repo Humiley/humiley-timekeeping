@@ -65,8 +65,20 @@ def test_no_reader_uses_bool_on_the_raw_setting(base_url):
         'bool() on a decoded setting reads a stored "0" as true'
     # And the helper is actually reached — a test that only forbids the wrong spelling would pass
     # with every call site deleted.
-    assert src.count('_flag("portal_trainedUplift")') >= 4, \
-        "expected the three consumers plus the GET read-back to go through _flag"
+    #
+    # Counted across BOTH spellings of the one rule. This asserted `_flag(...) >= 4` and went red when
+    # /api/portal stopped issuing 35 separate SELECTs: the read-back there now applies the same rule to
+    # a value the prefetch already holds, via `_flagval`, rather than paying for another query. That is
+    # the same judgement reached the same way — `_flag` is literally `_flagval(db.get_setting(key))` —
+    # so a count of one spelling was pinning the mechanism, not the property. The property is that
+    # every reader of this key goes through the shared rule and none of them re-implements it.
+    readers = src.count('_flag("portal_trainedUplift")') + src.count('_flagval(_ps("portal_trainedUplift")')
+    assert readers >= 4, \
+        "expected the three consumers plus the GET read-back to go through the shared flag rule, " \
+        "found %d" % readers
+    # One rule, not two that can drift: _flag must be defined in terms of _flagval.
+    assert 'return Handler._flagval(db.get_setting(key), default)' in src, \
+        "_flag and _flagval must share one implementation, or the two can disagree about a stored '0'"
 
 
 # ── (1) the writer ──────────────────────────────────────────────────────────────────────────────
