@@ -13073,9 +13073,25 @@ class Handler(BaseHTTPRequestHandler):
                 uom=str(ln.get("uom") or "lot")[:16], src=ln.get("src")))
         return out
 
-    def _sales_may_write(self, u, doc):
+    @staticmethod
+    def _dept_by_name():
+        """name -> department, for the manager-scope check. One read of the employee table."""
+        return {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
+
+    def _sales_may_write(self, u, doc, deptof=None):
         """A sell-side document follows the CRM's own rule: your own, your department if you manage
-        it, anything from management up."""
+        it, anything from management up.
+
+        `deptof` is an optional prebuilt `_dept_by_name()` map for callers judging MANY documents.
+        Without it this rebuilds the map per call, and the map costs a full read of the employee
+        table — ~3 ms at 80 people, most of it Python building 80x53 dicts rather than anything
+        SQLite does, so connection reuse does not touch it. Over a few hundred contracts that is
+        most of a second spent deriving the same answer again and again.
+
+        Passed in rather than memoised on the handler on purpose: handlers are REUSED across
+        keep-alive requests on one socket, so an instance cache would outlive the request that
+        filled it and could answer the next one from a stale employee table.
+        """
         if self._is_mgmt(u):
             return True
         owner = str((doc or {}).get("owner") or "")
@@ -13083,7 +13099,8 @@ class Handler(BaseHTTPRequestHandler):
             return True
         if u.get("role") == "manager":
             mydept = u.get("dept") or u.get("department") or ""
-            deptof = {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
+            if deptof is None:
+                deptof = self._dept_by_name()
             return bool(mydept) and deptof.get(owner) == mydept
         return False
 
@@ -13386,10 +13403,11 @@ class Handler(BaseHTTPRequestHandler):
         today = self._vn_day()
         rows, blocked = [], []
         held = due = 0.0
+        deptof = self._dept_by_name()          # once, not once per contract
         for c in db.list_collection("sales_contracts"):
             if c.get("status") not in (sales_doc.ACTIVE, sales_doc.CLOSED):
                 continue
-            if not self._sales_may_write(u, c):
+            if not self._sales_may_write(u, c, deptof):
                 continue
             r = sales_contract.retention_release(c, self._contract_state(c), today)
             if r["outstanding"] <= 0.005:
@@ -13520,11 +13538,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Customer not found.", 404)
         name = (acc or {}).get("name") or acc_name
 
+        deptof = self._dept_by_name()          # once for the whole dossier, not once per row
+
         def mine(coll, key="accountId"):
             rows = []
             for r in db.list_collection(coll):
                 if (acc_id and r.get(key) == acc_id) or (not acc_id and r.get("accountName") == name):
-                    if self._sales_may_write(u, r):
+                    if self._sales_may_write(u, r, deptof):
                         rows.append(r)
             return rows
 
@@ -15142,8 +15162,9 @@ class Handler(BaseHTTPRequestHandler):
         allocs_of, names = {}, {}
         for pr in db.list_collection("pm_projects"):
             names[str(pr.get("id") or "")] = pr.get("name") or pr.get("title") or pr.get("id") or ""
+        idof = self._id_by_lower_name()        # once, not once per unresolved resource row
         for r in db.list_collection("pm_resources"):
-            eid = self._emp_id_for_resource(r)
+            eid = self._emp_id_for_resource(r, idof)
             if eid:
                 allocs_of.setdefault(eid, []).append(
                     {"projectId": str(r.get("projectId") or r.get("project") or ""),
@@ -15171,19 +15192,40 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(rep)
 
     @staticmethod
-    def _emp_id_for_resource(r):
+    def _emp_id_for_resource(r, idof=None):
         """pm_resources stores the member as a NAME chosen from a dropdown, not an id — so it has to
-        be resolved back, and a name that matches nobody is dropped rather than guessed at."""
+        be resolved back, and a name that matches nobody is dropped rather than guessed at.
+
+        `idof` is an optional lowercased name -> id map for callers resolving MANY rows; see
+        `_id_by_lower_name`. Without one this reads the whole employee table per row that has no
+        `empId`, which is a full table read to answer one lookup.
+        """
         v = str((r or {}).get("empId") or "").strip()
         if v:
             return v
         nm = str((r or {}).get("name") or "").strip().lower()
         if not nm:
             return ""
+        if idof is not None:
+            return idof.get(nm, "")
         for e in db.list_employees():
             if str(e.get("name") or "").strip().lower() == nm:
                 return str(e.get("id") or "")
         return ""
+
+    @staticmethod
+    def _id_by_lower_name():
+        """lowercased name -> employee id. Built once by callers resolving a whole register.
+
+        First match wins, which is what the linear scan it replaces did — so two people sharing a
+        name resolve exactly as before rather than the later one silently taking over.
+        """
+        out = {}
+        for e in db.list_employees():
+            k = str(e.get("name") or "").strip().lower()
+            if k and k not in out:
+                out[k] = str(e.get("id") or "")
+        return out
 
     @staticmethod
     def _period_ym(period):
