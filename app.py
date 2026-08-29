@@ -49,6 +49,7 @@ import ahu              # AHU production control: gate exit criteria, route inst
 import ahu_selection    # the AeroSelect selection handoff: read a selection in without retyping it (pure)
 import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
 import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
+import ahu_rework       # which stations generate the rework, from the NCRs' own stepCode (pure)
 import ahu_notify       # who to tell when a step fails, a gate is held or an NCR ages (pure)
 import ahu_eurovent     # Eurovent 6/18-2022: what the industry recommends, as reference (pure)
 import ahu_calibration  # what measured the number, and whether it was fit to (pure)
@@ -6470,6 +6471,9 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             months = 12
         out["trend"] = ahu_kpi.monthly(all_rows, months)
+        # Where the rework happens, from the stepCode every NCR already records. Over EVERY
+        # unit, like the trend: "which station costs us" is not a question about one window.
+        out["rework"] = ahu_rework.summary(all_rows)
         return self._json(self._ahu_json_safe(out))
 
     def _ahu_board_ep(self, u):
