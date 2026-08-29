@@ -40,7 +40,10 @@ print(json.dumps(out))
 
 ok('cash flow really calls it peakFunding', realKeys.cash_flow.indexOf('peakFunding') >= 0,
    'got: ' + realKeys.cash_flow.join(', '));
-ok('the risk register really calls it expected', realKeys.risk_register.indexOf('expected') >= 0);
+/* The register itself carries `expectedValue`; its per-risk ROWS carry `expected`. A source
+   scan finds both, which is how the wrong one got used — so name the one that matters. */
+ok('the risk register really carries expectedValue',
+   realKeys.risk_register.indexOf('expectedValue') >= 0);
 ok('accuracy really carries stated/label/low', ['stated', 'label', 'low']
    .every(k => realKeys.accuracy.indexOf(k) >= 0));
 
@@ -49,7 +52,9 @@ ok('accuracy really carries stated/label/low', ['stated', 'label', 'low']
 ok('the page reads cash.peakFunding, not cash.peak',
    /cash\.peakFunding/.test(src) && !/cash\.peak[^FM]/.test(src),
    'the funding line would render blank');
-ok('the page reads risk.expected', /risk\.expected/.test(src));
+ok('the page reads risk.expectedValue, not risk.expected',
+   /risk\.expectedValue/.test(src) && !/risk\.expected\b(?!Value)/.test(src),
+   'the exposure line would render blank');
 
 // ── run the renderer ────────────────────────────────────────────────────────────────────────────
 const start = src.indexOf('function tndTabOverview() {');
@@ -76,8 +81,7 @@ const env = {
              signature: { required: true, signed: false, stale: false } },
     accuracy: { stated: true, label: 'Class 3', low: 900000000, high: 1200000000 },
     cash: { peakFunding: 450000000, peakMonth: 3 },
-    risk: { expected: 55000000, openCount: 4 },
-    rateDrift: [{ code: 'LAB-01' }, { code: 'MAT-01' }],
+    risk: { expectedValue: 55000000, openCount: 4 },   // the register's own key
     fxExposure: { currency: 'USD', rows: [{ movePct: -10, marginPct: 12.5 }] },
     document: null,
   },
@@ -111,7 +115,6 @@ ok('the cash needed to fund the job', has('450,000,000'),
    'peakFunding was read under the wrong name and vanished silently');
 ok('the risk exposure', has('55,000,000'));
 ok('the accuracy class', has('Class 3'));
-ok('the drifted rate count', has('2') && has('rate(s)'));
 
 ok('it says the quotation cannot be issued', has('Not ready to issue'));
 ok('it lists what is missing', has('Amount in words'));

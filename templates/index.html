@@ -33750,7 +33750,7 @@ function tndTabOverview() {
   }
 
   /* ── 5. what could go wrong ── */
-  const acc = S.accuracy || {}, cash = S.cash || {}, risk = S.risk || {}, drift = S.rateDrift || [];
+  const acc = S.accuracy || {}, cash = S.cash || {}, risk = S.risk || {};
   const fx = S.fxExposure;
   const fact = (lbl, val, note, hex) => '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
     '<div style="font-size:11.5px;color:var(--text-light)">' + _t(lbl) + '</div>' +
@@ -33769,10 +33769,17 @@ function tndTabOverview() {
     (cash.peakFunding ? fact('Cash needed to fund this job', _tndMoney(cash.peakFunding),
          _t('the deepest the company is out of pocket before the customer catches up') +
          (cash.peakMonth ? ' · ' + _t('month') + ' ' + cash.peakMonth : '')) : '') +
-    (risk.expected ? fact('Risk exposure (expected value)', _tndMoney(risk.expected),
+    /* `expectedValue`, not `expected` — the register's per-risk ROWS carry `expected`, the
+       register itself carries `expectedValue`. Reading the wrong one is not an error: it is
+       undefined, the guard skips it, and the exposure line silently never appears. */
+    (risk.expectedValue ? fact('Risk exposure (expected value)', _tndMoney(risk.expectedValue),
          (risk.openCount || 0) + ' ' + _t('risk(s) still open')) : '') +
-    (drift.length ? fact('Library rates that have moved', drift.length + ' ' + _t('rate(s)'),
-         _t('re-price from Cost Control, or price it knowingly'), '#B36B00') : '') +
+    /* NO RATE-DRIFT LINE HERE, deliberately.
+       Drift is `estimating.stale_rates` over est_resources.rateId — the BoQ path. A trading, EPC or
+       services tender prices from est_landed / est_bom / est_wbs, which carry no library rate, so
+       /api/tender/summary has no such figure to send. The line read a drift key off the tender
+       summary, which is always
+       undefined here: it rendered nothing, always, and looked like "no rates have moved". */
     (worst ? fact('If the dong moves ' + _tndNum(worst.movePct, 0) + '%',
          worst.marginPct == null ? '—' : _tndPct(worst.marginPct) + ' ' + _t('margin'),
          _t('the price is fixed in') + ' ' + fx.currency + ', ' + _t('the cost is not')) : '') +
