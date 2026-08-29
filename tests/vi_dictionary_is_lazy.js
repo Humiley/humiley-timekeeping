@@ -113,5 +113,29 @@ console.log('\nAnd without it, the app is English rather than broken\n');
      'got ' + JSON.stringify(runT('Settings')));
 }
 
+// ══ 5. everything that reads the dictionary followed it ════════════════════════════════════════
+console.log('\nEvery consumer follows it to the new file\n');
+{
+  /* I searched tests/ and missed tools/i18n/vi.js, which CI runs as a required check — it threw
+     `could not find "const _VI = {" in templates/index.html` and failed the build. A dictionary this
+     widely read has consumers outside the test folder, so scan the REPO, not one directory. */
+  const walk = (dir, out) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === '.git' || e.name === 'node_modules' || e.name === 'static') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (/\.(js|py)$/.test(e.name)) out.push(p);
+    }
+    return out;
+  };
+  const stale = walk(ROOT, [])
+    .filter(p => p !== __filename)
+    .filter(p => /const _VI\s*=\s*\{/.test(fs.readFileSync(p, 'utf8')))
+    .map(p => path.relative(ROOT, p));
+  ok('nothing still looks for the literal inside index.html', stale.length === 0,
+     'these still hunt for `const _VI = {`: ' + stale.join(', ') +
+     ' — they will either throw or, worse, quietly find nothing and assert against an empty string');
+}
+
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
