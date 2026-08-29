@@ -138,3 +138,56 @@ def test_a_record_in_another_collection_is_untouched(api, tokens, commission):
     """The guard is about eng_ design records, not about everything anybody signed."""
     st, b = api("GET", "/api/coll/eng_projects", tokens["admin"])
     assert st == 200
+
+
+# ── the clock has to start by itself ────────────────────────────────────────────
+
+def test_closing_a_commission_stamps_the_date(api, tokens, commission):
+    """Nothing started the clock before this. A date somebody has to remember to type is a
+    retention policy that protects finished work for ever — the same state as work that closed
+    yesterday, which is an absence of a policy wearing the right words."""
+    assert not commission.get("closedOn")
+    commission["status"] = "Completed"
+    st, b = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], commission)
+    assert st == 200, b
+    assert b["item"]["closedOn"], "closing the commission did not start the clock"
+
+
+def test_a_hand_entered_close_date_is_not_overwritten(api, tokens, commission):
+    """A commission closed in the past and recorded later. The typed date is the true one."""
+    commission["status"] = "Closed"
+    commission["closedOn"] = "2024-03-15"
+    st, b = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], commission)
+    assert st == 200, b
+    assert b["item"]["closedOn"] == "2024-03-15"
+
+
+def test_a_later_edit_does_not_move_the_expiry(api, tokens, commission):
+    """Re-stamping on every save would quietly push the expiry out each time somebody edited a
+    commission that had been closed for years."""
+    commission["status"] = "Closed"
+    commission["closedOn"] = "2015-01-01"
+    st, b = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], commission)
+    assert st == 200
+    item = b["item"]
+    item["client"] = "A Client, renamed"
+    st, b2 = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], item)
+    assert st == 200
+    assert b2["item"]["closedOn"] == "2015-01-01", "an ordinary edit moved the retention expiry"
+
+
+def test_reopening_and_closing_again_keeps_the_first_date(api, tokens, commission):
+    """A commission closed, reopened for a snag, and closed again. The retention clock belongs to
+    the first close — the records were complete then."""
+    commission["status"] = "Closed"
+    st, b = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], commission)
+    assert st == 200
+    first = b["item"]["closedOn"]
+    assert first
+    item = b["item"]; item["status"] = "Active"
+    st, b2 = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], item)
+    assert st == 200
+    item = b2["item"]; item["status"] = "Closed"
+    st, b3 = api("PATCH", "/api/coll/eng_projects/" + commission["id"], tokens["admin"], item)
+    assert st == 200
+    assert b3["item"]["closedOn"] == first

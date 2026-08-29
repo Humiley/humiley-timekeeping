@@ -17264,6 +17264,24 @@ class Handler(BaseHTTPRequestHandler):
             # appends a reversal rather than deleting, so testing the chain would leave a reversed
             # record frozen for ever. Each register keeps exactly one later fact editable, because
             # that fact is about the document rather than a change to it.
+            # Closing a commission starts the retention clock, and nothing was starting it. The
+            # date was a field somebody had to remember to fill in — so the records of a finished
+            # job would have been protected for ever, which sounds safe until you notice it is the
+            # same state as a job that closed yesterday. A clock that never starts is not a
+            # retention policy, it is an absence of one wearing the right words.
+            #
+            # Stamped SERVER-SIDE, from the transition rather than from the form: a legal control
+            # should not depend on a browser sending a field. Only set when it is missing — a close
+            # date corrected by hand afterwards is a correction, not an error, and re-stamping it
+            # on every later save would quietly move the expiry every time somebody edited a
+            # commission that had been closed for years.
+            if name == "eng_projects" and existing:
+                _st = str(item.get("status") or "").strip().lower()
+                _was = str(existing.get("status") or "").strip().lower()
+                if _st in ("completed", "closed") and _was not in ("completed", "closed") \
+                        and not str(item.get("closedOn") or existing.get("closedOn") or "").strip():
+                    item["closedOn"] = time.strftime("%Y-%m-%d")
+
             # A chargeable change that was built and never billed is the quietest way a design
             # office funds a client's change out of its own fee. The variation does not have to
             # exist yet when the change is approved — it usually cannot, the scope is still being
