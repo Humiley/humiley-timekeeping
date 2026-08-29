@@ -29,6 +29,8 @@ function slice(start, end) {
 
 const NAV = slice('/* ── ENG TAB NAV ──', '/* ── END ENG TAB NAV ── */');
 const LOG = slice('/* ── ENG REFUSAL LOG ──', '/* ── END ENG REFUSAL LOG ── */');
+const BASE = slice('/* ── ENG BASELINE ──', '/* ── END ENG BASELINE ── */');
+const PANEL = slice('/* ── ENG BASELINE PANEL ──', '/* ── END ENG BASELINE PANEL ── */');
 
 let SINK = '';
 const PRELUDE = `
@@ -36,7 +38,7 @@ const PRELUDE = `
   const PROJ = { id: 'p1', code: 'PIL26', name: 'Pilot commission' };
   function _engIsLead(){ return LEAD; }
   function _engProj(){ return PROJ; }
-  function _engScopeFor(c){ return c === 'eng_refusals' ? ROWS : []; }
+  function _engScopeFor(c){ return c === 'eng_refusals' ? ROWS : (c === 'eng_deliverables' ? DELS : []); }
   function _engSet(h){ CAPTURE(h); }
   function _engEsc(s){ return String(s == null ? '' : s).replace(/[<>&]/g, ''); }
   function _tkEscA(s){ return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
@@ -64,12 +66,29 @@ const PRELUDE = `
   function tkIcon(){ return '<svg></svg>'; }
   function showView(){}
   const sessionStorage = { setItem(){}, getItem(){ return null; } };
+  const _HR = { eng_baselines: [] };
+  let DELS = [];
+  function _engInScope(d){ return String(d.creditStatus || '') !== 'Cancelled'; }
+  function _engProgress(rows){
+    let w = 0, e = 0;
+    (rows || []).forEach(function (d) {
+      if (!_engInScope(d)) return;
+      const ww = Math.max(0, +d.weight || 0) || 1; w += ww; e += ww * (+d.credit || 0);
+    });
+    return { pct: w ? e / w : 0, wsum: w };
+  }
+  function _engSpi(){ return 0.93; }
+  function _engTile(l, v, hex, sub){ return '<div class="tile">' + l + ': ' + v + (sub ? ' (' + sub + ')' : '') + '</div>'; }
+  function _engTiles(list){ return '<div class="tiles">' + list.join('') + '</div>'; }
+  function _t(s){ return s; }
 `;
 
 const api = {};
-new Function('CAPTURE', PRELUDE + NAV + LOG + `
+new Function('CAPTURE', PRELUDE + NAV + LOG + BASE + PANEL + `
   Object.assign(this, { _ENG_TABS, _ENG_TAB_GROUPS, _engTabBar, engRenderRefusals,
-    setTab: v => { _engTabK = v; }, setRows: v => { ROWS = v; }, setLead: v => { LEAD = v; } });
+    _engBaselinePanel,
+    setTab: v => { _engTabK = v; }, setRows: v => { ROWS = v; }, setLead: v => { LEAD = v; },
+    setDels: v => { DELS = v; }, setBaselines: v => { _HR.eng_baselines = v; } });
 `).call(api, h => { SINK = h; });
 
 const VOID = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'source', 'path', 'polyline',
@@ -163,6 +182,41 @@ console.log('\nrefusal screen markup');
                  R({ coll: 'eng_deviations', attempted: 'Approved', rule: 'Agree the departure' })]]
 ].forEach(([label, rows]) => {
   t(label, () => { api.setRows(rows); SINK = ''; api.engRenderRefusals('p1'); wellFormed(label, SINK); });
+});
+
+console.log('\nbaseline panel markup');
+const BD = (id, planned, o) => Object.assign({ id: id, docNo: id, title: 'Doc ' + id,
+  plannedIssue: planned, weight: 10, credit: 0 }, o || {});
+const BBL = (lines, o) => Object.assign({ projectId: 'p1', seq: 1, stage: 'Detail',
+  takenOn: '2026-08-12', takenBy: 'Staff One', lines: lines }, o || {});
+const BL_ = (id, planned) => ({ deliverableId: id, docNo: id, plannedIssue: planned });
+
+[['no baseline at all', [BD('a', '2026-09-01')], []],
+ ['a baseline with nothing moved', [BD('a', '2026-09-01')], [BBL([BL_('a', '2026-09-01')])]],
+ ['dates moved both ways', [BD('a', '2026-11-30'), BD('b', '2026-08-01')],
+  [BBL([BL_('a', '2026-09-01'), BL_('b', '2026-09-01')])]],
+ ['scope added, scope gone, dates removed',
+  [BD('a', ''), BD('new', '2026-10-01')],
+  [BBL([BL_('a', '2026-09-01'), BL_('vanished', '2026-09-01')])]],
+ ['more than five moved, so the table truncates',
+  Array.from({ length: 8 }, (_, n) => BD('d' + n, '2026-12-0' + (n + 1))),
+  [BBL(Array.from({ length: 8 }, (_, n) => BL_('d' + n, '2026-09-01')))]],
+ ['a cancelled deliverable in the baseline',
+  [BD('a', '2026-09-01', { creditStatus: 'Cancelled' })], [BBL([BL_('a', '2026-09-01')])]],
+ ['the newest of three baselines governs', [BD('a', '2026-09-01')],
+  [BBL([BL_('a', '2026-01-01')], { seq: 1 }), BBL([BL_('a', '2026-09-01')], { seq: 3 }),
+   BBL([BL_('a', '2026-05-01')], { seq: 2 })]]
+].forEach(([label, dels, bls]) => {
+  t(label, () => {
+    api.setDels(dels); api.setBaselines(bls);
+    wellFormed(label, api._engBaselinePanel('p1'));
+  });
+});
+t('and for somebody who cannot take one', () => {
+  api.setLead(false);
+  api.setDels([BD('a', '2026-09-01')]); api.setBaselines([]);
+  wellFormed('no-baseline panel, non-lead', api._engBaselinePanel('p1'));
+  api.setLead(true);
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -87,6 +87,11 @@ SHARED = {
     "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards",
     "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds",
     "eng_transmittals",
+    # The baseline is a record of the PLAN, not of a person. Everyone working the commission is
+    # measured against it, so everyone on it should be able to see what it says — a schedule
+    # judgement people cannot inspect is one they cannot dispute. Writes are refused for every
+    # account through ISSUED_ONLY; only the server takes one.
+    "eng_baselines",
     # Production floor. An operator has to see the order, the unit, the route and the parts to do
     # the next step; a QC inspector has to see the whole trail.
     "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr",

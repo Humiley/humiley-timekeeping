@@ -4459,6 +4459,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/eng/baseline":
+            return self._guard(lambda uu: self._eng_baseline_ep(uu, body or {}))
         if path == "/api/sales/vat-settings":
             return self._guard(lambda uu: self._vat_settings_ep(uu, body or {}))
         if path == "/api/sales/receipt":
@@ -4598,7 +4600,13 @@ class Handler(BaseHTTPRequestHandler):
             # _is_hr_admin is the real gate. Being NAMED as HR is the grant, and the HR officer who
             # writes the policies is often plain staff — this guard would refuse her at the route
             # before the grant was ever consulted. Same reason `devices` is exempt on PATCH.
-            _mgr = (name not in self.STAFF_WRITE and name != "hrdocs")
+            # `eng_baselines` is exempt from this door so the refusal can tell the truth, NOT
+            # because anything is being granted: _coll_add refuses it for every account through
+            # ISSUED_ONLY, one branch later. Without the exemption a staff engineer was told
+            # "Manager access required", which is misleading — a manager cannot write one either,
+            # and the sentence sends them to ask for an access level that would not help. Past the
+            # door they get the message that says how a baseline is actually taken.
+            _mgr = (name not in self.STAFF_WRITE and name != "hrdocs" and name != "eng_baselines")
             # /api/coll/<name>/bulk — many rows, one request. Deliberately the SAME route guard as
             # the single-item POST beside it, and each row then goes through the same _coll_add:
             # a bulk endpoint whose door is even slightly different from the one-at-a-time door is
@@ -5182,6 +5190,103 @@ class Handler(BaseHTTPRequestHandler):
             names = [x.strip() for x in str(members or "").split(",")]
         return any(n and (n.strip().lower() == me or self._pm_same_person(n, u.get("name")))
                    for n in names)
+
+    # ── the design programme baseline ───────────────────────────────────────────────────────────
+    #
+    # Until this existed, "are we on schedule?" was answered from the LIVE plannedIssue dates. The
+    # planned figure, the SPI and the overdue count were all read off the same field an engineer
+    # edits when a drawing slips — so moving one date made the deliverable stop being overdue, put
+    # SPI back to 1.00, cleared the Needs-attention line, and left no record that the plan had
+    # moved. No bad intent needed: updating a date to something realistic is the job. The measure
+    # that exists to detect slippage was erased by the act of absorbing it.
+    #
+    # A baseline is a photograph of the planned dates at a moment somebody stands behind. It is
+    # written by the SERVER only — at a signed gate, or through /api/eng/baseline — because a plan
+    # a browser can write is a plan the person being measured can choose.
+    #
+    # Baselines accumulate and the newest governs. That is deliberate: re-baselining is legitimate
+    # and common, and the useful number is not "is there a baseline" but HOW MANY TIMES the plan has
+    # been re-cut. Deleting one is refused in _coll_delete for the same reason.
+    def _eng_take_baseline(self, u, pid, stage="", gate_id="", reason=""):
+        """Freeze the planned dates for one commission. Returns the row, or None if there is
+        nothing to freeze."""
+        pid = str(pid or "")
+        if not pid:
+            return None
+        lines = []
+        for d in db.list_collection("eng_deliverables"):
+            if str(d.get("projectId") or "") != pid:
+                continue
+            if str(d.get("creditStatus") or "").strip().lower() in ("cancelled", "canceled"):
+                continue
+            lines.append({
+                "deliverableId": d.get("id") or "",
+                "docNo": str(d.get("docNo") or "")[:80],
+                "title": str(d.get("title") or "")[:120],
+                "discipline": str(d.get("discipline") or "")[:60],
+                # The date is the point of the whole record. Stored even when blank, so a
+                # deliverable that had NO date at baseline and has one now is distinguishable from
+                # one that was added afterwards — they mean different things and the drift report
+                # counts them separately.
+                "plannedIssue": str(d.get("plannedIssue") or "")[:10],
+                "weight": d.get("weight") or "",
+            })
+        if not lines:
+            return None
+        prior = [b for b in db.list_collection("eng_baselines")
+                 if str(b.get("projectId") or "") == pid]
+        row = {
+            "projectId": pid,
+            "stage": str(stage or ""),
+            "gateId": str(gate_id or ""),
+            "seq": len(prior) + 1,
+            "takenBy": u.get("name") or "System",
+            "takenOn": time.strftime("%Y-%m-%d"),
+            "takenAt": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "reason": str(reason or "")[:200],
+            "dated": sum(1 for x in lines if x["plannedIssue"]),
+            "count": len(lines),
+            "lines": lines,
+        }
+        db.put_collection_item("eng_baselines", row)
+        return row
+
+    def _eng_baseline_ep(self, u, body):
+        """Take a baseline by hand.
+
+        Gates cover the future, and only the future: a commission already in Detailed Design has
+        passed the gates it is going to pass for a while, so a gate-only baseline would leave the
+        jobs that most need one waiting months for it. This is the cold start.
+
+        Authority is the commission's — Design Manager, Lead Engineer, QA approver — or a portal
+        manager, matching who decides a gate. Not an access level: a Design Manager here is usually
+        an ordinary staff account.
+        """
+        pid = str((body or {}).get("projectId") or "").strip()
+        if not pid:
+            return self._err("Which commission?", 400)
+        proj = next((p for p in db.list_collection("eng_projects") if p.get("id") == pid), None)
+        if not proj:
+            return self._err("Commission not found.", 404)
+        is_mgr = self._level_rank(self._caller_level(u)) >= self._level_rank("manager")
+        if not (is_mgr or self._eng_is_lead(u, proj)):
+            return self._err("A baseline is set by the Design Manager or Lead Engineer named on "
+                             "the commission — it is the plan everyone else is measured against.",
+                             403)
+        reason = str((body or {}).get("reason") or "").strip()
+        if not reason:
+            # The count of re-baselines is the number this feature exists to expose, and a count
+            # with no reasons beside it invites exactly one reading: that somebody was massaging
+            # the plan. Making the reason mandatory costs one sentence and answers that in advance.
+            return self._err("Say why the plan is being re-cut. A baseline with no reason recorded "
+                             "is indistinguishable, later, from one taken to make a slipping "
+                             "programme look on time.", 400)
+        row = self._eng_take_baseline(u, pid, proj.get("currentStage") or "", "", reason)
+        if not row:
+            return self._err("This commission has no deliverables to baseline yet. Build the "
+                             "register first — a baseline of nothing measures nothing.", 400)
+        return self._json({"ok": True, "baseline": {k: v for k, v in row.items() if k != "lines"},
+                           "count": row["count"], "dated": row["dated"]})
 
     def _eng_log_refusal(self, u, coll, set_status, rec, why, source="sign"):
         """Record that a rule stopped somebody, so it can be judged on real work.
@@ -7383,6 +7488,17 @@ class Handler(BaseHTTPRequestHandler):
                     item["bankSlip"] = _slip
                     item["bankSlipName"] = str(_att.get("bankSlipName") or "bank-payment-slip")[:120]
         db.put_collection_item(coll, item)
+        # A passed gate is the moment the plan for the next stage is agreed by somebody with
+        # authority, which makes it the only anchor a baseline needs — no new button, no new
+        # permission, and nobody has to remember. Best-effort on purpose: a baseline that fails to
+        # save must never turn a signed gate decision into an error. It prints, because a silent
+        # failure here would show a commission with no baseline and no reason why.
+        if coll == "eng_stages" and set_status in ("Passed", "Passed with actions"):
+            try:
+                self._eng_take_baseline(u, item.get("projectId"), item.get("stage"), iid,
+                                        "Gate signed — " + str(set_status))
+            except Exception as _e:
+                print("eng baseline capture failed: %r" % (_e,))
         if coll.startswith("ahu_"):
             _ahu_touch()          # a sign-off is exactly the event a board is being watched for
         db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
@@ -9693,7 +9809,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -9723,7 +9839,14 @@ class Handler(BaseHTTPRequestHandler):
     SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications", "sales_receipts",
                     "sales_variations", "sales_credits"}
 
-    ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
+    ISSUED_ONLY = {
+                   # A baseline is the plan every later "are we on schedule?" is measured against.
+                   # If a browser could write one, the answer to that question would be editable by
+                   # the person being asked it — which is the whole failure this exists to close.
+                   # Taken by the server when a gate is signed, or through /api/eng/baseline.
+                   "eng_baselines": ("a design baseline",
+                                     "signing a stage gate, or Take baseline on the commission"),
+                   "decisions": ("a decision", "/api/hr/decision"),
                    # A quotation carries LINES. A PATCH through /api/coll is a whole-document
                    # replace, so a one-key write would delete a 300-line bill of quantities and
                    # every open balance on it. Writes go through /api/sales/quote, which merges.
@@ -9780,7 +9903,8 @@ class Handler(BaseHTTPRequestHandler):
                        "month balances, that you are not closing books you posted yourself, and "
                        "they leave a trail."),
     }
-    ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
+    ISSUED_EDITABLE = {"eng_baselines": {"_rev", "id"},   # nothing: a baseline is a photograph
+                       "sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
                        "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},
                        "sales_variations": {"_rev", "id"}, "sales_credits": {"_rev", "id"},   # nothing: every change goes through the endpoint
                        "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
@@ -18046,6 +18170,17 @@ class Handler(BaseHTTPRequestHandler):
         # The audit trail is append-only (21 CFR Part 11) — never deletable via the generic store.
         if name == "audit":
             return self._err("Audit-trail entries cannot be deleted.", 403)
+        # A baseline is the plan the schedule is judged against. Deleting an inconvenient one and
+        # taking a fresh one is the same act as editing it, done in two steps — and it would leave
+        # no trace, because the drift count is computed from whichever baseline is left. Take a new
+        # one instead: they accumulate, the newest governs, and the older ones stay as the record of
+        # how many times the plan moved.
+        if name == "eng_baselines":
+            return self._err(
+                "A design baseline is not deleted. It is the plan progress is measured against, and "
+                "removing one silently changes every schedule figure that quotes it. Take a new "
+                "baseline instead — the newest governs, and the ones before it are the record of "
+                "how often the plan moved.", 403)
         # ---- Design records outlive the people tidying up -------------------------------------
         # Construction liability in Vietnam runs long past handover, and the document that answers
         # "who checked this, against which edition, and what did they know" is the signed record in
