@@ -23,6 +23,9 @@ An alert routed to a misspelled role holder must be visible as a gap, not absorb
 STEP_FAILED_ROLES = ("qcInspector", "qaManager", "productionLead")
 GATE_HELD_ROLES = ("productionLead", "qaManager", "salesOwner")
 NCR_AGING_ROLES = ("qaManager", "qcInspector", "productionLead")
+# A unit that has stopped is a scheduling fact before it is a quality one, so the production
+# lead is named first. Sales is included because a stalled unit is a delivery date at risk.
+STALLED_ROLES = ("productionLead", "salesOwner", "qaManager")
 
 # A non-conformance is "aging" after this many days open. The SOP sets no number, so this is a
 # portal default and is stated as one — it is configurable per deployment (setting
@@ -32,6 +35,7 @@ NCR_AGING_DAYS_DEFAULT = 5
 FAILED = "step-failed"
 HELD = "gate-held"
 AGING = "ncr-aging"
+STALLED = "unit-stalled"
 
 
 def _s(v):
@@ -143,6 +147,29 @@ def ncr_aging(ctx, ncr, age_days, threshold):
             "title": "Non-conformance aging — " + pin,
             "body": body, "url": _unit_url(unit),
             "tag": "ahu-ncr-" + _s((ncr or {}).get("id"))}
+
+
+def unit_stalled(ctx, days, threshold, last_code=None):
+    """Nothing has been signed on this unit for longer than the configured threshold.
+
+    The one alert here that fires on an ABSENCE rather than an event. Every other one needs somebody
+    to have done something — failed a step, been refused a gate, raised a non-conformance. This one
+    exists because the commonest way a unit is late is that nobody touched it, and that produces no
+    record at all to trigger on.
+
+    The message names the last thing signed, because "stopped" is only actionable once you know
+    where it stopped. Like the aging alert, the threshold is passed in rather than read here, so the
+    number in the sentence is provably the number that decided to send it.
+    """
+    unit = (ctx or {}).get("unit") or {}
+    pin = _s(unit.get("pin")) or _s(unit.get("id")) or "an AHU"
+    where = (" The last step signed was %s." % _s(last_code)) if last_code else ""
+    return {"event": STALLED, "roles": STALLED_ROLES,
+            "title": "No movement — " + pin,
+            "body": ("Nothing has been signed on %s for %d days (threshold %d). Calendar days, "
+                     "weekends included.%s" % (pin, days, threshold, where)),
+            "url": _unit_url(unit),
+            "tag": "ahu-stalled-" + _s(unit.get("id"))}
 
 
 def _unit_url(unit):
