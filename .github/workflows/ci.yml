@@ -203,6 +203,14 @@ jobs:
       - name: Every design register is reachable from the tab bar
         run: node tests/eng_tab_groups.js
 
+      # The other two design gates check LOGIC and would pass on markup carrying an unclosed <div>
+      # — which, in a card layout, swallows everything below it into the card. Nothing throws; the
+      # page is just wrong from that point down, and no source-level test can see it. This runs a
+      # tag stack over what both screens actually emit, and self-tests the stack first so a clean
+      # result means something.
+      - name: The design screens emit well-formed markup
+        run: node tests/eng_markup.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops
