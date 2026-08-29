@@ -1920,6 +1920,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div id="emphist-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div>
     </div>
     <div class="form-group"><label class="form-label">Annual overtime ceiling (hours)</label><input class="form-control" id="portal-otAnnualCap" placeholder="200" inputmode="numeric"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 107 allows <b>200 hours a year</b>, and <b>300</b> only for the industries Art. 107(3) lists, after notifying the labour authority. Leave blank for 200 — the answer for any company that has not taken and recorded that decision. The daily (4h) and monthly (40h) limits are fixed by the article and are not editable. Approving beyond a limit is still possible, but only with a reason, and it is written into the audit trail under the approver's name.</div></div>
+    <div class="form-group"><label class="form-label">Quotation total that needs a signature to issue (₫)</label><input class="form-control" id="portal-tenderSignThreshold" placeholder="500000000" inputmode="numeric"><div style="font-size:11px;color:var(--text-light);margin-top:4px">At or above this total, a quotation cannot be issued — no PDF, no Excel workbook — until somebody <b>electronically signs it</b>, the same Part 11 signature used for a pay run. <b>Leave blank to turn it off.</b> Most quotations are routine, and a control that fires on every one of them is one people learn to route around. The signature is tied to the <b>total it was given for</b>: if the price then changes, the signature stops counting and a fresh one is needed — otherwise a real name and a real timestamp end up standing behind a number nobody approved.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label">Bank salary-file layout</label>
       <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Every Vietnamese bank publishes its own upload template. Set the columns your bank expects and in what order — changing bank is a setting here, not a new release. Download a sample file from your bank's portal (Techcombank F@st EBank: <b>Payroll → Bulk transfer → Download template</b>) and copy its headings exactly; the bank matches on the heading text. Leave it untouched to use the shipped layout.</div>
@@ -6811,6 +6812,7 @@ async function tkLoadIntegrations() {
     _bankTplDefault = !!(live && live.bankTemplateIsDefault);
     tkRenderBankTemplate();
   }
+  const _tst = document.getElementById('portal-tenderSignThreshold'); if (_tst) _tst.value = g('tenderSignThreshold', '');
   const _otc = document.getElementById('portal-otAnnualCap'); if (_otc) _otc.value = (g('otAnnualCap', '') === '200' ? '' : g('otAnnualCap', ''));   // blank means the ordinary 200
   const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
   const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
@@ -6978,6 +6980,11 @@ async function tkSaveIntegrations() {
     // ticked, the toast said Saved, and the setting never moved.
     trainedUplift: (document.getElementById('portal-trainedUplift') || {}).checked ? '1' : '0',
     otAnnualCap: String(parseInt(V('portal-otAnnualCap'), 10) || ''),   // blank = Art. 107's ordinary 200-hour ceiling
+    /* String(), deliberately. The server's settings loop drops any value that is not a string, so a
+       JSON number here would save NOTHING while the screen said "Saved". Blank stays blank — that is
+       how the control is turned off, and String(0) would read as a threshold of zero: a signature
+       demanded for every quotation. */
+    tenderSignThreshold: String(parseInt(String(V('portal-tenderSignThreshold')).replace(/[^0-9]/g, ''), 10) || ''),
     digestEnabled: C('portal-digestEnabled') ? '1' : '0',
     digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
     digestLeadTo: V('portal-digestLeadTo'),
@@ -31795,6 +31802,15 @@ const TND_CENTRE_KEYS = ['CIV', 'MEP', 'BUT', 'CUT', 'CLR', 'OSD', 'PFI', 'LVP',
 
 const _EST_CORE = ['est_projects'];
 const _EST_STATUS = ['Draft', 'Submitted', 'Approved', 'Won', 'Lost', 'Cancelled'];
+/* Why a tender went the way it did. A FIXED list, because free text cannot be counted and the whole
+   point is to be able to say "we lost four of the last six on lead time".
+
+   This must stay identical to tender_outcome.REASONS — the server REFUSES a reason that is not on
+   its list, so a value offered here that the server does not know would 400 every save from this
+   form. tests/tender_reasons_cross_language.js compares the two. */
+const _EST_REASONS = ['Price', 'Technical compliance', 'Delivery / lead time', 'Payment terms',
+  'Warranty / guarantees', 'Relationship / incumbent supplier', 'Local content / origin',
+  'Client cancelled or deferred', 'No bid submitted', 'Other'];
 const _EST_STATUS_HEX = { Draft: '#5C6470', Submitted: '#F59E0B', Approved: '#205090', Won: '#00B060', Lost: '#C00000', Cancelled: '#9AA3AF' };
 const _EST_KINDS = ['material', 'labour', 'plant', 'subcontract'];
 const _EST_KIND_LABEL = { material: 'Material', labour: 'Labour', plant: 'Plant', subcontract: 'Subcontract' };
@@ -31829,6 +31845,13 @@ async function estRenderProjects() {
   root.innerHTML = tkSkeleton();
   await _estNeed(['est_projects']);
   const all = (_HR.est_projects || []).slice().sort(_cmpNewest('dateIssued'));
+  /* The hit rate is computed by the SERVER (tender_outcome), not here. It used to be worked out in
+     this function — won ÷ decided, by count — and that number on its own is close to useless:
+     nine small jobs won and one large one lost is 90% by count and can be 20% by value, and a
+     contractor plans capacity and cash against the second. Deriving it twice, in two languages, is
+     how the two come to disagree. Best-effort: the list must still draw if this call fails. */
+  let _oc = null;
+  try { _oc = await tkApi('/api/tender/outcomes'); } catch (e) { _oc = null; }
   const kpi = (lbl, val, hint, cls) => '<div class="kpi-card ' + (cls || 'c-navy') + '"><div class="kpi-label">' + _t(lbl) + '</div><div class="kpi-value">' + val + '</div><div class="kpi-delta neu">' + _estEsc(hint || '') + '</div></div>';
   const live = all.filter(e => ['Draft', 'Submitted', 'Approved'].indexOf(e.status || 'Draft') >= 0);
   const won = all.filter(e => e.status === 'Won');
@@ -31838,7 +31861,15 @@ async function estRenderProjects() {
   const head = '<div class="kpi-grid" style="margin-bottom:18px">' +
     kpi('Live tenders', live.length, _t('Draft, submitted or approved')) +
     kpi('Won', won.length, decided.length ? (won.length + '/' + decided.length + ' ' + _t('decided')) : _t('none decided yet'), 'c-emerald') +
-    kpi('Win rate', hit == null ? '—' : (hit + '%'), _t('By count of decided tenders'), 'c-navy') +
+    kpi('Win rate — by count', (_oc && _oc.hit.byCount != null) ? Math.round(_oc.hit.byCount) + '%'
+          : (hit == null ? '—' : hit + '%'),
+        _oc ? (_oc.hit.decided + ' ' + _t('decided') +
+               (_oc.hit.cancelledExcluded ? ' · ' + _oc.hit.cancelledExcluded + ' ' + _t('cancelled, excluded') : ''))
+            : _t('By count of decided tenders'), 'c-navy') +
+    /* The number that matters for capacity and cash, and the one nobody had. */
+    kpi('Win rate — by value', (_oc && _oc.hit.byValue != null) ? Math.round(_oc.hit.byValue) + '%' : '—',
+        _oc && _oc.hit.decidedValue ? _tndMoney(_oc.hit.wonValue) + ' / ' + _tndMoney(_oc.hit.decidedValue)
+            : _t('No decided tender carries a quoted price yet'), 'c-emerald') +
     kpi('Rate library', (_HR.est_rates || []).length || '—', _t('Priced resources on file'), 'c-amber') + '</div>';
 
   const rows = all.length ? all.map(e => {
@@ -31863,7 +31894,45 @@ async function estRenderProjects() {
     (_estCanPrice() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'est_projects\')">' + tkIcon('plus') + _t('New estimate') + '</button>' : '') + '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:880px"><thead><tr>' +
     ['Tender', 'Client', 'Contract type', 'Status', 'Due', '', ''].map(h => '<th>' + (h ? _t(h) : '') + '</th>').join('') +
-    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    _estWhyPanel(_oc);
+}
+
+/* WHY WE LOSE.
+   The one question a tender register exists to answer and could not: price, lead time, or terms?
+   Each has a different fix and two of them are free. Drawn only when there is something to say —
+   an empty table headed "Why we lose" reads as "we never lose". */
+function _estWhyPanel(oc) {
+  if (!oc) return '';
+  const reasons = oc.lossReasons || [];
+  const gap = oc.priceGap || {};
+  if (!reasons.length && !gap.lost) return '';
+
+  const pct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%');
+  const rows = reasons.map(r =>
+    '<tr><td style="font-weight:600">' + _estEsc(_t(r.reason)) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + r.count + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' +
+      _tndMoney(r.value) + '</td></tr>').join('');
+
+  /* The count of losses where somebody actually found out the winning price is printed BESIDE the
+     average, never instead of it. An average built from three of forty is not the shape of the
+     market, and a mean with no denominator invites being read as though it were. */
+  const gapLine = gap.known
+    /* Not _t('of'): a one-word key is the kind that collides in a 5,900-entry dictionary shared by
+       the whole portal, and 'of' was already translated for a different sentence. */
+    ? _t('Where we found out what won') + ': ' + gap.known + ' ' + _t('losing tenders, of') + ' ' + gap.lost +
+      ' — ' + _t('we were on average') + ' ' + pct(gap.avgPct) + ' ' + _t('against the winning price') +
+      (gap.worstPct != null ? ' (' + _t('worst') + ' ' + pct(gap.worstPct) + ')' : '')
+    : _t('No losing tender records what the winning price was, so there is nothing to compare against.');
+
+  return '<div class="card" style="margin-top:18px">' +
+    '<div style="font-weight:800;color:var(--navy);margin-bottom:4px">' + _t('Why we lose') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + gapLine + '</div>' +
+    (rows ? '<div class="table-wrap"><table style="min-width:420px"><thead><tr>' +
+      ['Reason', 'Tenders', 'Value'].map(h => '<th>' + _t(h) + '</th>').join('') +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' : '') +
+    '</div>';
 }
 
 function estOpen(id) { _estCur = id; _estTabK = 'boq'; _estOpen = {}; showView('est-estimate', null, 'Estimate'); }
@@ -32399,6 +32468,18 @@ Object.assign(_QA_SPECS, {
       { k: 'bankName', label: 'Bank' },
       { k: 'bankAccount', label: 'Bank account No.' },
       { k: 'bankSwift', label: 'SWIFT' },
+
+      /* WHY IT WENT THE WAY IT DID.
+         A tender cannot be marked Won or Lost without these — the server refuses it on the
+         collection route too, not only here, because that route takes a whole record and
+         overwrites the stored one. "Lost" on its own cannot answer the only question worth
+         asking: price, lead time, or terms? Each has a different fix and two of them are free. */
+      { sec: 'The outcome — needed to mark this Won or Lost' },
+      { k: 'outcomeReason', label: 'Why we won or lost', type: 'select',
+        options: [''].concat(_EST_REASONS) },
+      { k: 'decidedOn', label: 'Date the customer decided', type: 'date' },
+      { k: 'quotedPrice', label: 'What we quoted (₫) — the figure the hit rate is weighted by', type: 'money' },
+      { k: 'winningPrice', label: 'What won it (₫), if we found out — blank means nobody knows', type: 'money' },
 
       { sec: 'Reference and status' },
       { k: 'estNo', label: 'Estimate No.' },

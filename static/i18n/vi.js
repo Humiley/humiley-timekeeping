@@ -5547,4 +5547,33 @@ window._VI = {
   "Where the customer pays — only to override the company account":
     "Nơi khách hàng thanh toán — chỉ điền khi khác tài khoản công ty",
   "Reference and status": "Số hiệu và trạng thái",
+
+  // ── Win/loss outcomes and the signature that lets a big quotation out ──────────────────────────
+  "The outcome — needed to mark this Won or Lost": "Kết quả — bắt buộc khi đánh dấu Thắng hoặc Thua",
+  "Why we won or lost": "Lý do thắng hoặc thua",
+  "Date the customer decided": "Ngày khách hàng quyết định",
+  "Why we lose": "Vì sao chúng ta thua thầu",
+  "Win rate — by count": "Tỷ lệ thắng — theo số lượng",
+  "Win rate — by value": "Tỷ lệ thắng — theo giá trị",
+  "cancelled, excluded": "đã huỷ, không tính",
+  "No decided tender carries a quoted price yet": "Chưa hồ sơ nào đã có kết quả ghi giá chào",
+  "Where we found out what won": "Số lần biết được giá trúng",
+  "losing tenders, of": "hồ sơ thua, trên tổng số",
+  "we were on average": "chúng ta chênh trung bình",
+  "against the winning price": "so với giá trúng thầu",
+  "worst": "cao nhất",
+  "No losing tender records what the winning price was, so there is nothing to compare against.":
+    "Chưa hồ sơ thua nào ghi lại giá trúng thầu, nên không có gì để so sánh.",
+  "Tenders": "Số hồ sơ",
+
+  // The outcome reasons — must stay aligned with tender_outcome.REASONS by MEANING; only the
+  // English key is matched, so a translation can never break the server-side check.
+  "Price": "Giá",
+  "Technical compliance": "Đáp ứng kỹ thuật",
+  "Delivery / lead time": "Tiến độ giao hàng",
+  "Warranty / guarantees": "Bảo hành / bảo lãnh",
+  "Relationship / incumbent supplier": "Quan hệ / nhà cung cấp hiện hữu",
+  "Local content / origin": "Tỷ lệ nội địa / xuất xứ",
+  "Client cancelled or deferred": "Khách hàng huỷ hoặc hoãn",
+  "No bid submitted": "Không nộp thầu",
 };

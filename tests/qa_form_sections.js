@@ -107,6 +107,7 @@ const EXPECTED = [
   'quoteNo', 'issueDate', 'validUntil', 'validityDays', 'amountInWords', 'intro',
   'preparedBy', 'approvedBy',
   'bankName', 'bankAccount', 'bankSwift',
+  'outcomeReason', 'decidedOn', 'quotedPrice', 'winningPrice',
   'estNo', 'status', 'dateIssued', 'note',
 ];
 const missing = EXPECTED.filter(k => keys.indexOf(k) < 0);
