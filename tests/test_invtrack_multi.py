@@ -208,7 +208,7 @@ def test_attach_file_fills_row_and_attaches(base_url):
         if d.get("id"):
             db.delete_collection_item("invtrack", d["id"])
     db.put_collection_item("invtrack", {"kind": "invtrack-dataset", "meta": {}, "items": [
-        {"msgId": "<att@x>", "desc": "Hoa don VNPT", "type": "Hoá đơn mua vào (NCC)", "after": 0}]})
+        {"msgId": "<att@x>", "desc": "Hoa don VNPT", "type": "Hóa đơn mua vào (NCC)", "after": 0}]})
     xml = _xml_full("7001", "0311111111")   # user 'downloaded' this from a CAPTCHA portal and uploads it
     r = app._invtrack_attach_file({"msgId": "<att@x>", "name": "hoadon.xml",
                                    "contentB64": base64.b64encode(xml).decode()})

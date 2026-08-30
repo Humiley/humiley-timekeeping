@@ -43,9 +43,9 @@ TRANSITIONS = {
 
 STATUS_LABELS = {
     DRAFT: ("Draft", "Nháp"),
-    ISSUED: ("Issued", "Đã gửi"),
+    ISSUED: ("Issued", "Đã phát hành"),
     APPLIED: ("Applied", "Đã áp dụng"),
-    CANCELLED: ("Cancelled", "Đã huỷ"),
+    CANCELLED: ("Cancelled", "Đã hủy"),
 }
 
 # Why a credit is being raised. Recorded because "we credited ₫40,000,000" and "we credited
@@ -59,7 +59,7 @@ REASONS = (
     {"code": "descoped", "label": "Scope removed after certification",
      "labelVn": "Cắt giảm phạm vi sau khi đã nghiệm thu"},
     {"code": "pricing", "label": "Pricing corrected", "labelVn": "Điều chỉnh đơn giá"},
-    {"code": "goodwill", "label": "Commercial settlement", "labelVn": "Thoả thuận thương mại"},
+    {"code": "goodwill", "label": "Commercial settlement", "labelVn": "Thỏa thuận thương mại"},
 )
 REASON_CODES = tuple(r["code"] for r in REASONS)
 

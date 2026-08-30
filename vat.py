@@ -66,7 +66,7 @@ TAX_POINTS = {
     "retentionTaxPoint": {
         "question": "Is the retained 5% invoiced at acceptance with the rest of the value, or only "
                     "when it is released at the end of the warranty period?",
-        "questionVn": "Phần 5% giữ lại được xuất hoá đơn ngay khi nghiệm thu cùng phần còn lại, hay "
+        "questionVn": "Phần 5% giữ lại được xuất hóa đơn ngay khi nghiệm thu cùng phần còn lại, hay "
                       "chỉ khi hoàn trả lúc hết bảo hành?",
         "options": (
             {"code": "at_acceptance", "label": "At acceptance, with the rest of the value",
@@ -80,11 +80,11 @@ TAX_POINTS = {
     "advanceTaxPoint": {
         "question": "Does an advance arriving before any acceptance trigger a VAT invoice on "
                     "receipt, or is it a cash record until work is certified?",
-        "questionVn": "Khoản tạm ứng nhận trước khi nghiệm thu có phải xuất hoá đơn GTGT ngay khi "
+        "questionVn": "Khoản tạm ứng nhận trước khi nghiệm thu có phải xuất hóa đơn GTGT ngay khi "
                       "nhận tiền không, hay chỉ ghi nhận tiền cho tới khi nghiệm thu?",
         "options": (
             {"code": "on_receipt", "label": "A VAT invoice on receipt",
-             "labelVn": "Xuất hoá đơn GTGT khi nhận tiền"},
+             "labelVn": "Xuất hóa đơn GTGT khi nhận tiền"},
             {"code": "on_certification", "label": "A cash record until work is certified",
              "labelVn": "Chỉ ghi nhận tiền cho tới khi nghiệm thu"},
         ),
@@ -290,7 +290,7 @@ UNRESOLVED = (
      "why_it_matters": "It is 2% of the contract, on every invoice.",
      "action": "Offered as a choice per company, per contract and per claim. Never defaulted."},
     {"topic": "Whether the portal may issue the invoice",
-     "question": "No. A hoá đơn GTGT is the provider's digitally signed XML under Decree 123/2020 "
+     "question": "No. A hóa đơn GTGT is the provider's digitally signed XML under Decree 123/2020 "
                  "and Circular 78/2021.",
      "why_it_matters": "Recording a VAT figure and issuing a VAT invoice are different acts.",
      "action": "Enforced as an absence of capability by tests/test_sales_never_claims.py."},

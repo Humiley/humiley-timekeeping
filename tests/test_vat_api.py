@@ -217,7 +217,7 @@ def test_certifying_recomputes_the_tax_against_what_was_actually_certified(api, 
 
 
 def test_the_portal_still_cannot_issue_the_invoice(api, tokens):
-    """Recording a VAT figure and issuing a hoá đơn GTGT are different acts, and only one of them
+    """Recording a VAT figure and issuing a hóa đơn GTGT are different acts, and only one of them
     is this portal's to perform."""
     _post(api, tokens["management"], "/api/sales/vat-settings", vatRate=10,
           vatBase=vat.BASE_CERTIFIED)
