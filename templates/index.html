@@ -21945,8 +21945,20 @@ function tkFilePreview(url, name, mime) {
     '<div class="modal-footer"><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-ghost">Open in new tab</a><button class="btn btn-primary" onclick="document.getElementById(\'filePreviewOverlay\').remove()">Close</button></div></div>';
   document.body.appendChild(el);
 }
-function _pmOpenFile(coll, id, idx) {
-  const r = (_HR[coll] || []).find(x => x.id === id); if (!r) { toast('No file attached', 'warn'); return; }
+async function _pmOpenFile(coll, id, idx) {
+  let r = (_HR[coll] || []).find(x => x.id === id); if (!r) { toast('No file attached', 'warn'); return; }
+  /* The list read carries metadata only. Fetch the one row when the bytes are not here — which is
+     the normal case now, and the whole point: 200 attachments no longer travel so that one can be
+     opened. Falls through to the old behaviour if the fetch fails, so a record loaded some other
+     way (or an older cached one that still has its payload) still opens. */
+  const _need = (typeof idx === 'number' && Array.isArray(r.attachments))
+    ? !((r.attachments[idx] || {}).url) : !r.attachment;
+  if (_need && r.hasFile) {
+    try {
+      const d = await tkApi('/api/coll/' + encodeURIComponent(coll) + '/' + encodeURIComponent(id));
+      if (d && d.item) r = d.item;
+    } catch (e) { toast(_t('Could not open the file'), 'warn'); return; }
+  }
   const att = (typeof idx === 'number' && Array.isArray(r.attachments)) ? (r.attachments[idx] || {}) : null;
   const url = att ? (att.url || '') : (r.attachment || '');
   const name = att ? (att.name || 'attachment') : (r.attachmentName || 'attachment');
@@ -21969,7 +21981,11 @@ function _pmFileCell(coll, r) {
       '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\',' + i + ')" title="' + _tkEscA(a.name || ('File ' + (i + 1))) + '" style="color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">📎' + (i + 1) + '</a>').join('') + '</span>';
   }
   const one = r && Array.isArray(r.attachments) && r.attachments.length === 1;
-  if (!r || (!r.attachment && !one)) return '<span style="color:var(--text-light)">—</span>';
+  /* hasFile, not r.attachment: the list read strips the payload (a register of 200 records with a
+     photo each was a ~200 MB response for a table of "Show" links) and sends this marker instead.
+     Testing the bytes here would render an em dash on every record that HAS a file — the file would
+     look lost rather than deferred. r.attachment is still honoured for anything not yet reloaded. */
+  if (!r || (!r.attachment && !r.hasFile && !one)) return '<span style="color:var(--text-light)">—</span>';
   return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\'' + (one ? ',0' : '') + ')" title="' + _tkEscA((one ? r.attachments[0].name : r.attachmentName) || 'Show file') + '" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">' + _PM_EYE_SVG + 'Show</a>';
 }
 /* ---------- Import tasks from MS Project XML / Excel / CSV ---------- */

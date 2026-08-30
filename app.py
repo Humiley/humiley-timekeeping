@@ -4409,7 +4409,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/esign/pin/all":
             return self._guard(lambda u: self._json({"pins": db.all_pin_statuses()}), manager=True)
         if path.startswith("/api/coll/"):
-            name = path[len("/api/coll/"):].split("/")[0]
+            rest = path[len("/api/coll/"):].split("/")
+            name = rest[0]
+            # /api/coll/<name>/<id> — ONE row, with its file bytes. The list read strips them, so
+            # this is how an attachment is opened.
+            #
+            # It answers by running the LIST and picking the row out of the result, deliberately: the
+            # list is where every access rule for this collection lives — the app gate, READ_MIN, the
+            # per-project and per-department scoping, the token strip. Re-fetching the row directly
+            # would be faster and would bypass all of it, which is how a scoped collection quietly
+            # becomes readable one id at a time.
+            if len(rest) > 1 and rest[1]:
+                return self._guard(lambda u: self._coll_one(u, name, rest[1]))
             return self._guard(lambda u: self._coll_list(u, name))
         return self._err("Not found.", 404)
 
@@ -10113,6 +10124,32 @@ class Handler(BaseHTTPRequestHandler):
         db.put_collection_item("pm_chat_read", row)
         return self._json({"ok": True})
 
+    def _coll_one(self, u, name, rid):
+        """One row in full, including the file bytes the list read strips out.
+
+        Runs _coll_list and filters, so a caller can only reach a row the list would have shown them.
+        The response is one record, so the cost this exists to avoid does not come back.
+        """
+        cap = {}
+        real = self._json
+        self._json = lambda obj, status=200: cap.setdefault("r", (obj, status))
+        try:
+            self._coll_list(u, name)
+        finally:
+            self._json = real
+        obj, status = cap.get("r", ({}, 500))
+        if status != 200:
+            return self._json(obj, status)
+        stub = next((x for x in (obj.get("items") or []) if str(x.get("id")) == str(rid)), None)
+        if stub is None:
+            return self._err("Not found.", 404)
+        full = next((x for x in db.list_collection(name) if str(x.get("id")) == str(rid)), None)
+        if full is None:
+            return self._err("Not found.", 404)
+        # The list decided WHICH row; it does not get to widen WHAT is on it. Never hand back the
+        # approval token, whatever the stored record holds.
+        return self._json({"item": {k: v for k, v in full.items() if k != "token"}})
+
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -10310,11 +10347,51 @@ class Handler(BaseHTTPRequestHandler):
                     items = [it for it in items
                              if (it.get("owner") or "") == myname
                              or (mydept and deptof.get(it.get("owner") or "") == mydept)]
+        # FILE BYTES DO NOT BELONG IN A LIST READ.
+        #
+        # Project records keep their attachment inline, as a base64 data: URI on the row. A register
+        # of 200 inspection records with a photo each is therefore a ~200 MB JSON response — to draw a
+        # table whose File column is the word "Show". Reported from production: the Quality tab timed
+        # out at 30s and Safari reloaded the tab with "a problem occurred", which is what a browser
+        # does when a response will not fit in memory.
+        #
+        # Metadata stays, so the table still knows there IS a file, what it is called and how big.
+        # Only the payload goes, and /api/coll/<name>/<id> serves that one row in full when somebody
+        # actually opens it. Same shape the `candidates` collection above already uses for CVs.
+        #
+        # pm_chat is excluded: its attachments render inline in the conversation, so stripping them
+        # would empty the thread rather than defer it.
+        if name.startswith("pm_") and name != "pm_chat":
+            items = [self._strip_file_bytes(it) for it in items]
         # Never expose the one-click approval token in list reads — only the create response
         # carries it (once, for the email). Stops a requester from reading their own token and
         # self-approving via the unauthenticated /capprove link.
         items = [{k: v for k, v in it.items() if k != "token"} for it in items]
         return self._json({"items": items})
+
+    @staticmethod
+    def _strip_file_bytes(it):
+        """One row with its attachment payloads replaced by their size.
+
+        `hasFile` is what the table reads to decide whether to offer a link, because the bytes it
+        used to test are exactly what is no longer there. Without it every record with an attachment
+        would render an em dash and the file would look lost.
+        """
+        n = len(it.get("attachment") or "")
+        atts = it.get("attachments")
+        if not n and not isinstance(atts, list):
+            return it
+        out = dict(it)
+        if n:
+            out["attachment"] = ""
+            out["attachmentBytes"] = n
+        if isinstance(atts, list):
+            out["attachments"] = [
+                dict(a, url="", bytes=len(a.get("url") or "")) if isinstance(a, dict) else a
+                for a in atts
+            ]
+        out["hasFile"] = bool(n) or bool(isinstance(atts, list) and atts)
+        return out
 
     @staticmethod
     def _crm_sanitize(body):
