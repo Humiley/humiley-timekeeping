@@ -507,6 +507,12 @@ def valuation(ctx):
     vars_ = variations_value(ctx.get("variations"), cutoff)
     dw = daywork_value(ctx.get("daywork"), cutoff)
     mos = materials_value(ctx.get("materials"), cutoff)
+    trades = by_trade(ctx)
+    # The quality gate needs the registers another module owns. Absent — an older project, or a
+    # caller that did not pass them — it reports nothing rather than reporting nothing WRONG: an
+    # empty gate and a clean gate look identical, so `gated` says which this was.
+    qgate = quality_gate(ctx)
+    qgate["available"] = ctx.get("quality") is not None or ctx.get("itps") is not None
 
     gross = r2(meas["total"] + vars_["total"] + dw["total"] + mos["total"])
     prev = r2(ctx.get("previous"))
@@ -590,6 +596,33 @@ def valuation(ctx):
             "msg": "The valuation (%s) exceeds the revised contract sum (%s) by %s. Work is being "
                    "valued that the contract does not yet cover — an agreed variation is missing."
                    % (_vnd(gross), _vnd(revised), _vnd(gross - revised))})
+    if qgate["valueAtRisk"]:
+        warnings.append({
+            "code": "quality_value_at_risk",
+            "severity": "high",
+            "msg": "%s of measured work sits in a trade carrying an open Major or Critical "
+                   "non-conformance. It is being claimed; a client's QS deducts exactly this."
+                   % _vnd(qgate["valueAtRisk"]),
+            "items": [{"itemNo": t["label"],
+                       "desc": "%d open NCR(s): %s"
+                               % (t["count"], ", ".join(
+                                   (n["refNo"] or n["title"] or "") for n in t["ncrs"][:4]))}
+                      for t in qgate["atRisk"][:20]]})
+    if qgate["valueNotReleased"]:
+        warnings.append({
+            "code": "measured_without_inspection",
+            "severity": "high",
+            "msg": "%s is measured against bill lines that name an inspection and test plan, with "
+                   "nothing recording that the work was released past it."
+                   % _vnd(qgate["valueNotReleased"]),
+            "items": [{"itemNo": u["itemNo"], "desc": u["why"]}
+                      for u in qgate["unreleased"][:20]]})
+    if trades["unallocatedLines"]:
+        warnings.append({
+            "code": "lines_without_a_trade",
+            "severity": "low",
+            "msg": "%d bill line(s) are not allocated to a trade, so they sit outside every "
+                   "trade-by-trade figure on this screen." % trades["unallocatedLines"]})
     if not cutoff:
         warnings.append({
             "code": "no_cutoff",
@@ -620,6 +653,8 @@ def valuation(ctx):
         "variations": vars_,
         "daywork": dw,
         "materials": mos,
+        "trades": trades,
+        "quality": qgate,
         "warnings": warnings,
         # Said here rather than assumed anywhere: this module stops at the gross figure.
         "next": "This gross valuation is the `certified_this` figure for "
@@ -663,6 +698,24 @@ def cvr(ctx):
     f_margin = None if (fv is None or fc is None) else r2(fv - fc)
     f_margin_pct = None if (f_margin is None or not fv) else round(f_margin / fv * 100.0, 2)
 
+    # Margin BY TRADE. `valueByTrade` comes from the valuation and `costByTrade` from pm_costs;
+    # a trade present in one and not the other is reported, never quietly netted. Cost that nobody
+    # allocated to a trade stays UNALLOCATED — spreading it pro-rata would invent an allocation and
+    # put one trade's overspend in another trade's margin.
+    vbt = {str(k): r2(v) for k, v in (ctx.get("valueByTrade") or {}).items()}
+    cbt = {str(k): r2(v) for k, v in (ctx.get("costByTrade") or {}).items()}
+    trade_rows = []
+    for code in sorted(set(vbt) | set(cbt), key=lambda c: (c == UNALLOCATED, c)):
+        tv, tc = vbt.get(code, 0.0), cbt.get(code, 0.0)
+        tm = r2(tv - tc)
+        trade_rows.append({
+            "code": code, "label": discipline_label(code),
+            "value": tv, "cost": tc, "margin": tm,
+            "marginPct": round(tm / tv * 100.0, 2) if tv else None,
+            # Cost booked against a trade with no value is either work not yet measured or work
+            # billed to the wrong trade. Both matter and neither is visible in a project total.
+            "costWithoutValue": bool(tc and not tv)})
+
     prev_pct = ctx.get("previousMargin")
     prev_pct = None if prev_pct in (None, "") else round(_num(prev_pct), 2)
     drift = None if (prev_pct is None or margin_pct is None) else round(margin_pct - prev_pct, 2)
@@ -693,6 +746,22 @@ def cvr(ctx):
             "code": "no_forecast", "severity": "medium",
             "msg": "No forecast final value or cost, so this reconciliation says where the job HAS "
                    "been and nothing about where it is going."})
+    losing = [t for t in trade_rows if t["margin"] < 0 and t["value"]]
+    if losing and margin >= 0:
+        # The report this exists for. A job at +17% overall can carry a package at -4%, and the
+        # project total is the one number that cannot show it.
+        warnings.append({
+            "code": "trade_losing_inside_a_profitable_job", "severity": "high",
+            "msg": "The job is in profit overall, but %s. A project total cannot show this."
+                   % "; ".join("%s is %s behind" % (t["label"], _vnd(abs(t["margin"])))
+                               for t in losing[:4])})
+    orphan_cost = [t for t in trade_rows if t["costWithoutValue"]]
+    if orphan_cost:
+        warnings.append({
+            "code": "cost_on_a_trade_with_no_value", "severity": "medium",
+            "msg": "Cost is booked against %s with nothing valued there — either the measurement "
+                   "has not been done, or it is booked to the wrong trade."
+                   % ", ".join(t["label"] for t in orphan_cost[:4])})
     if accr == 0 and cost:
         warnings.append({
             "code": "no_accrual", "severity": "low",
@@ -705,6 +774,7 @@ def cvr(ctx):
         "forecastValue": fv, "forecastCost": fc,
         "forecastMargin": f_margin, "forecastMarginPct": f_margin_pct,
         "previousMarginPct": prev_pct, "marginDrift": drift,
+        "trades": trade_rows,
         "warnings": warnings,
     }
 
@@ -734,6 +804,7 @@ def final_account(ctx):
     ps_adj = r2(ctx.get("provisionalAdjustment"))
     claims = r2(ctx.get("agreedClaims"))
     certified = r2(ctx.get("certifiedToDate"))
+    comm = commissioning({"tests": ctx.get("commissioning")})
 
     # Name the record the way a person would name it. Falling through to the row id printed
     # "Variation pm_-778acacb is instructed, not agreed" on the screen a QS uses to chase the
@@ -758,6 +829,16 @@ def final_account(ctx):
         blocked.append("Variation %s is agreed but carries no agreed value." % _vname(v))
     for d in dw["pending"]:
         blocked.append("Daywork %s is %s, not approved." % (_dname(d), d["status"]))
+    # The last tranche of a cleanroom contract follows the room passing its tests. A final account
+    # that ignores an outstanding classification or a failed filter integrity test is one the client
+    # will not sign, so it blocks here rather than being discovered at the signing meeting.
+    for t in comm["failed"]:
+        blocked.append("%s%s has FAILED."
+                       % (t["label"], (" for " + t["area"]) if t["area"] else ""))
+    for t in comm["outstanding"]:
+        blocked.append("%s%s is %s and gates the final account."
+                       % (t["label"], (" for " + t["area"]) if t["area"] else "",
+                          t["status"].replace("_", " ")))
 
     total = None
     if original is not None:
@@ -781,11 +862,586 @@ def final_account(ctx):
         "balanceDue": None if total is None else r2(total - certified),
         "agreed": not blocked,
         "blockedBy": blocked,
+        "commissioning": comm,
         # Retention is NOT netted off here. It is held, not deducted, and when it comes back is a
         # term of the contract that sales_contract.retention_release() already reads.
         "retentionNote": "Retention still held is released under the contract's release rule — see "
                          "the contract's retention schedule. It is not a deduction from this sum.",
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE TRADES — Civil, MEP and Cleanroom
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# A contractor of this shape does not have "a bill". It has a bill per trade, priced by different
+# estimators, built by different subcontractors, inspected against different standards and losing
+# money independently of each other. "Is this job making money" is the wrong resolution: a job at
+# 17% overall can be a cleanroom envelope at 31% carrying an electrical package at -4%, and the
+# month you find out is the month the electrical subcontractor asks for a loss-and-expense claim.
+#
+# The order is the order work happens in, so a bill sorted by trade reads like a programme.
+CIVIL = "civil"
+ARCHITECTURAL = "architectural"
+CLEANROOM = "cleanroom"
+HVAC = "hvac"
+CLEAN_UTILITIES = "clean_utilities"
+PLUMBING = "plumbing"
+ELECTRICAL = "electrical"
+FIRE = "fire"
+CONTROLS = "controls"
+COMMISSIONING = "commissioning"
+VALIDATION = "validation"
+PRELIMINARIES = "preliminaries"
+
+DISCIPLINES = (
+    {"code": PRELIMINARIES, "label": "Preliminaries & general",
+     "labelVn": "Chi phí chung", "hex": "#64748B",
+     "note": "Site establishment, temporary works, supervision, insurances."},
+    {"code": CIVIL, "label": "Civil & structural",
+     "labelVn": "Xây dựng & kết cấu", "hex": "#8B5CF6",
+     "note": "Excavation, foundations, concrete, steelwork, builders' work in connection."},
+    {"code": ARCHITECTURAL, "label": "Architectural & finishes",
+     "labelVn": "Kiến trúc & hoàn thiện", "hex": "#A855F7",
+     "note": "Partitions, doors, ceilings, flooring, painting outside the clean envelope."},
+    {"code": CLEANROOM, "label": "Cleanroom envelope",
+     "labelVn": "Vỏ phòng sạch", "hex": "#0EA5E9",
+     "note": "Wall and ceiling panel systems, coving, view panels, cleanroom doors, pass boxes, "
+             "air showers, epoxy and vinyl flooring."},
+    {"code": HVAC, "label": "HVAC",
+     "labelVn": "Điều hòa & thông gió", "hex": "#3168A8",
+     "note": "AHU, ductwork and insulation, dampers, terminal HEPA housings, chilled water, "
+             "dust and fume extract."},
+    {"code": CLEAN_UTILITIES, "label": "Clean utilities & process piping",
+     "labelVn": "Tiện ích sạch & đường ống công nghệ", "hex": "#14B8A6",
+     "note": "Compressed air, nitrogen, vacuum, purified water and WFI loops, orbital welding, "
+             "passivation."},
+    {"code": PLUMBING, "label": "Plumbing & drainage",
+     "labelVn": "Cấp thoát nước", "hex": "#0891B2",
+     "note": "Domestic water, sanitary and process drainage, sumps, neutralisation."},
+    {"code": ELECTRICAL, "label": "Electrical",
+     "labelVn": "Điện", "hex": "#F59E0B",
+     "note": "LV distribution, small power, lighting, containment, earthing and bonding, UPS."},
+    {"code": FIRE, "label": "Fire protection & detection",
+     "labelVn": "Phòng cháy chữa cháy", "hex": "#EF4444",
+     "note": "Sprinkler, fire alarm, gaseous suppression, smoke control."},
+    {"code": CONTROLS, "label": "BMS / EMS & controls",
+     "labelVn": "Hệ điều khiển BMS/EMS", "hex": "#6366F1",
+     "note": "Building and environmental monitoring, field devices, graphics, alarms, 21 CFR "
+             "Part 11 records where the client is GMP."},
+    {"code": COMMISSIONING, "label": "Testing & commissioning",
+     "labelVn": "Chạy thử & nghiệm thu", "hex": "#00B060",
+     "note": "TAB, duct leakage, electrical testing, cause-and-effect, system demonstration."},
+    {"code": VALIDATION, "label": "Qualification & validation",
+     "labelVn": "Thẩm định & xác nhận", "hex": "#16A34A",
+     "note": "Cleanroom classification, DQ/IQ/OQ/PQ, documentation handover."},
+)
+DISCIPLINE_CODES = tuple(d["code"] for d in DISCIPLINES)
+_DISCIPLINE_BY_CODE = {d["code"]: d for d in DISCIPLINES}
+UNALLOCATED = "unallocated"
+# NOT the same thing, and the difference matters. UNALLOCATED is "nobody set a trade on this bill
+# line". UNATTRIBUTED is "this record names a trade, in another module's vocabulary, that does not
+# map onto one of ours". Folding the second into the first makes an NCR logged against "MEP" match
+# every un-traded bill line on the job — which is how a Critical duct NCR came to report the whole
+# contract at risk.
+UNATTRIBUTED = "unattributed"
+
+# pm_quality and pm_quality_itp were written before this module and carry their own discipline list.
+# The mapping is EXPLICIT and deliberately incomplete: "MEP" covers mechanical, electrical AND
+# plumbing, and there is no honest way to turn it into one of them. An unmapped discipline is
+# reported as unattributed rather than guessed, because the output of the guess would be a money
+# figure somebody acts on.
+QUALITY_DISCIPLINE_MAP = {
+    "civil": CIVIL,
+    "structural": CIVIL,
+    "geotechnical": CIVIL,
+    "architectural": ARCHITECTURAL,
+    "mechanical": HVAC,
+    "process / piping": CLEAN_UTILITIES,
+    "electrical": ELECTRICAL,
+    "hse": PRELIMINARIES,
+    "qa/qc": COMMISSIONING,
+    "commissioning": COMMISSIONING,
+    # "MEP" and "General / Multi" are NOT here. Both name more than one trade, and a valuation is
+    # not the place to resolve that by picking the first one.
+}
+
+
+def quality_discipline(v):
+    """A pm_quality discipline as one of OUR trades, or UNATTRIBUTED.
+
+    Accepts our own codes too, so a register that starts using them needs no migration.
+    """
+    c = str(v or "").strip().lower()
+    if c in _DISCIPLINE_BY_CODE:
+        return c
+    return QUALITY_DISCIPLINE_MAP.get(c, UNATTRIBUTED)
+
+
+def discipline_label(code):
+    """The trade's name, or a stated "unallocated" — never a blank column heading.
+
+    A trade nobody set is a real state and it is reported as one. Folding it into the first trade in
+    the list, or into "other", would put somebody else's money in a trade's margin.
+    """
+    d = _DISCIPLINE_BY_CODE.get(str(code or "").strip().lower())
+    return d["label"] if d else "Not allocated to a trade"
+
+
+def _disc(v):
+    c = str(v or "").strip().lower()
+    return c if c in _DISCIPLINE_BY_CODE else UNALLOCATED
+
+
+_DISCIPLINE_BY_LABEL = {}
+for _d in DISCIPLINES:
+    _DISCIPLINE_BY_LABEL[_d["label"].strip().lower()] = _d["code"]
+    _DISCIPLINE_BY_LABEL[_d["labelVn"].strip().lower()] = _d["code"]
+
+
+def discipline_code(v):
+    """A trade code from whatever a person typed, or None meaning "that is not a trade".
+
+    Accepts the code, the English name and the Vietnamese name, because a bill exported out of
+    Excel is typed by a quantity surveyor and says "HVAC" or "Cleanroom envelope", not "cleanroom".
+    Returns None rather than a default: an unrecognised trade is a TYPO, and silently filing it
+    under "unallocated" would put the line in the same place as a blank while looking allocated.
+    """
+    if v is None or str(v).strip() == "":
+        return ""
+    c = str(v).strip().lower()
+    if c in _DISCIPLINE_BY_CODE:
+        return c
+    return _DISCIPLINE_BY_LABEL.get(c)
+
+
+def by_trade(ctx):
+    """The bill, the measurement and the agreed variations, split by trade.
+
+    This is the report a commercial manager reads first and the one the portal could not produce.
+    Each trade carries what it is worth, what is built, and how far through it is — measured against
+    its OWN billed value, because 60% of the cleanroom envelope and 60% of the electrical package
+    are different amounts of money and a single project percentage hides both.
+    """
+    ctx = ctx or {}
+    cutoff = str(ctx.get("cutoff") or "")[:10]
+    items = ctx.get("boq") or []
+    meas = measured_value(items, ctx.get("measures"), cutoff)
+    measured_by = {r["id"]: r for r in meas["rows"]}
+    disc_of = {}
+    rows = {}
+
+    def row(code):
+        if code not in rows:
+            d = _DISCIPLINE_BY_CODE.get(code)
+            rows[code] = {"code": code, "label": d["label"] if d else discipline_label(code),
+                          "labelVn": d["labelVn"] if d else "Chưa phân bổ",
+                          "hex": d["hex"] if d else "#94A3B8",
+                          "billed": 0.0, "measured": 0.0, "variations": 0.0,
+                          "unpricedLines": 0, "lines": 0}
+        return rows[code]
+
+    for i in items:
+        line = boq_line(i)
+        if line["kind"] in UNVALUED_KINDS or not line["id"]:
+            continue
+        code = _disc(i.get("discipline"))
+        disc_of[line["id"]] = code
+        r = row(code)
+        r["lines"] += 1
+        if line["priced"]:
+            r["billed"] += line["value"]
+        else:
+            r["unpricedLines"] += 1
+        m = measured_by.get(line["id"])
+        if m:
+            r["measured"] += m["value"]
+
+    # A variation belongs to the trade doing the work. Unset, it is UNALLOCATED and says so rather
+    # than landing in whichever trade happens to be first.
+    for raw in (ctx.get("variations") or []):
+        v = variation_value(raw)
+        if not v["valuable"] or not _le(v["agreedOn"] or v["instructedOn"], cutoff):
+            continue
+        row(_disc(raw.get("discipline")))["variations"] += r2(v["amount"] * v["pctComplete"] / 100.0)
+
+    out = []
+    for code in DISCIPLINE_CODES + (UNALLOCATED,):
+        if code not in rows:
+            continue
+        r = rows[code]
+        r["billed"] = r2(r["billed"])
+        r["measured"] = r2(r["measured"])
+        r["variations"] = r2(r["variations"])
+        r["revised"] = r2(r["billed"] + r["variations"])
+        # Against the REVISED trade value, for the same reason the project percentage is: a trade
+        # carrying agreed variations is bigger than its bill said.
+        r["pct"] = round(r["measured"] / r["revised"] * 100.0, 2) if r["revised"] else None
+        out.append(r)
+    return {"trades": out,
+            "billedTotal": r2(sum(t["billed"] for t in out)),
+            "measuredTotal": r2(sum(t["measured"] for t in out)),
+            "unallocatedLines": sum(t["lines"] for t in out if t["code"] == UNALLOCATED)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE QUALITY GATE — what a client's QS will not certify
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# On a pharma or cleanroom fit-out, payment is gated on quality and not on progress. Work that is
+# built, measured and genuinely there is still not payable if it carries an open non-conformance or
+# if it was never released past its inspection hold point. The contractor's own QS needs to know
+# that BEFORE the application goes out, because the alternative is finding out from the client's
+# certificate three weeks later with the cash already spent.
+#
+# THIS MODULE NEVER DEDUCTS. It reports value AT RISK beside the valuation, in the same place and
+# for the same reason variation exposure is reported. Whether to claim it is a commercial decision
+# with a contract behind it, and the portal is not entitled to make it. What it is entitled to do is
+# make sure nobody submits ₫400m of ductwork against an open Critical NCR without knowing.
+
+# Dispositions that mean the work stays claimable. A CONCESSION is the client accepting what was
+# built — the whole point of one — so it is not at risk. Everything else means the work is not yet
+# what was bought.
+NCR_CONCESSION = "use as is (concession)"
+NCR_OPEN_STATUSES = ("open", "in progress")
+NCR_AT_RISK_SEVERITIES = ("major", "critical")
+
+
+def _norm(v):
+    return str(v or "").strip().lower()
+
+
+def quality_gate(ctx):
+    """Which measured value is at risk, and which is measured but never released.
+
+    Two mechanisms, at two different resolutions, and the difference is stated rather than blurred:
+
+    BY TRADE — an open NCR carries a discipline. Every open Major or Critical non-conformance puts
+    the measured value of ITS TRADE at risk. Coarse, and it needs nobody to have linked anything, so
+    it works on the day the register is first used.
+
+    BY LINE — where the quantity surveyor has said so. A bill line naming an `itpRef` is released by
+    that inspection and test plan and by nothing else: measurement against it with no inspection
+    reference, or against an ITP that is still in draft, is NOT RELEASED. A line naming no ITP is
+    not gated at all, because not every bill line has an inspection (nobody witnesses site
+    establishment) and inventing a hold point would make the whole gate noise.
+
+    `ctx`: boq, measures, quality (pm_quality), itps (pm_quality_itp), cutoff.
+    """
+    ctx = ctx or {}
+    cutoff = str(ctx.get("cutoff") or "")[:10]
+    items = ctx.get("boq") or []
+    meas = measured_value(items, ctx.get("measures"), cutoff)
+    measured_by = {r["id"]: r for r in meas["rows"]}
+    line_of = {}
+    for i in items:
+        line = boq_line(i)
+        if line["id"]:
+            line_of[line["id"]] = dict(line, discipline=_disc(i.get("discipline")),
+                                       itpRef=str(i.get("itpRef") or "").strip())
+
+    # ── open non-conformances, by trade ──────────────────────────────────────────────────────────
+    ncrs = []
+    for q in (ctx.get("quality") or []):
+        if _norm(q.get("type")) != "ncr":
+            continue
+        if _norm(q.get("status")) not in NCR_OPEN_STATUSES:
+            continue
+        # A concession is the client accepting what was built, so it puts nothing at risk — but it
+        # is still an OPEN non-conformance and it stays in the register. Dropping it here removed it
+        # from the "Open non-conformances" table as well, so a QS reading that table was shown three
+        # of the four open NCRs on the job with nothing saying the fourth existed.
+        conc = _norm(q.get("disposition")) == NCR_CONCESSION
+        ncrs.append({"id": q.get("id"), "refNo": q.get("refNo") or "",
+                     "title": q.get("title") or "", "severity": q.get("severity") or "",
+                     "discipline": quality_discipline(q.get("discipline")),
+                     "rawDiscipline": q.get("discipline") or "",
+                     "disposition": q.get("disposition") or "",
+                     "concession": conc,
+                     "raisedDate": q.get("raisedDate") or "",
+                     "atRisk": (not conc)
+                               and _norm(q.get("severity")) in NCR_AT_RISK_SEVERITIES})
+
+    measured_by_disc = {}
+    for lid, m in measured_by.items():
+        d = (line_of.get(lid) or {}).get("discipline", UNALLOCATED)
+        measured_by_disc[d] = measured_by_disc.get(d, 0.0) + m["value"]
+
+    at_risk, risk_total = [], 0.0
+    # An NCR whose trade could not be attributed must NOT be matched against the un-traded bill
+    # lines. They are two different absences and treating them as one produced a confident,
+    # completely wrong figure the first time this ran on a real bill.
+    unattributed = [n for n in ncrs if n["atRisk"] and n["discipline"] == UNATTRIBUTED]
+    for d in sorted({n["discipline"] for n in ncrs
+                     if n["atRisk"] and n["discipline"] != UNATTRIBUTED}):
+        val = r2(measured_by_disc.get(d, 0.0))
+        if not val:
+            continue                       # an NCR on a trade with nothing measured risks nothing
+        against = [n for n in ncrs if n["discipline"] == d and n["atRisk"]]
+        at_risk.append({"discipline": d, "label": discipline_label(d), "measured": val,
+                        "ncrs": against, "count": len(against)})
+        risk_total += val
+
+    # ── measured but never released ──────────────────────────────────────────────────────────────
+    # An ITP releases work only once it is APPROVED. A plan still in draft has not been agreed with
+    # the client, so nothing can have been witnessed against it.
+    itp_by_no, itp_by_id = {}, {}
+    for p in (ctx.get("itps") or []):
+        rec = {"id": p.get("id"), "itpNo": p.get("itpNo") or "", "title": p.get("title") or "",
+               "status": p.get("status") or "", "approved": _norm(p.get("status")) == "approved"}
+        if rec["itpNo"]:
+            itp_by_no[rec["itpNo"].strip().lower()] = rec
+        if rec["id"]:
+            itp_by_id[rec["id"]] = rec
+
+    # Which measurement records carry an inspection reference, per bill line.
+    released_qty, total_qty = {}, {}
+    for m in (ctx.get("measures") or []):
+        lid = m.get("boqItemId")
+        if not lid or lid not in line_of:
+            continue
+        d = m.get("date") or m.get("measuredOn") or ""
+        if cutoff and (not d or not _le(d, cutoff)):
+            continue
+        q = _num(m.get("qty"))
+        total_qty[lid] = total_qty.get(lid, 0.0) + q
+        if str(m.get("inspectionRef") or "").strip():
+            released_qty[lid] = released_qty.get(lid, 0.0) + q
+
+    unreleased, unreleased_total = [], 0.0
+    for lid, m in measured_by.items():
+        line = line_of.get(lid) or {}
+        ref = line.get("itpRef") or ""
+        if not ref:
+            continue                        # this line is not inspection-gated, and says so
+        itp = itp_by_no.get(ref.strip().lower()) or itp_by_id.get(ref)
+        tq = total_qty.get(lid, 0.0)
+        rq = released_qty.get(lid, 0.0)
+        if itp and itp["approved"] and tq and rq >= tq - 1e-9:
+            continue                        # fully released against an approved plan
+        why = ("the inspection and test plan %s is not on the register" % ref) if not itp else (
+            ("%s is %s, not approved — nothing can have been witnessed against it"
+             % (itp["itpNo"] or ref, itp["status"] or "not set")) if not itp["approved"] else
+            ("%s of %s measured carries no inspection reference"
+             % (_qty(tq - rq), _qty(tq))))
+        # Value the UNRELEASED part, not the whole line: half a line inspected is half a line at
+        # risk, and reporting the lot would make the figure easy to dismiss.
+        share = 1.0 if (not tq or not itp or not itp["approved"]) else max(0.0, (tq - rq) / tq)
+        val = r2(m["value"] * share)
+        unreleased.append({"id": lid, "itemNo": m["itemNo"], "desc": m["desc"],
+                           "itpRef": ref, "itpStatus": (itp or {}).get("status") or "",
+                           "measured": m["value"], "unreleased": val, "why": why})
+        unreleased_total += val
+
+    gated = sum(1 for l in line_of.values() if l.get("itpRef"))
+    return {
+        "openNcrs": ncrs,
+        "unattributedNcrs": unattributed,
+        "atRisk": at_risk,
+        "valueAtRisk": r2(risk_total),
+        "unreleased": unreleased,
+        "valueNotReleased": r2(unreleased_total),
+        "linesGatedByItp": gated,
+        "linesTotal": len(line_of),
+        "measuredTotal": meas["total"],
+    }
+
+
+def _qty(n):
+    """A quantity in a sentence. 900.0 reads as a defect; 900 reads as a measurement."""
+    n = _num(n)
+    return ("%d" % n) if abs(n - round(n)) < 1e-9 else ("%.2f" % n)
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  COMMISSIONING, QUALIFICATION AND THE LAST TEN PER CENT
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# On a cleanroom contract the final tranche of money does not follow the last panel being fixed. It
+# follows the ROOM PASSING ITS TESTS: classification, filter integrity, air change rate, pressure
+# cascade, recovery. Until those certificates exist the works are not complete however finished they
+# look, and a final account that ignores them is a final account the client will not sign.
+#
+# The standards below are cited so the register states WHAT a test is against rather than only that
+# it happened. A test with no acceptance criterion is not a test, it is an opinion.
+CT_CLASSIFICATION = "classification"
+CT_FILTER_INTEGRITY = "filter_integrity"
+CT_AIRFLOW = "airflow"
+CT_PRESSURE = "pressure"
+CT_RECOVERY = "recovery"
+CT_CONTAINMENT = "containment"
+CT_VISUALISATION = "visualisation"
+CT_TEMP_RH = "temp_rh"
+CT_LIGHT_NOISE = "light_noise"
+CT_TAB = "tab"
+CT_DUCT_LEAKAGE = "duct_leakage"
+CT_ELECTRICAL = "electrical_test"
+CT_FIRE_CE = "fire_cause_effect"
+CT_CLEAN_UTILITY = "clean_utility"
+CT_IQ = "iq"
+CT_OQ = "oq"
+CT_PQ = "pq"
+
+COMMISSIONING_TESTS = (
+    {"code": CT_TAB, "label": "Testing, adjusting & balancing (TAB)",
+     "labelVn": "Cân chỉnh lưu lượng", "standard": "AABC / NEBB procedural standard",
+     "criterion": "Every terminal within the design tolerance stated on the drawings",
+     "discipline": HVAC, "cleanroom": False},
+    {"code": CT_DUCT_LEAKAGE, "label": "Ductwork leakage test",
+     "labelVn": "Thử rò rỉ đường ống gió", "standard": "EN 12237 / EN 1507 (SMACNA equivalent)",
+     "criterion": "Leakage within the specified class at the specified test pressure",
+     "discipline": HVAC, "cleanroom": False},
+    {"code": CT_FILTER_INTEGRITY, "label": "Installed HEPA/ULPA filter leak test (DOP/PAO)",
+     "labelVn": "Thử rò rỉ màng lọc HEPA", "standard": "ISO 14644-3:2019 §B.7",
+     "criterion": "No downstream leak above the specified penetration",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_AIRFLOW, "label": "Airflow volume / velocity & air change rate",
+     "labelVn": "Lưu lượng & số lần trao đổi không khí", "standard": "ISO 14644-3:2019 §B.1",
+     "criterion": "Air changes per hour at or above the design figure for the room grade",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_PRESSURE, "label": "Room pressure differential & cascade",
+     "labelVn": "Chênh áp giữa các phòng", "standard": "ISO 14644-3:2019 §B.4",
+     "criterion": "Cascade in the specified direction, each step within tolerance",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_CLASSIFICATION, "label": "Airborne particle classification",
+     "labelVn": "Phân loại độ sạch không khí", "standard": "ISO 14644-1:2015",
+     "criterion": "Room achieves its specified ISO class at the specified occupancy state",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_RECOVERY, "label": "Recovery test",
+     "labelVn": "Thử phục hồi độ sạch", "standard": "ISO 14644-3:2019 §B.12",
+     "criterion": "Return to classification within the specified recovery time",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_CONTAINMENT, "label": "Containment leak / installed system leakage",
+     "labelVn": "Thử rò rỉ hệ thống", "standard": "ISO 14644-3:2019 §B.5",
+     "criterion": "No ingress above the specified limit at the room boundary",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_VISUALISATION, "label": "Airflow direction & visualisation (smoke study)",
+     "labelVn": "Quan sát hướng dòng khí", "standard": "ISO 14644-3:2019 §B.6",
+     "criterion": "Airflow moves from clean to less clean with no stagnation at critical points",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_TEMP_RH, "label": "Temperature & relative humidity",
+     "labelVn": "Nhiệt độ & độ ẩm", "standard": "ISO 14644-3:2019 §B.9 / §B.10",
+     "criterion": "Held within the specified band over the specified period",
+     "discipline": HVAC, "cleanroom": True},
+    {"code": CT_LIGHT_NOISE, "label": "Lighting level & sound level",
+     "labelVn": "Độ rọi & độ ồn", "standard": "ISO 14644-3:2019 §B.11 and the project specification",
+     "criterion": "Lux at working plane and dB(A) within the specification",
+     "discipline": ELECTRICAL, "cleanroom": False},
+    {"code": CT_ELECTRICAL, "label": "Electrical installation testing",
+     "labelVn": "Thí nghiệm hệ thống điện", "standard": "IEC 60364-6 (TCVN 9358 equivalent)",
+     "criterion": "Continuity, insulation resistance, loop impedance and RCD operation all within "
+                  "limits, recorded per circuit",
+     "discipline": ELECTRICAL, "cleanroom": False},
+    {"code": CT_FIRE_CE, "label": "Fire detection & suppression cause-and-effect",
+     "labelVn": "Thử nghiệm liên động PCCC", "standard": "Project cause-and-effect matrix",
+     "criterion": "Every input drives its specified outputs, witnessed by the authority where "
+                  "required",
+     "discipline": FIRE, "cleanroom": False},
+    {"code": CT_CLEAN_UTILITY, "label": "Clean utility pressure, purity & passivation",
+     "labelVn": "Thử áp & độ tinh khiết tiện ích sạch",
+     "standard": "USP <1231> / EP for water; ISO 8573 for compressed air",
+     "criterion": "Pressure and leak test passed; purity at every user point within the "
+                  "specification; passivation certified",
+     "discipline": CLEAN_UTILITIES, "cleanroom": True},
+    {"code": CT_IQ, "label": "Installation qualification (IQ)",
+     "labelVn": "Thẩm định lắp đặt", "standard": "EU GMP Annex 15 / PIC/S",
+     "criterion": "Installed as designed, against approved drawings, with all documentation and "
+                  "calibration certificates present",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_OQ, "label": "Operational qualification (OQ)",
+     "labelVn": "Thẩm định vận hành", "standard": "EU GMP Annex 15 / PIC/S",
+     "criterion": "Operates throughout its specified range, alarms and interlocks demonstrated",
+     "discipline": VALIDATION, "cleanroom": True},
+    {"code": CT_PQ, "label": "Performance qualification (PQ)",
+     "labelVn": "Thẩm định hiệu năng", "standard": "EU GMP Annex 15 / PIC/S",
+     "criterion": "Performs to specification over the specified period under production conditions",
+     "discipline": VALIDATION, "cleanroom": True},
+)
+_TEST_BY_CODE = {t["code"]: t for t in COMMISSIONING_TESTS}
+
+CS_NOT_STARTED = "not_started"
+CS_IN_PROGRESS = "in_progress"
+CS_PASSED = "passed"
+CS_WITNESSED = "witnessed"      # passed AND witnessed by the client or their consultant
+CS_FAILED = "failed"
+CS_NA = "not_applicable"        # a stated decision, never a blank
+
+COMMISSIONING_DONE = (CS_PASSED, CS_WITNESSED, CS_NA)
+
+
+def commissioning(ctx):
+    """The handover test schedule, and what it is holding up.
+
+    Every row is a test against a named standard with a stated acceptance criterion. A row marked
+    NOT APPLICABLE is a DECISION and is recorded as one — a blank is not the same thing, and the
+    difference is exactly what a GMP client's auditor asks about.
+    """
+    ctx = ctx or {}
+    rows, done, failed, outstanding = [], 0, [], []
+    for r in (ctx.get("tests") or []):
+        spec = _TEST_BY_CODE.get(_norm(r.get("testCode")))
+        st = _norm(r.get("status")) or CS_NOT_STARTED
+        row = {
+            "id": r.get("id"),
+            "testCode": _norm(r.get("testCode")),
+            "label": spec["label"] if spec else (r.get("title") or "Unlisted test"),
+            "labelVn": spec["labelVn"] if spec else "",
+            "standard": r.get("standard") or (spec["standard"] if spec else ""),
+            "criterion": r.get("criterion") or (spec["criterion"] if spec else ""),
+            "discipline": _disc(r.get("discipline") or (spec["discipline"] if spec else "")),
+            "area": r.get("area") or r.get("room") or "",
+            "system": r.get("system") or "",
+            "status": st,
+            "result": r.get("result") or "",
+            "testedOn": r.get("testedOn") or "",
+            "witnessedBy": r.get("witnessedBy") or "",
+            "certRef": r.get("certRef") or "",
+            "gatesFinalAccount": r.get("gatesFinalAccount") not in (False, "false", "0", 0),
+            "cleanroom": bool(spec["cleanroom"]) if spec else False,
+        }
+        # A test recorded as passed with no acceptance criterion behind it is an assertion, not a
+        # result. Said here rather than silently accepted, because the certificate goes in the
+        # handover file and somebody will read it in an audit years from now.
+        row["criterionMissing"] = row["status"] in (CS_PASSED, CS_WITNESSED) and not row["criterion"]
+        rows.append(row)
+        if st in COMMISSIONING_DONE:
+            done += 1
+        if st == CS_FAILED:
+            failed.append(row)
+        if st not in COMMISSIONING_DONE and st != CS_FAILED and row["gatesFinalAccount"]:
+            # A failure is reported by `failed` and blocks on its own line. Counting it here as
+            # well printed it twice in the blocker list, which is the one list where noise costs.
+            outstanding.append(row)
+
+    total = len(rows)
+    warnings = []
+    if failed:
+        warnings.append({
+            "code": "commissioning_failed", "severity": "high",
+            "msg": "%d test(s) have FAILED. Failed work is not complete however finished it looks, "
+                   "and the client will not certify against it." % len(failed),
+            "items": [{"itemNo": f["certRef"], "desc": "%s — %s" % (f["label"], f["area"] or "")}
+                      for f in failed[:20]]})
+    if outstanding:
+        warnings.append({
+            "code": "commissioning_outstanding", "severity": "medium",
+            "msg": "%d test(s) that gate the final account are still outstanding." % len(outstanding),
+            "items": [{"itemNo": o["area"], "desc": o["label"]} for o in outstanding[:20]]})
+    bad_crit = [r for r in rows if r["criterionMissing"]]
+    if bad_crit:
+        warnings.append({
+            "code": "no_acceptance_criterion", "severity": "medium",
+            "msg": "%d test(s) are recorded as passed with no acceptance criterion. A pass against "
+                   "nothing is an opinion, and it goes in the handover file."
+                   % len(bad_crit),
+            "items": [{"itemNo": r["certRef"], "desc": r["label"]} for r in bad_crit[:20]]})
+    if not total:
+        warnings.append({
+            "code": "no_commissioning_schedule", "severity": "medium",
+            "msg": "No commissioning or qualification tests are scheduled. On a cleanroom contract "
+                   "the last tranche of money follows the room passing its tests, not the last "
+                   "panel being fixed."})
+
+    return {"rows": rows, "total": total, "done": done,
+            "pct": round(done / total * 100.0, 2) if total else None,
+            "failed": failed, "outstanding": outstanding, "warnings": warnings}
 
 
 # ── what this module will not decide ─────────────────────────────────────────────────────────────

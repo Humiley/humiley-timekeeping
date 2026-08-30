@@ -28,11 +28,16 @@ import qsurvey
 
 
 H = app.Handler
-QS = ("pm_qs_boq", "pm_qs_measure", "pm_qs_daywork", "pm_qs_variations",
-      "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr")
+QS = ("pm_qs_boq", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning",
+      "pm_qs_variations", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr")
 
-SITE_LEVEL = {"pm_qs_boq", "pm_qs_measure", "pm_qs_daywork"}
+# A commissioning result carries no money — it is a test against a standard, run and recorded by
+# the commissioning engineer. What it GATES is commercial, and that gate is in final_account.
+SITE_LEVEL = {"pm_qs_boq", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning"}
 COMMERCIAL_LEVEL = {"pm_qs_variations", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr"}
+# Readable at staff AND writable by them: recording measurement, daywork and a test result IS the
+# site job. pm_qs_boq is the CONTRACT bill and stays manager-write.
+SITE_WRITE = {"pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning"}
 
 
 def _src():
@@ -157,3 +162,108 @@ def test_the_frontend_lifecycle_mirrors_the_engine():
     assert ui == engine, (
         "the variation lifecycle on screen disagrees with qsurvey.VARIATION_FLOW.\n"
         "  screen: %s\n  engine: %s" % (ui, engine))
+
+
+def test_the_site_registers_are_WRITABLE_by_the_site_not_only_readable():
+    """Read and write are two gates and they have to agree.
+
+    These three were readable at staff and missing from STAFF_WRITE, so a site engineer could open
+    the measurement register and every save came back "Manager access required" — a register you can
+    see and cannot write to reads as a bug in the app rather than as a decision. It is the eng_
+    failure written up in tests/test_module_family_coverage.py, reached one collection at a time.
+    """
+    for c in sorted(SITE_WRITE):
+        assert c in H.STAFF_WRITE, (
+            "%s is readable at %r but not in STAFF_WRITE, so every save from a site account is "
+            "refused." % (c, H.READ_MIN.get(c)))
+
+
+def test_the_contract_bill_is_not_writable_from_a_site_account():
+    """An engineer measuring against the bill must not be able to change the rate they are measured
+    at. Readable, deliberately; writable, deliberately not."""
+    assert H.READ_MIN.get("pm_qs_boq") == "staff"
+    assert "pm_qs_boq" not in H.STAFF_WRITE
+
+
+def test_no_qs_register_is_readable_and_unwritable_by_accident():
+    """The general form of the bug above: anything staff can READ is either staff-WRITABLE or is
+    listed here as a deliberate exception, with the reason."""
+    deliberate = {"pm_qs_boq": "the contract bill — an engineer must not edit the rate they are "
+                               "measured at"}
+    for c in QS:
+        if H.READ_MIN.get(c) != "staff" or c in H.STAFF_WRITE:
+            continue
+        assert c in deliberate, (
+            "%s is staff-readable and not staff-writable, and nothing says that was on purpose. "
+            "Either add it to STAFF_WRITE or record the reason here." % c)
+
+
+def _qs_block():
+    with open("templates/index.html", encoding="utf-8") as fh:
+        html = fh.read()
+    return html, html[html.index("   QS — QUANTITY SURVEYING"):html.index("/* ══ END QS ══")]
+
+
+def _code_only(js):
+    """The QS block with its comments removed.
+
+    The duplication checks below look for a trade label or a published standard appearing as DATA in
+    the browser. A comment that NAMES one is documentation and is exactly what should be there —
+    "the one on screen is the one somebody reads off a certificate" mentions ISO 14644-1 on purpose.
+    Scanning the raw text flagged that sentence, which is a check firing on the wrong thing.
+
+    Block comments are removed wholesale; line comments only where `//` opens the line, so a `https://`
+    inside an expression cannot be mistaken for one.
+    """
+    js = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+    return "\n".join(l for l in js.splitlines() if not l.lstrip().startswith("//"))
+
+
+def test_the_trade_list_on_screen_is_the_one_the_engine_groups_by():
+    """The screen must not carry its own copy of the trades.
+
+    Every rollup — progress, margin, the quality gate — groups on the trade CODE, so a code that
+    exists in one place and not the other silently drops a trade's money out of every total. The
+    browser is SERVED the list; this asserts it is not duplicated in index.html."""
+    _, raw = _qs_block()
+    assert "_qsDisciplines" in raw, "the screen no longer reads the served trade list"
+    block = _code_only(raw)
+    for d in qsurvey.DISCIPLINES:
+        assert ("'%s'" % d["label"]) not in block, (
+            "the trade label %r is hard-coded in index.html — it is served, and a second copy is "
+            "one that can go stale" % d["label"])
+    for t in qsurvey.COMMISSIONING_TESTS:
+        assert t["standard"] not in block, (
+            "the standard %r is hard-coded in index.html. The one on screen is the one somebody "
+            "reads off a certificate; it comes from the engine." % t["standard"])
+
+
+def test_the_commissioning_statuses_on_screen_match_the_engine():
+    """A status the screen offers and the engine does not know is a row that counts towards
+    nothing — it neither completes the schedule nor blocks the account."""
+    html, _ = _qs_block()
+    block = html[html.index("const _QS_CSTATUS = {"):]
+    block = block[:block.index("};") + 2]
+    ui = set(re.findall(r"(\w+): \[", block))
+    engine = {qsurvey.CS_NOT_STARTED, qsurvey.CS_IN_PROGRESS, qsurvey.CS_PASSED,
+              qsurvey.CS_WITNESSED, qsurvey.CS_FAILED, qsurvey.CS_NA}
+    assert ui == engine, "screen: %s\nengine: %s" % (sorted(ui), sorted(engine))
+    # And the form must offer exactly those, or somebody records a status nothing counts.
+    i = html.index("pm_qs_commissioning: { title:")
+    form = html[i:html.index("pm_qs_materials: { title:", i)]
+    m = re.search(r"k: 'status'.*?options: \[([^\]]*)\]", form, re.S)
+    assert m, "the commissioning form has no status field"
+    offered = {x.strip().strip("'") for x in m.group(1).split(",") if x.strip()}
+    assert offered == engine, "form offers %s" % sorted(offered)
+
+
+def test_the_cost_register_can_say_which_trade_a_cost_belongs_to():
+    """Margin by trade divides cost by trade. Without this field pm_costs has no trade, every cost
+    lands in UNALLOCATED, and the report is a single row saying nothing."""
+    html, _ = _qs_block()
+    i = html.index("pm_costs: { title: 'Cost Line'")
+    form = html[i:html.index("pm_quality: { title:", i)]
+    assert "k: 'discipline'" in form
+    assert "options: 'qs_disciplines'" in form, (
+        "the trade picker on a cost line must use the SERVED list, or the codes it writes will not "
+        "be the codes the rollup groups on")

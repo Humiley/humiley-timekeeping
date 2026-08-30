@@ -9831,9 +9831,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -9861,6 +9861,16 @@ class Handler(BaseHTTPRequestHandler):
     SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications", "sales_receipts",
                     "sales_variations", "sales_credits"}
 
+    # ⚠️ READ AND WRITE ARE TWO GATES AND THEY MUST AGREE.
+    # pm_qs_measure and pm_qs_daywork are in STAFF_WRITE above because they are readable at staff
+    # (READ_MIN) for a reason: recording measurement and daywork IS the site job. Without them there
+    # every one of those saves came back "Manager access required" from the pm_/eng_/ahu_ gate in
+    # _coll_add, so a site engineer could open the register and not write to it — which reads as a
+    # bug in the app rather than as a decision. That is the eng_ failure written up in
+    # tests/test_module_family_coverage.py, reached one collection at a time.
+    #
+    # pm_qs_boq is deliberately NOT staff-writable. The bill of quantities is the CONTRACT: an
+    # engineer measuring against it must not be able to change the rate they are measured at.
     ISSUED_ONLY = {
                    # A baseline is the plan every later "are we on schedule?" is measured against.
                    # If a browser could write one, the answer to that question would be editable by
@@ -10005,7 +10015,11 @@ class Handler(BaseHTTPRequestHandler):
                 #
                 # Everything else states what we are claiming and what we are making, and is
                 # manager and above to match pm_costs.
+                # A commissioning result carries no money — it is a test against a standard,
+                # run and recorded by the commissioning engineer. What it GATES is commercial
+                # (the final account), and that gate lives in qsurvey.final_account, not here.
                 "pm_qs_boq": "staff", "pm_qs_measure": "staff", "pm_qs_daywork": "staff",
+                "pm_qs_commissioning": "staff",
                 "pm_qs_variations": "manager", "pm_qs_materials": "manager",
                 "pm_qs_valuations": "manager", "pm_qs_cvr": "manager",
                 # Not compensation data: a site manager has to know whether their crew is covered
@@ -10171,7 +10185,7 @@ class Handler(BaseHTTPRequestHandler):
     # `qsurvey.py` computes the gross valuation and stops. Retention and advance recovery are computed by
     # sales_contract.application() and by nothing else — see the note it returns in `next`.
     QS_COLLS = ("pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork",
-                "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr")
+                "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning")
 
     def _qs_may_read(self, u, pid):
         """Whether this caller may read a project's commercial position, and why not if not.
@@ -10207,7 +10221,47 @@ class Handler(BaseHTTPRequestHandler):
         return {"boq": boq, "measures": _of("pm_qs_measure"),
                 "variations": _of("pm_qs_variations"), "daywork": _of("pm_qs_daywork"),
                 "materials": _of("pm_qs_materials"), "valuations": _of("pm_qs_valuations"),
-                "cvr": _of("pm_qs_cvr")}
+                "cvr": _of("pm_qs_cvr"), "commissioning": _of("pm_qs_commissioning"),
+                # The quality gate reads two registers this module does not own. They are fetched
+                # here rather than in the gate so the gate stays pure and testable, and so a
+                # valuation and its quality position are always read at the same moment.
+                "quality": _of("pm_quality"), "itps": _of("pm_quality_itp")}
+
+    @staticmethod
+    def _qs_ctx(rows):
+        """The registers a valuation is computed from, in one place.
+
+        Written once because it is built in three: the live position, every valuation in the series,
+        and the snapshot taken at submission. Three hand-maintained copies is how one of them ends
+        up without the quality registers and quietly reports a clean gate on a job with four open
+        non-conformances.
+        """
+        return {"boq": rows["boq"], "measures": rows["measures"],
+                "variations": rows["variations"], "daywork": rows["daywork"],
+                "materials": rows["materials"],
+                "quality": rows.get("quality"), "itps": rows.get("itps")}
+
+    @staticmethod
+    def _qs_cost_by_trade(pid):
+        """Actual cost to date, per trade, from pm_costs.
+
+        `actual` only: a cost line with no actual on it is a COMMITMENT, and pricing a margin with
+        commitments in it reports a loss the job has not made yet. A line with no discipline stays
+        UNALLOCATED — spreading it pro-rata would put one trade's overspend in another's margin and
+        would look plausible in every column.
+        """
+        out = {}
+        for c in db.list_collection("pm_costs"):
+            if c.get("projectId") != pid:
+                continue
+            amt = qsurvey._num(c.get("actual"))
+            if not amt:
+                continue
+            code = str(c.get("discipline") or "").strip().lower()
+            if code not in qsurvey.DISCIPLINE_CODES:
+                code = qsurvey.UNALLOCATED
+            out[code] = out.get(code, 0.0) + amt
+        return {k: qsurvey.r2(v) for k, v in out.items()}
 
     @staticmethod
     def _qs_contract_sum(project):
@@ -10240,11 +10294,9 @@ class Handler(BaseHTTPRequestHandler):
                 calc = dict(snap)
                 calc["fromSnapshot"] = True
             else:
-                calc = qsurvey.valuation({
-                    "boq": rows["boq"], "measures": rows["measures"],
-                    "variations": rows["variations"], "daywork": rows["daywork"],
-                    "materials": rows["materials"], "cutoff": v.get("cutoff") or "",
-                    "previous": prev_gross, "contractSum": contract_sum})
+                calc = qsurvey.valuation(dict(
+                    self._qs_ctx(rows), cutoff=v.get("cutoff") or "",
+                    previous=prev_gross, contractSum=contract_sum))
                 calc["fromSnapshot"] = False
                 if st in qsurvey.VALUATION_FROZEN:
                     # Submitted with no snapshot: an older row, or one written round the endpoint.
@@ -10291,10 +10343,8 @@ class Handler(BaseHTTPRequestHandler):
 
         # The live position: the last valuation in the series, or a fresh one against today if the
         # job has none yet. A QS opening this screen wants the position NOW, not "no data".
-        live = series[-1]["calc"] if series else qsurvey.valuation({
-            "boq": rows["boq"], "measures": rows["measures"], "variations": rows["variations"],
-            "daywork": rows["daywork"], "materials": rows["materials"],
-            "cutoff": "", "previous": 0, "contractSum": contract_sum})
+        live = series[-1]["calc"] if series else qsurvey.valuation(dict(
+            self._qs_ctx(rows), cutoff="", previous=0, contractSum=contract_sum))
 
         # Certified to date is the newest CERTIFIED figure, not a sum: a certificate states the
         # gross certified to date, so adding them together counts the whole job once per month.
@@ -10310,12 +10360,18 @@ class Handler(BaseHTTPRequestHandler):
         cvr_rows = sorted(rows["cvr"], key=lambda c: str(c.get("cutoff") or ""))
         latest_cvr = cvr_rows[-1] if cvr_rows else {}
         prev_margin = (cvr_rows[-2].get("marginPct") if len(cvr_rows) > 1 else None)
+        # Value per trade comes from the valuation (measured + agreed variations), cost per
+        # trade from pm_costs. Both are read; neither is sent by the browser.
+        value_by_trade = {t["code"]: qsurvey.r2(t["measured"] + t["variations"])
+                          for t in (live.get("trades") or {}).get("trades", [])}
         cvr_calc = qsurvey.cvr({
             "valueToDate": live.get("grossToDate"), "costToDate": cost_to_date,
             "accruals": latest_cvr.get("accruals"), "provisions": latest_cvr.get("provisions"),
             "forecastValue": latest_cvr.get("forecastValue"),
             "forecastCost": latest_cvr.get("forecastCost"),
-            "previousMargin": prev_margin})
+            "previousMargin": prev_margin,
+            "valueByTrade": value_by_trade,
+            "costByTrade": self._qs_cost_by_trade(pid)})
 
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
@@ -10323,7 +10379,8 @@ class Handler(BaseHTTPRequestHandler):
             "provisionalAdjustment": (latest_cvr.get("provisionalAdjustment")
                                       if latest_cvr else 0),
             "agreedClaims": latest_cvr.get("agreedClaims") if latest_cvr else 0,
-            "certifiedToDate": certified if certified is not None else 0})
+            "certifiedToDate": certified if certified is not None else 0,
+            "commissioning": rows["commissioning"]})
 
         return self._json({
             "projectId": pid,
@@ -10342,6 +10399,11 @@ class Handler(BaseHTTPRequestHandler):
                            for c in cvr_rows],
             "finalAccount": final,
             "counts": {k: len(v) for k, v in rows.items()},
+            # The trade list and the commissioning catalogue are served, never duplicated in the
+            # browser. A second copy of "ISO 14644-1:2015" is a second copy that can go stale, and
+            # the one on screen is the one somebody reads off a certificate.
+            "disciplines": list(qsurvey.DISCIPLINES),
+            "commissioningTests": list(qsurvey.COMMISSIONING_TESTS),
             "at": _now_iso(),
         })
 
@@ -10427,11 +10489,9 @@ class Handler(BaseHTTPRequestHandler):
                 if s["id"] == vid:
                     break
                 prev = qsurvey.r2(s["calc"].get("grossToDate"))
-            calc = qsurvey.valuation({
-                "boq": rows["boq"], "measures": rows["measures"],
-                "variations": rows["variations"], "daywork": rows["daywork"],
-                "materials": rows["materials"], "cutoff": cur.get("cutoff") or "",
-                "previous": prev, "contractSum": self._qs_contract_sum(project)})
+            calc = qsurvey.valuation(dict(
+                self._qs_ctx(rows), cutoff=cur.get("cutoff") or "",
+                previous=prev, contractSum=self._qs_contract_sum(project)))
             blockers = [w for w in calc["warnings"] if w["severity"] == "high"
                         and w["code"] in ("measured_but_unpriced", "agreed_variation_unpriced",
                                           "orphan_measurements")]
@@ -10633,12 +10693,26 @@ class Handler(BaseHTTPRequestHandler):
             if not desc and kind != qsurvey.NOTE:
                 rejected.append({"line": n, "why": "no description"})
                 continue
+            # The trade. An empty one is a real state (the line sits outside every
+            # trade-by-trade figure and the valuation says so); an unrecognised one is a TYPO, and
+            # storing it would put the line in the same place as a blank while looking like it had
+            # been allocated. Rejected by name, like every other bad row.
+            disc = qsurvey.discipline_code(raw.get("discipline"))
+            if raw.get("discipline") and disc is None:
+                rejected.append({"line": n, "why": "'%s' is not a trade. Use a code or a name: %s"
+                                                   % (str(raw.get("discipline")).strip(),
+                                                      ", ".join(qsurvey.DISCIPLINE_CODES))})
+                continue
+            disc = disc or ""
             row = {"projectId": pid, "seq": base + n,
                    "section": str(raw.get("section") or "")[:120],
                    "itemNo": str(raw.get("itemNo") or "")[:40],
                    "desc": desc[:600], "unit": str(raw.get("unit") or "")[:20],
                    "kind": kind,
                    "billedQty": qsurvey._num(raw.get("billedQty")),
+                   "discipline": disc,
+                   # Naming an ITP is what puts the line behind an inspection hold point.
+                   "itpRef": str(raw.get("itpRef") or "").strip()[:60],
                    "wbsId": str(raw.get("wbsId") or "")[:80]}
             # A blank rate stays BLANK. Writing 0 here would turn "nobody priced this" into "this is
             # free", and bill_total would then have nothing to warn about — the one thing rule 1
