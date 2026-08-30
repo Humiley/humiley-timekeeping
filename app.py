@@ -5599,8 +5599,21 @@ class Handler(BaseHTTPRequestHandler):
             # would be worked around by not recording the gate.
             if t == "passed":
                 _blockers = []
+                # Compared by ID, not by calling _eng_project_of on every row. That helper does a
+                # full `list_collection("eng_projects")` scan per call, and it was being called once
+                # per hold, once per deviation and once per risk — MEASURED at 7 reads of
+                # eng_projects for a commission with 2 rows in each register and 67 for one with 20,
+                # so the cost of signing a gate grew with how much the commission had recorded. It is
+                # the same shape that took the AHU board to four seconds; a real commission carries
+                # hundreds of these rows by the time it reaches a gate.
+                #
+                # Identical outcome: _eng_project_of(x) == proj was only ever true when x's
+                # projectId resolved to this very record. A gate on a commission with no id cannot
+                # be blocked by orphan rows, which is what the empty-string guard says.
+                _pid = str(proj.get("id") or "")
+                _mine = (lambda x: bool(_pid) and str(x.get("projectId") or "") == _pid)
                 _holds = [h for h in db.list_collection("eng_holds")
-                          if self._eng_project_of(h) == proj
+                          if _mine(h)
                           and str(h.get("kind") or "hold").strip().lower() == "hold"
                           and str(h.get("status") or "open").strip().lower() in ("open", "raised")]
                 if _holds:
@@ -5608,7 +5621,7 @@ class Handler(BaseHTTPRequestHandler):
                         len(_holds), ", ".join(str(h.get("ref") or h.get("title") or "?")
                                                for h in _holds[:4])))
                 _devs = [d for d in db.list_collection("eng_deviations")
-                         if self._eng_project_of(d) == proj
+                         if _mine(d)
                          and str(d.get("decision") or "").strip().lower() not in
                              ("approved", "rejected", "withdrawn", "closed")]
                 if _devs:
@@ -5616,7 +5629,7 @@ class Handler(BaseHTTPRequestHandler):
                         len(_devs), ", ".join(str(d.get("ref") or d.get("title") or "?")
                                               for d in _devs[:4])))
                 _risks = [r for r in db.list_collection("eng_risks")
-                          if self._eng_project_of(r) == proj
+                          if _mine(r)
                           and str(r.get("status") or "").strip().lower() in
                               ("transferred", "transfer to others", "residual")
                           and not str(r.get("informedBy") or "").strip()]
