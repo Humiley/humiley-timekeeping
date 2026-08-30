@@ -81,6 +81,7 @@ import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
+import qsurvey           # what is built and what it is worth at contract rates (pure)
 import est_copy         # duplicating a tender: the bill travels, the original's history does not (pure)
 import tender_outcome   # why a tender was won or lost, and the hit rate that follows (pure)
 import rate_reprice     # bringing a tender's copied rates up to today's library (pure)
@@ -4358,6 +4359,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/tender/outcomes":
             return self._guard(lambda u: self._tender_outcomes_ep(u), manager=True)
+        if path == "/api/qs/summary":
+            return self._guard(lambda u: self._qs_summary_ep(u, qs))
         if path == "/api/est/summary":
             return self._guard(lambda u: self._est_summary_ep(u, qs))
         if path == "/api/tender/summary":
@@ -4472,6 +4475,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
         if path == "/api/eng/baseline":
             return self._guard(lambda uu: self._eng_baseline_ep(uu, body or {}))
+        if path == "/api/qs/valuation":
+            return self._guard(lambda uu: self._qs_valuation_ep(uu, body or {}))
+        if path == "/api/qs/variation":
+            return self._guard(lambda uu: self._qs_variation_ep(uu, body or {}))
+        if path == "/api/qs/cvr":
+            return self._guard(lambda uu: self._qs_cvr_ep(uu, body or {}))
+        if path == "/api/qs/boq":
+            return self._guard(lambda uu: self._qs_boq_ep(uu, body or {}))
         if path == "/api/sales/vat-settings":
             return self._guard(lambda uu: self._vat_settings_ep(uu, body or {}))
         if path == "/api/sales/receipt":
@@ -9820,7 +9831,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -9888,7 +9899,17 @@ class Handler(BaseHTTPRequestHandler):
                    # with NONE of the ten Art. 21 particulars and no Art. 20 term check. This
                    # register was the FIRST to get a checking endpoint and the last to have its
                    # back door shut.
-                   "contracts": ("a labour contract", "/api/hr/contract")}
+                   "contracts": ("a labour contract", "/api/hr/contract"),
+                   # A valuation SNAPSHOTS itself when it is submitted (qsurvey.py rule 5). Moved
+                   # through the generic route it would change status with no snapshot, and
+                   # every later read would recompute a claim that had already left the
+                   # building from registers that had since moved.
+                   # A variation is NOT here, deliberately. Listing it made the register
+                   # unreachable — the endpoint below only moves an existing variation through
+                   # VARIATION_FLOW, so there was no way to create one at all. What must not be
+                   # freely edited is its LIFECYCLE, and that is stripped in _coll_add and
+                   # preserved in _coll_update instead.
+                   "pm_qs_valuations": ("an interim valuation", "/api/qs/valuation")}
     # Collections the GENERIC /api/coll route must never serve, at ANY level. A speak-up concern
     # is readable only through /api/hr/speakup, which applies grievance.may_read — and being an
     # administrator is deliberately not a way in. Listing the collection would hand every concern
@@ -9972,6 +9993,21 @@ class Handler(BaseHTTPRequestHandler):
                 # payments AGAINST it were manager-gated, so the certificate was protected and the
                 # contract it certifies against was served in full to every staff account.
                 "pm_costs": "manager", "pm_procurement": "manager", "pm_procurement_payments": "manager",
+                # Quantity surveying. The split is deliberate and is about WHOSE money each
+                # register holds.
+                #
+                # The BILL, the MEASUREMENT and the DAYWORK SHEETS are the site's working
+                # documents. The bill carries CONTRACT rates — the client signed them and has
+                # their own copy — and a site engineer who cannot open the bill cannot record a
+                # measurement against it, which is the whole job. (Our own cost and margin live
+                # in est_*, which stays at manager, and in pm_qs_cvr below.) Project scoping
+                # still applies through _coll_list, so this is the site team of THAT job.
+                #
+                # Everything else states what we are claiming and what we are making, and is
+                # manager and above to match pm_costs.
+                "pm_qs_boq": "staff", "pm_qs_measure": "staff", "pm_qs_daywork": "staff",
+                "pm_qs_variations": "manager", "pm_qs_materials": "manager",
+                "pm_qs_valuations": "manager", "pm_qs_cvr": "manager",
                 # Not compensation data: a site manager has to know whether their crew is covered
                 # before sending them out, so this is manager-and-above, not management.
                 "certificates": "manager",
@@ -10123,6 +10159,514 @@ class Handler(BaseHTTPRequestHandler):
         row["id"] = me
         db.put_collection_item("pm_chat_read", row)
         return self._json({"ok": True})
+
+    # ── Quantity surveying ───────────────────────────────────────────────────────────────────────
+    # The commercial layer of a project: what is built, what it is worth, and what it is costing.
+    #
+    # WHERE THE BOUNDARY IS, because three modules touch this money and only one may own each part:
+    #   est_*            what we said the job would cost when we bid it        (pre-contract)
+    #   pm_qs_*          what is built and what it is worth at contract rates  (this)
+    #   sales_*          the contract, retention, advance, invoice, cash       (post-valuation)
+    #   pm_costs         what the job has actually cost
+    # `qsurvey.py` computes the gross valuation and stops. Retention and advance recovery are computed by
+    # sales_contract.application() and by nothing else — see the note it returns in `next`.
+    QS_COLLS = ("pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork",
+                "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr")
+
+    def _qs_may_read(self, u, pid):
+        """Whether this caller may read a project's commercial position, and why not if not.
+
+        Two gates, and they are different questions. VISIBILITY is "is this your job" and uses the
+        same _pm_visible_projects the whole PM module uses. LEVEL is "may you see money" and matches
+        pm_costs at manager — the valuation states the margin on the job, and a job's margin is not
+        something every site account reads.
+        """
+        if not pid:
+            return "A project is required."
+        vis = self._pm_visible_projects(u)
+        if vis is not None and pid not in vis:
+            return "You are not on this project."
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank("manager"):
+            return ("Manager access required — a valuation states what this job is worth and what "
+                    "it is making.")
+        if self._app_blocked(u, "pm"):
+            return "Access restricted — Projects is not enabled for your account."
+        return None
+
+    def _qs_rows(self, pid):
+        """Every QS register for one project, in the shape `qs` expects.
+
+        A bill is an ORDERED document — a rate above its heading is a different document — so the
+        bill is sorted by its stored sequence and then by item number, never by insert order.
+        """
+        def _of(name):
+            return [r for r in db.list_collection(name) if r.get("projectId") == pid]
+        boq = _of("pm_qs_boq")
+        boq.sort(key=lambda i: (_est_seq(i.get("seq")), str(i.get("section") or ""),
+                                str(i.get("itemNo") or ""), str(i.get("id") or "")))
+        return {"boq": boq, "measures": _of("pm_qs_measure"),
+                "variations": _of("pm_qs_variations"), "daywork": _of("pm_qs_daywork"),
+                "materials": _of("pm_qs_materials"), "valuations": _of("pm_qs_valuations"),
+                "cvr": _of("pm_qs_cvr")}
+
+    @staticmethod
+    def _qs_contract_sum(project):
+        """The contract sum this project is measured against.
+
+        `contractValue` is the sell-side number and is the right one. `budget` is what we expect to
+        SPEND and is emphatically not it — using it would compare the client's money with ours and
+        report a percentage complete that means nothing. Absent, it stays None so every derived
+        percentage stays None rather than dividing by an invented figure.
+        """
+        v = qsurvey._rate((project or {}).get("contractValue"))
+        return v if v else None
+
+    def _qs_series(self, pid, rows, project):
+        """Every valuation on the job, in cut-off order, each chained off the one before it.
+
+        RULE 5 lives here. A DRAFT recomputes from today's registers, which is the point of a draft.
+        Anything SUBMITTED reads the snapshot the submission took: recomputing it would rewrite what
+        was claimed, months later, with no record that the figure moved.
+        """
+        vals = [v for v in rows["valuations"]
+                if (v.get("status") or qsurvey.VAL_DRAFT) != qsurvey.VAL_CANCELLED]
+        vals.sort(key=lambda v: (str(v.get("cutoff") or "9999-12-31"), str(v.get("valNo") or "")))
+        contract_sum = self._qs_contract_sum(project)
+        out, prev_gross = [], 0.0
+        for v in vals:
+            st = str(v.get("status") or qsurvey.VAL_DRAFT).strip().lower()
+            snap = v.get("snapshot") if isinstance(v.get("snapshot"), dict) else None
+            if st in qsurvey.VALUATION_FROZEN and snap:
+                calc = dict(snap)
+                calc["fromSnapshot"] = True
+            else:
+                calc = qsurvey.valuation({
+                    "boq": rows["boq"], "measures": rows["measures"],
+                    "variations": rows["variations"], "daywork": rows["daywork"],
+                    "materials": rows["materials"], "cutoff": v.get("cutoff") or "",
+                    "previous": prev_gross, "contractSum": contract_sum})
+                calc["fromSnapshot"] = False
+                if st in qsurvey.VALUATION_FROZEN:
+                    # Submitted with no snapshot: an older row, or one written round the endpoint.
+                    # Recomputing it is the only thing left to do, and saying so is the difference
+                    # between a figure and a figure somebody can trust.
+                    calc.setdefault("warnings", []).append({
+                        "code": "no_snapshot", "severity": "high",
+                        "msg": "This valuation was submitted without a snapshot, so the figures "
+                               "shown are recomputed from today's registers and are not necessarily "
+                               "what was claimed."})
+            # What the CLIENT certified, which is very often not what we claimed. Stored as a
+            # gross-to-date figure because that is the shape a payment certificate takes.
+            cert_gross = qsurvey._rate(v.get("certifiedGross"))
+            under = (None if cert_gross is None
+                     else qsurvey.r2(calc.get("grossToDate", 0) - cert_gross))
+            out.append({
+                "id": v.get("id"), "valNo": v.get("valNo") or "", "period": v.get("period") or "",
+                "cutoff": v.get("cutoff") or "", "status": st,
+                "submittedAt": v.get("submittedAt") or "", "submittedBy": v.get("submittedBy") or "",
+                "certifiedOn": v.get("certifiedOn") or "", "paidOn": v.get("paidOn") or "",
+                "certifiedGross": cert_gross, "underCertified": under,
+                "signatures": v.get("signatures") or [],
+                "spUrl": v.get("spUrl") or "", "note": v.get("note") or "",
+                "calc": calc})
+            prev_gross = qsurvey.r2(calc.get("grossToDate"))
+        return out
+
+    def _qs_summary_ep(self, u, params):
+        """The whole commercial position of one project in a single read.
+
+        One call, because a QS screen that fired seven of them would paint in seven stages and the
+        first thing anybody saw would be a valuation with no variations in it.
+        """
+        pid = (params.get("projectId") or [""])[0].strip()
+        why = self._qs_may_read(u, pid)
+        if why:
+            return self._err(why, 403 if pid else 400)
+        project = next((p for p in db.list_collection("pm_projects") if p.get("id") == pid), None)
+        if not project:
+            return self._err("Project not found.", 404)
+        rows = self._qs_rows(pid)
+        contract_sum = self._qs_contract_sum(project)
+        series = self._qs_series(pid, rows, project)
+
+        # The live position: the last valuation in the series, or a fresh one against today if the
+        # job has none yet. A QS opening this screen wants the position NOW, not "no data".
+        live = series[-1]["calc"] if series else qsurvey.valuation({
+            "boq": rows["boq"], "measures": rows["measures"], "variations": rows["variations"],
+            "daywork": rows["daywork"], "materials": rows["materials"],
+            "cutoff": "", "previous": 0, "contractSum": contract_sum})
+
+        # Certified to date is the newest CERTIFIED figure, not a sum: a certificate states the
+        # gross certified to date, so adding them together counts the whole job once per month.
+        certified = next((s["certifiedGross"] for s in reversed(series)
+                          if s["status"] in (qsurvey.VAL_CERTIFIED, qsurvey.VAL_PAID)
+                          and s["certifiedGross"] is not None), None)
+
+        # Cost to date, from the module that owns it. `actual` is what has been incurred; a cost
+        # line with no actual on it is a commitment, not a cost, and must not price the margin.
+        cost_to_date = qsurvey.r2(sum(qsurvey._num(c.get("actual"))
+                                 for c in db.list_collection("pm_costs")
+                                 if c.get("projectId") == pid))
+        cvr_rows = sorted(rows["cvr"], key=lambda c: str(c.get("cutoff") or ""))
+        latest_cvr = cvr_rows[-1] if cvr_rows else {}
+        prev_margin = (cvr_rows[-2].get("marginPct") if len(cvr_rows) > 1 else None)
+        cvr_calc = qsurvey.cvr({
+            "valueToDate": live.get("grossToDate"), "costToDate": cost_to_date,
+            "accruals": latest_cvr.get("accruals"), "provisions": latest_cvr.get("provisions"),
+            "forecastValue": latest_cvr.get("forecastValue"),
+            "forecastCost": latest_cvr.get("forecastCost"),
+            "previousMargin": prev_margin})
+
+        final = qsurvey.final_account({
+            "contractSum": contract_sum, "variations": rows["variations"],
+            "daywork": rows["daywork"], "cutoff": "",
+            "provisionalAdjustment": (latest_cvr.get("provisionalAdjustment")
+                                      if latest_cvr else 0),
+            "agreedClaims": latest_cvr.get("agreedClaims") if latest_cvr else 0,
+            "certifiedToDate": certified if certified is not None else 0})
+
+        return self._json({
+            "projectId": pid,
+            "project": {"id": project.get("id"), "code": project.get("code"),
+                        "name": project.get("name"), "client": project.get("account")
+                        or project.get("client"), "manager": project.get("manager"),
+                        "contractValue": contract_sum},
+            "live": live,
+            "series": series,
+            "certifiedToDate": certified,
+            "costToDate": cost_to_date,
+            "cvr": cvr_calc,
+            "cvrHistory": [{"id": c.get("id"), "cutoff": c.get("cutoff") or "",
+                            "marginPct": c.get("marginPct"), "margin": c.get("margin"),
+                            "valueToDate": c.get("valueToDate"), "costToDate": c.get("costToDate")}
+                           for c in cvr_rows],
+            "finalAccount": final,
+            "counts": {k: len(v) for k, v in rows.items()},
+            "at": _now_iso(),
+        })
+
+    def _qs_val_next_no(self, pid, rows):
+        """The next valuation number, read off the highest already in the register.
+
+        Highest, not count: deleting valuation 7 must not hand its number to the next one.
+        """
+        mx = 0
+        for v in rows["valuations"]:
+            m = re.search(r"(\d+)\s*$", str(v.get("valNo") or ""))
+            if m and int(m.group(1)) > mx:
+                mx = int(m.group(1))
+        # The same prefix every other register on this project uses (_pmPrefix3 in the frontend):
+        # the first three LETTERS of the project name. Built from the project CODE it read
+        # "202603-VAL-001" on a March valuation — a number that looks like the period beside it and
+        # belongs to no convention in the product.
+        p = db.get_collection_item("pm_projects", pid) or {}
+        code = re.sub(r"[^A-Za-z0-9]", "", str(p.get("name") or ""))[:3].upper() or "PRJ"
+        return "%s-VAL-%03d" % (code, mx + 1)
+
+    def _qs_valuation_ep(self, u, body):
+        """Open, submit, certify or close an interim valuation.
+
+        SUBMIT is the act this endpoint exists for, and it does exactly one thing the generic
+        collection route cannot: it TAKES THE SNAPSHOT. A payment application that leaves the
+        building and is then recomputed from tomorrow's registers is not a record of what was
+        claimed — see rule 5 in qsurvey.py. Everything else here is a status transition checked against
+        VALUATION_FLOW, so a certified valuation cannot quietly go back to draft.
+        """
+        body = body or {}
+        pid = str(body.get("projectId") or "").strip()
+        why = self._qs_may_read(u, pid)
+        if why:
+            return self._err(why, 403 if pid else 400)
+        act = str(body.get("action") or "").strip().lower()
+        project = next((p for p in db.list_collection("pm_projects") if p.get("id") == pid), None)
+        if not project:
+            return self._err("Project not found.", 404)
+        rows = self._qs_rows(pid)
+
+        if act == "open":
+            cutoff = str(body.get("cutoff") or "").strip()[:10]
+            if not cutoff:
+                return self._err("A valuation needs a cut-off date — it is what decides which "
+                                 "month's work is in it.", 400)
+            if any(str(v.get("status") or qsurvey.VAL_DRAFT) == qsurvey.VAL_DRAFT
+                   for v in rows["valuations"]):
+                return self._err("There is already an open draft valuation on this project. "
+                                 "Submit or cancel it before opening the next one.", 409)
+            row = {"projectId": pid, "valNo": self._qs_val_next_no(pid, rows),
+                   "period": str(body.get("period") or cutoff[:7]), "cutoff": cutoff,
+                   "status": qsurvey.VAL_DRAFT, "note": str(body.get("note") or "")[:2000],
+                   "openedBy": u.get("name") or u.get("email"), "openedAt": self._utc_now()}
+            saved = db.put_collection_item("pm_qs_valuations", row)
+            self._qs_audit(u, "QS valuation opened", project, saved.get("valNo"),
+                           "cut-off " + cutoff)
+            return self._json({"ok": True, "item": saved})
+
+        vid = str(body.get("id") or "").strip()
+        cur = db.get_collection_item("pm_qs_valuations", vid) if vid else None
+        if not cur or cur.get("projectId") != pid:
+            return self._err("Valuation not found on this project.", 404)
+        st = str(cur.get("status") or qsurvey.VAL_DRAFT).strip().lower()
+
+        target = {"submit": qsurvey.VAL_SUBMITTED, "certify": qsurvey.VAL_CERTIFIED,
+                  "paid": qsurvey.VAL_PAID, "cancel": qsurvey.VAL_CANCELLED}.get(act)
+        if not target:
+            return self._err("Unknown action '%s'." % act, 400)
+        if target not in qsurvey.VALUATION_FLOW.get(st, ()):
+            return self._err("A %s valuation cannot become %s. Allowed from here: %s."
+                             % (st, target, ", ".join(qsurvey.VALUATION_FLOW.get(st, ())) or "nothing"),
+                             409)
+
+        upd = dict(cur)
+        if target == qsurvey.VAL_SUBMITTED:
+            # The previous gross is read from the SERIES, so it comes from the previous valuation's
+            # own snapshot rather than from a figure the browser sent. A client-supplied "previous"
+            # is the one number that would let a claim be inflated with nothing to check it.
+            series = self._qs_series(pid, rows, project)
+            prev = 0.0
+            for s in series:
+                if s["id"] == vid:
+                    break
+                prev = qsurvey.r2(s["calc"].get("grossToDate"))
+            calc = qsurvey.valuation({
+                "boq": rows["boq"], "measures": rows["measures"],
+                "variations": rows["variations"], "daywork": rows["daywork"],
+                "materials": rows["materials"], "cutoff": cur.get("cutoff") or "",
+                "previous": prev, "contractSum": self._qs_contract_sum(project)})
+            blockers = [w for w in calc["warnings"] if w["severity"] == "high"
+                        and w["code"] in ("measured_but_unpriced", "agreed_variation_unpriced",
+                                          "orphan_measurements")]
+            if blockers and not body.get("acceptWarnings"):
+                # NOT a silent pass and not an unconditional block. These three mean real work is
+                # valued at nothing; the QS may still have a reason, and if they do they say so on
+                # the record rather than being stopped by a rule that cannot see the contract.
+                return self._err(
+                    "This valuation leaves work unvalued: %s Submit again with 'acceptWarnings' if "
+                    "that is deliberate — the reason is recorded on the certificate."
+                    % " ".join(w["msg"] for w in blockers), 409)
+            upd["snapshot"] = calc
+            upd["grossToDate"] = calc["grossToDate"]
+            upd["valuedThisPeriod"] = calc["valuedThisPeriod"]
+            upd["previousToDate"] = calc["previousToDate"]
+            upd["submittedAt"] = self._utc_now()
+            upd["submittedBy"] = u.get("name") or u.get("email")
+            upd["submittedById"] = u.get("id")
+            if body.get("acceptWarnings"):
+                upd["acceptedWarnings"] = [w["code"] for w in blockers]
+                upd["acceptedWarningsReason"] = str(body.get("reason") or "")[:2000]
+        elif target == qsurvey.VAL_CERTIFIED:
+            cg = qsurvey._rate(body.get("certifiedGross"))
+            if cg is None:
+                return self._err("A certification needs the gross amount the client certified to "
+                                 "date. It is very often not what was claimed, which is exactly "
+                                 "why it is recorded separately.", 400)
+            if cg < 0:
+                return self._err("A negative certification is a credit note, not a certificate.", 400)
+            upd["certifiedGross"] = qsurvey.r2(cg)
+            upd["certifiedOn"] = str(body.get("certifiedOn") or "")[:10] or self._utc_now()[:10]
+            upd["certifiedRef"] = str(body.get("certifiedRef") or "")[:120]
+        elif target == qsurvey.VAL_PAID:
+            upd["paidOn"] = str(body.get("paidOn") or "")[:10] or self._utc_now()[:10]
+            upd["paidRef"] = str(body.get("paidRef") or "")[:120]
+        elif target == qsurvey.VAL_CANCELLED:
+            upd["cancelReason"] = str(body.get("reason") or "")[:2000]
+        upd["status"] = target
+        upd["updatedAt"] = self._utc_now()
+        saved = db.put_collection_item("pm_qs_valuations", upd)
+        self._qs_audit(u, "QS valuation " + target, project, saved.get("valNo"),
+                       _money_vnd(saved.get("grossToDate") or 0) + " gross to date")
+        return self._json({"ok": True, "item": saved})
+
+    def _qs_variation_ep(self, u, body):
+        """Move a variation through its lifecycle, checked against VARIATION_FLOW.
+
+        The status is what decides whether the money enters a valuation (rule 3), so it is not a
+        field somebody edits — it is a transition, and an illegal one says which are legal.
+        """
+        body = body or {}
+        pid = str(body.get("projectId") or "").strip()
+        why = self._qs_may_read(u, pid)
+        if why:
+            return self._err(why, 403 if pid else 400)
+        vid = str(body.get("id") or "").strip()
+        cur = db.get_collection_item("pm_qs_variations", vid) if vid else None
+        if not cur or cur.get("projectId") != pid:
+            return self._err("Variation not found on this project.", 404)
+        target = str(body.get("status") or "").strip().lower()
+        st = str(cur.get("status") or qsurvey.V_IDENTIFIED).strip().lower()
+        if target not in qsurvey.VARIATION_FLOW:
+            return self._err("'%s' is not a variation status." % target, 400)
+        if target not in qsurvey.VARIATION_FLOW.get(st, ()):
+            return self._err("A %s variation cannot become %s. Allowed from here: %s."
+                             % (st, target, ", ".join(qsurvey.VARIATION_FLOW.get(st, ())) or "nothing"),
+                             409)
+        upd = dict(cur)
+        if target == qsurvey.V_AGREED:
+            agreed = qsurvey._rate(body.get("agreedValue", cur.get("agreedValue")))
+            if agreed is None:
+                return self._err("An agreed variation needs an agreed value. Agreeing one without "
+                                 "a figure is how instructed work stops being claimed.", 400)
+            if not str(body.get("basis") or cur.get("basis") or "").strip():
+                return self._err("Record how this variation was valued (bill rate, pro-rata, star "
+                                 "rate, daywork, lump sum or omission). It is the first question "
+                                 "asked in a final-account dispute.", 400)
+            upd["agreedValue"] = qsurvey.r2(agreed)
+            upd["basis"] = str(body.get("basis") or cur.get("basis")).strip().lower()
+            upd["agreedOn"] = str(body.get("agreedOn") or "")[:10] or self._utc_now()[:10]
+            upd["agreedBy"] = u.get("name") or u.get("email")
+        if target == qsurvey.V_INSTRUCTED:
+            upd["instructedOn"] = (str(body.get("instructedOn") or "")[:10]
+                                   or cur.get("instructedOn") or self._utc_now()[:10])
+            upd["instructionRef"] = (str(body.get("instructionRef") or "")[:120]
+                                     or cur.get("instructionRef") or "")
+        if target == qsurvey.V_REJECTED:
+            upd["rejectedReason"] = str(body.get("reason") or "")[:2000]
+        upd["status"] = target
+        upd["updatedAt"] = self._utc_now()
+        saved = db.put_collection_item("pm_qs_variations", upd)
+        project = next((p for p in db.list_collection("pm_projects") if p.get("id") == pid), None)
+        self._qs_audit(u, "QS variation " + target, project, saved.get("voNo"),
+                       (saved.get("title") or "")[:120])
+        return self._json({"ok": True, "item": saved})
+
+    def _qs_cvr_ep(self, u, body):
+        """Record a cost-value reconciliation for a cut-off.
+
+        Value and cost are READ, not sent: the valuation comes from this module and the cost from
+        pm_costs, so a reconciliation cannot be made to balance by typing a different value into it.
+        What the caller supplies is the JUDGEMENT — accruals, provisions and the forecast — which is
+        the part no system can derive and the part that makes a CVR worth doing.
+        """
+        body = body or {}
+        pid = str(body.get("projectId") or "").strip()
+        why = self._qs_may_read(u, pid)
+        if why:
+            return self._err(why, 403 if pid else 400)
+        project = next((p for p in db.list_collection("pm_projects") if p.get("id") == pid), None)
+        if not project:
+            return self._err("Project not found.", 404)
+        cutoff = str(body.get("cutoff") or "").strip()[:10]
+        if not cutoff:
+            return self._err("A reconciliation needs a cut-off date.", 400)
+        rows = self._qs_rows(pid)
+        series = self._qs_series(pid, rows, project)
+        value = qsurvey.r2(series[-1]["calc"].get("grossToDate")) if series else 0.0
+        cost = qsurvey.r2(sum(qsurvey._num(c.get("actual")) for c in db.list_collection("pm_costs")
+                         if c.get("projectId") == pid))
+        prev = sorted([c for c in rows["cvr"] if str(c.get("cutoff") or "") < cutoff],
+                      key=lambda c: str(c.get("cutoff") or ""))
+        calc = qsurvey.cvr({"valueToDate": value, "costToDate": cost,
+                       "accruals": body.get("accruals"), "provisions": body.get("provisions"),
+                       "forecastValue": body.get("forecastValue"),
+                       "forecastCost": body.get("forecastCost"),
+                       "previousMargin": prev[-1].get("marginPct") if prev else None})
+        existing = next((c for c in rows["cvr"] if str(c.get("cutoff") or "") == cutoff), None)
+        row = dict(existing or {})
+        row.update({"projectId": pid, "cutoff": cutoff,
+                    "accruals": qsurvey.r2(body.get("accruals")),
+                    "provisions": qsurvey.r2(body.get("provisions")),
+                    "forecastValue": qsurvey._rate(body.get("forecastValue")),
+                    "forecastCost": qsurvey._rate(body.get("forecastCost")),
+                    "provisionalAdjustment": qsurvey.r2(body.get("provisionalAdjustment")),
+                    "agreedClaims": qsurvey.r2(body.get("agreedClaims")),
+                    "note": str(body.get("note") or "")[:4000],
+                    "valueToDate": calc["valueToDate"], "costToDate": calc["costToDate"],
+                    "trueCostToDate": calc["trueCostToDate"],
+                    "margin": calc["margin"], "marginPct": calc["marginPct"],
+                    "forecastMargin": calc["forecastMargin"],
+                    "preparedBy": u.get("name") or u.get("email"),
+                    "preparedAt": self._utc_now()})
+        saved = db.put_collection_item("pm_qs_cvr", row)
+        self._qs_audit(u, "QS cost-value reconciliation", project, cutoff,
+                       "margin %s (%s)" % (_money_vnd(calc["margin"] or 0),
+                                           ("%.2f%%" % calc["marginPct"])
+                                           if calc["marginPct"] is not None else "n/a"))
+        return self._json({"ok": True, "item": saved, "cvr": calc})
+
+    # A bill import is the one place a QS pastes 400 rows at once. Bounded so a paste cannot become
+    # a denial of service, and reported line by line so a rejected row is fixable rather than a
+    # silent gap in the middle of a bill.
+    QS_IMPORT_MAX = 2000
+
+    def _qs_boq_ep(self, u, body):
+        """Import bill of quantity lines in one act.
+
+        Every rejected row comes back with its number and what was wrong with it. A partial import
+        that silently drops the twelve rows it could not parse produces a bill that totals correctly
+        and is missing work — which is the same failure as pricing a line at nil, one level up.
+        """
+        body = body or {}
+        pid = str(body.get("projectId") or "").strip()
+        why = self._qs_may_read(u, pid)
+        if why:
+            return self._err(why, 403 if pid else 400)
+        lines = body.get("lines")
+        if not isinstance(lines, list) or not lines:
+            return self._err("Nothing to import.", 400)
+        if len(lines) > self.QS_IMPORT_MAX:
+            return self._err("A bill import is limited to %d lines at a time (%d sent)."
+                             % (self.QS_IMPORT_MAX, len(lines)), 413)
+        existing = [r for r in db.list_collection("pm_qs_boq") if r.get("projectId") == pid]
+        if body.get("replace"):
+            if not body.get("confirm"):
+                return self._err("Replacing the bill deletes %d existing line(s) and every "
+                                 "measurement pointing at them keeps pointing at rows that no "
+                                 "longer exist. Send confirm:true if that is what you mean."
+                                 % len(existing), 409)
+            for r in existing:
+                db.delete_collection_item("pm_qs_boq", r.get("id"))
+        base = 0
+        for r in ([] if body.get("replace") else existing):
+            try:
+                base = max(base, int(_est_seq(r.get("seq"))))
+            except (TypeError, ValueError):
+                pass
+        added, rejected = 0, []
+        for n, raw in enumerate(lines, 1):
+            if not isinstance(raw, dict):
+                rejected.append({"line": n, "why": "not a row"})
+                continue
+            kind = str(raw.get("kind") or qsurvey.ITEM).strip().lower()
+            if kind not in (qsurvey.VALUED_KINDS + qsurvey.UNVALUED_KINDS):
+                rejected.append({"line": n, "why": "unknown line kind '%s'" % kind})
+                continue
+            desc = str(raw.get("desc") or raw.get("description") or "").strip()
+            if not desc and kind != qsurvey.NOTE:
+                rejected.append({"line": n, "why": "no description"})
+                continue
+            row = {"projectId": pid, "seq": base + n,
+                   "section": str(raw.get("section") or "")[:120],
+                   "itemNo": str(raw.get("itemNo") or "")[:40],
+                   "desc": desc[:600], "unit": str(raw.get("unit") or "")[:20],
+                   "kind": kind,
+                   "billedQty": qsurvey._num(raw.get("billedQty")),
+                   "wbsId": str(raw.get("wbsId") or "")[:80]}
+            # A blank rate stays BLANK. Writing 0 here would turn "nobody priced this" into "this is
+            # free", and bill_total would then have nothing to warn about — the one thing rule 1
+            # exists to keep visible.
+            rate = qsurvey._rate(raw.get("rate"))
+            if rate is not None:
+                row["rate"] = rate
+            db.put_collection_item("pm_qs_boq", row)
+            added += 1
+        project = next((p for p in db.list_collection("pm_projects") if p.get("id") == pid), None)
+        self._qs_audit(u, "QS bill of quantities imported", project, "",
+                       "%d line(s) added, %d rejected%s"
+                       % (added, len(rejected), ", bill replaced" if body.get("replace") else ""))
+        return self._json({"ok": True, "added": added, "rejected": rejected,
+                           "replaced": bool(body.get("replace"))})
+
+    def _qs_audit(self, u, action, project, ref, detail):
+        """One trail entry per commercial act. Best-effort: a failed audit write must never be the
+        reason a valuation does not save, but it is the record of who moved the money."""
+        try:
+            db.put_collection_item("audit", {
+                "ts": _now_iso(), "by": u.get("email"),
+                "actor": u.get("name") or u.get("email"), "action": action,
+                "target": ((project or {}).get("code") or (project or {}).get("name") or "")
+                          + ((" · " + str(ref)) if ref else ""),
+                "detail": detail})
+        except Exception:
+            pass
 
     def _coll_one(self, u, name, rid):
         """One row in full, including the file bytes the list read strips out.
@@ -11179,6 +11723,16 @@ class Handler(BaseHTTPRequestHandler):
                        "gateSignedOn", "verifiedBy", "verifiedOn", "witnessedBy", "releasedBy",
                        "releasedOn"):
                 item.pop(_k, None)
+        if name in ("pm_qs_variations",):
+            # Same reasoning as the eng_ strip below, in money rather than in drawings. These
+            # four decide whether a variation's value enters a valuation, and a POST arriving
+            # with status="agreed" and an agreedValue would put unagreed work into a payment
+            # application with nothing having checked the transition. They move only through
+            # /api/qs/variation. A new variation starts where every variation starts.
+            for _k in ("status", "agreedValue", "agreedOn", "agreedBy", "basis",
+                       "rejectedReason"):
+                item.pop(_k, None)
+            item["status"] = qsurvey.V_IDENTIFIED
         if name.startswith("eng_"):
             # A signature is applied by /api/esign and by nothing else. Without this, POSTing a
             # revision with issuedBy already filled in would produce a drawing that renders as
@@ -18002,6 +18556,18 @@ class Handler(BaseHTTPRequestHandler):
                     if _later in item:
                         _keep[_later] = item.get(_later)
                 item = _keep
+        if name == "pm_qs_variations":
+            # The edit form PATCHes the whole record, so without this, saving a corrected title
+            # on an agreed variation would write back whatever the browser was holding for the
+            # status and the agreed value — including a stale copy from before it was agreed.
+            # The four lifecycle fields are taken from the STORED record, always.
+            _prevv = db.get_collection_item(name, iid) or {}
+            for _k in ("status", "agreedValue", "agreedOn", "agreedBy", "basis",
+                       "rejectedReason", "instructedOn", "instructionRef"):
+                if _k in _prevv:
+                    item[_k] = _prevv[_k]
+                else:
+                    item.pop(_k, None)
         if name.startswith("eng_"):
             existing = db.get_collection_item(name, iid)
             if existing:

@@ -7598,6 +7598,11 @@ function _hrEditDel(type, id, reload) {
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
 const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_schedules: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+  // A QS register edit has to re-read /api/qs/summary: every figure on the tab is computed
+  // server-side from these rows, so redrawing without refetching would show a table that has
+  // changed under totals that have not.
+  pm_qs_boq: () => qsReload(), pm_qs_measure: () => qsReload(), pm_qs_variations: () => qsReload(),
+  pm_qs_daywork: () => qsReload(), pm_qs_materials: () => qsReload(),
   eng_projects: () => _engReload(), eng_team: () => _engReload(), eng_stages: () => _engReload(), eng_inputs: () => _engReload(), eng_deliverables: () => _engReload(), eng_revisions: () => _engReload(), eng_reviews: () => _engReload(), eng_comments: () => _engReload(), eng_changes: () => _engReload(), eng_tq: () => _engReload(), eng_transmittals: () => _engReload(), eng_dwg: () => _engReload(),
   // Publishing a document used to redraw the ONBOARDING view, because that was the only place the
   // register lived. Now that the register also mounts on the Compliance tab, redrawing onboarding
@@ -16924,6 +16929,68 @@ const _QA_SPECS = {
     { k: 'workPerformed', label: 'Work performed this week', type: 'textarea' }, { k: 'nextWeekPlan', label: 'Plan for next week', type: 'textarea' },
     { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }, { k: 'attachments', label: 'Attachments — contractor reports / photos (images / PDF)', type: 'files' }] },
 
+  /* ── Quantity surveying ──
+     The bill is the document everything else is measured against, so its form is deliberately
+     plain: a rate LEFT BLANK stays blank and the line is reported as unpriced. There is no default
+     of zero anywhere in this group — a defaulted rate is a line that quietly charges nothing. */
+  pm_qs_boq: { title: 'Bill of Quantities Line', coll: 'pm_qs_boq', reload: 'pm_qs_boq', fields: [
+    { k: 'section', label: 'Section / bill' }, { k: 'itemNo', label: 'Item No.' },
+    { k: 'desc', label: 'Description', type: 'textarea' },
+    { k: 'kind', label: 'Line kind', type: 'select', options: ['item', 'provisional', 'pcsum', 'heading', 'note'] },
+    { k: 'unit', label: 'Unit (m, m2, m3, kg, no, item…)' },
+    { k: 'billedQty', label: 'Billed quantity', type: 'number' },
+    { k: 'rate', label: 'Rate (₫) — leave blank if not yet priced', type: 'money' },
+    { k: 'seq', label: 'Order in the bill', type: 'number' },
+    { k: 'wbsId', label: 'Linked WBS deliverable', type: 'select', options: 'pm_deliverables' }] },
+  pm_qs_measure: { title: 'Measurement Record', coll: 'pm_qs_measure', reload: 'pm_qs_measure', fields: [
+    { k: 'boqItemId', label: 'Bill line', type: 'select', options: 'pm_qs_boq' },
+    { k: 'date', label: 'Date measured', type: 'date' },
+    { k: 'qty', label: 'Quantity this record', type: 'number' },
+    { k: 'location', label: 'Location / grid / level' },
+    { k: 'method', label: 'Method', type: 'select', options: ['Site measure', 'Drawing take-off', 'Joint measure with client', 'Survey', 'Count', 'Weighbridge'] },
+    { k: 'measuredBy', label: 'Measured by', type: 'select', options: 'employees' },
+    { k: 'checkedBy', label: 'Checked by', type: 'select', options: 'employees' },
+    { k: 'note', label: 'Notes', type: 'textarea' },
+    { k: 'attachments', label: 'Evidence — measurement sheet, marked-up drawing, photos', type: 'files' }] },
+  pm_qs_variations: { title: 'Variation', coll: 'pm_qs_variations', reload: 'pm_qs_variations', fields: [
+    { k: 'voNo', label: 'VO No.' }, { k: 'title', label: 'Title' },
+    { k: 'origin', label: 'Origin', type: 'select', options: ['Client instruction', 'Design change', 'Site condition', 'Statutory requirement', 'Error / omission in the bill', 'Contractor proposal'] },
+    { k: 'instructionRef', label: 'Instruction reference' },
+    { k: 'instructedOn', label: 'Instructed on', type: 'date' },
+    { k: 'estimatedValue', label: 'Our estimate (₫)', type: 'money' },
+    /* No status, basis, agreed value or agreed date here — on purpose. Those four decide whether
+       this variation's money enters a valuation, so they move through the Agree action (which
+       checks the transition and records who agreed it), and the server strips them from this form.
+       A field the server silently drops is worse than no field: it reads as saved. */
+    { k: 'pctComplete', label: '% of this variation built', type: 'number' },
+    { k: 'timeImpactDays', label: 'Time impact (days)', type: 'number' },
+    { k: 'description', label: 'Scope of the change', type: 'textarea' },
+    { k: 'attachment', label: 'Instruction / quotation (image or PDF)', type: 'file' }] },
+  pm_qs_daywork: { title: 'Daywork Sheet', coll: 'pm_qs_daywork', reload: 'pm_qs_daywork', fields: [
+    { k: 'sheetNo', label: 'Sheet No.' }, { k: 'date', label: 'Date of the work', type: 'date' },
+    { k: 'desc', label: 'Work done', type: 'textarea' },
+    { k: 'labourHours', label: 'Labour hours', type: 'number' },
+    { k: 'plantHours', label: 'Plant hours', type: 'number' },
+    { k: 'materialsValue', label: 'Materials used (₫)', type: 'money' },
+    { k: 'value', label: 'Sheet value (₫)', type: 'money' },
+    { k: 'clientSignedBy', label: 'Signed on site by (client representative)' },
+    { k: 'status', label: 'Status', type: 'select', options: ['draft', 'signed', 'priced', 'approved', 'rejected'] },
+    { k: 'voNo', label: 'Against variation (if any)' },
+    { k: 'attachment', label: 'Signed sheet (image or PDF)', type: 'file' }] },
+  pm_qs_materials: { title: 'Materials on Site', coll: 'pm_qs_materials', reload: 'pm_qs_materials', fields: [
+    { k: 'desc', label: 'Material / equipment' },
+    { k: 'invoiceRef', label: 'Supplier invoice reference' },
+    { k: 'value', label: 'Invoice value (₫)', type: 'money' },
+    { k: 'claimPct', label: 'Claimed % of invoice value (blank = 100)', type: 'number' },
+    { k: 'onSiteDate', label: 'Delivered to site', type: 'date' },
+    /* Setting this is what stops the same pump being claimed twice — once as unfixed material and
+       again inside the measured works. The label says so, because nothing else will. */
+    { k: 'incorporatedDate', label: 'Built into the works on — set this and it leaves the valuation', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['on_site', 'incorporated', 'removed'] },
+    { k: 'storageLocation', label: 'Where it is stored' },
+    { k: 'note', label: 'Notes', type: 'textarea' },
+    { k: 'attachments', label: 'Invoice, delivery note, photos', type: 'files' }] },
+
   /* ── AHU production ──
      The class fields are deliberately left blank rather than pre-filled: a blank one inherits the
      Design Standard default for the family, and the server says so. Cleanroom class and supply
@@ -20896,6 +20963,20 @@ function _qaDynOptions(src, ex) {
     const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
     return _pdScheds(pid).map(x => ({ v: x.id, l: String(x.name || '').trim() || x.id }));
   }
+  if (src === 'pm_qs_lines') {
+    // The VALUE stays the row id — measurement is filed against it and changing it would
+    // orphan every record. Only the LABEL changes, and it has to: a site engineer knows the
+    // work by its item number and its description, never by "pm_-3f81a2c4".
+    const rows = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_qs_boq', _pmPid()) : [];
+    return rows.filter(r => (r.kind || 'item') === 'item')
+      .map(r => ({ v: r.id, l: (r.itemNo ? r.itemNo + ' \u2014 ' : '') + String(r.desc || '').slice(0, 60) + (r.unit ? '  (' + r.unit + ')' : '') }));
+  }
+  if (src === 'pm_wbs') {
+    const rows = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_deliverables', _pmPid()) : [];
+    return rows.map(r => ({ v: r.id, l: String(r.name || r.title || r.id) }));
+  }
   if (src === 'pm_units') {
     const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_detail', _pmPid()).map(r => r.unit) : [];
@@ -21439,7 +21520,9 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
-const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports',
+  'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr',
+  'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
 // after ~5 requests instead of 18 (the other 13 load lazily when a project is opened). tkLoadColl
@@ -21752,7 +21835,7 @@ function _pmDocNoCmp(f) {
   };
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
-const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' } };
+const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' }, pm_qs_variations: { f: 'voNo', tag: 'VO' }, pm_qs_daywork: { f: 'sheetNo', tag: 'DW' } };
 function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
 /* Zero-pad to three, and NEVER truncate past it.
    `('00' + seq).slice(-3)` was fine to 999 and then wrapped: 1000 became "000", 1001 became "001",
@@ -23404,7 +23487,11 @@ function _pmMyActionsHtml() {
 const _PM_COLL_LABEL = {
   pm_costs: 'Project costs and budget',
   pm_procurement: 'Subcontracts and packages',
-  pm_procurement_payments: 'Payment certificates'
+  pm_procurement_payments: 'Payment certificates',
+  pm_qs_variations: 'Variations',
+  pm_qs_materials: 'Materials on site',
+  pm_qs_valuations: 'Interim valuations',
+  pm_qs_cvr: 'Cost-value reconciliation'
 };
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
@@ -23416,6 +23503,10 @@ const _PM_TABS = [
   // was 403 for staff and take the whole tab down with it.
   { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
+  // The commercial tab. Its money comes from /api/qs/summary (manager+), NOT from these
+  // registers — they are listed so a denied one is NAMED in the access banner rather than
+  // rendering as an empty register that reads like "nothing ever happened here".
+  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
   { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms', need: ['pm_comms', 'pm_issues'] },
@@ -28048,6 +28139,16 @@ const _PM_SP_TPL = [
   [1,'10_Change_Management_ECN','ECN log + records','PM + ENG + QA','Internal','Contract end +10y'],
   [1,'11_Risk_Issue_Register_Live','Live risk & issue register','PM','Internal','Contract end +7y'],
   [1,'12_Meeting_Minutes_Correspondence','MoM + correspondence','PM','Internal','Contract end +7y'],
+  [1,'13_QS_Commercial','Bill of quantities, measurement, valuations, variations, final account','QS + PM','Confidential','Contract end +10y'],
+  [2,'01_Bill_of_Quantities','Priced bill + rate build-ups','QS','Confidential','Contract end +10y'],
+  [2,'02_Measurement_Takeoff','Measurement sheets + site evidence','QS + Site Manager','Internal','Contract end +10y'],
+  [2,'03_Interim_Valuations_IPA','Payment applications + client certificates','QS + Finance','Confidential','Contract end +10y'],
+  [2,'04_Variations_VO','Instructions, quotations, agreements','QS + PM','Confidential','Contract end +10y'],
+  [2,'05_Daywork_Sheets','Daywork sheets signed on site','QS + Site Manager','Internal','Contract end +10y'],
+  [2,'06_Materials_On_Site','Materials-on-site records + supplier invoices','QS','Confidential','Contract end +10y'],
+  [2,'07_Cost_Value_Reconciliation','CVR reports','QS + Finance','Restricted','Contract end +10y'],
+  [2,'08_Contract_Claims_EOT','Extension of time, loss and expense','QS + PM + Legal','Restricted','Contract end +10y'],
+  [2,'09_Final_Account','Agreed final account + close-out','QS + Finance','Restricted','Contract end +10y'],
   [1,'99_Client_Shared_Folder','Controlled client share','PM','Confidential','Contract end +7y']
 ];
 
@@ -28388,6 +28489,1405 @@ function pmRenderDocuments(pid) {
   const kpis = _hrKpiRow([_hrKpi('Files on record', files.length, '#3168A8'), _hrKpi('Folders', _PM_SP_TPL.length, 'var(--navy)'), _hrKpi('Top-level sections', sections, '#8B5CF6'), _hrKpi('SharePoint', linked ? 'Linked' : 'Not linked', linked ? 'var(--emerald)' : '#F59E0B')]);
   _pmSet(kpis + _pmFilesRegisterCard(files) + _pmFoldersCard(p));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   QS — QUANTITY SURVEYING / COMMERCIAL MANAGEMENT
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   The commercial half of a construction project: what is built, what it is worth, what the client
+   has certified, and what the job is making. Nine screens over one loop:
+
+     1  Bill of quantities        the priced document everything is measured against
+     2  Measurement               dated take-off on site, with the evidence attached
+     3  Valuation                 measured + variations + daywork + materials = gross this period
+     4  Payment application       the letterhead document that goes to the client
+     5  Certification             what the client actually certified, which is often less
+     6  Variations                instructed -> measured -> priced -> submitted -> agreed
+     7  Daywork & materials       the two things that are not measured under bill rates
+     8  Cost-value reconciliation value against cost — is this job making money
+     9  Final account             the agreed final measure that closes it
+
+   EVERY FIGURE HERE IS COMPUTED ON THE SERVER (qsurvey.py, /api/qs/summary). Nothing on this screen
+   re-implements the arithmetic. That is deliberate: this codebase already carries one calculation
+   written twice (payroll_calc.py and _payComputed) and keeping the two in step is a permanent tax.
+   A valuation goes on a document a director signs and a client disputes — it gets one implementation.
+
+   Documents go to the project's SharePoint library under 13_QS_Commercial/, which is created by the
+   same folder builder as the rest of the project tree.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+let _qsTabK = 'dash';
+let _QS = {};              /* projectId -> the /api/qs/summary payload */
+let _QSErr = {};           /* projectId -> why it could not be read (403 for a site account) */
+let _qsBusy = false;
+
+const _QS_TABS = [
+  { k: 'dash', label: 'Commercial', fn: '_qsRenderDash' },
+  { k: 'boq', label: 'Bill of Quantities', fn: '_qsRenderBoq' },
+  { k: 'measure', label: 'Measurement', fn: '_qsRenderMeasure' },
+  { k: 'val', label: 'Valuations', fn: '_qsRenderVals' },
+  { k: 'vo', label: 'Variations', fn: '_qsRenderVos' },
+  { k: 'dw', label: 'Daywork & Materials', fn: '_qsRenderDw' },
+  { k: 'cvr', label: 'Cost / Value', fn: '_qsRenderCvr' },
+  { k: 'final', label: 'Final Account', fn: '_qsRenderFinal' },
+  { k: 'docs', label: 'QS Documents', fn: '_qsRenderDocs' }
+];
+
+/* The variation lifecycle, mirrored from qsurvey.py so the buttons can only offer a legal move.
+   The SERVER is the authority — it re-checks every transition — but a button that offers an
+   impossible step and then shows a 409 is a screen that wastes somebody's afternoon. */
+const _QS_VFLOW = {
+  identified: ['instructed', 'withdrawn'],
+  instructed: ['measured', 'priced', 'withdrawn'],
+  measured: ['priced', 'withdrawn'],
+  priced: ['submitted', 'measured', 'withdrawn'],
+  submitted: ['agreed', 'rejected', 'priced'],
+  agreed: [], rejected: ['priced'], withdrawn: []
+};
+const _QS_VLABEL = {
+  identified: 'Identified', instructed: 'Instructed', measured: 'Measured', priced: 'Priced',
+  submitted: 'Submitted', agreed: 'Agreed', rejected: 'Rejected', withdrawn: 'Withdrawn'
+};
+const _QS_VHEX = {
+  identified: '#94A3B8', instructed: '#F59E0B', measured: '#3168A8', priced: '#8B5CF6',
+  submitted: '#0EA5E9', agreed: '#00B060', rejected: '#EF4444', withdrawn: '#64748B'
+};
+const _QS_VBASIS = {
+  boq_rate: 'Bill rate', pro_rata: 'Pro-rata', star_rate: 'Star rate',
+  daywork: 'Daywork', lump_sum: 'Lump sum', omission: 'Omission'
+};
+const _QS_BASIS_LABELS = Object.keys(_QS_VBASIS).map(k => _QS_VBASIS[k]);
+const _QS_VALHEX = {
+  draft: '#94A3B8', submitted: '#0EA5E9', certified: '#00B060', paid: '#16A34A',
+  cancelled: '#64748B'
+};
+const _QS_SEVHEX = { high: '#EF4444', medium: '#F59E0B', low: '#94A3B8' };
+
+/* Where each QS document is filed in the project library. One place, so the folder tree, the upload
+   and the on-screen document register cannot drift apart. */
+const _QS_SP_ROOT = '13_QS_Commercial';
+const _QS_SP = {
+  boq: '01_Bill_of_Quantities',
+  measure: '02_Measurement_Takeoff',
+  val: '03_Interim_Valuations_IPA',
+  vo: '04_Variations_VO',
+  dw: '05_Daywork_Sheets',
+  mos: '06_Materials_On_Site',
+  cvr: '07_Cost_Value_Reconciliation',
+  claims: '08_Contract_Claims_EOT',
+  final: '09_Final_Account'
+};
+
+function _qsMoney(n) { return (n === null || n === undefined || n === '') ? '—' : _pmMoney(n); }
+function _qsPct(n) { return (n === null || n === undefined) ? '—' : (Math.round(n * 10) / 10) + '%'; }
+function _qsNum(n, dp) { const d = dp == null ? 2 : dp; return (n === null || n === undefined || n === '') ? '—' : (+n).toLocaleString('en-US', { maximumFractionDigits: d }); }
+function _qsData() { return _QS[_pmPid()] || null; }
+
+/* Why the commercial figures are not on screen, in words the person reading can act on. A staff
+   account is REFUSED this endpoint on purpose (qsurvey money is manager+), and "could not load"
+   would send a site engineer to IT for a permission decision that was made deliberately. */
+function _qsDeniedCard(pid) {
+  const e = _QSErr[pid] || {};
+  const denied = e.status === 403;
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px;border-left:3px solid ' + (denied ? 'var(--warning)' : '#EF4444') + '">' +
+    '<div style="font-weight:700;color:var(--navy);margin-bottom:5px">' + _pmEsc(denied ? _t('Commercial figures are not shown at your access level') : _t('Could not load the commercial position')) + '</div>' +
+    '<div style="font-size:12.5px;color:var(--text-light)">' + _pmEsc(e.msg || _t('Check your connection and try again.')) + '</div>' +
+    (denied ? '<div style="font-size:12px;color:var(--text-light);margin-top:7px">' + _pmEsc(_t('The bill of quantities, the measurement register and the daywork sheets below are yours to work with — it is the valuation, the margin and the variations register that are held at manager level.')) + '</div>'
+      : '<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="qsReload()">' + _t('Retry') + '</button>') + '</div>';
+}
+
+/* One read for the whole commercial position. Nine sub-tabs off one payload: firing a request per
+   tab would repaint the KPI strip from a different moment than the table under it. */
+async function qsLoad(pid, force) {
+  pid = pid || _pmPid(); if (!pid) return null;
+  if (!force && _QS[pid]) return _QS[pid];
+  try {
+    const r = await tkApi('/api/qs/summary?projectId=' + encodeURIComponent(pid));
+    _QS[pid] = r; delete _QSErr[pid];
+    return r;
+  } catch (e) {
+    _QSErr[pid] = { status: (e && e.status) || 0, msg: _errMsg(e) };
+    delete _QS[pid];
+    return null;
+  }
+}
+async function qsReload() {
+  const pid = _pmPid(); if (!pid) return;
+  _PM_QS_COLLS.forEach(c => { try { tkCollInvalidate(c); } catch (e) { } });
+  await qsLoad(pid, true);
+  qsTab(_qsTabK);
+}
+/* The registers this tab reads. Named once — the tab's `need` list, the reload invalidation and the
+   Documents register all walk it, and three hand-maintained copies would drift. */
+const _PM_QS_COLLS = ['pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork',
+  'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr'];
+
+async function pmRenderQS(pid) {
+  const p = _pmProj(pid); if (!p) return;
+  _pmSet('<div id="qs-subbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px"></div><div id="qs-body">' + tkSkeleton() + '</div>');
+  await qsLoad(pid, true);
+  const bar = document.getElementById('qs-subbar');
+  if (bar) bar.innerHTML = _qsTabRow();
+  qsTab(_qsTabK);
+}
+function _qsTabRow() {
+  return _QS_TABS.map(t => '<button class="tab" data-qsk="' + t.k + '" onclick="qsTab(\'' + t.k + '\')" style="border:none;background:' +
+    (t.k === _qsTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _qsTabK ? '#fff' : 'var(--text-light)') +
+    ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + _pmEsc(_t(t.label)) + '</button>').join('');
+}
+function qsTab(k) {
+  const t = _QS_TABS.find(x => x.k === k); if (!t) return;
+  _qsTabK = k;
+  const bar = document.getElementById('qs-subbar'); if (bar) bar.innerHTML = _qsTabRow();
+  const body = document.getElementById('qs-body'); if (!body) return;
+  try { body.innerHTML = (window[t.fn] || (() => ''))(_pmPid()) || ''; }
+  catch (e) { body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error rendering ' + _pmEsc(t.label) + ': ' + _pmEsc(e.message) + '</div>'; }
+  try { document.querySelector('#qs-subbar .tab[data-qsk="' + k + '"]')?.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) { }
+}
+
+/* ── the warnings panel ──────────────────────────────────────────────────────────────────────────
+   Every warning qsurvey.py raises reaches the screen, with its severity and the rows it names. This
+   is the single most important element on the tab: the module is written so that a valuation with
+   problems in it is still served WITH the problems, and a screen that quietly dropped them would
+   undo the whole design. */
+function _qsWarnCard(warns, title) {
+  warns = warns || [];
+  if (!warns.length) return '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:3px solid var(--emerald)">' +
+    '<div style="font-size:12.5px;color:var(--text)"><b style="color:var(--emerald)">' + _t('Nothing unexplained') + '</b> — ' + _pmEsc(_t('every bill line is priced, every measurement is dated and lands on a real line, and nothing agreed is unvalued.')) + '</div></div>';
+  const order = { high: 0, medium: 1, low: 2 };
+  const rows = warns.slice().sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3)).map(w => {
+    const hex = _QS_SEVHEX[w.severity] || '#94A3B8';
+    const items = (w.items || []).length
+      ? '<div style="margin-top:5px;font-size:11px;color:var(--text-light);line-height:1.6">' + w.items.slice(0, 8).map(i =>
+        '<span style="display:inline-block;background:var(--soft-bg);border-radius:6px;padding:2px 7px;margin:0 4px 4px 0">' +
+        _pmEsc([i.itemNo || i.voNo || i.sheetNo || '', i.desc || i.title || ''].filter(Boolean).join(' · ').slice(0, 58) || (i.id || '')) + '</span>').join('') +
+      (w.items.length > 8 ? '<span style="font-size:10.5px">+' + (w.items.length - 8) + ' ' + _t('more') + '</span>' : '') + '</div>'
+      : '';
+    return '<div style="padding:9px 0;border-bottom:1px solid var(--soft-bg)">' +
+      '<div style="display:flex;gap:8px;align-items:flex-start">' +
+      '<span style="flex:0 0 auto;margin-top:2px;width:8px;height:8px;border-radius:50%;background:' + hex + '"></span>' +
+      '<div style="flex:1"><div style="font-size:12.5px;color:var(--text)">' + _pmEsc(w.msg) + '</div>' + items + '</div></div></div>';
+  }).join('');
+  const high = warns.filter(w => w.severity === 'high').length;
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid ' + (high ? '#EF4444' : '#F59E0B') + '">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">' + _pmEsc(title || _t('What this valuation cannot account for')) + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + warns.length + ' ' + _t('item(s)') + (high ? ' · ' + high + ' ' + _t('need a decision') : '') + '</span></div>' +
+    '<div style="padding:4px 16px 12px">' + rows + '</div></div>';
+}
+
+/* ── 1. Commercial dashboard ──────────────────────────────────────────────────────────────────── */
+function _qsRenderDash(pid) {
+  const p = _pmProj(pid), d = _qsData();
+  if (!d) return _qsDeniedCard(pid) + _qsBoqSummaryCard(pid);
+  const live = d.live || {}, cvr = d.cvr || {};
+  const claimed = live.grossToDate || 0;
+  const cert = d.certifiedToDate;
+  const under = (cert === null || cert === undefined) ? null : claimed - cert;
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Revised contract'), _pmMoneyShort(live.revisedContractSum || live.contractSum || 0), 'var(--navy)'),
+    _hrKpi(_t('Valued to date'), _pmMoneyShort(claimed), '#3168A8'),
+    _hrKpi(_t('Certified to date'), cert == null ? '—' : _pmMoneyShort(cert), cert == null ? '#94A3B8' : 'var(--emerald)'),
+    _hrKpi(_t('Margin'), cvr.marginPct == null ? '—' : _qsPct(cvr.marginPct), (cvr.marginPct || 0) < 0 ? '#EF4444' : 'var(--emerald)')
+  ]);
+
+  /* The build-up, as a waterfall a QS reads top to bottom. This is the arithmetic of the trade and
+     printing it as four labelled rows plus a rule is worth more than any chart. */
+  const build = (live.build || []).map(b =>
+    '<tr><td style="padding:7px 10px;font-size:12.5px">' + _pmEsc(_t2(b.label, b.labelVn)) + '</td>' +
+    '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' + ((b.amount || 0) < 0 ? '#EF4444' : 'var(--text)') + '">' + _qsMoney(b.amount) + '</td></tr>').join('');
+  const buildCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('Valuation build-up') + (live.cutoff ? ' — ' + _t('as at') + ' ' + _pmFmt(live.cutoff) : '') + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + (live.fromSnapshot ? _t('from the submitted snapshot') : _t('live from the registers')) + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:420px"><tbody>' + build +
+    '<tr style="border-top:2px solid var(--navy)"><td style="padding:9px 10px;font-weight:800;color:var(--navy)">' + _t('Gross valuation to date') + '</td><td style="padding:9px 10px;text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _qsMoney(live.grossToDate) + '</td></tr>' +
+    '<tr><td style="padding:7px 10px;font-size:12.5px;color:var(--text-light)">' + _t('Less previously valued') + '</td><td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">' + _qsMoney(live.previousToDate) + '</td></tr>' +
+    '<tr style="border-top:1px solid var(--line)"><td style="padding:9px 10px;font-weight:800;color:var(--emerald)">' + _t('Valued this period') + '</td><td style="padding:9px 10px;text-align:right;font-weight:800;color:var(--emerald);font-variant-numeric:tabular-nums">' + _qsMoney(live.valuedThisPeriod) + '</td></tr>' +
+    '</tbody></table></div>' +
+    /* Said on the screen, not only in the code: this figure is not the cheque. */
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('This is the GROSS value of work done. Retention and recovery of the advance are applied by the contract when this becomes a payment application — they are not deducted here.')) + '</div></div>';
+
+  /* Progress against the revised sum, with the original marked, so a job carrying ₫800m of agreed
+     variations is not reported as 130% complete against a contract it no longer has. */
+  const pct = live.pctComplete;
+  const progCard = '<div class="card" style="padding:14px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><div class="card-title">' + _t('Progress against the revised contract sum') + '</div><div style="font-size:18px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _qsPct(pct) + '</div></div>' +
+    '<div style="height:14px;border-radius:7px;background:var(--soft-bg);overflow:hidden;position:relative">' +
+    '<div style="height:100%;width:' + Math.max(0, Math.min(100, pct || 0)) + '%;background:linear-gradient(90deg,var(--navy),var(--emerald))"></div>' +
+    (cert != null && live.revisedContractSum ? '<div title="' + _tkEscA(_t('Certified')) + '" style="position:absolute;top:0;bottom:0;left:' + Math.max(0, Math.min(100, cert / live.revisedContractSum * 100)) + '%;width:2px;background:#111"></div>' : '') + '</div>' +
+    '<div style="display:flex;gap:18px;margin-top:8px;font-size:11.5px;color:var(--text-light);flex-wrap:wrap">' +
+    '<span>' + _t('Original') + ': <b style="color:var(--text)">' + _qsMoney(live.contractSum) + '</b></span>' +
+    '<span>' + _t('Agreed variations') + ': <b style="color:var(--text)">' + _qsMoney((live.variations || {}).total) + '</b></span>' +
+    '<span>' + _t('Revised') + ': <b style="color:var(--navy)">' + _qsMoney(live.revisedContractSum) + '</b></span></div></div>';
+
+  /* Under-certification and un-agreed exposure — the two numbers that decide whether this job is
+     about to have a cash problem. Neither is derivable from the valuation alone. */
+  const expo = (live.variations || {}).exposure || 0;
+  const dwExpo = (live.daywork || {}).exposure || 0;
+  const tile = (label, val, hex, sub) => '<div style="flex:1;min-width:180px;background:var(--soft-bg);border-radius:10px;padding:12px 14px">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(label) + '</div>' +
+    '<div style="font-size:17px;font-weight:800;color:' + hex + ';font-variant-numeric:tabular-nums;margin:2px 0">' + val + '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);line-height:1.5">' + _pmEsc(sub) + '</div></div>';
+  const riskCard = '<div class="card" style="padding:14px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">' + _t('Commercial exposure') + '</div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    tile(_t('Under-certified'), under == null ? '—' : _pmMoneyShort(under), (under || 0) > 0 ? '#EF4444' : 'var(--text-light)',
+      under == null ? _t('Nothing certified yet.') : _t('Claimed less what the client has certified.')) +
+    tile(_t('Variations not agreed'), _pmMoneyShort(expo), expo ? '#F59E0B' : 'var(--text-light)', _t('Instructed and being built, with no agreed price behind it.')) +
+    tile(_t('Daywork not approved'), _pmMoneyShort(dwExpo), dwExpo ? '#F59E0B' : 'var(--text-light)', _t('Signed on site, not yet accepted for payment.')) +
+    tile(_t('Forecast margin'), cvr.forecastMarginPct == null ? '—' : _qsPct(cvr.forecastMarginPct), (cvr.forecastMargin || 0) < 0 ? '#EF4444' : 'var(--emerald)', _t('At completion, from the last reconciliation.')) +
+    '</div></div>';
+
+  return kpis + _qsWarnCard(live.warnings) + progCard + buildCard + riskCard + _qsValStripCard(d) + _qsGuideCard();
+}
+
+/* The valuation history as one strip: claimed against certified, month by month. A gap that opens
+   and does not close is the shape of a client who has stopped paying. */
+function _qsValStripCard(d) {
+  const s = (d.series || []).filter(v => v.status !== 'cancelled');
+  if (!s.length) return '';
+  const max = Math.max.apply(null, s.map(v => Math.max(v.calc.grossToDate || 0, v.certifiedGross || 0)).concat([1]));
+  const bars = s.map(v => {
+    const g = (v.calc.grossToDate || 0) / max * 100, c = (v.certifiedGross || 0) / max * 100;
+    return '<div style="flex:1;min-width:44px;text-align:center">' +
+      '<div style="height:110px;display:flex;align-items:flex-end;justify-content:center;gap:3px">' +
+      '<div title="' + _tkEscA(_t('Claimed') + ' ' + _qsMoney(v.calc.grossToDate)) + '" style="width:13px;height:' + Math.max(2, g) + '%;background:var(--navy);border-radius:3px 3px 0 0"></div>' +
+      '<div title="' + _tkEscA(_t('Certified') + ' ' + _qsMoney(v.certifiedGross)) + '" style="width:13px;height:' + Math.max(2, c) + '%;background:' + (v.certifiedGross == null ? 'var(--soft-bg)' : 'var(--emerald)') + ';border-radius:3px 3px 0 0"></div></div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:5px;white-space:nowrap">' + _pmEsc(v.period || (v.cutoff || '').slice(0, 7)) + '</div></div>';
+  }).join('');
+  return '<div class="card" style="padding:14px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="card-title">' + _t('Claimed against certified') + '</div>' +
+    '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-light)"><span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--navy);margin-right:4px"></span>' + _t('Claimed') + '</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--emerald);margin-right:4px"></span>' + _t('Certified') + '</span></div></div>' +
+    '<div style="overflow-x:auto"><div style="display:flex;gap:8px;align-items:flex-end;min-width:' + (s.length * 52) + 'px">' + bars + '</div></div></div>';
+}
+
+/* How the loop works, in the tab that runs it. Every other module in this portal carries one and
+   the QS cycle is the least self-evident process in the product. */
+function _qsGuideCard() {
+  const steps = [
+    ['1', _t('Price the bill'), _t('Import or enter the bill of quantities. A line with no rate is reported as unpriced — never valued at nil.')],
+    ['2', _t('Measure on site'), _t('Record dated take-off against bill lines, with the evidence. The cut-off date decides which month the work falls in.')],
+    ['3', _t('Value the period'), _t('Open a valuation. Measured works + agreed variations + approved daywork + materials on site.')],
+    ['4', _t('Apply for payment'), _t('Submit. The valuation snapshots itself, and the payment application prints on the letterhead and files to SharePoint.')],
+    ['5', _t('Record the certificate'), _t('Enter what the client actually certified. The difference from what was claimed is under-certification, and it is tracked.')],
+    ['6', _t('Reconcile'), _t('Cost-value reconciliation: value earned against cost incurred, plus the accruals and provisions only a person can judge.')],
+    ['7', _t('Agree the final account'), _t('Original sum + agreed variations + provisional adjustments + daywork + agreed claims. It refuses to call itself agreed while anything in it is not.')]
+  ];
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('How the QS cycle works') + '</div></div>' +
+    '<div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px">' + steps.map(s =>
+      '<div style="flex:1;min-width:210px;display:flex;gap:9px;align-items:flex-start">' +
+      '<span style="flex:0 0 auto;width:21px;height:21px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">' + s[0] + '</span>' +
+      '<div><div style="font-size:12.5px;font-weight:700;color:var(--navy)">' + _pmEsc(s[1]) + '</div><div style="font-size:11px;color:var(--text-light);line-height:1.55">' + _pmEsc(s[2]) + '</div></div></div>').join('') + '</div></div>';
+}
+
+/* ── 2. Bill of quantities ────────────────────────────────────────────────────────────────────── */
+function _qsBoqSummaryCard(pid) {
+  const rows = _pmScopeFor('pm_qs_boq', pid);
+  if (!rows.length) return '';
+  const unpriced = rows.filter(r => (r.kind || 'item') !== 'heading' && (r.kind || 'item') !== 'note' && (r.rate === '' || r.rate == null)).length;
+  return '<div class="card" style="padding:12px 16px;margin-bottom:14px"><div style="font-size:12.5px;color:var(--text-light)">' +
+    _pmEsc(_t('Bill of quantities')) + ': <b style="color:var(--navy)">' + rows.length + '</b> ' + _t('line(s)') +
+    (unpriced ? ' · <b style="color:#EF4444">' + unpriced + '</b> ' + _t('with no rate') : '') + '</div></div>';
+}
+function _qsRenderBoq(pid) {
+  const d = _qsData(), bill = d && d.live ? d.live.bill : null;
+  const meas = d && d.live ? (d.live.measured || {}) : {};
+  const qtyBy = {}; (meas.rows || []).forEach(r => { qtyBy[r.id] = r; });
+  /* The SERVER's lines, already priced and already in bill order. Nothing here multiplies a
+     quantity by a rate: a provisional sum is not qty x rate, and the browser getting that wrong
+     while the KPI above it (from the same server) got it right is exactly the kind of disagreement
+     one implementation exists to prevent. */
+  const rows = bill ? bill.lines : _qsBoqFallbackRows(pid);
+  const priced = !!bill;
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Bill lines'), bill ? bill.count : rows.filter(r => (r.kind || 'item') !== 'heading' && (r.kind || 'item') !== 'note').length, 'var(--navy)'),
+    _hrKpi(_t('Bill total'), bill ? _pmMoneyShort(bill.total) : '—', '#3168A8'),
+    _hrKpi(_t('Provisional / PC sums'), bill ? _pmMoneyShort(bill.sumsTotal) : '—', '#8B5CF6'),
+    _hrKpi(_t('Unpriced lines'), bill ? bill.unpriced.length : '—', (bill && bill.unpriced.length) ? '#EF4444' : 'var(--emerald)')
+  ]);
+
+  _crmLF['qs-bq'] = _crmLF['qs-bq'] || '';
+  const sections = [...new Set(rows.map(r => r.section).filter(Boolean))].sort();
+  const fbar = _crmFiltBar(_crmFiltSearch('qs-bq', _t('Search the bill…'), 'qsTabRefresh') +
+    _crmFiltSel('qs-bsec', _t('All sections'), sections, 'qsTabRefresh') +
+    _crmFiltSel('qs-bkind', _t('All line kinds'), ['item', 'provisional', 'pcsum', 'heading', 'note'], 'qsTabRefresh'));
+
+  const q = (_crmLF['qs-bq'] || '').toLowerCase(), sec = _crmLF['qs-bsec'] || '', kd = _crmLF['qs-bkind'] || '';
+  const shown = rows.filter(r => (!q || ((r.itemNo || '') + ' ' + (r.desc || '') + ' ' + (r.section || '')).toLowerCase().indexOf(q) >= 0) &&
+    (!sec || r.section === sec) && (!kd || (r.kind || 'item') === kd));
+
+  const cols = priced
+    ? ['Item', 'Description', 'Unit', 'Billed qty', 'Rate', 'Bill value', 'Measured qty', 'Measured %', 'Measured value']
+    : ['Item', 'Description', 'Unit', 'Billed qty', 'Rate'];
+  const rightFrom = 3;
+
+  const body = shown.length ? shown.map(r => {
+    const kind = r.kind || 'item';
+    if (kind === 'heading') return '<tr style="background:rgba(32,80,144,.05)"><td colspan="' + (cols.length) + '" style="padding:8px 10px;font-weight:800;color:var(--navy);font-size:12.5px">' + _pmEsc(r.desc || '') + '</td></tr>';
+    const rate = (r.rate === '' || r.rate == null) ? null : +r.rate;
+    const m = qtyBy[r.id] || {};
+    const kindTag = kind !== 'item'
+      ? ' ' + _pmBadge(_t(kind === 'provisional' ? 'Provisional' : kind === 'pcsum' ? 'PC sum' : 'Note'), '#8B5CF6') : '';
+    const head = '<td style="font-variant-numeric:tabular-nums;font-size:11.5px;white-space:nowrap">' + _pmEsc(r.itemNo || '—') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(r.desc || '') + kindTag + '</td>' +
+      '<td style="font-size:11.5px">' + _pmEsc(r.unit || '—') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (r.billedQty ? _qsNum(r.billedQty) : '—') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (rate == null ? '<span style="color:#EF4444;font-weight:700" title="' + _tkEscA(_t('No rate — this line is excluded from every total, and is not worth nil.')) + '">' + _t('no rate') + '</span>' : _pmMoney(rate)) + '</td>';
+    if (!priced) return '<tr>' + head + '</tr>';
+    return '<tr>' + head +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _qsMoney(r.value) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsNum(m.qtyToDate) + '</td>' +
+      '<td style="text-align:right">' + (m.pct == null ? '—' : '<span style="display:inline-flex;align-items:center;gap:6px">' + _pmBar(Math.min(100, m.pct)) + '<span style="font-size:11px;color:' + (m.pct > 100 ? '#EF4444' : 'var(--text-light)') + '">' + _qsPct(m.pct) + '</span></span>') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--emerald)">' + _qsMoney(m.value) + '</td></tr>';
+  }).join('') : tkEmptyRow(cols.length, _t('No bill of quantities yet'), { icon: 'inbox', sub: _t('Import the priced bill from the contract — everything on this tab is measured against it.'), cta: { label: _t('Import bill'), onclick: 'qsBoqImport()' } });
+
+  const tools = '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsBoqImport()">' + tkIcon('upload', 12) + ' ' + _t('Import') + '</button>' +
+    (priced ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsBoqPDF()">' + tkIcon('download', 12) + ' ' + _t('Priced bill (PDF)') + '</button>' : '') +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsBoqCSV()">' + tkIcon('download', 12) + ' CSV</button>';
+
+  const note = priced ? '' : '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Line values and measured progress are part of the valuation, which is held at manager level. The quantities and rates below are the contract bill and are yours to measure against.')) + '</div>';
+
+  const tbl = _pmCard(_t('Bill of Quantities'), 'pm_qs_boq', _t('Add line'),
+    fbar + note + '<div class="table-wrap"><table style="min-width:' + (priced ? 1000 : 640) + 'px;font-size:13px"><thead><tr>' +
+    cols.map((h, i) => '<th style="' + (i >= rightFrom ? 'text-align:right' : '') + '">' + _t(h) + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>', tools);
+  return kpis + (bill && bill.unpriced.length ? _qsWarnCard([{ severity: 'high', msg: _t('These bill lines carry no rate. They are excluded from every total on this tab — they are not worth nil.'), items: bill.unpriced }], _t('Unpriced bill lines')) : '') + tbl;
+}
+/* Below manager the valuation endpoint is refused, so the bill is read straight from the register.
+   Sorted the way the SERVER sorts it (stored sequence, then section, then item number) — a bill in
+   insert order is a different document, and the money columns are simply not shown. */
+function _qsBoqFallbackRows(pid) {
+  const seq = r => { const n = parseFloat(r.seq); return isFinite(n) ? n : Number.MAX_SAFE_INTEGER; };
+  return _pmScopeFor('pm_qs_boq', pid).slice().sort((a, b) =>
+    seq(a) - seq(b) ||
+    String(a.section || '').localeCompare(String(b.section || '')) ||
+    String(a.itemNo || '').localeCompare(String(b.itemNo || '')) ||
+    String(a.id || '').localeCompare(String(b.id || '')));
+}
+function qsTabRefresh() { qsTab(_qsTabK); }
+
+/* ── 3. Measurement ───────────────────────────────────────────────────────────────────────────── */
+function _qsRenderMeasure(pid) {
+  const rows = _pmScopeFor('pm_qs_measure', pid).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const boq = _pmScopeFor('pm_qs_boq', pid);
+  const byId = {}; boq.forEach(b => { byId[b.id] = b; });
+  const d = _qsData(), meas = d && d.live ? (d.live.measured || {}) : {};
+
+  const undated = rows.filter(r => !r.date).length;
+  const orphan = (meas.orphanMeasureIds || []).length;
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Measurement records'), rows.length, 'var(--navy)'),
+    _hrKpi(_t('Measured value'), meas.total == null ? '—' : _pmMoneyShort(meas.total), '#3168A8'),
+    _hrKpi(_t('Over-measured lines'), (meas.overMeasured || []).length, (meas.overMeasured || []).length ? '#F59E0B' : 'var(--emerald)'),
+    _hrKpi(_t('Not counted'), undated + orphan, (undated + orphan) ? '#EF4444' : 'var(--emerald)')
+  ]);
+
+  _crmLF['qs-mq'] = _crmLF['qs-mq'] || '';
+  const fbar = _crmFiltBar(_crmFiltSearch('qs-mq', _t('Search measurement…'), 'qsTabRefresh') + _crmFiltPeriod('qs-mperiod-f', 'qsTabRefresh'));
+  const q = (_crmLF['qs-mq'] || '').toLowerCase();
+  const shown = rows.filter(r => {
+    const b = byId[r.boqItemId] || {};
+    return (!q || ((b.itemNo || '') + ' ' + (b.desc || '') + ' ' + (r.location || '') + ' ' + (r.measuredBy || '')).toLowerCase().indexOf(q) >= 0)
+      && _inPeriodLF(r.date, 'qs-mperiod-f');
+  });
+
+  const body = shown.length ? shown.map(r => {
+    const b = byId[r.boqItemId];
+    return '<tr>' +
+      '<td style="white-space:nowrap;font-size:12px">' + (r.date ? _pmFmt(r.date) : '<span style="color:#EF4444;font-weight:600" title="' + _tkEscA(_t('No date, so this record cannot be placed in a period and is excluded from every valuation.')) + '">' + _t('undated') + '</span>') + '</td>' +
+      '<td style="font-size:12px">' + (b ? '<b style="font-variant-numeric:tabular-nums">' + _pmEsc(b.itemNo || '') + '</b> ' + _pmEsc((b.desc || '').slice(0, 46)) : '<span style="color:#EF4444;font-weight:600" title="' + _tkEscA(_t('This points at a bill line that is not in the bill, so the quantity is valued nowhere.')) + '">' + _t('line not in the bill') + '</span>') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _qsNum(r.qty) + '</td>' +
+      '<td style="font-size:11.5px">' + _pmEsc((b && b.unit) || '') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(r.location || '—') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(r.method || '—') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(r.measuredBy || '—') + '</td>' +
+      '<td style="font-size:12px">' + (r.checkedBy ? _pmBadge(r.checkedBy, '#00B060') : '<span style="color:var(--text-light)">' + _t('not checked') + '</span>') + '</td>' +
+      '<td>' + _pmFileCell('pm_qs_measure', r) + '</td>' +
+      '<td style="white-space:nowrap" onclick="event.stopPropagation()">' + _hrEditDel('pm_qs_measure', r.id, 'pm_qs_measure') + '</td></tr>';
+  }).join('') : tkEmptyRow(10, _t('No measurement recorded yet'), { icon: 'inbox', sub: _t('Every valuation is built from dated measurement against bill lines. Record it here as the work is done, with the evidence attached.') });
+
+  const overCard = (meas.overMeasured || []).length ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid #F59E0B">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Measured beyond the billed quantity') + '</div></div>' +
+    '<div style="padding:8px 16px 4px;font-size:11.5px;color:var(--text-light)">' + _pmEsc(_t('These are included in the valuation at full measured quantity. That is right for a remeasurement contract and wrong for a take-off error — somebody has to say which.')) + '</div>' +
+    '<div class="table-wrap"><table style="min-width:620px;font-size:12.5px"><thead><tr><th>' + _t('Item') + '</th><th>' + _t('Description') + '</th><th style="text-align:right">' + _t('Billed') + '</th><th style="text-align:right">' + _t('Measured') + '</th><th style="text-align:right">' + _t('Excess') + '</th><th style="text-align:right">' + _t('Excess value') + '</th></tr></thead><tbody>' +
+    meas.overMeasured.map(o => '<tr><td style="font-variant-numeric:tabular-nums">' + _pmEsc(o.itemNo) + '</td><td>' + _pmEsc((o.desc || '').slice(0, 50)) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsNum(o.billedQty) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsNum(o.qtyToDate) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:#F59E0B;font-weight:700">+' + _qsNum(o.excessQty) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700">' + _pmMoney(o.excessValue) + '</td></tr>').join('') +
+    '</tbody></table></div></div>' : '';
+
+  const tools = '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsMeasurePDF()">' + tkIcon('download', 12) + ' ' + _t('Measurement sheet (PDF)') + '</button>';
+  return kpis + overCard + _pmCard(_t('Measurement / Take-off Register'), 'pm_qs_measure', _t('Record measurement'),
+    fbar + '<div class="table-wrap"><table style="min-width:1020px;font-size:13px"><thead><tr>' +
+    ['Date', 'Bill line', 'Quantity', 'Unit', 'Location / grid', 'Method', 'Measured by', 'Checked by', 'Evidence', '']
+      .map((h, i) => '<th style="' + (i === 2 ? 'text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>', tools);
+}
+
+/* ── 4. Valuations ────────────────────────────────────────────────────────────────────────────── */
+function _qsRenderVals(pid) {
+  const d = _qsData();
+  if (!d) return _qsDeniedCard(pid);
+  const s = d.series || [];
+  const draft = s.find(v => v.status === 'draft');
+  const certified = s.filter(v => v.status === 'certified' || v.status === 'paid');
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Valuations'), s.length, 'var(--navy)'),
+    _hrKpi(_t('Submitted, not certified'), s.filter(v => v.status === 'submitted').length, s.filter(v => v.status === 'submitted').length ? '#F59E0B' : 'var(--emerald)'),
+    _hrKpi(_t('Certified to date'), d.certifiedToDate == null ? '—' : _pmMoneyShort(d.certifiedToDate), 'var(--emerald)'),
+    _hrKpi(_t('Awaiting payment'), _pmMoneyShort(certified.filter(v => v.status !== 'paid').reduce((a, v) => a + (v.certifiedGross || 0), 0)), '#3168A8')
+  ]);
+
+  const rows = s.slice().reverse();
+  const body = rows.length ? rows.map(v => {
+    const under = v.underCertified;
+    return '<tr>' +
+      '<td style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy);font-size:12px">' + _pmEsc(v.valNo || '—') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(v.period || '—') + '</td>' +
+      '<td style="white-space:nowrap;font-size:12px">' + _pmFmt(v.cutoff) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _qsMoney(v.calc.grossToDate) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--emerald)">' + _qsMoney(v.calc.valuedThisPeriod) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(v.certifiedGross) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;color:' + ((under || 0) > 0 ? '#EF4444' : 'var(--text-light)') + ';font-weight:' + ((under || 0) > 0 ? 700 : 400) + '">' + (under == null ? '—' : _pmMoney(under)) + '</td>' +
+      '<td>' + _pmBadge(_t(v.status.charAt(0).toUpperCase() + v.status.slice(1)), _QS_VALHEX[v.status] || '#94A3B8') +
+      (v.calc.fromSnapshot ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px" title="' + _tkEscA(_t('These are the figures as submitted, not a recomputation from today\'s registers.')) + '">' + _t('snapshot') + '</div>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' + _qsValActions(v) + '</td></tr>';
+  }).join('') : tkEmptyRow(9, _t('No valuation opened yet'), { icon: 'inbox', sub: _t('A valuation values one period of work. Open one against a cut-off date and it builds itself from the registers.'), cta: { label: _t('Open valuation'), onclick: 'qsValOpen()' } });
+
+  const openBtn = draft ? '' : '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="qsValOpen()">' + _PLUS_SVG + ' ' + _t('Open valuation') + '</button>';
+  const tbl = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('Interim Valuations & Payment Applications') + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + openBtn + '</div></div>' +
+    '<div class="table-wrap"><table style="min-width:1000px;font-size:13px"><thead><tr>' +
+    ['No.', 'Period', 'Cut-off', 'Gross to date', 'This period', 'Certified', 'Under-certified', 'Status', '']
+      .map((h, i) => '<th style="' + (i >= 3 && i <= 6 ? 'text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+
+  const draftCard = draft ? _qsDraftCard(draft) : '';
+  return kpis + draftCard + tbl;
+}
+function _qsValActions(v) {
+  const B = (label, fn, cls) => '<button class="btn ' + (cls || 'btn-ghost') + ' btn-sm" style="font-size:10px;padding:4px 9px" onclick="' + fn + '">' + _pmEsc(label) + '</button>';
+  let out = B(_t('Application'), 'qsIpaPDF(\'' + v.id + '\')');
+  if (v.status === 'draft') out += B(_t('Submit'), 'qsValSubmit(\'' + v.id + '\')', 'btn-primary') + B(_t('Cancel'), 'qsValCancel(\'' + v.id + '\')');
+  if (v.status === 'submitted') out += B(_t('Certify'), 'qsValCertify(\'' + v.id + '\')', 'btn-emerald');
+  if (v.status === 'certified') out += B(_t('Mark paid'), 'qsValPaid(\'' + v.id + '\')', 'btn-emerald');
+  return '<span style="display:inline-flex;gap:4px;flex-wrap:wrap">' + out + '</span>';
+}
+function _qsDraftCard(v) {
+  const c = v.calc || {};
+  const build = (c.build || []).map(b => '<tr><td style="padding:6px 10px;font-size:12.5px">' + _pmEsc(_t2(b.label, b.labelVn)) + '</td><td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _qsMoney(b.amount) + '</td></tr>').join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid var(--emerald)">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Open draft') + ' — ' + _pmEsc(v.valNo) + ' · ' + _t('cut-off') + ' ' + _pmFmt(v.cutoff) + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsReload()">' + _t('Recompute') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsIpaPDF(\'' + v.id + '\')">' + tkIcon('download', 12) + ' ' + _t('Payment application') + '</button>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="qsValSubmit(\'' + v.id + '\')">' + _t('Submit to client') + '</button></div></div>' +
+    '<div class="table-wrap"><table style="min-width:420px"><tbody>' + build +
+    '<tr style="border-top:2px solid var(--navy)"><td style="padding:8px 10px;font-weight:800;color:var(--navy)">' + _t('Gross to date') + '</td><td style="padding:8px 10px;text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _qsMoney(c.grossToDate) + '</td></tr>' +
+    '<tr><td style="padding:6px 10px;color:var(--text-light)">' + _t('Less previously valued') + '</td><td style="padding:6px 10px;text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + _qsMoney(c.previousToDate) + '</td></tr>' +
+    '<tr style="border-top:1px solid var(--line)"><td style="padding:8px 10px;font-weight:800;color:var(--emerald)">' + _t('Valued this period') + '</td><td style="padding:8px 10px;text-align:right;font-weight:800;color:var(--emerald);font-variant-numeric:tabular-nums">' + _qsMoney(c.valuedThisPeriod) + '</td></tr></tbody></table></div>' +
+    '</div>' + _qsWarnCard(c.warnings, _t('Before this goes to the client'));
+}
+
+/* ── 5. Variations ────────────────────────────────────────────────────────────────────────────── */
+function _qsRenderVos(pid) {
+  const rows = _pmScopeFor('pm_qs_variations', pid).slice().sort(_pmDocNoCmp('voNo'));
+  const d = _qsData(), vv = d && d.live ? (d.live.variations || {}) : {};
+  const agreed = rows.filter(r => (r.status || 'identified') === 'agreed');
+  const open = rows.filter(r => ['identified', 'instructed', 'measured', 'priced', 'submitted'].indexOf(r.status || 'identified') >= 0);
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Variations'), rows.length, 'var(--navy)'),
+    _hrKpi(_t('Agreed value'), _pmMoneyShort(vv.total || 0), 'var(--emerald)'),
+    _hrKpi(_t('Open'), open.length, open.length ? '#F59E0B' : 'var(--emerald)'),
+    _hrKpi(_t('Exposure'), _pmMoneyShort(vv.exposure || 0), (vv.exposure || 0) ? '#EF4444' : 'var(--emerald)')
+  ]);
+
+  _crmLF['qs-vq'] = _crmLF['qs-vq'] || '';
+  const fbar = _crmFiltBar(_crmFiltSearch('qs-vq', _t('Search variations…'), 'qsTabRefresh') +
+    _crmFiltSel('qs-vst', _t('All statuses'), Object.keys(_QS_VLABEL).map(k => _QS_VLABEL[k]), 'qsTabRefresh'));
+  const q = (_crmLF['qs-vq'] || '').toLowerCase(), st = _crmLF['qs-vst'] || '';
+  const shown = rows.filter(r => (!q || ((r.voNo || '') + ' ' + (r.title || '') + ' ' + (r.instructionRef || '')).toLowerCase().indexOf(q) >= 0) &&
+    (!st || _QS_VLABEL[r.status || 'identified'] === st));
+
+  const body = shown.length ? shown.map(r => {
+    const s = r.status || 'identified';
+    const amt = s === 'agreed' ? r.agreedValue : r.estimatedValue;
+    return '<tr>' +
+      '<td style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy);font-size:12px">' + _pmEsc(r.voNo || '—') + '</td>' +
+      '<td style="font-size:12px;font-weight:600">' + _pmEsc(r.title || '') + (r.instructionRef ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('Instruction') + ': ' + _pmEsc(r.instructionRef) + '</div>' : '') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(r.origin || '—') + '</td>' +
+      '<td>' + (r.basis ? _pmBadge(_t(_QS_VBASIS[r.basis] || r.basis), '#8B5CF6') : '<span style="color:var(--text-light)">—</span>') + '</td>' +
+      '<td style="white-space:nowrap;font-size:12px">' + _pmFmt(r.instructedOn) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' + ((+amt || 0) < 0 ? '#EF4444' : 'var(--text)') + '">' + ((amt === '' || amt == null) ? '<span style="color:var(--text-light)">' + _t('not priced') + '</span>' : _pmMoney(amt)) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (s === 'agreed' ? _qsPct(+r.pctComplete || 100) : '—') + '</td>' +
+      '<td>' + _pmBadge(_t(_QS_VLABEL[s] || s), _QS_VHEX[s] || '#94A3B8') + '</td>' +
+      '<td>' + _pmFileCell('pm_qs_variations', r) + '</td>' +
+      '<td style="white-space:nowrap" onclick="event.stopPropagation()">' + _qsVoActions(r) + _hrEditDel('pm_qs_variations', r.id, 'pm_qs_variations') + '</td></tr>';
+  }).join('') : tkEmptyRow(10, _t('No variations recorded'), { icon: 'inbox', sub: _t('A variation is instructed, measured, priced, submitted and agreed. Only when it is AGREED does its money enter a valuation — until then it is exposure.') });
+
+  const tools = '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsVoPDF()">' + tkIcon('download', 12) + ' ' + _t('Variation register (PDF)') + '</button>';
+  const flowCard = '<div class="card" style="padding:12px 16px;margin-bottom:14px"><div style="font-size:11.5px;color:var(--text-light);line-height:1.7">' +
+    '<b style="color:var(--navy)">' + _t('The lifecycle') + ':</b> ' +
+    Object.keys(_QS_VLABEL).filter(k => ['identified', 'instructed', 'measured', 'priced', 'submitted', 'agreed'].indexOf(k) >= 0)
+      .map(k => '<span style="display:inline-block;background:' + _QS_VHEX[k] + '1f;color:' + _QS_VHEX[k] + ';font-weight:700;padding:2px 8px;border-radius:10px;margin:2px 3px">' + _t(_QS_VLABEL[k]) + '</span>').join('→') +
+    '<div style="margin-top:6px">' + _pmEsc(_t('Work instructed and being built with no agreed price is the exposure figure on the Commercial tab. It is deliberately kept out of the valuation — a claim the client has not agreed is a dispute, not a certificate.')) + '</div></div></div>';
+
+  return kpis + flowCard + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
+    /* Explicit widths, because the browser's auto-layout gives a two-word "Client instruction" the
+       same claim on the row as the variation's title, and the title is what the row is ABOUT. Left
+       to itself it wrapped "Additional HEPA terminal filters, Zone 2" over five lines. */
+    /* All widths in px and summing to the table's min-width. Mixing a percentage into a fixed
+       layout makes the browser scale everything to fit its container instead, which put the title
+       back to 65px — narrower than before the widths were added. */
+    fbar + '<div class="table-wrap"><table style="min-width:1290px;font-size:13px;table-layout:fixed"><thead><tr>' +
+    [['VO No.', '90px'], ['Title', '300px'], ['Origin', '120px'], ['Basis', '110px'], ['Instructed', '110px'],
+     ['Value', '140px'], ['% done', '80px'], ['Status', '110px'], ['File', '80px'], ['', '150px']]
+      .map((c, i) => '<th style="width:' + c[1] + ';' + (i === 5 || i === 6 ? 'text-align:right' : '') + '">' + (c[0] ? _t(c[0]) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>', tools);
+}
+function _qsVoActions(r) {
+  const next = _QS_VFLOW[r.status || 'identified'] || [];
+  if (!next.length) return '';
+  return next.map(n => '<button class="btn ' + (n === 'agreed' ? 'btn-emerald' : 'btn-ghost') + ' btn-sm" style="font-size:10px;padding:4px 8px" onclick="qsVoMove(\'' + r.id + '\',\'' + n + '\')">' + _pmEsc(_t(_QS_VLABEL[n])) + '</button>').join('');
+}
+
+/* ── 6. Daywork & materials on site ───────────────────────────────────────────────────────────── */
+function _qsRenderDw(pid) {
+  const dw = _pmScopeFor('pm_qs_daywork', pid).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const mos = _pmScopeFor('pm_qs_materials', pid).slice().sort((a, b) => String(b.onSiteDate || '').localeCompare(String(a.onSiteDate || '')));
+  const d = _qsData(), dwv = d && d.live ? (d.live.daywork || {}) : {}, mv = d && d.live ? (d.live.materials || {}) : {};
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Daywork approved'), _pmMoneyShort(dwv.total || 0), 'var(--emerald)'),
+    _hrKpi(_t('Daywork pending'), _pmMoneyShort(dwv.exposure || 0), (dwv.exposure || 0) ? '#F59E0B' : 'var(--emerald)'),
+    _hrKpi(_t('Materials on site'), _pmMoneyShort(mv.total || 0), '#3168A8'),
+    _hrKpi(_t('Built in (dropped)'), (mv.droppedAsIncorporated || []).length, 'var(--navy)')
+  ]);
+
+  const dwBody = dw.length ? dw.map(r => '<tr>' +
+    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _pmEsc(r.sheetNo || '—') + '</td>' +
+    '<td style="white-space:nowrap;font-size:12px">' + _pmFmt(r.date) + '</td>' +
+    '<td style="font-size:12px">' + _pmLongCell(r.desc, 56) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsNum(r.labourHours, 1) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsNum(r.plantHours, 1) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _qsMoney(r.value) + '</td>' +
+    '<td style="font-size:12px">' + (r.clientSignedBy ? _pmBadge(r.clientSignedBy, '#00B060') : '<span style="color:#F59E0B;font-weight:600" title="' + _tkEscA(_t('A daywork sheet nobody signed on site is very hard to get paid for.')) + '">' + _t('unsigned') + '</span>') + '</td>' +
+    '<td>' + _pmBadge(_t((r.status || 'draft').charAt(0).toUpperCase() + (r.status || 'draft').slice(1)), r.status === 'approved' ? '#00B060' : r.status === 'rejected' ? '#EF4444' : '#F59E0B') + '</td>' +
+    '<td>' + _pmFileCell('pm_qs_daywork', r) + '</td>' +
+    '<td style="white-space:nowrap" onclick="event.stopPropagation()">' + _hrEditDel('pm_qs_daywork', r.id, 'pm_qs_daywork') + '</td></tr>').join('')
+    : tkEmptyRow(10, _t('No daywork sheets'), { icon: 'inbox', sub: _t('Daywork is work that cannot be measured under bill rates. Get the sheet signed on site the day it happens — an unsigned sheet is very hard to get paid for.') });
+
+  const mosBody = mos.length ? mos.map(r => {
+    const inc = !!r.incorporatedDate;
+    return '<tr' + (inc ? ' style="opacity:.62"' : '') + '>' +
+      '<td style="font-size:12px;font-weight:600">' + _pmEsc(r.desc || '') + '</td>' +
+      '<td style="font-size:12px">' + _pmEsc(r.invoiceRef || '—') + '</td>' +
+      '<td style="white-space:nowrap;font-size:12px">' + _pmFmt(r.onSiteDate) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(r.value) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + ((r.claimPct === '' || r.claimPct == null) ? '100%' : _qsPct(+r.claimPct)) + '</td>' +
+      '<td style="white-space:nowrap;font-size:12px">' + (inc ? _pmFmt(r.incorporatedDate) : '<span style="color:var(--text-light)">' + _t('on site') + '</span>') + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-light)">' + _pmEsc(inc ? _t('in the measured works') : _t('claimed as unfixed material')) + '</td>' +
+      '<td>' + _pmFileCell('pm_qs_materials', r) + '</td>' +
+      '<td style="white-space:nowrap" onclick="event.stopPropagation()">' + _hrEditDel('pm_qs_materials', r.id, 'pm_qs_materials') + '</td></tr>';
+  }).join('') : tkEmptyRow(9, _t('No materials on site recorded'), { icon: 'inbox', sub: _t('Material delivered and paid for but not yet built in. Set the incorporation date when it is installed and it leaves the valuation — otherwise the same pump is claimed twice.') });
+
+  const note = '<div style="padding:9px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Setting the incorporation date is what stops a double claim: once material is built in, its value is in the measured works and it drops out of this list automatically.')) + '</div>';
+
+  return kpis +
+    _pmCard(_t('Daywork Sheets'), 'pm_qs_daywork', _t('Add sheet'),
+      '<div class="table-wrap"><table style="min-width:980px;font-size:13px"><thead><tr>' +
+      ['Sheet No.', 'Date', 'Work done', 'Labour hrs', 'Plant hrs', 'Value', 'Signed on site by', 'Status', 'File', '']
+        .map((h, i) => '<th style="' + (i >= 3 && i <= 5 ? 'text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>').join('') +
+      '</tr></thead><tbody>' + dwBody + '</tbody></table></div>',
+      '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsDayworkPDF()">' + tkIcon('download', 12) + ' PDF</button>') +
+    _pmCard(_t('Materials on Site'), 'pm_qs_materials', _t('Add material'),
+      '<div class="table-wrap"><table style="min-width:940px;font-size:13px"><thead><tr>' +
+      ['Description', 'Invoice ref', 'On site', 'Invoice value', 'Claim %', 'Built in', 'In the valuation as', 'File', '']
+        .map((h, i) => '<th style="' + (i === 3 || i === 4 ? 'text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>').join('') +
+      '</tr></thead><tbody>' + mosBody + '</tbody></table></div>' + note);
+}
+
+/* ── 7. Cost-value reconciliation ─────────────────────────────────────────────────────────────── */
+function _qsRenderCvr(pid) {
+  const d = _qsData();
+  if (!d) return _qsDeniedCard(pid);
+  const c = d.cvr || {}, hist = d.cvrHistory || [];
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Value to date'), _pmMoneyShort(c.valueToDate || 0), '#3168A8'),
+    _hrKpi(_t('True cost to date'), _pmMoneyShort(c.trueCostToDate || 0), 'var(--navy)'),
+    _hrKpi(_t('Margin'), _pmMoneyShort(c.margin || 0), (c.margin || 0) < 0 ? '#EF4444' : 'var(--emerald)'),
+    _hrKpi(_t('Margin %'), c.marginPct == null ? '—' : _qsPct(c.marginPct), (c.marginPct || 0) < 0 ? '#EF4444' : 'var(--emerald)')
+  ]);
+
+  const row = (label, val, hint, strong, hex) => '<tr' + (strong ? ' style="border-top:2px solid var(--navy)"' : '') + '>' +
+    '<td style="padding:' + (strong ? '9px' : '7px') + ' 10px;font-size:12.5px;font-weight:' + (strong ? 800 : 400) + ';color:' + (hex || (strong ? 'var(--navy)' : 'var(--text)')) + '">' + _pmEsc(label) +
+    (hint ? '<div style="font-size:10.5px;color:var(--text-light);font-weight:400">' + _pmEsc(hint) + '</div>' : '') + '</td>' +
+    '<td style="padding:' + (strong ? '9px' : '7px') + ' 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:' + (strong ? 800 : 600) + ';color:' + (hex || (strong ? 'var(--navy)' : 'var(--text)')) + '">' + val + '</td></tr>';
+
+  const table = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('Cost-Value Reconciliation') + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsCvrPDF()">' + tkIcon('download', 12) + ' PDF</button>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="qsCvrRecord()">' + _t('Record reconciliation') + '</button></div></div>' +
+    '<div class="table-wrap"><table style="min-width:460px"><tbody>' +
+    row(_t('Value of work to date'), _qsMoney(c.valueToDate), _t('The gross valuation — read from this module, not typed.')) +
+    row(_t('Cost booked to date'), _qsMoney(c.costToDate), _t('Actual cost from the project Cost register.')) +
+    row(_t('Accruals'), _qsMoney(c.accruals), _t('Cost incurred, not yet invoiced. A judgement, entered by the QS.')) +
+    row(_t('Provisions'), _qsMoney(c.provisions), _t('Known future losses: rework, damages, disputed variations.')) +
+    row(_t('True cost to date'), _qsMoney(c.trueCostToDate), '', true) +
+    row(_t('Margin'), _qsMoney(c.margin) + '  (' + (c.marginPct == null ? '—' : _qsPct(c.marginPct)) + ')', '', true, (c.margin || 0) < 0 ? '#EF4444' : 'var(--emerald)') +
+    '</tbody></table></div>' +
+    '<div style="padding:9px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Value and cost are read, never sent — a reconciliation cannot be made to balance by typing a different value into it. What you supply is the judgement: the accrual, the provision and the forecast.')) + '</div></div>';
+
+  const fc = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Forecast at completion') + '</div></div>' +
+    '<div class="table-wrap"><table style="min-width:420px"><tbody>' +
+    row(_t('Forecast final value'), _qsMoney(c.forecastValue)) +
+    row(_t('Forecast final cost'), _qsMoney(c.forecastCost)) +
+    row(_t('Forecast margin'), _qsMoney(c.forecastMargin) + '  (' + (c.forecastMarginPct == null ? '—' : _qsPct(c.forecastMarginPct)) + ')', '', true, (c.forecastMargin || 0) < 0 ? '#EF4444' : 'var(--emerald)') +
+    '</tbody></table></div></div>';
+
+  const trend = hist.length > 1 ? (() => {
+    const pts = hist.filter(h => h.marginPct != null);
+    if (pts.length < 2) return '';
+    const mn = Math.min.apply(null, pts.map(p => p.marginPct).concat([0]));
+    const mx = Math.max.apply(null, pts.map(p => p.marginPct).concat([0]));
+    const span = (mx - mn) || 1;
+    return '<div class="card" style="padding:14px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">' + _t('Margin trend') + '</div>' +
+      '<div style="overflow-x:auto"><div style="display:flex;gap:8px;align-items:flex-end;min-width:' + (pts.length * 56) + 'px;height:120px">' +
+      pts.map(p => '<div style="flex:1;min-width:48px;text-align:center;display:flex;flex-direction:column;justify-content:flex-end;height:100%">' +
+        '<div style="font-size:10.5px;font-weight:700;color:' + (p.marginPct < 0 ? '#EF4444' : 'var(--emerald)') + '">' + _qsPct(p.marginPct) + '</div>' +
+        '<div style="height:' + Math.max(3, (p.marginPct - mn) / span * 82) + 'px;background:' + (p.marginPct < 0 ? '#EF4444' : 'var(--emerald)') + ';border-radius:3px 3px 0 0;margin-top:3px"></div>' +
+        '<div style="font-size:10px;color:var(--text-light);margin-top:4px;white-space:nowrap">' + _pmEsc((p.cutoff || '').slice(0, 7)) + '</div></div>').join('') +
+      '</div></div></div>';
+  })() : '';
+
+  const histTbl = hist.length ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Reconciliation history') + '</div></div>' +
+    '<div class="table-wrap"><table style="min-width:560px;font-size:12.5px"><thead><tr><th>' + _t('Cut-off') + '</th><th style="text-align:right">' + _t('Value') + '</th><th style="text-align:right">' + _t('Cost') + '</th><th style="text-align:right">' + _t('Margin') + '</th><th style="text-align:right">' + _t('Margin %') + '</th></tr></thead><tbody>' +
+    hist.slice().reverse().map(h => '<tr><td>' + _pmFmt(h.cutoff) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(h.valueToDate) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(h.costToDate) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' + ((h.margin || 0) < 0 ? '#EF4444' : 'var(--emerald)') + '">' + _qsMoney(h.margin) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + (h.marginPct == null ? '—' : _qsPct(h.marginPct)) + '</td></tr>').join('') +
+    '</tbody></table></div></div>' : '';
+
+  return kpis + _qsWarnCard(c.warnings, _t('What this reconciliation is telling you')) + table + fc + trend + histTbl;
+}
+
+/* ── 8. Final account ─────────────────────────────────────────────────────────────────────────── */
+function _qsRenderFinal(pid) {
+  const d = _qsData();
+  if (!d) return _qsDeniedCard(pid);
+  const f = d.finalAccount || {};
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Final account sum'), f.finalAccountSum == null ? '—' : _pmMoneyShort(f.finalAccountSum), 'var(--navy)'),
+    _hrKpi(_t('Certified to date'), _pmMoneyShort(f.certifiedToDate || 0), 'var(--emerald)'),
+    _hrKpi(_t('Balance due'), f.balanceDue == null ? '—' : _pmMoneyShort(f.balanceDue), '#3168A8'),
+    _hrKpi(_t('Agreed'), f.agreed ? _t('Yes') : _t('Not yet'), f.agreed ? 'var(--emerald)' : '#F59E0B')
+  ]);
+
+  const build = (f.build || []).map(b => '<tr><td style="padding:7px 10px;font-size:12.5px">' + _pmEsc(_t2(b.label, b.labelVn)) + '</td><td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' + ((b.amount || 0) < 0 ? '#EF4444' : 'var(--text)') + '">' + _qsMoney(b.amount) + '</td></tr>').join('');
+
+  const blocked = (f.blockedBy || []).length ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid #F59E0B">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Not a final account yet') + '</div></div>' +
+    '<div style="padding:8px 16px 4px;font-size:12px;color:var(--text-light)">' + _pmEsc(_t('A final account containing an unagreed figure is a claim, not a final account. It can still be printed as a draft — it simply will not call itself agreed.')) + '</div>' +
+    '<ul style="margin:6px 0 14px;padding-left:34px;font-size:12.5px;color:var(--text);line-height:1.8">' + f.blockedBy.slice(0, 25).map(b => '<li>' + _pmEsc(b) + '</li>').join('') + '</ul>' +
+    (f.blockedBy.length > 25 ? '<div style="padding:0 16px 12px;font-size:11px;color:var(--text-light)">+' + (f.blockedBy.length - 25) + ' ' + _t('more') + '</div>' : '') + '</div>' : '';
+
+  const table = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('Final Account') + '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsFinalPDF()">' + tkIcon('download', 12) + ' ' + _t('Final account (PDF)') + '</button></div>' +
+    '<div class="table-wrap"><table style="min-width:460px"><tbody>' + build +
+    '<tr style="border-top:2px solid var(--navy)"><td style="padding:9px 10px;font-weight:800;color:var(--navy)">' + _t('Final account sum') + '</td><td style="padding:9px 10px;text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _qsMoney(f.finalAccountSum) + '</td></tr>' +
+    '<tr><td style="padding:7px 10px;color:var(--text-light)">' + _t('Less certified to date') + '</td><td style="padding:7px 10px;text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + _qsMoney(f.certifiedToDate) + '</td></tr>' +
+    '<tr style="border-top:1px solid var(--line)"><td style="padding:9px 10px;font-weight:800;color:var(--emerald)">' + _t('Balance due on the final certificate') + '</td><td style="padding:9px 10px;text-align:right;font-weight:800;color:var(--emerald);font-variant-numeric:tabular-nums">' + _qsMoney(f.balanceDue) + '</td></tr>' +
+    '</tbody></table></div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' + _pmEsc(f.retentionNote || '') + '</div></div>';
+
+  return kpis + blocked + table;
+}
+
+/* ── 9. QS documents (SharePoint) ─────────────────────────────────────────────────────────────── */
+function _qsRenderDocs(pid) {
+  const p = _pmProj(pid); if (!p) return '';
+  const base = _pmSpBase(p), ctx = base ? _pmSpCtx(base) : null;
+  const canDeep = !!(ctx && (ctx.mode === 'view' || ctx.mode === 'path'));
+  const fIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  const folders = _PM_SP_TPL.filter(r => r[0] === 2 && _QS_SP_LIST.indexOf(r[1]) >= 0);
+  const rows = folders.map(r => {
+    const rel = _QS_SP_ROOT + '/' + r[1];
+    const name = canDeep ? '<a href="' + _tkEscA(_pmSpFolderUrl(ctx, rel)) + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;font-weight:600">' + _pmEsc(r[1]) + '</a>' : '<span style="font-weight:600">' + _pmEsc(r[1]) + '</span>';
+    return '<tr style="border-bottom:1px solid var(--soft-bg)"><td style="padding:7px 10px">' + fIcon + name + '<div style="font-size:10.5px;color:var(--text-light);margin-left:18px">' + _pmEsc(r[2]) + '</div></td>' +
+      '<td style="padding:7px 10px;font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmEsc(r[3]) + '</td>' +
+      '<td style="padding:7px 10px"><span style="font-size:9.5px;font-weight:700;color:#fff;background:' + _pmConfClr(r[4]) + ';padding:2px 7px;border-radius:10px;white-space:nowrap">' + r[4] + '</span></td>' +
+      '<td style="padding:7px 10px;font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmEsc(r[5]) + '</td>' +
+      '<td style="padding:7px 10px;white-space:nowrap">' + ((_msalApp && _account) ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 9px" onclick="qsSpUpload(\'' + _tkEscA(r[1]) + '\')">' + _t('Upload') + '</button>' : '') + '</td></tr>';
+  }).join('');
+
+  const files = _qsFileRegisterRows(pid);
+  const fileBody = files.length ? files.map(x =>
+    '<tr><td style="white-space:nowrap;font-size:12px">' + _pmFmt(x.date) + '</td><td>' + _pmBadge(_t(x.label), '#3168A8') + '</td><td style="font-size:12px">' + _pmEsc(String(x.ref).slice(0, 66)) + '</td>' +
+    '<td><a href="javascript:void(0)" onclick="_pmOpenFile(\'' + x.coll + '\',\'' + x.id + '\'' + (x.i == null ? '' : ',' + x.i) + ')" style="color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">📎 ' + _pmEsc(String(x.name).slice(0, 46)) + '</a></td></tr>').join('')
+    : tkEmptyRow(4, _t('No QS files yet — anything attached to a measurement, a variation, a daywork sheet or a materials record appears here.'), { icon: 'inbox' });
+
+  const banner = canDeep
+    ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' + _pmEsc(_t('Every folder below opens directly in the project SharePoint library. Generated documents — payment applications, measurement sheets, variation registers, reconciliations and the final account — file themselves into the right one.')) + '</div>'
+    : '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">' + _pmEsc(_t('Paste the project SharePoint folder link in Edit → SharePoint docs folder, then use Create in SharePoint on the Documents tab to build the QS folders.')) + '</div>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('QS Document Structure') + ' — ' + _QS_SP_ROOT + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' + ((ctx && ctx.open) ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' ' + _t('Open library') + '</a>' : '') +
+    ((_msalApp && _account) ? '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="pmSpCreateFoldersGraph(\'' + pid + '\')">' + _t('Create folders in SharePoint') + '</button>' : '') + '</div></div>' +
+    '<div style="padding:12px 16px">' + banner +
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:660px"><thead><tr>' +
+    ['Folder', 'Owner', 'Confidentiality', 'Retention', ''].map(h => '<th style="text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light);border-bottom:1px solid var(--border)">' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">' + _t('QS File Register') + '</div><span style="font-size:11px;color:var(--text-light)">' + files.length + ' ' + _t('file(s)') + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:640px"><thead><tr><th>' + _t('Date') + '</th><th>' + _t('Register') + '</th><th>' + _t('Reference') + '</th><th>' + _t('File') + '</th></tr></thead><tbody>' + fileBody + '</tbody></table></div></div>';
+}
+/* The QS folder names, from the ONE folder template. Hard-coding the list here would let the tree
+   and this screen drift the first time a folder was renamed. */
+const _QS_SP_LIST = Object.keys(_QS_SP).map(k => _QS_SP[k]);
+
+const _QS_FILE_SRC = [
+  ['pm_qs_measure', 'Measurement', r => r.date, r => (r.location || '') + ' ' + (r.method || '')],
+  ['pm_qs_variations', 'Variation', r => r.instructedOn || r.agreedOn, r => (r.voNo ? r.voNo + ' · ' : '') + (r.title || '')],
+  ['pm_qs_daywork', 'Daywork', r => r.date, r => (r.sheetNo ? r.sheetNo + ' · ' : '') + (r.desc || '')],
+  ['pm_qs_materials', 'Materials on site', r => r.onSiteDate, r => (r.invoiceRef ? r.invoiceRef + ' · ' : '') + (r.desc || '')]
+];
+function _qsFileRegisterRows(pid) {
+  const out = [];
+  _QS_FILE_SRC.forEach(src => {
+    _pmScopeFor(src[0], pid).forEach(r => {
+      const files = Array.isArray(r.attachments) && r.attachments.length
+        ? r.attachments.map((a, i) => ({ name: a.name || ('File ' + (i + 1)), i: i }))
+        : (r.attachment ? [{ name: r.attachmentName || 'attachment', i: null }] : []);
+      files.forEach(f => out.push({ coll: src[0], label: src[1], id: r.id, date: src[2](r) || '', ref: src[3](r) || '', name: f.name, i: f.i }));
+    });
+  });
+  return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+/* ── actions ──────────────────────────────────────────────────────────────────────────────────── */
+/* A multi-field dialog. tkPrompt asks for ONE value and escapes its body — right for "type a
+   reason", wrong for "record the certificate": a QS entering a certified amount, a date and a
+   reference through three consecutive single-field prompts loses the first one to a mis-click and
+   has no idea which of the three they are on. Resolves to an object, or null if dismissed. */
+function _qsForm(opts) {
+  return new Promise(resolve => {
+    const esc = s => _crmEsc(String(s == null ? '' : s));
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2000';
+    const fields = (opts.fields || []).map((f, i) => {
+      const id = '_qsf' + i;
+      const val = f.value == null ? '' : String(f.value);
+      let input;
+      if (f.type === 'select') {
+        input = '<select class="form-control" id="' + id + '">' + (f.options || []).map(o =>
+          '<option value="' + esc(o) + '"' + (o === val ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select>';
+      } else if (f.type === 'textarea') {
+        input = '<textarea class="form-control" id="' + id + '" rows="3">' + esc(val) + '</textarea>';
+      } else {
+        // A money field is a NUMBER input, not text: ₫1,234,567 typed with separators reaches the
+        // server as a string the parser has to guess at, and a guess about money is not acceptable.
+        const t = f.type === 'date' ? 'date' : f.type === 'money' || f.type === 'number' ? 'number' : 'text';
+        input = '<input class="form-control" id="' + id + '" type="' + t + '"' +
+          (t === 'number' ? ' step="any" inputmode="decimal"' : '') +
+          ' value="' + esc(val) + '"' + (f.placeholder ? ' placeholder="' + esc(_t(f.placeholder)) + '"' : '') + '>';
+      }
+      return '<div style="margin-bottom:11px"><label for="' + id + '" style="display:block;font-size:12px;font-weight:600;color:var(--text-light);margin-bottom:4px">' +
+        esc(_t(f.label)) + '</label>' + input + '</div>';
+    }).join('');
+    ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="width:520px;max-width:94vw;max-height:88vh;overflow:auto">' +
+      '<div style="font-size:17px;font-weight:800;color:var(--navy);margin-bottom:8px">' + esc(_t(opts.title || '')) + '</div>' +
+      (opts.body ? '<div style="font-size:13px;color:var(--text-light);line-height:1.6;margin-bottom:14px">' + esc(_t(opts.body)) + '</div>' : '') +
+      (opts.extraHtml || '') + fields +
+      '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:6px">' +
+      '<button type="button" class="btn btn-outline" data-act="cancel">' + esc(_t('Cancel')) + '</button>' +
+      '<button type="button" class="btn btn-primary" data-act="ok">' + esc(_t(opts.ok || 'Save')) + '</button></div></div>';
+    let done = false;
+    const finish = ok => {
+      if (done) return; done = true;
+      let out = null;
+      if (ok) {
+        out = {};
+        (opts.fields || []).forEach((f, i) => { out[f.k] = (ov.querySelector('#_qsf' + i) || {}).value || ''; });
+      }
+      document.removeEventListener('keydown', onKey, true);
+      ov.remove();
+      resolve(out);
+    };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); finish(false); } };
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(false); });
+    ov.querySelector('[data-act="ok"]').addEventListener('click', () => finish(true));
+    ov.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(false));
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    setTimeout(() => { const b = ov.querySelector('.form-control'); if (b) b.focus(); }, 30);
+  });
+}
+
+async function _qsPost(path, body, okMsg) {
+  if (_qsBusy) return null;
+  _qsBusy = true;
+  try {
+    const r = await tkApi(path, { method: 'POST', body: body });
+    if (okMsg) toast(okMsg, 'success');
+    _PM_QS_COLLS.forEach(c => { try { tkCollInvalidate(c); } catch (e) { } });
+    await Promise.all(_PM_QS_COLLS.map(c => tkLoadColl(c).catch(() => { })));
+    await qsLoad(_pmPid(), true);
+    qsTab(_qsTabK);
+    return r;
+  } catch (e) {
+    // The server's refusals are the interesting part of this module — "certifying ₫X would take the
+    // contract past its value", "an agreed variation needs an agreed value". They are written to be
+    // read, so they get a long toast rather than a three-second flash.
+    toast(_errMsg(e), 'error', 11000);
+    return null;
+  } finally { _qsBusy = false; }
+}
+
+async function qsValOpen() {
+  const today = _pmToday();
+  const v = await _qsForm({
+    title: _t('Open an interim valuation'),
+    body: _t('The cut-off date decides which month\'s work is in this valuation. Measurement dated after it belongs to the next one.'),
+    fields: [{ k: 'cutoff', label: _t('Cut-off date'), type: 'date', value: today },
+    { k: 'period', label: _t('Period (YYYY-MM)'), value: today.slice(0, 7) }],
+    ok: _t('Open')
+  });
+  if (!v) return;
+  if (!v.cutoff) { toast(_t('A valuation needs a cut-off date.'), 'warn'); return; }
+  _qsPost('/api/qs/valuation', { projectId: _pmPid(), action: 'open', cutoff: v.cutoff, period: v.period }, _t('Valuation opened'));
+}
+
+async function qsValSubmit(id) {
+  const d = _qsData(); if (!d) return;
+  const v = (d.series || []).find(x => x.id === id); if (!v) return;
+  const c = v.calc || {};
+  const high = (c.warnings || []).filter(w => w.severity === 'high' &&
+    ['measured_but_unpriced', 'agreed_variation_unpriced', 'orphan_measurements'].indexOf(w.code) >= 0);
+  /* Plain text, with newlines — _tkDialog escapes its body and renders it `white-space:pre-line`,
+     so markup here would be shown to the user as markup. */
+  const lines = [
+    _t('Submitting takes a snapshot: these figures become the record of what was claimed, and they will not be recomputed afterwards.'),
+    '',
+    (v.valNo || '') + '  ·  ' + _t('cut-off') + ' ' + _pmFmt(v.cutoff),
+    _t('Gross to date') + ': ' + _qsMoney(c.grossToDate),
+    _t('Valued this period') + ': ' + _qsMoney(c.valuedThisPeriod)
+  ];
+  if (high.length) {
+    lines.push('', '⚠ ' + _t('Work is being left unvalued'));
+    high.forEach(w => lines.push('• ' + w.msg));
+  }
+  const ok = await tkConfirm({ title: _t('Submit this payment application'), body: lines.join('\n'), confirmText: _t('Submit') });
+  if (!ok) return;
+  let extra = {};
+  if (high.length) {
+    const reason = await tkPrompt({
+      title: _t('Why is that work not being claimed?'),
+      body: _t('This is recorded on the certificate, so the decision is readable later.'),
+      placeholder: _t('e.g. rates still being agreed with the client'),
+      confirmText: _t('Submit anyway')
+    });
+    if (!reason) return;
+    extra = { acceptWarnings: true, reason: reason };
+  }
+  const r = await _qsPost('/api/qs/valuation',
+    Object.assign({ projectId: _pmPid(), action: 'submit', id: id }, extra), _t('Payment application submitted'));
+  if (r) qsIpaPDF(id);
+}
+
+async function qsValCertify(id) {
+  const d = _qsData(); if (!d) return;
+  const v = (d.series || []).find(x => x.id === id); if (!v) return;
+  const val = await _qsForm({
+    title: _t('Record the client\'s certificate'),
+    body: _t('Enter the gross amount the client certified to date. It is very often not what was claimed, which is exactly why it is recorded separately.')
+      + ' ' + _t('Claimed to date') + ': ' + _qsMoney((v.calc || {}).grossToDate),
+    fields: [{ k: 'certifiedGross', label: _t('Certified gross to date (₫)'), type: 'money', value: (v.calc || {}).grossToDate },
+    { k: 'certifiedOn', label: _t('Certificate date'), type: 'date', value: _pmToday() },
+    { k: 'certifiedRef', label: _t('Certificate reference') }],
+    ok: _t('Record')
+  });
+  if (!val) return;
+  if (val.certifiedGross === '') { toast(_t('Enter the certified amount — ₫0 is a valid answer, but it has to be chosen.'), 'warn', 8000); return; }
+  _qsPost('/api/qs/valuation', { projectId: _pmPid(), action: 'certify', id: id, certifiedGross: val.certifiedGross, certifiedOn: val.certifiedOn, certifiedRef: val.certifiedRef }, _t('Certificate recorded'));
+}
+
+async function qsValPaid(id) {
+  const v = await _qsForm({
+    title: _t('Mark as paid'),
+    fields: [{ k: 'paidOn', label: _t('Payment date'), type: 'date', value: _pmToday() },
+    { k: 'paidRef', label: _t('Bank / receipt reference') }],
+    ok: _t('Mark paid')
+  });
+  if (!v) return;
+  _qsPost('/api/qs/valuation', { projectId: _pmPid(), action: 'paid', id: id, paidOn: v.paidOn, paidRef: v.paidRef }, _t('Recorded as paid'));
+}
+
+async function qsValCancel(id) {
+  const reason = await tkPrompt({
+    title: _t('Cancel this valuation'),
+    body: _t('A cancelled valuation stays on the record and is not counted. Say why.'),
+    confirmText: _t('Cancel valuation')
+  });
+  if (!reason) return;
+  _qsPost('/api/qs/valuation', { projectId: _pmPid(), action: 'cancel', id: id, reason: reason }, _t('Valuation cancelled'));
+}
+
+async function qsVoMove(id, target) {
+  const r = _pmScopeFor('pm_qs_variations', _pmPid()).find(x => x.id === id); if (!r) return;
+  if (target === 'agreed') {
+    const v = await _qsForm({
+      title: _t('Agree this variation'),
+      body: _t('An agreed variation enters the next valuation. Record what was agreed and how it was valued — the basis is the first question asked in a final-account dispute.'),
+      fields: [{ k: 'agreedValue', label: _t('Agreed value (₫)'), type: 'money', value: r.agreedValue || r.estimatedValue || '' },
+      { k: 'basis', label: _t('Valued on'), type: 'select', options: _QS_BASIS_LABELS, value: _QS_VBASIS[r.basis] || _QS_BASIS_LABELS[0] },
+      { k: 'agreedOn', label: _t('Agreed on'), type: 'date', value: _pmToday() }],
+      ok: _t('Agree')
+    });
+    if (!v) return;
+    if (v.agreedValue === '') { toast(_t('An agreed variation needs an agreed value.'), 'warn', 8000); return; }
+    const basisCode = Object.keys(_QS_VBASIS).find(k => _QS_VBASIS[k] === v.basis) || '';
+    _qsPost('/api/qs/variation', { projectId: _pmPid(), id: id, status: 'agreed', agreedValue: v.agreedValue, basis: basisCode, agreedOn: v.agreedOn }, _t('Variation agreed'));
+    return;
+  }
+  if (target === 'instructed') {
+    const v = await _qsForm({
+      title: _t('Record the instruction'),
+      body: _t('From here the work is being built and we are exposed until it is agreed.'),
+      fields: [{ k: 'instructionRef', label: _t('Instruction reference'), value: r.instructionRef || '' },
+      { k: 'instructedOn', label: _t('Instructed on'), type: 'date', value: r.instructedOn || _pmToday() }],
+      ok: _t('Record')
+    });
+    if (!v) return;
+    _qsPost('/api/qs/variation', { projectId: _pmPid(), id: id, status: 'instructed', instructionRef: v.instructionRef, instructedOn: v.instructedOn }, _t('Instruction recorded'));
+    return;
+  }
+  if (target === 'rejected') {
+    const reason = await tkPrompt({
+      title: _t('Rejected by the client'),
+      body: _t('Record why. A rejected variation can be re-priced and submitted again.'),
+      confirmText: _t('Record')
+    });
+    if (!reason) return;
+    _qsPost('/api/qs/variation', { projectId: _pmPid(), id: id, status: 'rejected', reason: reason }, _t('Rejection recorded'));
+    return;
+  }
+  _qsPost('/api/qs/variation', { projectId: _pmPid(), id: id, status: target }, _t('Variation') + ' — ' + _t(_QS_VLABEL[target] || target));
+}
+
+async function qsCvrRecord() {
+  const d = _qsData(); const c = d ? (d.cvr || {}) : {};
+  const v = await _qsForm({
+    title: _t('Record a cost-value reconciliation'),
+    body: _t('Value and cost are read from the valuation and the cost register. What you enter is the judgement — the cost incurred but not yet invoiced, the losses already known about, and where the job finishes.'),
+    fields: [{ k: 'cutoff', label: _t('Cut-off date'), type: 'date', value: _pmToday() },
+    { k: 'accruals', label: _t('Accruals — cost incurred, not yet invoiced (₫)'), type: 'money', value: c.accruals || '' },
+    { k: 'provisions', label: _t('Provisions — known future losses (₫)'), type: 'money', value: c.provisions || '' },
+    { k: 'forecastValue', label: _t('Forecast final value (₫)'), type: 'money', value: c.forecastValue || '' },
+    { k: 'forecastCost', label: _t('Forecast final cost (₫)'), type: 'money', value: c.forecastCost || '' },
+    { k: 'provisionalAdjustment', label: _t('Provisional / PC sum adjustment for the final account (₫)'), type: 'money' },
+    { k: 'agreedClaims', label: _t('Agreed claims — EOT / loss and expense (₫)'), type: 'money' },
+    { k: 'note', label: _t('Commentary'), type: 'textarea' }],
+    ok: _t('Record')
+  });
+  if (!v) return;
+  if (!v.cutoff) { toast(_t('A reconciliation needs a cut-off date.'), 'warn'); return; }
+  _qsPost('/api/qs/cvr', Object.assign({ projectId: _pmPid() }, v), _t('Reconciliation recorded'));
+}
+
+/* ── bill import ──────────────────────────────────────────────────────────────────────────────── */
+/* CSV or a paste out of Excel. Deliberately tolerant of what a real bill looks like — a tab-separated
+   paste, a comma CSV, quoted descriptions with commas in them — and deliberately intolerant of a
+   line it cannot understand, which comes back numbered rather than being dropped. */
+function qsBoqImport() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay'; overlay.style.display = 'flex'; overlay.id = 'qsImportOverlay';
+  overlay.innerHTML = '<div class="modal" style="max-width:760px;width:95vw">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Import the bill of quantities') + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'qsImportOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="padding:16px 20px">' +
+    '<div style="font-size:12.5px;color:var(--text-light);line-height:1.65;margin-bottom:10px">' +
+    _pmEsc(_t('Paste straight out of Excel, or drop a CSV. Columns, in order:')) +
+    '<div style="font-family:ui-monospace,monospace;font-size:11.5px;background:var(--soft-bg);border-radius:7px;padding:9px 11px;margin:7px 0">Section, Item No, Description, Unit, Quantity, Rate, Kind</div>' +
+    _pmEsc(_t('Kind is optional and defaults to a measured item; use heading, provisional, pcsum or note for the others. A BLANK RATE STAYS BLANK — it is reported as unpriced, never valued at nil.')) + '</div>' +
+    '<textarea id="qs-imp-text" class="form-control" rows="10" style="font-family:ui-monospace,monospace;font-size:12px" placeholder="A\tA.1\tExcavation to reduce level\tm3\t120\t250000"></textarea>' +
+    '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<input type="file" id="qs-imp-file" accept=".csv,.txt" style="font-size:12px">' +
+    '<label style="font-size:12.5px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="qs-imp-replace"> ' + _t('Replace the existing bill') + '</label></div>' +
+    '<div id="qs-imp-out" style="margin-top:10px"></div></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'qsImportOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="qsBoqImportRun()">' + _t('Import') + '</button></div></div>';
+  document.body.appendChild(overlay);
+  const f = document.getElementById('qs-imp-file');
+  if (f) f.onchange = () => {
+    const file = f.files && f.files[0]; if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => { document.getElementById('qs-imp-text').value = String(rd.result || ''); };
+    rd.readAsText(file);
+  };
+}
+/* One CSV line into fields, honouring quotes. A bill description routinely contains a comma
+   ("Excavate, cart away and dispose"), and a naive split turns one line into two half-lines that
+   both fail — or worse, one that parses with the rate in the wrong column. */
+function _qsCsvSplit(line) {
+  if (line.indexOf('\t') >= 0) return line.split('\t');
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+function qsBoqParse(text) {
+  const KINDS = { '': 'item', item: 'item', measured: 'item', provisional: 'provisional', 'provisional sum': 'provisional', ps: 'provisional', pcsum: 'pcsum', 'pc sum': 'pcsum', pc: 'pcsum', heading: 'heading', header: 'heading', note: 'note' };
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rows = [], bad = [];
+  lines.forEach((l, n) => {
+    const f = _qsCsvSplit(l).map(x => String(x).trim().replace(/^"|"$/g, ''));
+    // A header row is a header row in any of the shapes Excel produces. Silently importing it as a
+    // bill line puts a row called "Description" in the contract.
+    if (n === 0 && /^(section|item)/i.test(f[0] || '') && /^(item|description|desc)/i.test(f[1] || '')) return;
+    const kindRaw = String(f[6] || '').toLowerCase();
+    const kind = KINDS[kindRaw];
+    if (kindRaw && !kind) { bad.push({ line: n + 1, why: _t('unknown kind') + ' "' + f[6] + '"' }); return; }
+    const desc = f[2] || '';
+    if (!desc && (kind || 'item') !== 'note') { bad.push({ line: n + 1, why: _t('no description') }); return; }
+    rows.push({
+      section: f[0] || '', itemNo: f[1] || '', desc: desc, unit: f[3] || '',
+      billedQty: f[4] || '', rate: f[5] || '', kind: kind || 'item'
+    });
+  });
+  return { rows: rows, bad: bad };
+}
+async function qsBoqImportRun() {
+  const text = (document.getElementById('qs-imp-text') || {}).value || '';
+  const replace = !!(document.getElementById('qs-imp-replace') || {}).checked;
+  const out = document.getElementById('qs-imp-out');
+  const p = qsBoqParse(text);
+  if (!p.rows.length) { if (out) out.innerHTML = '<div style="color:#EF4444;font-size:12.5px">' + _t('Nothing to import — check the columns.') + '</div>'; return; }
+  if (out) out.innerHTML = '<div style="font-size:12.5px;color:var(--text-light)">' + _t('Importing') + ' ' + p.rows.length + ' ' + _t('line(s)…') + '</div>';
+  const r = await _qsPost('/api/qs/boq', { projectId: _pmPid(), lines: p.rows, replace: replace, confirm: replace }, null);
+  if (!r) { if (out) out.innerHTML = ''; return; }
+  const rejected = (p.bad || []).concat(r.rejected || []);
+  document.getElementById('qsImportOverlay')?.remove();
+  toast(r.added + ' ' + _t('bill line(s) imported') + (rejected.length ? ' · ' + rejected.length + ' ' + _t('rejected') : ''), rejected.length ? 'warn' : 'success', rejected.length ? 11000 : 4000);
+  if (rejected.length) {
+    // Plain text with newlines: tkAlert escapes its body and renders it pre-line, so markup here
+    // would be shown to the reader as markup.
+    tkAlert({
+      title: _t('Some lines were not imported'),
+      body: _t('These are listed rather than dropped: a bill that is silently missing twelve rows totals correctly and is missing work.') + '\n\n' +
+        rejected.slice(0, 30).map(b => _t('Line') + ' ' + b.line + ': ' + b.why).join('\n') +
+        (rejected.length > 30 ? '\n+' + (rejected.length - 30) + ' ' + _t('more') : '')
+    });
+  }
+}
+function qsBoqCSV() {
+  const rows = _pmScopeFor('pm_qs_boq', _pmPid());
+  const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const head = ['Section', 'Item No', 'Description', 'Unit', 'Quantity', 'Rate', 'Kind'];
+  const body = rows.map(r => [r.section, r.itemNo, r.desc, r.unit, r.billedQty, (r.rate == null ? '' : r.rate), r.kind || 'item'].map(esc).join(','));
+  const p = _pmProj();
+  _qsDownload(new Blob(['﻿' + [head.join(',')].concat(body).join('\n')], { type: 'text/csv;charset=utf-8' }),
+    'BoQ_' + ((p && (p.code || p.name)) || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.csv');
+}
+function _qsDownload(blob, name) {
+  try {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) { } }, 1500);
+  } catch (e) { toast(_t('Download failed') + ': ' + _errMsg(e), 'error'); }
+}
+
+/* ── SharePoint ───────────────────────────────────────────────────────────────────────────────── */
+async function qsSpUpload(folder) {
+  const p = _pmProj(); if (!p) return;
+  if (!_pmSpBase(p)) { toast(_t('Add the SharePoint folder link on the project first.'), 'warn', 7000); return; }
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 100 * 1024 * 1024) { toast(_t('File too large (max 100 MB)'), 'warn'); return; }
+    toast(_t('Uploading') + ' “' + f.name + '” → ' + folder + '…');
+    try {
+      const res = await _graphUploadFile(f, p, _QS_SP_ROOT + '/' + folder);
+      toast(_t('Filed in SharePoint') + ' ✓', 'success', 6000);
+      try { tkAudit('QS file uploaded to SharePoint', p.name || '', folder + '/' + f.name); } catch (e) { }
+      if (res.webUrl) window.open(res.webUrl, '_blank', 'noopener');
+    } catch (e) { toast(_t('Upload failed') + ': ' + _errMsg(e), 'error', 9000); }
+  };
+  inp.click();
+}
+/* Save a generated PDF: always to the machine, and — when the project is linked and Microsoft 365 is
+   available — into the right QS folder as well. The download is unconditional on purpose: a
+   SharePoint failure must never be the reason somebody has no document. */
+async function _qsSavePdf(doc, filename, folderKey) {
+  doc.save(filename);
+  const p = _pmProj();
+  if (!p || !_pmSpBase(p) || !_msalApp || !_account) return;
+  const folder = _QS_SP[folderKey];
+  if (!folder) return;
+  try {
+    const blob = doc.output('blob');
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    const res = await _graphUploadFile(file, p, _QS_SP_ROOT + '/' + folder);
+    toast(_t('Also filed in SharePoint') + ' → ' + folder, 'success', 6000);
+    try { tkAudit('QS document filed to SharePoint', p.name || '', folder + '/' + filename); } catch (e) { }
+    return res;
+  } catch (e) {
+    // Named, not swallowed: the document IS downloaded, and the archive silently not happening is
+    // exactly how a project library ends up incomplete without anybody noticing.
+    toast(_t('Downloaded, but not filed in SharePoint') + ': ' + _errMsg(e), 'warn', 9000);
+  }
+}
+
+/* ── documents ────────────────────────────────────────────────────────────────────────────────── */
+function _qsFile(prefix, ext) {
+  const p = _pmProj();
+  return prefix + '_' + ((p && (p.code || p.name)) || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.' + (ext || 'pdf');
+}
+function _qsPdfHdr(doc, title, code, sub) {
+  const p = _pmProj();
+  return _brandHeader(doc, {
+    title: title, docCode: code, confidential: true,
+    subtitle: _pmPdfTxt([(p && ((p.code ? p.code + ' - ' : '') + (p.name || ''))) || '', sub].filter(Boolean).join('   ·   '))
+  });
+}
+/* A money table that paginates. Every QS document is a build-up of labelled amounts, and writing
+   the page-break logic five times is how the fifth one gets it wrong. */
+function _qsPdfRows(doc, y, rows, code, title, opts) {
+  opts = opts || {};
+  const M = 15, RIGHT = 195;
+  rows.forEach(r => {
+    if (y > 268) { _brandFooter(doc, doc.internal.getNumberOfPages(), doc.internal.getNumberOfPages(), code); doc.addPage(); y = _qsPdfHdr(doc, title + ' (cont.)', code) + 2; }
+    const bold = !!r.strong, rule = !!r.rule;
+    if (rule) { doc.setDrawColor(180, 188, 198); doc.setLineWidth(0.3); doc.line(M, y - 3.4, RIGHT, y - 3.4); }
+    _pdfFont(doc, bold ? 'bold' : 'normal');
+    doc.setFontSize(bold ? 11 : 9);
+    doc.setTextColor.apply(doc, bold ? [32, 80, 144] : [42, 48, 56]);
+    const L = doc.splitTextToSize(_pmPdfTxt(r.label), 120);
+    doc.text(L, M + (r.indent ? 5 : 0), y);
+    if (r.value != null) doc.text(_pmPdfTxt(r.value), RIGHT, y, { align: 'right' });
+    /* A hint belongs to the row ABOVE it. With an equal gap on both sides it reads as belonging to
+       the row below — on the priced bill, "6 no at VND 620,000,000" appeared to describe the NEXT
+       bill item. So it is pulled up tight under its own label and given clear air beneath. */
+    if (r.hint) {
+      y += Math.max(4.2, L.length * 4.8 - 1.4);
+      _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(130, 138, 148);
+      const H = doc.splitTextToSize(_pmPdfTxt(r.hint), 150);
+      doc.text(H, M + (r.indent ? 7 : 2), y);
+      y += H.length * 3.4 + 4;
+    } else {
+      y += Math.max(5.6, L.length * 4.8);
+    }
+  });
+  return y;
+}
+function _qsSignBlock(doc, y, names) {
+  const M = 15;
+  if (y > 232) { doc.addPage(); y = 40; }
+  y += 8;
+  doc.setDrawColor(154, 164, 178);
+  const cw = 180 / names.length;
+  names.forEach((s, i) => {
+    const cx = M + cw * i;
+    doc.line(cx + 3, y + 14, cx + cw - 7, y + 14);
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor(40, 46, 54);
+    doc.text(_pmPdfTxt(s[0]), cx + 3, y + 19);
+    if (s[1]) { _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(120, 128, 138); doc.text(_pmPdfTxt(s[1]), cx + 3, y + 23); }
+  });
+  return y + 26;
+}
+function _qsFoot(doc, code) {
+  const tot = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= tot; i++) { doc.setPage(i); _brandFooter(doc, i, tot, code); }
+}
+
+/* Interim Payment Application — the document that actually goes to the client. */
+function qsIpaPDF(id) {
+  const d = _qsData(); if (!d) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const v = (d.series || []).find(x => x.id === id); if (!v) { toast(_t('Valuation not found'), 'warn'); return; }
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const c = v.calc || {}, p = _pmProj(), CODE = 'HML-QS-IPA';
+  let y = _qsPdfHdr(doc, 'Interim Payment Application', CODE,
+    (v.valNo || '') + '   ·   ' + _pmPdfTxt('cut-off ' + _pmFmt(v.cutoff))) + 2;
+  [['Employer / Client', (p && (p.account || p.client)) || ''], ['Contract', (p && p.contractType) || ''],
+  ['Application No.', v.valNo || ''], ['Period', v.period || ''], ['Valuation date', _pmFmt(v.cutoff)],
+  ['Original contract sum', _qsMoney(c.contractSum)], ['Agreed variations', _qsMoney((c.variations || {}).total)],
+  ['Revised contract sum', _qsMoney(c.revisedContractSum)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  y += 3;
+  const rows = (c.build || []).map(b => ({ label: b.label, value: _qsMoney(b.amount) }));
+  rows.push({ label: 'Gross valuation to date', value: _qsMoney(c.grossToDate), strong: true, rule: true });
+  rows.push({ label: 'Less previously applied for', value: _qsMoney(c.previousToDate) });
+  rows.push({ label: 'AMOUNT OF THIS APPLICATION (before retention and advance recovery)', value: _qsMoney(c.valuedThisPeriod), strong: true, rule: true });
+  y = _qsPdfRows(doc, y, rows, CODE, 'Interim Payment Application');
+  y += 4;
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(120, 128, 138);
+  const note = doc.splitTextToSize(_pmPdfTxt(
+    'This application states the GROSS value of work executed to the valuation date. Retention and '
+    + 'recovery of the advance payment are applied under the terms of the Contract, and amounts are '
+    + 'exclusive of VAT. Measured quantities are as recorded in the measurement register; variations '
+    + 'are included only where agreed.'), 180);
+  doc.text(note, 15, y); y += note.length * 3.6 + 2;
+  if ((c.variations || {}).valued && c.variations.valued.length) {
+    y += 2;
+    y = _qsPdfRows(doc, y, [{ label: 'Agreed variations included', strong: true, rule: true }].concat(
+      c.variations.valued.map(x => ({ label: (x.voNo ? x.voNo + '  ' : '') + (x.title || ''), value: _qsMoney(x.valuedAmount), indent: true }))),
+      CODE, 'Interim Payment Application');
+  }
+  y = _qsSignBlock(doc, y, [['Prepared by (Quantity Surveyor)', v.submittedBy || ''], ['For and on behalf of', _LH.name], ['Client certification', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('IPA_' + (v.valNo || '').replace(/[^A-Za-z0-9]+/g, '')), 'val');
+  try { tkAudit('QS payment application exported', (p && p.name) || '', v.valNo || ''); } catch (e) { }
+}
+
+function qsMeasurePDF() {
+  const d = _qsData(); const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const meas = d && d.live ? (d.live.measured || {}) : {};
+  const CODE = 'HML-QS-MEA';
+  let y = _qsPdfHdr(doc, 'Measurement Summary', CODE, d && d.live ? _pmPdfTxt('as at ' + _pmFmt(d.live.cutoff)) : '') + 2;
+  const rows = (meas.rows || []).filter(r => r.qtyToDate).map(r => ({
+    label: (r.itemNo ? r.itemNo + '  ' : '') + (r.desc || '').slice(0, 62),
+    value: _qsNum(r.qtyToDate) + ' ' + (r.unit || '') + '   ' + _qsMoney(r.value),
+    hint: 'Billed ' + _qsNum(r.billedQty) + ' ' + (r.unit || '') + ' at ' + _qsMoney(r.rate) + ((r.pct != null && r.pct > 100) ? '  —  OVER-MEASURED (' + _qsPct(r.pct) + ')' : '')
+  }));
+  if (!rows.length) rows.push({ label: 'No measurement recorded to this cut-off.', value: '' });
+  rows.push({ label: 'Total measured works', value: _qsMoney(meas.total), strong: true, rule: true });
+  y = _qsPdfRows(doc, y, rows, CODE, 'Measurement Summary');
+  y = _qsSignBlock(doc, y, [['Measured by', ''], ['Checked by', ''], ['Agreed — Client / Consultant', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('Measurement'), 'measure');
+}
+
+function qsVoPDF() {
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const rows0 = _pmScopeFor('pm_qs_variations', _pmPid()).slice().sort(_pmDocNoCmp('voNo'));
+  const CODE = 'HML-QS-VOR';
+  let y = _qsPdfHdr(doc, 'Variation Register', CODE) + 2;
+  const rows = rows0.length ? rows0.map(r => {
+    const s = r.status || 'identified';
+    const amt = s === 'agreed' ? r.agreedValue : r.estimatedValue;
+    return {
+      label: (r.voNo ? r.voNo + '  ' : '') + (r.title || '').slice(0, 60),
+      value: (amt === '' || amt == null) ? 'not priced' : _qsMoney(amt),
+      hint: (_QS_VLABEL[s] || s) + (r.basis ? '  ·  ' + (_QS_VBASIS[r.basis] || r.basis) : '')
+        + (r.instructionRef ? '  ·  instruction ' + r.instructionRef : '')
+        + (r.instructedOn ? '  ·  instructed ' + _pmFmt(r.instructedOn) : '')
+    };
+  }) : [{ label: 'No variations recorded.', value: '' }];
+  const d = _qsData(), vv = d && d.live ? (d.live.variations || {}) : {};
+  rows.push({ label: 'Agreed variations (net)', value: _qsMoney(vv.total), strong: true, rule: true });
+  rows.push({ label: 'Instructed, not yet agreed (exposure)', value: _qsMoney(vv.exposure), strong: true });
+  y = _qsPdfRows(doc, y, rows, CODE, 'Variation Register');
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('Variation_Register'), 'vo');
+}
+
+function qsDayworkPDF() {
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const rows0 = _pmScopeFor('pm_qs_daywork', _pmPid()).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const CODE = 'HML-QS-DWK';
+  let y = _qsPdfHdr(doc, 'Daywork Register', CODE) + 2;
+  const rows = rows0.length ? rows0.map(r => ({
+    label: (r.sheetNo ? r.sheetNo + '  ' : '') + (r.desc || '').slice(0, 60),
+    value: _qsMoney(r.value),
+    hint: _pmFmt(r.date) + '  ·  labour ' + _qsNum(r.labourHours, 1) + ' h  ·  plant ' + _qsNum(r.plantHours, 1) + ' h  ·  '
+      + (r.status || 'draft') + (r.clientSignedBy ? '  ·  signed on site by ' + r.clientSignedBy : '  ·  NOT SIGNED ON SITE')
+  })) : [{ label: 'No daywork sheets recorded.', value: '' }];
+  const d = _qsData(), dwv = d && d.live ? (d.live.daywork || {}) : {};
+  rows.push({ label: 'Approved daywork', value: _qsMoney(dwv.total), strong: true, rule: true });
+  rows.push({ label: 'Signed but not approved', value: _qsMoney(dwv.exposure), strong: true });
+  y = _qsPdfRows(doc, y, rows, CODE, 'Daywork Register');
+  y = _qsSignBlock(doc, y, [['Site Manager', ''], ['Quantity Surveyor', ''], ['Client representative', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('Daywork_Register'), 'dw');
+}
+
+function qsCvrPDF() {
+  const d = _qsData(); if (!d) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const c = d.cvr || {}, CODE = 'HML-QS-CVR';
+  let y = _qsPdfHdr(doc, 'Cost-Value Reconciliation', CODE, _pmPdfTxt('as at ' + _pmFmt(_pmToday()))) + 2;
+  y = _qsPdfRows(doc, y, [
+    { label: 'Value of work to date', value: _qsMoney(c.valueToDate), hint: 'Gross valuation from the measurement and variation registers.' },
+    { label: 'Cost booked to date', value: _qsMoney(c.costToDate), hint: 'Actual cost from the project cost register.' },
+    { label: 'Accruals (incurred, not invoiced)', value: _qsMoney(c.accruals) },
+    { label: 'Provisions (known future losses)', value: _qsMoney(c.provisions) },
+    { label: 'True cost to date', value: _qsMoney(c.trueCostToDate), strong: true, rule: true },
+    { label: 'Margin', value: _qsMoney(c.margin) + '   (' + (c.marginPct == null ? 'n/a' : _qsPct(c.marginPct)) + ')', strong: true },
+    { label: 'Forecast final value', value: _qsMoney(c.forecastValue), rule: true },
+    { label: 'Forecast final cost', value: _qsMoney(c.forecastCost) },
+    { label: 'Forecast margin at completion', value: _qsMoney(c.forecastMargin) + '   (' + (c.forecastMarginPct == null ? 'n/a' : _qsPct(c.forecastMarginPct)) + ')', strong: true }
+  ], CODE, 'Cost-Value Reconciliation');
+  if ((c.warnings || []).length) {
+    y += 3;
+    y = _qsPdfRows(doc, y, [{ label: 'Matters arising', strong: true, rule: true }].concat(
+      c.warnings.map(w => ({ label: '- ' + w.msg, indent: true }))), CODE, 'Cost-Value Reconciliation');
+  }
+  y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['Project Manager', ''], ['Commercial Director', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('CVR'), 'cvr');
+}
+
+function qsFinalPDF() {
+  const d = _qsData(); if (!d) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const f = d.finalAccount || {}, CODE = 'HML-QS-FIN';
+  let y = _qsPdfHdr(doc, f.agreed ? 'Final Account' : 'Final Account (DRAFT — not agreed)', CODE) + 2;
+  const rows = (f.build || []).map(b => ({ label: b.label, value: _qsMoney(b.amount) }));
+  rows.push({ label: 'Final account sum', value: _qsMoney(f.finalAccountSum), strong: true, rule: true });
+  rows.push({ label: 'Less certified to date', value: _qsMoney(f.certifiedToDate) });
+  rows.push({ label: 'Balance due on the final certificate', value: _qsMoney(f.balanceDue), strong: true, rule: true });
+  y = _qsPdfRows(doc, y, rows, CODE, 'Final Account');
+  y += 3;
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(120, 128, 138);
+  const note = doc.splitTextToSize(_pmPdfTxt(f.retentionNote || ''), 180);
+  doc.text(note, 15, y); y += note.length * 3.6 + 2;
+  if ((f.blockedBy || []).length) {
+    y = _qsPdfRows(doc, y, [{ label: 'This is a DRAFT. It is not a final account while these remain unagreed:', strong: true, rule: true }].concat(
+      f.blockedBy.slice(0, 30).map(b => ({ label: '- ' + b, indent: true }))), CODE, 'Final Account');
+  }
+  y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['For the Contractor', _LH.name], ['For the Employer', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('Final_Account'), 'final');
+}
+
+function qsBoqPDF() {
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const d = _qsData(), bill = d && d.live ? d.live.bill : null;
+  if (!bill) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const CODE = 'HML-QS-BOQ';
+  let y = _qsPdfHdr(doc, 'Priced Bill of Quantities', CODE) + 2;
+  // The server's priced lines, in the server's order. The printed bill and the bill on screen are
+  // then the same document — computing either one here is how they stop being.
+  const rows = bill.lines.length ? bill.lines.map(r => {
+    const kind = r.kind || 'item';
+    if (kind === 'heading') return { label: (r.desc || '').toUpperCase(), strong: true, rule: true };
+    return {
+      label: (r.itemNo ? r.itemNo + '  ' : '') + (r.desc || '').slice(0, 62), indent: true,
+      value: r.priced ? _qsMoney(r.value) : 'NO RATE',
+      hint: (r.billedQty ? _qsNum(r.billedQty) + ' ' + (r.unit || '') : '')
+        + (r.rate == null ? '' : (r.billedQty ? ' at ' : '') + _qsMoney(r.rate))
+        + (kind !== 'item' ? '  ·  ' + kind : '')
+    };
+  }) : [{ label: 'No bill of quantities entered.', value: '' }];
+  if (bill) {
+    rows.push({ label: 'Bill total', value: _qsMoney(bill.total), strong: true, rule: true });
+    if (bill.unpriced.length) rows.push({ label: bill.unpriced.length + ' line(s) carry no rate and are excluded from this total. They are not worth nil.', strong: true });
+  }
+  y = _qsPdfRows(doc, y, rows, CODE, 'Priced Bill of Quantities');
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('Priced_BoQ'), 'boq');
+}
+/* ══ END QS ══════════════════════════════════════════════════════════════════════════════════ */
+
 /* ============================================================================
    PM PORTFOLIO — executive cross-project dashboard (the PMC landing screen)
    ========================================================================== */
