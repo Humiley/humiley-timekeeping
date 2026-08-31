@@ -35797,6 +35797,48 @@ async function ahuRenderBoard() {
    A month with too few units to read is drawn HOLLOW and still occupies its slot. Dropping it would
    leave a gap, and a gap in a series reads as "nothing went wrong then" rather than "we did not
    build enough that month to tell". The count is in the tooltip of every bar, readable or not. */
+/* Which stations generate the rework. Every non-conformance already records where it was found;
+   this is the first screen that reads it.
+
+   The caveat is rendered WITH the table, not tucked into documentation. The counts are frequency,
+   not cost — the non-conformance form has no hours field — and a reader who takes them for cost
+   will price work off them. The row that could not be attributed to any station is drawn apart
+   from the stations, because it is a data-quality figure and listing it among them reads as an
+   accusation of a station that does not exist. */
+function _ahuReworkPanel(rw) {
+  if (!rw || !(rw.stations || []).length) return '';
+  const row = g => {
+    const orphan = g.code === '(no step recorded)';
+    const tone = orphan ? 'var(--text-light)' : (g.rework ? '#DC2626' : 'var(--text)');
+    return '<tr' + (orphan ? ' style="background:var(--soft-bg)"' : '') + '>' +
+      '<td style="font-weight:' + (orphan ? '500' : '700') + ';color:' + tone + '">' +
+      _ahuEsc(g.code) + (orphan ? ' <span style="font-size:10px">— not attributable</span>' : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:' +
+      (g.rework ? '#DC2626' : 'var(--text-light)') + '">' + _ahuEsc(g.rework) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">' +
+      _ahuEsc(g.useAsIs) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">' +
+      _ahuEsc(g.reject) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;color:' +
+      (g.undecided ? '#A16207' : 'var(--text-light)') + '">' + _ahuEsc(g.undecided) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _ahuEsc(g.units) + '</td></tr>';
+  };
+  return _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Where the rework happens</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)"> — from the step each non-conformance ' +
+    'was found at</span></div>' +
+    (rw.worstStation ? '<div style="font-size:11.5px;color:#DC2626;font-weight:700">Most rework: ' +
+      _ahuEsc(rw.worstStation) + '</div>' : '') + '</div>' +
+    '<div style="overflow-x:auto"><table class="tk-table" style="font-size:12px;min-width:420px">' +
+    '<thead><tr><th>Step</th><th style="text-align:right">Rework</th>' +
+    '<th style="text-align:right">Use as is</th><th style="text-align:right">Reject</th>' +
+    '<th style="text-align:right">Undecided</th><th style="text-align:right">Units</th></tr></thead>' +
+    '<tbody>' + rw.stations.map(row).join('') + '</tbody></table></div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:8px;line-height:1.5">' +
+    _ahuEsc(rw.note) + '</div>') + '<div style="height:12px"></div>';
+}
+
 function _ahuTrendStrip(series, minN) {
   if (!series || !series.length) return '';
   const bar = p => {
@@ -35869,7 +35911,10 @@ async function ahuRenderSopKpi() {
     '<div style="font-size:10.5px;color:var(--text-light);margin-top:9px;line-height:1.5">' +
     'Computed from signed records, not entered. A casing class is the class ACHIEVED at test — a ' +
     'unit sold as L1 and measured at 0.30 fails its contract and achieves L2, and both facts matter.' +
-    '</div>') + '<div style="height:12px"></div>';
+    '</div>') + '<div style="height:12px"></div>' +
+    // Rendered here rather than shipped as an endpoint field nobody draws — the gap #173 and #175
+    // both existed to close, and it is not worth opening a third time.
+    _ahuReworkPanel(d.rework);
 }
 
 function _ahuBoardTick() {
