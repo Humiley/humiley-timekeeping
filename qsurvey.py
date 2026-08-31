@@ -2001,6 +2001,223 @@ def reserves(ctx):
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE NOTICE CLOCK — the entitlement you lose by being late rather than by being wrong
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# Under almost every standard form, an extension of time must be NOTIFIED within a stated period of
+# the delay event becoming apparent. Miss that window and the entitlement is gone — not weakened,
+# GONE — however good the claim, however obviously the client caused the delay, however much money
+# it costs. FIDIC 20.1 makes it a condition precedent in terms; NEC's early-warning and compensation
+# event clocks work the same way; a Vietnamese contract written off either does too.
+#
+# So the expensive failure here is not a bad claim. It is a good claim submitted on day 31 of a
+# 28-day window, and the reason it happens is that nothing anywhere is counting. The variation
+# register knows the instruction date, the contract knows the notice period, and until now no screen
+# put those two facts together and said "four days left".
+#
+# This is the same shape as the OSH module's statutory clock: a duty that starts on an EVENT, runs
+# in real time, and is worth nothing the day after it expires. It is therefore reported the same
+# way — by how many days are LEFT, loudest while there is still time to act.
+
+NOTICE_OK = "given"
+NOTICE_DUE = "due"                # not given, still inside the window
+NOTICE_URGENT = "urgent"          # not given, and the window is nearly shut
+NOTICE_LAPSED = "lapsed"          # not given, window closed — the entitlement is at risk
+NOTICE_NO_PERIOD = "no_period"    # the contract's notice period is not recorded
+
+# Inside this many days of the deadline, "due" becomes "urgent". Three working days is the point at
+# which a notice still has to be drafted, checked and served, so it is the last moment a warning is
+# any use.
+NOTICE_URGENT_WITHIN = 5
+
+
+def notice_position(ctx):
+    """Which time claims still have a notice to serve, and how long is left to serve it.
+
+    `ctx`:
+        variations     the register — instructedOn starts the clock, noticeGivenOn stops it
+        noticeDays     the contract's notice period, in days
+        today          the day to measure from (never read from a clock in here)
+    """
+    ctx = ctx or {}
+    today = str(ctx.get("today") or "")[:10]
+    period = _num(ctx.get("noticeDays"))
+    rows, lapsed, urgent, due = [], [], [], []
+
+    for raw in (ctx.get("variations") or []):
+        v = variation_value(raw)
+        days = _num(raw.get("timeImpactDays"))
+        # A claim for time is what needs notifying. A variation with no time on it has no clock, and
+        # one nobody has instructed has no event to count from.
+        if not days or v["status"] not in (V_INSTRUCTED, V_MEASURED, V_PRICED, V_SUBMITTED, V_AGREED):
+            continue
+        event = str(raw.get("instructedOn") or "")[:10]
+        given = str(raw.get("noticeGivenOn") or "")[:10]
+        deadline = _add_days(event, period) if (event and period) else None
+        left = _days_between(today, deadline) if (deadline and today) else None
+
+        if given:
+            state = NOTICE_OK
+            # Served, but was it served in time? A late notice is a fact about the claim that the
+            # client will raise, so it is recorded rather than quietly counted as done.
+            late = (_days_between(deadline, given) or 0) > 0 if deadline else False
+        elif not period:
+            state, late = NOTICE_NO_PERIOD, False
+        elif not event:
+            # Nothing to count from. Reported as its own state rather than treated as compliant.
+            state, late = NOTICE_NO_PERIOD, False
+        elif left is None:
+            state, late = NOTICE_DUE, False
+        elif left < 0:
+            state, late = NOTICE_LAPSED, False
+        elif left <= NOTICE_URGENT_WITHIN:
+            state, late = NOTICE_URGENT, False
+        else:
+            state, late = NOTICE_DUE, False
+
+        row = {"id": v["id"], "voNo": v["voNo"], "title": v["title"], "status": v["status"],
+               "timeImpactDays": days, "instructedOn": event, "noticeGivenOn": given,
+               "noticeRef": raw.get("noticeRef") or "", "noticeDue": deadline,
+               "daysLeft": left, "state": state, "servedLate": late}
+        rows.append(row)
+        if state == NOTICE_LAPSED:
+            lapsed.append(row)
+        elif state == NOTICE_URGENT:
+            urgent.append(row)
+        elif state == NOTICE_DUE:
+            due.append(row)
+
+    warnings = []
+    if lapsed:
+        warnings.append({
+            "code": "notice_period_lapsed", "severity": "high",
+            "msg": "%d time claim(s) worth %d day(s) have passed their notice period with no notice "
+                   "served. Under most contracts that entitlement is gone — not weakened, gone — "
+                   "however good the claim."
+                   % (len(lapsed), int(sum(r["timeImpactDays"] for r in lapsed))),
+            "items": [{"itemNo": r["voNo"], "desc": "%s — notice was due %s"
+                       % (r["title"][:40], r["noticeDue"])} for r in lapsed[:20]]})
+    if urgent:
+        warnings.append({
+            "code": "notice_period_closing", "severity": "high",
+            "msg": "%d notice(s) are due within %d day(s). This is the last point at which one can "
+                   "still be drafted, checked and served."
+                   % (len(urgent), NOTICE_URGENT_WITHIN),
+            "items": [{"itemNo": r["voNo"], "desc": "%d day(s) left" % (r["daysLeft"] or 0)}
+                      for r in urgent[:20]]})
+    served_late = [r for r in rows if r["servedLate"]]
+    if served_late:
+        warnings.append({
+            "code": "notice_served_late", "severity": "medium",
+            "msg": "%d notice(s) were served after the contract's period had run. The client can be "
+                   "expected to raise that against the claim." % len(served_late),
+            "items": [{"itemNo": r["voNo"], "desc": "due %s, served %s"
+                       % (r["noticeDue"], r["noticeGivenOn"])} for r in served_late[:20]]})
+    if rows and not period:
+        warnings.append({
+            "code": "no_notice_period", "severity": "medium",
+            "msg": "The contract's notice period for extensions of time is not recorded, so nothing "
+                   "can say how long is left to serve one. It is a number in the contract and it "
+                   "decides whether a good claim survives."})
+
+    return {
+        "rows": rows,
+        "noticeDays": period or None,
+        "lapsed": lapsed, "urgent": urgent, "due": due,
+        "servedLate": served_late,
+        "atRiskDays": r2(sum(r["timeImpactDays"] for r in lapsed)),
+        "warnings": warnings,
+        "note": "A notice is a condition precedent under most standard forms. The claim that is "
+                "lost is almost never the weak one — it is the good one served on day 31 of a "
+                "28-day window.",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE COMMERCIAL EXPOSURES, IN ONE LIST
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# Every figure below is already computed somewhere on this tab and reviewed by nobody, because it
+# lives on a commercial screen rather than on the risk register the project actually walks through
+# every week. This gathers them into one shape a person can act on — and deliberately does NOT
+# create risk records: a register filled automatically is a register with no owners, and the first
+# thing anybody does with one is stop reading it.
+
+EXPOSURE_KINDS = (
+    {"code": "quality_at_risk", "label": "Measured work under an open non-conformance",
+     "labelVn": "Khối lượng đã đo bóc đang có phiếu không phù hợp",
+     "category": "Quality", "why": "A client's quantity surveyor can defend deducting this."},
+    {"code": "not_released", "label": "Measured work never released past its inspection",
+     "labelVn": "Khối lượng chưa được nghiệm thu qua điểm dừng",
+     "category": "Quality", "why": "Claimed against bill lines whose hold point was never signed."},
+    {"code": "variation_exposure", "label": "Instructed variation work with no agreed price",
+     "labelVn": "Phát sinh đã chỉ thị chưa thống nhất giá",
+     "category": "Commercial", "why": "Being built now, and cannot be claimed until it is agreed."},
+    {"code": "approved_not_claimed", "label": "Approved change with no variation raised",
+     "labelVn": "Thay đổi đã duyệt chưa lập phát sinh",
+     "category": "Commercial", "why": "Authorised work that nothing is billing for."},
+    {"code": "under_certified", "label": "Claimed and not certified",
+     "labelVn": "Đã đề nghị nhưng chưa được xác nhận",
+     "category": "Commercial", "why": "The client has certified less than was applied for."},
+    {"code": "ld_exposure", "label": "Liquidated damages at the contract rate",
+     "labelVn": "Phạt chậm tiến độ theo đơn giá hợp đồng",
+     "category": "Schedule", "why": "The programme forecasts completion after the revised date."},
+    {"code": "notice_lapsed", "label": "Time entitlement lost to a lapsed notice",
+     "labelVn": "Mất quyền gia hạn do quá hạn thông báo",
+     "category": "Schedule", "why": "The notice period ran out before a notice was served."},
+    {"code": "contingency_short", "label": "Contingency below the open risk",
+     "labelVn": "Dự phòng thấp hơn rủi ro đang mở",
+     "category": "Commercial", "why": "What is left will not cover the threats already identified."},
+)
+_EXPOSURE_BY_CODE = {e["code"]: e for e in EXPOSURE_KINDS}
+
+
+def exposures(ctx):
+    """The module's quantified exposures, in one list, biggest first.
+
+    Amounts come from the reports that already computed them — nothing is recalculated here, so a
+    figure on this list and the figure on the screen it came from cannot disagree.
+    """
+    ctx = ctx or {}
+    raw = {
+        "quality_at_risk": _num(ctx.get("qualityAtRisk")),
+        "not_released": _num(ctx.get("notReleased")),
+        "variation_exposure": _num(ctx.get("variationExposure")),
+        "approved_not_claimed": _num(ctx.get("approvedNotClaimed")),
+        "under_certified": _num(ctx.get("underCertified")),
+        "ld_exposure": _num(ctx.get("ldExposure")),
+        "contingency_short": _num(ctx.get("contingencyShortfall")),
+    }
+    out = []
+    for code, amount in raw.items():
+        if amount <= 0:
+            continue
+        spec = _EXPOSURE_BY_CODE[code]
+        out.append({"code": code, "label": spec["label"], "labelVn": spec["labelVn"],
+                    "category": spec["category"], "why": spec["why"],
+                    "amount": r2(amount), "unit": "money"})
+
+    # Time is an exposure too and is NOT money. It is carried with its own unit rather than priced
+    # at some assumed daily cost — a day of delay only becomes money through a rate somebody agreed.
+    lapsed_days = _num(ctx.get("noticeLapsedDays"))
+    if lapsed_days > 0:
+        spec = _EXPOSURE_BY_CODE["notice_lapsed"]
+        out.append({"code": "notice_lapsed", "label": spec["label"], "labelVn": spec["labelVn"],
+                    "category": spec["category"], "why": spec["why"],
+                    "amount": r2(lapsed_days), "unit": "days"})
+
+    out.sort(key=lambda e: (e["unit"] != "money", -e["amount"]))
+    return {
+        "items": out,
+        "moneyTotal": r2(sum(e["amount"] for e in out if e["unit"] == "money")),
+        "daysTotal": r2(sum(e["amount"] for e in out if e["unit"] == "days")),
+        # Stated, because the sum is a sum of DIFFERENT things: some of it is money a client may
+        # deduct, some is money nobody has billed, and they do not add up to a single loss.
+        "note": "These are separate exposures, not one number. Some is value a client can defend "
+                "deducting, some is work nobody is billing for, and some is time. Adding them "
+                "produces a figure that describes no single event.",
+    }
+
+
 # ── what this module will not decide ─────────────────────────────────────────────────────────────
 
 UNRESOLVED = (

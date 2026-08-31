@@ -16775,6 +16775,10 @@ const _QA_SPECS = {
        whether damages are deducted from a certificate, set off, or claimed separately is a
        legal position the portal does not take. Without a rate the delay exposure cannot be
        put in money and the QS tab says so instead of guessing. */
+    /* The contract's notice period for an extension of time. Under most standard forms notice
+       is a CONDITION PRECEDENT — miss it and the entitlement is gone, not weakened — so this
+       number decides whether a good claim survives. */
+    { k: 'eotNoticeDays', label: 'Notice period for an extension of time (days)', type: 'number' },
     { k: 'ldPerDay', label: 'Liquidated damages per day (₫)', type: 'money' },
     { k: 'ldCap', label: 'Liquidated damages cap (₫)', type: 'money' },
     { k: 'startPlanned', label: 'Planned start', type: 'date' }, { k: 'endPlanned', label: 'Planned finish', type: 'date' },
@@ -16997,6 +17001,11 @@ const _QA_SPECS = {
     { k: 'eotGrantedDays', label: 'Extension of time GRANTED (days)', type: 'number' },
     { k: 'eotGrantedOn', label: 'Extension granted on', type: 'date' },
     { k: 'eotRef', label: 'Extension of time reference' },
+    /* When notice of the delay was SERVED. The clock runs from the instruction date and the
+       contract's notice period; leave this blank and the QS tab counts down to the day the
+       entitlement lapses. */
+    { k: 'noticeGivenOn', label: 'Notice of delay served on', type: 'date' },
+    { k: 'noticeRef', label: 'Notice reference' },
     { k: 'description', label: 'Scope of the change', type: 'textarea' },
     { k: 'attachment', label: 'Instruction / quotation (image or PDF)', type: 'file' }] },
   pm_qs_daywork: { title: 'Daywork Sheet', coll: 'pm_qs_daywork', reload: 'pm_qs_daywork', fields: [
@@ -23582,7 +23591,7 @@ const _PM_TABS = [
   // fallback in _qsCrOf read it locally, and without it that button reports the change request
   // missing on a project where it is sitting right there.
   // Keep `need` on ONE line — tests/test_pm_tab_loading.py parses the array off it.
-  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning', 'pm_changes'] },
+  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning', 'pm_changes', 'pm_risks'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
   { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms', need: ['pm_comms', 'pm_issues'] },
@@ -28847,8 +28856,9 @@ function _qsRenderDash(pid) {
   const _w = (live.warnings || []).concat(((d.changeControl || {}).warnings) || [])
     .concat(((d.earnedValue || {}).warnings) || [])
     .concat(((d.extensionOfTime || {}).warnings) || [])
+    .concat(((d.notice || {}).warnings) || [])
     .concat(((d.reserves || {}).warnings) || []);
-  return kpis + _qsWarnCard(_w) + progCard + _qsEvCard(d) + _qsTradeCard(d) + buildCard + riskCard + _qsValStripCard(d) + _qsGuideCard();
+  return kpis + _qsWarnCard(_w) + _qsExposureCard(d) + progCard + _qsEvCard(d) + _qsTradeCard(d) + buildCard + riskCard + _qsValStripCard(d) + _qsGuideCard();
 }
 
 /* The valuation history as one strip: claimed against certified, month by month. A gap that opens
@@ -29150,7 +29160,7 @@ function _qsRenderVos(pid) {
       .map(k => '<span style="display:inline-block;background:' + _QS_VHEX[k] + '1f;color:' + _QS_VHEX[k] + ';font-weight:700;padding:2px 8px;border-radius:10px;margin:2px 3px">' + _t(_QS_VLABEL[k]) + '</span>').join('→') +
     '<div style="margin-top:6px">' + _pmEsc(_t('Work instructed and being built with no agreed price is the exposure figure on the Commercial tab. It is deliberately kept out of the valuation — a claim the client has not agreed is a dispute, not a certificate.')) + '</div></div></div>';
 
-  return kpis + flowCard + _qsCcCard(d) + _qsEotCard(d) + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
+  return kpis + flowCard + _qsCcCard(d) + _qsEotCard(d) + _qsNoticeCard(d) + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
     /* Explicit widths, because the browser's auto-layout gives a two-word "Client instruction" the
        same claim on the row as the variation's title, and the title is what the row is ABOUT. Left
        to itself it wrapped "Additional HEPA terminal filters, Zone 2" over five lines. */
@@ -29792,7 +29802,12 @@ function _qsPdfRows(doc, y, rows, code, title, opts) {
   opts = opts || {};
   const M = 15, RIGHT = 195;
   rows.forEach(r => {
-    if (y > 268) { _brandFooter(doc, doc.internal.getNumberOfPages(), doc.internal.getNumberOfPages(), code); doc.addPage(); y = _qsPdfHdr(doc, title + ' (cont.)', code) + 2; }
+    /* No footer stamped here. _qsFoot() walks EVERY page at the end and writes the real page
+       numbers; drawing one on the way past wrote a second footer on top of the first — and wrote
+       it as "page N of N", so page 1 of a two-page report claimed to be page 1 of 1. It was
+       invisible for as long as both footers carried the same words, and showed up the moment a
+       document had a "(cont.)" heading on its later pages. */
+    if (y > 268) { doc.addPage(); y = _qsPdfHdr(doc, title + ' (cont.)', code) + 2; }
     const bold = !!r.strong, rule = !!r.rule;
     if (rule) { doc.setDrawColor(180, 188, 198); doc.setLineWidth(0.3); doc.line(M, y - 3.4, RIGHT, y - 3.4); }
     _pdfFont(doc, bold ? 'bold' : 'normal');
@@ -30530,7 +30545,9 @@ function _qsEvCard(d) {
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
     '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
     '<div class="card-title">' + _t('Physical progress, measured') + '</div>' +
-    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmTab(\'cost\')">' + _t('Open Cost / EVM') + '</button></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsCommercialReportPDF()">' + tkIcon('download', 12) + ' ' + _t('Commercial report (PDF)') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmTab(\'cost\')">' + _t('Open Cost / EVM') + '</button></div></div>' +
     '<div style="padding:14px 16px">' +
     bar(_t('Measured on site, at contract rates'), e.pct, 'var(--emerald)',
       _qsMoney(e.physicalToDate) + ' ' + _t('of') + ' ' + _qsMoney(e.revisedContractSum)) +
@@ -30578,7 +30595,10 @@ function _qsEotCard(d) {
     '</tr></thead><tbody>' + rows + '</tbody></table></div>' : '';
 
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px' + (late ? ';border-left:3px solid #EF4444' : '') + '">' +
-    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Extension of time') + '</div></div>' + chain +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Extension of time') + '</div>' +
+    ((e.grantedDays || 0) ? '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="qsApplyEot()">' + _t('Record the revised completion') + '</button>' : '') +
+    '</div>' + chain +
     '<div style="padding:12px 16px;display:flex;gap:10px;flex-wrap:wrap">' +
     tile(_t('Days claimed'), e.claimedDays || 0, (e.claimedDays || 0) ? '#F59E0B' : 'var(--text-light)', _t('Time impact on instructed variations.')) +
     tile(_t('Days granted'), e.grantedDays || 0, (e.grantedDays || 0) ? 'var(--emerald)' : 'var(--text-light)', _t('What the client has actually allowed.')) +
@@ -30631,6 +30651,234 @@ function _qsReserveCard(d) {
     '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
     _pmEsc(_t('Contingency sits inside the cost baseline and covers identified risks. Management reserve sits outside it, covers what nobody identified, and is released by the sponsor — it is deliberately never drawn down here.')) +
     (r.managementReserve ? ' <b>' + _qsMoney(r.managementReserve) + '</b> ' + _pmEsc(_t('held and untouched.')) : '') + '</div></div>';
+}
+/* ── the notice clock ─────────────────────────────────────────────────────────────────────────────
+   Under most standard forms a notice is a condition precedent: miss the window and the entitlement
+   is gone, not weakened. The claim that gets lost is almost never the weak one. */
+const _QS_NOTICE = {
+  given: ['Served', 'var(--emerald)'],
+  due: ['Notice due', '#3168A8'],
+  urgent: ['Closing', '#EF4444'],
+  lapsed: ['LAPSED', '#EF4444'],
+  no_period: ['No period set', '#94A3B8']
+};
+function _qsNoticeCard(d) {
+  const n = d.notice; if (!n || !(n.rows || []).length) return '';
+  const bad = (n.lapsed || []).length, soon = (n.urgent || []).length;
+  const rows = (n.rows || []).slice().sort((a, b) =>
+    (a.daysLeft == null ? 9999 : a.daysLeft) - (b.daysLeft == null ? 9999 : b.daysLeft)).map(r => {
+    const s = _QS_NOTICE[r.state] || ['—', '#94A3B8'];
+    /* Days LEFT, not days elapsed. The number somebody can act on is how long they have, and it is
+       the loudest thing in the row while there is still time to act. */
+    const left = r.state === 'given' ? (r.servedLate ? _t('served late') : _pmFmt(r.noticeGivenOn))
+      : r.daysLeft == null ? '—'
+      : r.daysLeft < 0 ? (Math.abs(r.daysLeft) + ' ' + _t('days ago'))
+      : (r.daysLeft + ' ' + _t('days left'));
+    return '<tr style="border-bottom:1px solid var(--soft-bg)">' +
+      '<td style="padding:8px 10px;font-variant-numeric:tabular-nums;font-size:11.5px;white-space:nowrap">' + _pmEsc(r.voNo || '—') + '</td>' +
+      '<td style="padding:8px 10px;font-size:12px">' + _pmEsc((r.title || '').slice(0, 46)) + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">' + r.timeImpactDays + '</td>' +
+      '<td style="padding:8px 10px;white-space:nowrap;font-size:12px">' + _pmFmt(r.instructedOn) + '</td>' +
+      '<td style="padding:8px 10px;white-space:nowrap;font-size:12px">' + _pmFmt(r.noticeDue) + '</td>' +
+      '<td style="padding:8px 10px;white-space:nowrap;font-size:12.5px;font-weight:' + (r.state === 'urgent' || r.state === 'lapsed' ? 800 : 600) + ';color:' + s[1] + '">' + _pmEsc(left) + '</td>' +
+      '<td style="padding:8px 10px">' + _pmBadge(_t(s[0]), s[1]) + (r.servedLate ? ' ' + _pmBadge(_t('late'), '#F59E0B') : '') + '</td>' +
+      '<td style="padding:8px 10px;font-variant-numeric:tabular-nums;font-size:11.5px">' + _pmEsc(r.noticeRef || '—') + '</td></tr>';
+  }).join('');
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px' + (bad || soon ? ';border-left:3px solid #EF4444' : '') + '">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Notice of delay — the clock on each claim') + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + (n.noticeDays ? n.noticeDays + ' ' + _t('day notice period under the contract') : _t('no notice period recorded')) + '</span></div>' +
+    (bad ? '<div style="padding:9px 16px;background:#FEF2F2;color:#B91C1C;font-size:12.5px;font-weight:600">' +
+      _pmEsc(bad + ' ' + _t('claim(s) worth') + ' ' + n.atRiskDays + ' ' + _t('day(s) are past their notice period. Under most contracts that entitlement is gone.')) + '</div>' : '') +
+    '<div class="table-wrap"><table style="min-width:860px;font-size:13px"><thead><tr>' +
+    [['VO No.', ''], ['Variation', ''], ['Days', 'text-align:right'], ['Instructed', ''], ['Notice due', ''], ['Time left', ''], ['Status', ''], ['Notice ref', '']]
+      .map(c => '<th style="' + c[1] + '">' + _t(c[0]) + '</th>').join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('A notice is a condition precedent under most standard forms. The claim that is lost is almost never the weak one — it is the good one served on day 31 of a 28-day window.')) + '</div></div>';
+}
+
+/* ── the exposures, and getting them onto the register somebody actually reviews ───────────────── */
+function _qsExposureCard(d) {
+  const e = d.exposures; if (!e || !(e.items || []).length) return '';
+  const raised = _qsRaisedExposures();
+  const rows = e.items.map(x => {
+    const done = raised[x.code];
+    return '<tr style="border-bottom:1px solid var(--soft-bg)">' +
+      '<td style="padding:9px 10px">' + _pmBadge(_t(x.category), x.category === 'Quality' ? '#8B5CF6' : x.category === 'Schedule' ? '#F59E0B' : '#3168A8') + '</td>' +
+      '<td style="padding:9px 10px;font-size:12.5px;font-weight:600">' + _pmEsc(_t2(x.label, x.labelVn)) +
+      '<div style="font-size:10.5px;color:var(--text-light);font-weight:400;line-height:1.5">' + _pmEsc(_t(x.why)) + '</div></td>' +
+      '<td style="padding:9px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:#EF4444;white-space:nowrap">' +
+      (x.unit === 'days' ? (x.amount + ' ' + _t('days')) : _qsMoney(x.amount)) + '</td>' +
+      '<td style="padding:9px 10px;white-space:nowrap">' + (done
+        ? '<span style="font-size:11px;color:var(--emerald);font-weight:600">' + _t('on the risk register') + ' · ' + _pmEsc(done) + '</span>'
+        : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 9px" onclick="qsRaiseRisk(\'' + x.code + '\')">' + _t('Raise as a risk') + '</button>') + '</td></tr>';
+  }).join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Commercial exposure, in one list') + '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmTab(\'risk\')">' + _t('Open the Risk register') + '</button></div>' +
+    '<div style="padding:8px 16px 2px;font-size:11.5px;color:var(--text-light)">' +
+    _pmEsc(_t('Every figure here is computed somewhere on this tab and reviewed by nobody, because it lives on a commercial screen rather than on the register the project walks through each week.')) + '</div>' +
+    '<div class="table-wrap"><table style="min-width:820px;font-size:13px"><thead><tr>' +
+    [['Kind', ''], ['Exposure', ''], ['Amount', 'text-align:right'], ['', '']]
+      .map(c => '<th style="' + c[1] + '">' + (c[0] ? _t(c[0]) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t(e.note)) + '</div></div>';
+}
+
+/* Which exposures already have a risk raised for them, keyed by the marker written into the risk's
+   category field. Read from the register rather than stored on the project, so deleting the risk
+   correctly makes the button come back. */
+const _QS_RISK_TAG = 'QS:';
+function _qsRaisedExposures() {
+  const out = {};
+  _pmScopeFor('pm_risks', _pmPid()).forEach(r => {
+    const m = /QS:([a-z_]+)/.exec(String(r.description || '') + ' ' + String(r.title || ''));
+    if (m && r.status !== 'Closed') out[m[1]] = r.riskNo || _t('raised');
+  });
+  return out;
+}
+
+/* One click onto the register the project reviews. Deliberately NOT automatic: a register filled by
+   a machine is a register with no owners, and the first thing anybody does with one is stop reading
+   it. The figure and the reason are pre-filled; the owner and the response are the person's. */
+async function qsRaiseRisk(code) {
+  const d = _qsData(); if (!d) return;
+  const x = ((d.exposures || {}).items || []).find(i => i.code === code);
+  if (!x) { toast(_t('That exposure is no longer on the list.'), 'warn'); return; }
+  const money = x.unit === 'money';
+  const v = await _qsForm({
+    title: _t('Raise this as a project risk'),
+    body: _t('It goes on the register with the figure and the reason already filled in. What it needs from you is an owner and a response — those are the two things that make a risk something anybody acts on.'),
+    fields: [
+      { k: 'title', label: _t('Risk title'), value: _t2(x.label, x.labelVn) },
+      { k: 'owner', label: _t('Owner'), type: 'select', options: _qaDynOptions('employees') },
+      { k: 'probability', label: _t('Probability (1-5)'), type: 'select', options: ['1', '2', '3', '4', '5'], value: '3' },
+      { k: 'impact', label: _t('Impact (1-5)'), type: 'select', options: ['1', '2', '3', '4', '5'], value: '4' },
+      { k: 'responseStrategy', label: _t('Response'), type: 'select', options: ['Avoid', 'Mitigate', 'Transfer', 'Accept'] },
+      { k: 'mitigationActions', label: _t('What will be done about it'), type: 'textarea' }
+    ],
+    ok: _t('Raise it')
+  });
+  if (!v) return;
+  if (!v.owner) { toast(_t('A risk with no owner is a risk nobody acts on. Name one.'), 'warn', 8000); return; }
+  const p = +v.probability || 3, i = +v.impact || 4;
+  await _qsPost('/api/coll/pm_risks', {
+    projectId: _pmPid(), title: v.title, category: 'Commercial',
+    direction: 'Threat', probability: String(p), impact: String(i), score: p * i,
+    /* Money only. A time exposure has no cost impact until somebody agrees a rate for a day, and
+       inventing one here would put a number on the register that no contract contains. */
+    costImpact: money ? x.amount : '',
+    owner: v.owner, responseStrategy: v.responseStrategy,
+    mitigationActions: v.mitigationActions, status: 'Open',
+    // The marker that stops this being raised twice. In the description because it is a fact about
+    // where the risk came from, and it survives somebody renaming the risk.
+    description: _QS_RISK_TAG + x.code + ' — ' + _t(x.why) +
+      '\n' + _t('Raised from the QS commercial position at') + ' ' +
+      (money ? _qsMoney(x.amount) : x.amount + ' ' + _t('days')) + '.'
+  }, _t('Raised on the risk register'));
+}
+
+/* ── the monthly commercial report ───────────────────────────────────────────────────────────────
+   One document for the monthly review: the whole position, in the order a commercial manager asks
+   for it. Everything on it is already on a screen; what it adds is that they are on ONE page. */
+function qsCommercialReportPDF() {
+  const d = _qsData(); if (!d) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const live = d.live || {}, cv = d.cvr || {}, cc = d.changeControl || {}, ev = d.earnedValue || {};
+  const eo = d.extensionOfTime || {}, rs = d.reserves || {}, q = live.quality || {};
+  const CODE = 'HML-QS-CMR';
+  let y = _qsPdfHdr(doc, 'Commercial Report', CODE,
+    _pmPdfTxt('as at ' + _pmFmt(live.cutoff || _pmToday()))) + 2;
+
+  const money = v => _qsMoney(v);
+  y = _qsPdfRows(doc, y, [
+    { label: 'POSITION', strong: true, rule: true },
+    { label: 'Revised contract sum', value: money(live.revisedContractSum), indent: true },
+    { label: 'Gross valuation to date', value: money(live.grossToDate), indent: true },
+    { label: 'Certified to date', value: money(d.certifiedToDate), indent: true },
+    { label: 'Physical progress (measured)', indent: true,
+      value: ev.pct == null ? '-' : (Math.round(ev.pct * 10) / 10) + '%' },
+    { label: 'PROFITABILITY', strong: true, rule: true },
+    { label: 'True cost to date', value: money(cv.trueCostToDate), indent: true },
+    { label: 'Margin', indent: true,
+      value: money(cv.margin) + (cv.marginPct == null ? '' : '   (' + cv.marginPct + '%)') },
+    { label: 'Forecast margin at completion', indent: true,
+      value: money(cv.forecastMargin) + (cv.forecastMarginPct == null ? '' : '   (' + cv.forecastMarginPct + '%)') },
+  ], CODE, 'Commercial Report');
+
+  const losing = (cv.trades || []).filter(t => t.value && t.margin < 0);
+  if (losing.length) {
+    y = _qsPdfRows(doc, y, [{ label: 'Trades running at a loss', strong: true, rule: true }].concat(
+      losing.map(t => ({ label: t.label, indent: true,
+        value: money(t.margin) + (t.marginPct == null ? '' : '   (' + t.marginPct + '%)') }))),
+      CODE, 'Commercial Report');
+  }
+  const overBudget = (cv.trades || []).filter(t => t.overBudget);
+  if (overBudget.length) {
+    y = _qsPdfRows(doc, y, [{ label: 'Trades over budget', strong: true, rule: true }].concat(
+      overBudget.map(t => ({ label: t.label, indent: true, value: money(t.budgetVariance),
+        hint: 'budget ' + money(t.budget) + ', spent ' + money(t.cost) }))),
+      CODE, 'Commercial Report');
+  }
+
+  y = _qsPdfRows(doc, y, [
+    { label: 'CHANGE AND TIME', strong: true, rule: true },
+    { label: 'Approved change with no variation raised', value: money(cc.unclaimedValue), indent: true },
+    { label: 'Variations agreed below their assessed cost', value: money(cc.shortfall), indent: true },
+    { label: 'Extension of time claimed / granted', indent: true,
+      value: (eo.claimedDays || 0) + ' / ' + (eo.grantedDays || 0) + ' days' },
+    { label: 'Revised contract completion', value: _pmFmt(eo.revisedCompletion), indent: true },
+    { label: 'Programme forecast', value: _pmFmt(eo.forecastCompletion), indent: true,
+      hint: eo.delayDays ? (eo.delayDays + ' day(s) late; liquidated damages exposure ' + money(eo.ldExposure)) : '' },
+    { label: 'QUALITY AND RESERVES', strong: true, rule: true },
+    { label: 'Measured value under an open non-conformance', value: money(q.valueAtRisk), indent: true },
+    { label: 'Measured value not released past inspection', value: money(q.valueNotReleased), indent: true },
+    { label: 'Contingency remaining', value: money(rs.remaining), indent: true,
+      hint: 'against ' + money(rs.openThreatEmv) + ' of expected value on ' + (rs.openThreatCount || 0) + ' open threat(s)' },
+  ], CODE, 'Commercial Report');
+
+  const items = (d.exposures || {}).items || [];
+  if (items.length) {
+    y = _qsPdfRows(doc, y, [{ label: 'EXPOSURES', strong: true, rule: true }].concat(
+      items.map(x => ({ label: x.label, indent: true,
+        value: x.unit === 'days' ? (x.amount + ' days') : money(x.amount), hint: x.why }))),
+      CODE, 'Commercial Report');
+    y += 2;
+    _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(120, 128, 138);
+    const note = doc.splitTextToSize(_pmPdfTxt((d.exposures || {}).note || ''), 180);
+    doc.text(note, 15, y); y += note.length * 3.6 + 2;
+  }
+
+  y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['Project Manager', ''],
+                            ['Commercial Director', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, _qsFile('Commercial_Report'), 'cvr');
+  try { tkAudit('QS commercial report exported', (_pmProj() || {}).name || '', live.cutoff || ''); } catch (e) { }
+}
+
+/* Record the granted extension on the project, so the rest of the module can see the date the
+   client actually agreed to. It never touches the baseline — see the endpoint's docstring. */
+async function qsApplyEot() {
+  const d = _qsData(); const e = d && d.extensionOfTime;
+  if (!e || !e.grantedDays) { toast(_t('No extension of time has been granted yet.'), 'warn', 7000); return; }
+  const p = _pmProj() || {};
+  const ok = await tkConfirm({
+    title: _t('Record the revised completion date'),
+    body: [_t('The client has granted') + ' ' + e.grantedDays + ' ' + _t('day(s).'),
+      '',
+      _t('Contract completion') + ': ' + _pmFmt(e.contractCompletion),
+      _t('Revised completion') + ': ' + _pmFmt(e.revisedCompletion),
+      '',
+      _t('This records the revised date ALONGSIDE the original. It does not move the planned finish or any task date — a plan that moves under people destroys every variance measured against it.')
+    ].join('\n'),
+    confirmText: _t('Record it')
+  });
+  if (!ok) return;
+  await _qsPost('/api/qs/eot', { projectId: _pmPid() }, _t('Revised completion recorded'));
 }
 /* ══ END QS ══════════════════════════════════════════════════════════════════════════════════ */
 

@@ -4481,6 +4481,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._qs_variation_ep(uu, body or {}))
         if path == "/api/qs/cvr":
             return self._guard(lambda uu: self._qs_cvr_ep(uu, body or {}))
+        if path == "/api/qs/eot":
+            return self._guard(lambda uu: self._qs_eot_ep(uu, body or {}))
         if path == "/api/qs/boq":
             return self._guard(lambda uu: self._qs_boq_ep(uu, body or {}))
         if path == "/api/sales/vat-settings":
@@ -10464,6 +10466,9 @@ class Handler(BaseHTTPRequestHandler):
             "independentBasis": "the project's own percent complete"})
 
         eot = qsurvey.extension_of_time({
+            # The ORIGINAL contract date, always. The revised one is DERIVED from the grants and is
+            # recomputed here every time — reading back the stored revision would compound it, so a
+            # second grant would extend an already-extended date.
             "contractCompletion": project.get("endPlanned") or project.get("endBaseline"),
             "forecastCompletion": self._qs_forecast_completion(rows["tasks"]),
             "variations": rows["variations"], "changes": rows["changes"],
@@ -10477,6 +10482,28 @@ class Handler(BaseHTTPRequestHandler):
             "provisions": latest_cvr.get("provisions") if latest_cvr else 0,
             "variationShortfall": cc.get("shortfall"),
             "openThreatEmv": _emv, "openThreatCount": _nthreat})
+
+        # The notice clock. `today` is passed in rather than read inside the engine, so the
+        # position can be computed for any day — the only day a notice warning is worth anything
+        # is the day BEFORE it expires, and a module reading its own clock cannot be tested there.
+        notice = qsurvey.notice_position({
+            "variations": rows["variations"],
+            "noticeDays": project.get("eotNoticeDays"),
+            "today": _now_iso()[:10]})
+
+        # Every exposure the module has computed, in one list. Nothing is recalculated — each
+        # figure comes from the report that produced it, so this list and the screen it came from
+        # cannot disagree.
+        _last = series[-1] if series else None
+        expo = qsurvey.exposures({
+            "qualityAtRisk": (live.get("quality") or {}).get("valueAtRisk"),
+            "notReleased": (live.get("quality") or {}).get("valueNotReleased"),
+            "variationExposure": (live.get("variations") or {}).get("exposure"),
+            "approvedNotClaimed": cc.get("unclaimedValue"),
+            "underCertified": (_last or {}).get("underCertified"),
+            "ldExposure": eot.get("ldExposure"),
+            "contingencyShortfall": res.get("shortfallAgainstRisk"),
+            "noticeLapsedDays": notice.get("atRiskDays")})
 
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
@@ -10500,6 +10527,8 @@ class Handler(BaseHTTPRequestHandler):
             "changeControl": cc,
             "earnedValue": ev,
             "extensionOfTime": eot,
+            "notice": notice,
+            "exposures": expo,
             "reserves": res,
             "cvr": cvr_calc,
             "cvrHistory": [{"id": c.get("id"), "cutoff": c.get("cutoff") or "",
@@ -10696,6 +10725,53 @@ class Handler(BaseHTTPRequestHandler):
         self._qs_audit(u, "QS variation " + target, project, saved.get("voNo"),
                        (saved.get("title") or "")[:120])
         return self._json({"ok": True, "item": saved})
+
+    def _qs_eot_ep(self, u, body):
+        """Record the granted extension of time on the project.
+
+        ⚠️ THIS NEVER TOUCHES `endPlanned` OR ANY TASK DATE. `endPlanned` is the contract date every
+        variance on the project is measured against; moving it would make the job look on time by
+        rewriting the thing it was late against — which is exactly the failure the engineering
+        module's baseline drift was: SPI came from a live planned date, so moving a slipped date
+        reset it to 1.00 with no record that the plan had moved.
+
+        What it writes is a SEPARATE, DERIVED field: the revised completion date implied by the
+        extensions the client has actually granted, with the day count and the day it was applied.
+        The original stays exactly where it was, beside it, and both are shown.
+        """
+        body = body or {}
+        pid = str(body.get("projectId") or "").strip()
+        why = self._qs_may_read(u, pid)
+        if why:
+            return self._err(why, 403 if pid else 400)
+        project = next((p for p in db.list_collection("pm_projects") if p.get("id") == pid), None)
+        if not project:
+            return self._err("Project not found.", 404)
+
+        rows = self._qs_rows(pid)
+        eot = qsurvey.extension_of_time({
+            "contractCompletion": project.get("endPlanned") or project.get("endBaseline"),
+            "forecastCompletion": self._qs_forecast_completion(rows["tasks"]),
+            "variations": rows["variations"], "changes": rows["changes"],
+            "ldPerDay": project.get("ldPerDay"), "ldCap": project.get("ldCap"),
+            "cutoff": ""})
+        if not eot["contractCompletion"]:
+            return self._err("This project has no contract completion date, so there is nothing "
+                             "for an extension to move. Set the planned finish first.", 400)
+        if not eot["grantedDays"]:
+            return self._err("No extension of time has been granted yet. Record the days the "
+                             "client allowed on the variation first — a claim is not a grant.", 400)
+
+        upd = dict(project)
+        upd["contractCompletionRevised"] = eot["revisedCompletion"]
+        upd["eotGrantedDaysTotal"] = eot["grantedDays"]
+        upd["eotAppliedAt"] = self._utc_now()
+        upd["eotAppliedBy"] = u.get("name") or u.get("email")
+        saved = db.put_collection_item("pm_projects", upd)
+        self._qs_audit(u, "EOT applied to the project", project, "",
+                       "%s granted day(s): %s -> %s"
+                       % (eot["grantedDays"], eot["contractCompletion"], eot["revisedCompletion"]))
+        return self._json({"ok": True, "item": saved, "extensionOfTime": eot})
 
     def _qs_cvr_ep(self, u, body):
         """Record a cost-value reconciliation for a cut-off.
