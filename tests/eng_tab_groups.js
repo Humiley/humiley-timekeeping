@@ -41,13 +41,19 @@ const PRELUDE = `
   function showView(){}
   function tkIcon(){ return ''; }
   const sessionStorage = { setItem(){}, getItem(){ return null; } };
+  const _HR = {};
+  function _engPid(){ return 'p1'; }
+  function _engEsc(s){ return String(s == null ? '' : s); }
+  function _t(s){ return s; }
+  function _engSet(h){ const b = document.getElementById('eng-tab-body'); if (b) b.innerHTML = h; }
+  async function _engNeed(names){ (names || []).forEach(function (n) { _HR[n] = []; }); return []; }
 `;
 
 const api = {};
 new Function(PRELUDE + src.slice(i, j) + `
   Object.assign(this, {
     _ENG_TABS, _ENG_TAB_GROUPS, _engGroupOf, _engGroupTabs, _engActiveGroup, _engTabsFor,
-    _engGroupRow, _engTabRow, _engTabBar,
+    _engGroupRow, _engTabRow, _engTabBar, engTab,
     setLead: function (v) { LEAD = v; },
     setTab: function (v) { _engTabK = v; }
   });
@@ -56,17 +62,23 @@ const { _ENG_TABS, _ENG_TAB_GROUPS, _engGroupOf, _engGroupTabs, _engActiveGroup,
         _engTabsFor, _engGroupRow, _engTabRow, setLead, setTab } = api;
 
 let pass = 0, fail = 0;
+/* Async-aware: the dispatcher tests below await engTab, and a runner that ignored the promise
+   would report them all green without ever reaching the assertion. */
+const queue = [];
 function t(name, fn) {
-  try { fn(); console.log('  ok    ' + name); pass++; }
-  catch (e) { console.log('  FAIL  ' + name + '\n        ' + e.message); fail++; }
+  queue.push(async () => {
+    try { await fn(); console.log('  ok    ' + name); pass++; }
+    catch (e) { console.log('  FAIL  ' + name + '\n        ' + e.message); fail++; }
+  });
 }
+function say(s) { queue.push(async () => console.log(s)); }
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || '') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); };
 const ok = (c, m) => { if (!c) throw new Error(m || 'expected true'); };
 
 const P = { id: 'p1', code: 'PIL26' };
 const GK = _ENG_TAB_GROUPS.map(g => g.k);
 
-console.log('\nevery register is reachable');
+say('\nevery register is reachable');
 t('there is more than one group and more than one tab', () => {
   /* Guards the guard: if the extraction silently produced empty arrays, every check below would
      pass while examining nothing. */
@@ -88,7 +100,7 @@ t('the groups partition the tabs — none counted twice, none missed', () => {
   eq(n, _engTabsFor(P).length, 'sum of the groups vs the tab list:');
 });
 
-console.log('\nthe highlighted group is derived from the open tab');
+say('\nthe highlighted group is derived from the open tab');
 t('each tab lights its own group, all of them', () => {
   setLead(true);
   _engTabsFor(P).forEach(tab => {
@@ -114,7 +126,7 @@ t('exactly one pill is marked active', () => {
   eq(lit, 1);
 });
 
-console.log('\nthe restricted tab');
+say('\nthe restricted tab');
 t('a lead is offered the refusal log; somebody else is not', () => {
   setLead(true);
   ok(_engTabsFor(P).some(x => x.k === 'refusals'), 'a lead cannot reach the refusal log');
@@ -132,11 +144,80 @@ t('its group does not render an empty pill when it is the only tab hidden', () =
   setLead(true);
 });
 
-console.log('\nthe fallback keeps a mis-keyed tab reachable');
+say('\nthe fallback keeps a mis-keyed tab reachable');
 t('a tab with a bad group key lands in the last group, not nowhere', () => {
   eq(_engGroupOf({ k: 'x', g: 'not-a-group' }), GK[GK.length - 1]);
   eq(_engGroupOf({ k: 'x' }), GK[GK.length - 1], 'a tab with no group at all');
 });
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+// ── the dispatcher has to PAINT ────────────────────────────────────────────────
+//
+// engTab used to call the renderer and throw its return value away. Most renderers call _engSet
+// themselves; EIGHT of the twenty-one ended `return guide + kpis + tbl` — so Codes & Standards,
+// Deviations, Design Risk, Effort & Earned Value, Register Check, IDC Matrix, Holds & Assumptions
+// and Awaiting Response painted nothing at all. The body kept whatever the previous tab left in
+// it, which is worse than blank: a blank panel reads as "no data", the previous register's table
+// under a new heading reads as THIS register's data. Nothing threw, so nothing was ever logged.
+//
+// Both shapes are exercised here against the real engTab, because a static "does it contain
+// _engSet" scan would pass on a dispatcher that painted into the wrong element.
+
+say('\nthe dispatcher paints, whichever way a renderer is written');
+
+async function withBody(fn) {   // async: a sync `finally` removed the DOM before the awaited
+                                // engTab ever ran, and the failure read as a bug in the fix
+  /* Minimal DOM: the one element engTab writes into, plus the two nav rows it repaints. */
+  const nodes = {};
+  const mk = id => (nodes[id] = { id: id, innerHTML: '', dataset: {}, style: {}, scrollIntoView() { } });
+  ['eng-tab-body', 'eng-grpbar', 'eng-tabbar'].forEach(mk);
+  global.document = {
+    getElementById: id => nodes[id] || null,
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  global.window = global;
+  try { return await fn(nodes); } finally { delete global.document; }
+}
+
+t('a renderer that RETURNS its html gets painted', async () => {
+  await withBody(async nodes => {
+    global.engRenderStages = () => '<div id="from-return">standards-shaped renderer</div>';
+    setTab('overview');
+    await api.engTab('stages');
+    if (nodes['eng-tab-body'].innerHTML.indexOf('from-return') < 0) {
+      throw new Error('the returned html never reached the page — got ' +
+        JSON.stringify(nodes['eng-tab-body'].innerHTML.slice(0, 80)));
+    }
+  });
+});
+t('a renderer that calls _engSet still works', async () => {
+  await withBody(async nodes => {
+    global.engRenderStages = () => { nodes['eng-tab-body'].innerHTML = '<div id="from-set">set</div>'; };
+    setTab('overview');
+    await api.engTab('stages');
+    if (nodes['eng-tab-body'].innerHTML.indexOf('from-set') < 0) throw new Error('_engSet-style renderer stopped painting');
+  });
+});
+t('a renderer that returns nothing leaves the body alone rather than blanking it', async () => {
+  await withBody(async nodes => {
+    nodes['eng-tab-body'].innerHTML = '<div id="pre">painted by the renderer itself</div>';
+    global.engRenderStages = () => undefined;
+    setTab('overview');
+    await api.engTab('stages');
+    if (nodes['eng-tab-body'].innerHTML.indexOf('pre') < 0) throw new Error('an undefined return wiped the body');
+  });
+});
+t('a throwing renderer shows an error instead of a blank panel', async () => {
+  await withBody(async nodes => {
+    global.engRenderStages = () => { throw new Error('boom'); };
+    setTab('overview');
+    await api.engTab('stages');
+    if (nodes['eng-tab-body'].innerHTML.indexOf('boom') < 0) throw new Error('the error was swallowed');
+  });
+});
+
+(async () => {
+  for (const step of queue) await step();
+  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+})();
