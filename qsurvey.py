@@ -2218,6 +2218,280 @@ def exposures(ctx):
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE BACK-TO-BACK POSITION — PMBOK §12.3 Control Procurements
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# A main contractor's money leaves through its subcontractors and arrives from its client, and the
+# two are certified by different people a month apart. The portal held both registers — packages in
+# pm_procurement, certificates in pm_procurement_payments — and nothing had ever put them beside
+# each other, or beside the measure. A certificate did not even record the package it was against.
+#
+# Four questions, and each one is a way a profitable job runs out of cash:
+#
+#   1. Have we certified a subcontractor for more than we bought from him? Either somebody varied
+#      the subcontract and never wrote it down, or we have over-certified. Both need naming.
+#   2. Are we holding the retention the subcontract entitles us to? Retention is the security
+#      against defects and against the subcontractor failing. Certified without deducting it, it is
+#      gone — and nothing was checking, because the deduction is typed by hand on each certificate.
+#   3. Have we certified a trade OUT ahead of measuring it IN? A subcontractor's measure and our
+#      own measure of the same physical work should track, with our margin between them. Certified
+#      out above valued in means we are paying for work we are not billing.
+#   4. Across the job, does what we have certified out sit inside what the client has certified in?
+#
+# It never restates a certificate. A retention shortfall is REPORTED — the figure the subcontract
+# implies against the figure actually deducted — because correcting it here would produce a net
+# certified that disagrees with the piece of paper the subcontractor was paid against.
+
+# A certificate that is only SUBMITTED is a subcontractor's claim. It is not our liability, for the
+# same reason a submitted application of ours is not the client's. They are counted apart.
+SUB_OWED = ("certified", "paid")
+SUB_CLAIMED = ("submitted",)
+
+
+def subcontract_position(ctx):
+    """The subcontract commitment, what has been certified against it, and how that sits against
+    both our own measure and the client's certificate.
+
+    ctx: packages (pm_procurement), certificates (pm_procurement_payments), valueByTrade
+    {code: value we have valued in}, clientCertified (gross certified BY the client, or None),
+    retentionFromUs (retention the client is holding), cutoff.
+    """
+    ctx = ctx or {}
+    cutoff = str(ctx.get("cutoff") or "")[:10]
+    valued = ctx.get("valueByTrade") or {}
+    warn = []
+
+    def w(code, severity, msg, **extra):
+        warn.append(dict({"code": code, "severity": severity, "msg": msg}, **extra))
+
+    # ── the packages ─────────────────────────────────────────────────────────────────────────────
+    rows, by_no = [], {}
+    for p in (ctx.get("packages") or []):
+        no = str(p.get("pkgNo") or "").strip()
+        r = {"id": p.get("id"), "pkgNo": no, "title": p.get("title") or "",
+             "vendor": p.get("vendor") or "", "type": p.get("type") or "",
+             "status": p.get("status") or "", "discipline": _disc(p.get("discipline")),
+             # `_rate`, not `_num`: a package with no value recorded is not a package worth nil.
+             "value": _rate(p.get("value")), "retentionPct": _rate(p.get("retentionPct")),
+             "certifiedGross": 0.0, "retentionHeld": 0.0, "certifiedNet": 0.0,
+             "paidNet": 0.0, "submitted": 0.0, "certs": 0}
+        rows.append(r)
+        key = _norm(no)
+        if not key:
+            continue
+        if key in by_no:
+            w("duplicate_package_no", "medium",
+              "Package number %s is on more than one package, so a certificate quoting it cannot "
+              "be matched to one of them." % no, pkgNo=no)
+        else:
+            by_no[key] = r
+
+    # ── the certificates ─────────────────────────────────────────────────────────────────────────
+    # Orphans are counted in the PROJECT totals and excluded only from the package rows. The money
+    # is owed whether or not anybody typed a package number on it, and dropping it from the total
+    # would understate the very exposure this report exists to state.
+    orphan_gross = orphan_net = orphan_ret = 0.0
+    orphans, undated = [], []
+    for c in (ctx.get("certificates") or []):
+        ref = str(c.get("certNo") or "").strip() or "(no number)"
+        if cutoff and not str(c.get("certDate") or "")[:10]:
+            undated.append(ref)
+            continue
+        if not _le(c.get("certDate"), cutoff):
+            continue
+        status = _norm(c.get("status"))
+        gross = _num(c.get("grossClaimed"))
+        ret = _num(c.get("retentionDeducted"))
+        net = _rate(c.get("netCertified"))
+        # The certificate's own arithmetic. Reported, never corrected — the figure the
+        # subcontractor was paid against is the one on the paper, whatever it should have been.
+        if net is not None and abs(net - (gross - ret)) > 0.5:
+            w("certificate_does_not_add_up", "high",
+              "Certificate %s states net %s against gross %s less retention %s, which comes to %s."
+              % (ref, _vnd(net), _vnd(gross), _vnd(ret), _vnd(gross - ret)), certNo=ref)
+        net = net if net is not None else r2(gross - ret)
+
+        key = _norm(c.get("pkgNo"))
+        r = by_no.get(key) if key else None
+        if r is None:
+            if status in SUB_OWED:
+                orphan_gross += gross
+                orphan_ret += ret
+                orphan_net += net
+            orphans.append({"certNo": ref, "pkgNo": str(c.get("pkgNo") or "").strip(),
+                            "gross": r2(gross), "net": r2(net), "status": c.get("status") or "",
+                            # Two different absences, and they are not the same problem: nobody
+                            # typed a package, versus somebody typed one that does not exist.
+                            "reason": "unknown" if key else "missing"})
+            continue
+        r["certs"] += 1
+        if status in SUB_OWED:
+            r["certifiedGross"] += gross
+            r["retentionHeld"] += ret
+            r["certifiedNet"] += net
+            if status == "paid":
+                r["paidNet"] += net
+        elif status in SUB_CLAIMED:
+            r["submitted"] += gross
+
+    if undated:
+        w("certificate_no_date", "medium",
+          "%d certificate(s) carry no certified date and cannot be shown to fall before %s, so "
+          "they are outside this position: %s."
+          % (len(undated), cutoff, ", ".join(sorted(undated)[:6])), certNos=sorted(undated))
+    for o in orphans:
+        if o["reason"] == "missing":
+            w("certificate_no_package", "high",
+              "Certificate %s for %s names no package, so it cannot be tested against a committed "
+              "value or a retention percentage. It is inside the project totals below."
+              % (o["certNo"], _vnd(o["gross"])), certNo=o["certNo"])
+        else:
+            w("certificate_unknown_package", "high",
+              "Certificate %s for %s quotes package %s, which is not in the register."
+              % (o["certNo"], _vnd(o["gross"]), o["pkgNo"]), certNo=o["certNo"], pkgNo=o["pkgNo"])
+
+    # ── what each package now says ───────────────────────────────────────────────────────────────
+    for r in rows:
+        for k in ("certifiedGross", "retentionHeld", "certifiedNet", "paidNet", "submitted"):
+            r[k] = r2(r[k])
+        v = r["value"]
+        r["pctCertified"] = round(r["certifiedGross"] / v * 100.0, 2) if v else None
+        r["overBy"] = 0.0
+        r["overCertified"] = bool(v and r["certifiedGross"] > v + 0.005)
+        if r["overCertified"]:
+            r["overBy"] = r2(r["certifiedGross"] - v)
+            w("subcontract_over_certified", "high",
+              "%s (%s) is certified %s against a committed value of %s — %s more. Either a "
+              "subcontract variation was never recorded, or the package is over-certified."
+              % (r["pkgNo"] or r["title"], r["vendor"] or "no vendor", _vnd(r["certifiedGross"]),
+                 _vnd(v), _vnd(r["overBy"])), pkgNo=r["pkgNo"])
+        elif v is None and (r["certifiedGross"] or r["submitted"]):
+            w("subcontract_no_value", "high",
+              "%s carries %s of certificates against no committed value, so nothing can say "
+              "whether it is over-certified."
+              % (r["pkgNo"] or r["title"], _vnd(r["certifiedGross"] or r["submitted"])),
+              pkgNo=r["pkgNo"])
+
+        pct = r["retentionPct"]
+        # A retention of nil is a contractual fact. A retention nobody recorded is not the same
+        # fact, and must not be read as one — with it absent, no shortfall can be computed at all.
+        if pct is None:
+            r["retentionDue"] = None
+            r["retentionShort"] = 0.0
+            if r["certifiedGross"]:
+                w("subcontract_no_retention_pct", "medium",
+                  "%s is certified %s with no retention percentage recorded, so whether the "
+                  "security we should be holding is being held cannot be answered."
+                  % (r["pkgNo"] or r["title"], _vnd(r["certifiedGross"])), pkgNo=r["pkgNo"])
+        else:
+            r["retentionDue"] = r2(r["certifiedGross"] * pct / 100.0)
+            short = r2(r["retentionDue"] - r["retentionHeld"])
+            r["retentionShort"] = short if short > 0.005 else 0.0
+            if r["retentionShort"]:
+                w("subcontract_retention_short", "high",
+                  "%s should be holding %s at %s%% but %s has been deducted — %s of security is "
+                  "not being held."
+                  % (r["pkgNo"] or r["title"], _vnd(r["retentionDue"]),
+                     ("%g" % pct), _vnd(r["retentionHeld"]), _vnd(r["retentionShort"])),
+                  pkgNo=r["pkgNo"])
+
+    # ── by trade, against our own measure ────────────────────────────────────────────────────────
+    trades, no_trade = {}, []
+    for r in rows:
+        code = r["discipline"]
+        if code == UNALLOCATED and (r["value"] or r["certifiedGross"]):
+            no_trade.append(r["pkgNo"] or r["title"])
+        d = _DISCIPLINE_BY_CODE.get(code)
+        t = trades.setdefault(code, {
+            "code": code, "label": d["label"] if d else discipline_label(code),
+            "labelVn": d["labelVn"] if d else "Chưa phân bổ", "hex": d["hex"] if d else "#94A3B8",
+            "packages": 0, "committed": 0.0, "certifiedOut": 0.0, "retentionHeld": 0.0,
+            "noValue": 0})
+        t["packages"] += 1
+        t["certifiedOut"] += r["certifiedGross"]
+        t["retentionHeld"] += r["retentionHeld"]
+        if r["value"] is None:
+            t["noValue"] += 1
+        else:
+            t["committed"] += r["value"]
+
+    tr_out = []
+    for code in DISCIPLINE_CODES + (UNALLOCATED,):
+        if code not in trades:
+            continue
+        t = trades[code]
+        for k in ("committed", "certifiedOut", "retentionHeld"):
+            t[k] = r2(t[k])
+        # UNALLOCATED is forced to None rather than read from `valued`. There is an unallocated row
+        # in the bill too, and comparing packages nobody assigned to a trade against bill lines
+        # nobody assigned to a trade compares two different absences and reads as a finding.
+        t["valuedIn"] = None if code == UNALLOCATED else _rate(valued.get(code))
+        t["ahead"] = bool(t["valuedIn"] is not None and t["certifiedOut"] > t["valuedIn"] + 0.005)
+        t["aheadBy"] = r2(t["certifiedOut"] - t["valuedIn"]) if t["ahead"] else 0.0
+        if t["ahead"]:
+            w("certified_out_ahead_of_measure", "high",
+              "%s is certified %s to subcontractors against %s measured into our own valuation — "
+              "%s more. We are paying for work we are not billing."
+              % (t["label"], _vnd(t["certifiedOut"]), _vnd(t["valuedIn"]), _vnd(t["aheadBy"])),
+              trade=code)
+        tr_out.append(t)
+    if no_trade:
+        w("package_no_trade", "medium",
+          "%d package(s) carry no trade, so they are in the totals but in no trade comparison: %s."
+          % (len(no_trade), ", ".join(no_trade[:6])), packages=no_trade)
+
+    # ── the project position ─────────────────────────────────────────────────────────────────────
+    committed = r2(sum(r["value"] for r in rows if r["value"] is not None))
+    no_value = sum(1 for r in rows if r["value"] is None)
+    cert_gross = r2(sum(r["certifiedGross"] for r in rows) + orphan_gross)
+    ret_held = r2(sum(r["retentionHeld"] for r in rows) + orphan_ret)
+    cert_net = r2(sum(r["certifiedNet"] for r in rows) + orphan_net)
+    paid_net = r2(sum(r["paidNet"] for r in rows))
+    submitted = r2(sum(r["submitted"] for r in rows))
+    ret_short = r2(sum(r["retentionShort"] for r in rows))
+
+    client = _rate(ctx.get("clientCertified"))
+    ret_from_us = _rate(ctx.get("retentionFromUs"))
+    if client is None:
+        # NOT nil. Nil would say the client has certified nothing, which is a statement about the
+        # job; this is a statement about the record, and the two lead to opposite decisions.
+        cover = None
+        ahead = None
+        w("no_client_certificate", "medium",
+          "No certificate from the client has been recorded, so what we have certified out cannot "
+          "be set against what has been certified in. The position is unknown, not nil.")
+    else:
+        cover = round(client / cert_gross * 100.0, 2) if cert_gross else None
+        ahead = r2(cert_gross - client) if cert_gross > client + 0.005 else 0.0
+        if ahead:
+            w("certified_out_ahead_of_in", "high",
+              "We have certified %s to subcontractors against %s certified to us — %s of this job "
+              "is being funded from our own cash."
+              % (_vnd(cert_gross), _vnd(client), _vnd(ahead)))
+
+    # A register somebody reads down. The rows arrive in whatever order the store returns them,
+    # and a payment position printed in insert order is the same defect the bill had, where a
+    # heading rendered below its own items because the screen never sorted what it was given.
+    rows.sort(key=lambda r: (not r["pkgNo"], _norm(r["pkgNo"]), _norm(r["title"])))
+
+    return {
+        "packages": rows, "trades": tr_out, "orphans": orphans,
+        "committed": committed, "packagesWithoutValue": no_value,
+        "certifiedGross": cert_gross, "retentionHeld": ret_held, "certifiedNet": cert_net,
+        "paidNet": paid_net, "outstandingNet": r2(cert_net - paid_net),
+        "submittedNotCertified": submitted,
+        "retentionShortfall": ret_short,
+        "orphanGross": r2(orphan_gross), "orphanCount": len(orphans),
+        "clientCertified": client, "coverPct": cover, "certifiedAheadOfClient": ahead,
+        # The security position: what we hold from subcontractors against what the client holds
+        # from us. Positive means our own retention is more than covered by theirs.
+        "retentionFromUs": ret_from_us,
+        "retentionNet": (r2(ret_held - ret_from_us) if ret_from_us is not None else None),
+        "warnings": warn,
+        "cutoff": cutoff,
+    }
+
+
 # ── what this module will not decide ─────────────────────────────────────────────────────────────
 
 UNRESOLVED = (
@@ -2228,6 +2502,11 @@ UNRESOLVED = (
     "separately. extension_of_time() computes the EXPOSURE — days late at the rate the contract "
     "states, capped where it states a cap, which is arithmetic — and stops there. Which remedy the "
     "employer takes, and when, is a legal position under the contract.",
+    "A VARIATION to a subcontract. pm_procurement holds one committed value per package and\n"
+    "nothing records an instruction issued down the chain, so subcontract_position() can say\n"
+    "a package is certified above what was bought but not which of the two reasons it is.\n"
+    "Inventing a subcontract variation register so the arithmetic closes would put a figure on\n"
+    "a payment position that no subcontract contains.",
     "The tax treatment of retention and of materials on site — see sales_contract.vat_ready(), "
     "which refuses for the same reason and names it.",
 )

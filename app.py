@@ -10248,7 +10248,13 @@ class Handler(BaseHTTPRequestHandler):
                 # The programme (for the forecast completion date) and the risk register (for the
                 # expected value of what is still open). Both belong to other parts of the module
                 # and are fetched here so the whole commercial position is read at one moment.
-                "tasks": _of("pm_tasks"), "risks": _of("pm_risks")}
+                "tasks": _of("pm_tasks"), "risks": _of("pm_risks"),
+                # PMBOK §12.3. The money going OUT. Both registers have existed since the
+                # Procurement tab was built and nothing had ever read them beside the measure, so
+                # a subcontractor certified past his package — or certified with no retention
+                # deducted — was invisible to every commercial screen on the job.
+                "procurement": _of("pm_procurement"),
+                "procurementCerts": _of("pm_procurement_payments")}
 
     @staticmethod
     def _qs_ctx(rows):
@@ -10381,6 +10387,7 @@ class Handler(BaseHTTPRequestHandler):
             # What the CLIENT certified, which is very often not what we claimed. Stored as a
             # gross-to-date figure because that is the shape a payment certificate takes.
             cert_gross = qsurvey._rate(v.get("certifiedGross"))
+            cert_ret = qsurvey._rate(v.get("certifiedRetention"))
             under = (None if cert_gross is None
                      else qsurvey.r2(calc.get("grossToDate", 0) - cert_gross))
             out.append({
@@ -10388,7 +10395,8 @@ class Handler(BaseHTTPRequestHandler):
                 "cutoff": v.get("cutoff") or "", "status": st,
                 "submittedAt": v.get("submittedAt") or "", "submittedBy": v.get("submittedBy") or "",
                 "certifiedOn": v.get("certifiedOn") or "", "paidOn": v.get("paidOn") or "",
-                "certifiedGross": cert_gross, "underCertified": under,
+                "certifiedGross": cert_gross, "certifiedRetention": cert_ret,
+                "underCertified": under,
                 "signatures": v.get("signatures") or [],
                 "spUrl": v.get("spUrl") or "", "note": v.get("note") or "",
                 "calc": calc})
@@ -10419,9 +10427,13 @@ class Handler(BaseHTTPRequestHandler):
 
         # Certified to date is the newest CERTIFIED figure, not a sum: a certificate states the
         # gross certified to date, so adding them together counts the whole job once per month.
-        certified = next((s["certifiedGross"] for s in reversed(series)
-                          if s["status"] in (qsurvey.VAL_CERTIFIED, qsurvey.VAL_PAID)
-                          and s["certifiedGross"] is not None), None)
+        # The ROW is found once and both figures are read off it — gross and retention are two
+        # lines on one piece of paper, and taking them from different certificates would produce a
+        # net that appears on nothing anybody signed.
+        cert_row = next((s for s in reversed(series)
+                         if s["status"] in (qsurvey.VAL_CERTIFIED, qsurvey.VAL_PAID)
+                         and s["certifiedGross"] is not None), None)
+        certified = cert_row["certifiedGross"] if cert_row else None
 
         # Cost to date, from the module that owns it. `actual` is what has been incurred; a cost
         # line with no actual on it is a commitment, not a cost, and must not price the margin.
@@ -10505,6 +10517,17 @@ class Handler(BaseHTTPRequestHandler):
             "contingencyShortfall": res.get("shortfallAgainstRisk"),
             "noticeLapsedDays": notice.get("atRiskDays")})
 
+        # PMBOK §12.3 Control Procurements — the money going out, against the measure and
+        # against the money coming in. `clientCertified` is None where no certificate has been
+        # recorded, never 0: "the client has certified nothing" and "nobody recorded a certificate"
+        # are different facts and lead to opposite decisions.
+        sub = qsurvey.subcontract_position({
+            "packages": rows["procurement"], "certificates": rows["procurementCerts"],
+            "valueByTrade": value_by_trade,
+            "clientCertified": certified,
+            "retentionFromUs": (cert_row or {}).get("certifiedRetention"),
+            "cutoff": live.get("cutoff") or ""})
+
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
             "daywork": rows["daywork"], "cutoff": "",
@@ -10528,6 +10551,7 @@ class Handler(BaseHTTPRequestHandler):
             "earnedValue": ev,
             "extensionOfTime": eot,
             "notice": notice,
+            "subcontracts": sub,
             "exposures": expo,
             "reserves": res,
             "cvr": cvr_calc,
@@ -10660,6 +10684,15 @@ class Handler(BaseHTTPRequestHandler):
             if cg < 0:
                 return self._err("A negative certification is a credit note, not a certificate.", 400)
             upd["certifiedGross"] = qsurvey.r2(cg)
+            # The retention the client is holding, read off the SAME certificate as the gross.
+            # Optional, because not every certificate states it — and absent it stays unrecorded
+            # rather than nil, so the security position reads "not stated" instead of claiming
+            # nothing is being held from us.
+            cr = qsurvey._rate(body.get("certifiedRetention"))
+            if cr is not None and cr < 0:
+                return self._err("Retention held cannot be negative. A release of retention is a "
+                                 "lower figure held to date, not a negative one.", 400)
+            upd["certifiedRetention"] = qsurvey.r2(cr) if cr is not None else ""
             upd["certifiedOn"] = str(body.get("certifiedOn") or "")[:10] or self._utc_now()[:10]
             upd["certifiedRef"] = str(body.get("certifiedRef") or "")[:120]
         elif target == qsurvey.VAL_PAID:
