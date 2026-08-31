@@ -23537,7 +23537,16 @@ async function pmTab(k) {
       '<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="pmTab(\'' + k + '\')">' + _t('Retry') + '</button></div>';
     return;
   }
-  try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
+  // Paint a returned string as well as letting the renderer paint itself. Both shapes exist in
+  // this file and only one of them used to work: in the design module eight renderers ended
+  // `return guide + kpis + tbl`, their html was discarded exactly here, and the tab showed the
+  // PREVIOUS tab's content — worse than blank, because the previous register's table under a new
+  // heading reads as this register's data. Today no PMC renderer is written that way; this is so
+  // the next one that is does not reintroduce it silently.
+  try {
+    const out = (window[t.fn] || function () { })(_pmPid());
+    if (typeof out === 'string' && out) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = out; }
+  } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
   // Rendering without the denied register would show a confident 0 against a real budget,
   // which reads as "this project has no money" rather than "you may not see the money".
   // A zero nobody can tell from a fact is worse than an absence somebody explains.
@@ -32948,7 +32957,12 @@ function estTab(k) {
   k = t.k;
   _estTabK = k;
   document.querySelectorAll('#est-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
-  try { (window[t.fn] || function () { })(); }
+  // Same as pmTab and engTab: a renderer may paint itself or return its html, and both have to
+  // work. See the comment on pmTab for what happened when only one of them did.
+  try {
+    const out = (window[t.fn] || function () { })();
+    if (typeof out === 'string' && out) _estSet(out);
+  }
   catch (e) { _estSet('<div class="card" style="padding:16px;color:#C00000">' + _estEsc(e.message) + '</div>'); }
 }
 function _estSet(html) { const b = document.getElementById('est-tab-body'); if (b) b.innerHTML = html; }

@@ -220,6 +220,15 @@ jobs:
       - name: Every design register is reachable from the tab bar
         run: node tests/eng_tab_groups.js
 
+      # Whole-app version of the bug that took eight design tabs off the screen. A renderer may
+      # paint itself or RETURN its html; both shapes are written in this file and for a long time
+      # only one worked, so the tab showed the PREVIOUS tab's content — worse than blank, because
+      # another register's table under a new heading reads as this register's data. Nothing threw.
+      # Three dispatchers (pmTab / engTab / estTab) and the same mistake is available in each, so
+      # all three are DRIVEN here rather than scanned.
+      - name: Every tab dispatcher paints what its renderer returns
+        run: node tests/tab_dispatchers_paint.js
+
       # The other two design gates check LOGIC and would pass on markup carrying an unclosed <div>
       # — which, in a card layout, swallows everything below it into the card. Nothing throws; the
       # page is just wrong from that point down, and no source-level test can see it. This runs a
