@@ -10374,7 +10374,10 @@ class Handler(BaseHTTPRequestHandler):
         #
         # pm_chat is excluded: its attachments render inline in the conversation, so stripping them
         # would empty the thread rather than defer it.
-        if name.startswith("pm_") and name != "pm_chat":
+        # claims / travel / payments carry the BILL and the INVOICE the same way, and the finance
+        # lists are the other screens reported as slow. Their line ITEMS carry files too — a claim is
+        # one row with a receipt per line — so the strip goes one level down as well.
+        if (name.startswith("pm_") and name != "pm_chat") or name in ("claims", "travel", "payments"):
             items = [self._strip_file_bytes(it) for it in items]
         # Never expose the one-click approval token in list reads — only the create response
         # carries it (once, for the email). Stops a requester from reading their own token and
@@ -10392,9 +10395,20 @@ class Handler(BaseHTTPRequestHandler):
         """
         n = len(it.get("attachment") or "")
         atts = it.get("attachments")
-        if not n and not isinstance(atts, list):
+        rows = it.get("items")
+        # A claim is one record with a receipt PER LINE, so the payload is in items[] as often as it
+        # is on the row. _recHasBill reads both; so does this.
+        nested = isinstance(rows, list) and any(
+            isinstance(r, dict) and r.get("attachment") for r in rows)
+        if not n and not isinstance(atts, list) and not nested:
             return it
         out = dict(it)
+        if nested:
+            out["items"] = [
+                dict(r, attachment="", attachmentBytes=len(r.get("attachment") or ""), hasFile=True)
+                if isinstance(r, dict) and r.get("attachment") else r
+                for r in rows
+            ]
         if n:
             out["attachment"] = ""
             out["attachmentBytes"] = n
