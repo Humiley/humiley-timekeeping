@@ -173,6 +173,37 @@ def test_the_single_row_route_cannot_reach_a_row_the_list_would_hide(_clean_pm_q
     assert status == 404, "a row the list would not show must not be fetchable by id"
 
 
+def test_claims_travel_payments_are_stripped_too():
+    """The finance registers carry the bill and the invoice the same way, and were the other screens
+    reported as slow. A claim keeps a receipt PER LINE, so the strip goes one level down as well —
+    _recHasBill reads items[].attachment, so a list that kept them would still be shipping the files.
+    """
+    for coll in ("claims", "travel", "payments"):
+        db.put_collection_item(coll, {"id": "f1", "title": "One", "attachment": BIG,
+                                      "attachmentName": "bill.pdf"})
+        db.put_collection_item(coll, {"id": "f2", "title": "Lines", "items": [
+            {"category": "Taxi", "amount": 100, "attachment": BIG},
+            {"category": "Hotel", "amount": 200},
+        ]})
+        try:
+            obj, status = _call("_coll_list", coll)
+            assert status == 200, coll
+            rows = {it["id"]: it for it in obj["items"]}
+            assert not rows["f1"].get("attachment"), coll + ": the row still carries its bill"
+            assert rows["f1"]["hasFile"] is True, coll + ": the Show button would disappear"
+            assert rows["f1"]["attachmentName"] == "bill.pdf"
+            line = rows["f2"]["items"][0]
+            assert not line.get("attachment"), coll + ": a LINE still carries its receipt"
+            assert line["hasFile"] is True, coll + ": _recHasBill would hide the button"
+            assert rows["f2"]["items"][1].get("hasFile") is None, "a line with no file gains nothing"
+            # and the bytes are still reachable one record at a time
+            one, st = _call("_coll_one", coll, "f2")
+            assert st == 200 and one["item"]["items"][0]["attachment"] == BIG, coll
+        finally:
+            db.delete_collection_item(coll, "f1")
+            db.delete_collection_item(coll, "f2")
+
+
 def test_pm_chat_keeps_its_attachments(_clean_pm_quality):
     """Excluded on purpose: chat files render inline in the thread, so stripping them empties the
     conversation rather than deferring it."""
