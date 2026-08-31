@@ -3,7 +3,7 @@
 A policy note in a docstring is a promise. These are the same rules written as tests over the actual
 source, so that adding the capability breaks the build rather than quietly shipping.
 
-The one that matters most: a Vietnamese VAT invoice (hoá đơn GTGT) is the provider-issued, digitally
+The one that matters most: a Vietnamese VAT invoice (hóa đơn GTGT) is the provider-issued, digitally
 signed XML under Decree 123/2020 and Circular 78/2021. This portal cannot issue one and must not
 look as though it can. That is enforced here as an ABSENCE OF CAPABILITY — no code path may exist
 that mints a ký hiệu or a số hóa đơn — because a policy that lives only in prose gets coded around

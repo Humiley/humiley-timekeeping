@@ -26,8 +26,28 @@ const ACC = 'àáảãạèéẻẽẹỳýỷỹỵÀÁẢÃẠÈÉẺẼẸỲ
 // of an alternation that can consume the q tests the wrong character and lets every "quá" through.
 const OLD = new RegExp('(?<![qQ])[ouOU][' + ACC + '](?![a-zà-ỹA-ZÀ-Ỹ])', 'gu');
 
+// The dictionary is only ONE of the two translation surfaces. A call site can also carry its own
+// pair inline -- _t2('Cancel', 'Huỷ') -- and those strings are in no dictionary, so a gate that
+// reads _VI alone passes a file that still contains the old spelling. That is exactly what
+// happened: this scan reported the portal clean while _t2('Cancel', 'Hu\u1ef7') sat in it.
+//
+// Note the escape. The source writes some Vietnamese as \uXXXX, so a scanner that does not decode
+// those sees pure ASCII and finds nothing -- silence for the wrong reason.
+const fs2 = require('fs');
+const path2 = require('path');
+const SRC = fs2.readFileSync(path2.join(__dirname, '..', '..', 'templates', 'index.html'), 'utf8');
+const CALL = /_t2\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*(['"])((?:\\.|(?!\3)[^\\])*)\3\s*\)/g;
+const unesc2 = s => s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+                     .replace(/\\(['"\\])/g, '$1');
+const inline = [];
+let cm;
+while ((cm = CALL.exec(SRC))) {
+  inline.push({ line: SRC.slice(0, cm.index).split('\n').length, key: unesc2(cm[2]), val: unesc2(cm[4]) });
+}
+console.log('surfaces: _VI dictionary (' + entries.length + ' entries) + _t2 inline pairs (' + inline.length + ')\n');
+
 const hits = new Map();
-for (const e of entries) {
+for (const e of entries.concat(inline)) {
   let m;
   OLD.lastIndex = 0;
   while ((m = OLD.exec(e.val))) {
@@ -44,3 +64,7 @@ for (const [w, list] of rows) {
   list.forEach(h => console.log('  ' + w.padEnd(10) + ' line ' + h.line + '  ' + JSON.stringify(h.val)));
 }
 if (!rows.length) console.log('  none');
+
+// A gate has to FAIL, not just report. Without this the scan printed the regression it had just
+// found and exited 0, which is indistinguishable from a clean run to CI.
+process.exit(rows.length ? 1 : 0);

@@ -2939,8 +2939,8 @@ def _invtrack_item(m, ex):
     s = _vn_fold(subject + " " + from_name + " " + from_addr)
     invoiceish = extracted or bool(url or code) or any(k in s for k in ["hoa don", "hddt", "invoice", "einvoice", "e-invoice", "hoadon", "xuat hoa don", "gtgt", "vat"])
     from_humiley = "@humiley.com" in from_addr.lower()
-    typ = ("Hoá đơn bán ra (Humiley phát hành)" if (from_humiley and invoiceish)
-           else "Hoá đơn mua vào (NCC)" if invoiceish else "Khác / không phải hoá đơn")
+    typ = ("Hóa đơn bán ra (Humiley phát hành)" if (from_humiley and invoiceish)
+           else "Hóa đơn mua vào (NCC)" if invoiceish else "Khác / không phải hóa đơn")
     rd = (m.get("receivedDateTime") or "")[:10]
     method = ex.get("method") or ("attachment" if ex.get("_attachName") else ("link" if url else "email"))
     return {"msgId": m.get("internetMessageId") or m.get("id"),
@@ -3503,7 +3503,7 @@ def _invtrack_import(body):
                         "supplier": r.get("supplier") or "", "invNo": r.get("invNo") or "", "serial": r.get("serial") or "",
                         "taxCode": r.get("taxCode") or "", "before": _num(r.get("before")), "vat": _num(r.get("vat")),
                         "after": _num(r.get("after")), "desc": r.get("desc") or "", "attach": r.get("attach") or "",
-                        "type": r.get("type") or "Hoá đơn mua vào (NCC)", "sender": r.get("sender") or "",
+                        "type": r.get("type") or "Hóa đơn mua vào (NCC)", "sender": r.get("sender") or "",
                         "lookup": r.get("lookup") or "", "method": "import",
                         "needsLookup": not (_num(r.get("after")) > 0), "source": "import"}
                 cur_items.append(item)
@@ -3603,7 +3603,7 @@ def _invtrack_portal_fetch(body):
                 except Exception:
                     pass
         if row is None and cur is not None:
-            row = {"msgId": msgid, "type": "Hoá đơn mua vào (NCC)", "source": "portal", "desc": ""}
+            row = {"msgId": msgid, "type": "Hóa đơn mua vào (NCC)", "source": "portal", "desc": ""}
             cur.setdefault("items", []).append(row)
         if row is None:
             return {"ok": False, "message": "No invoice dataset to update."}

@@ -64,7 +64,7 @@ jobs:
     name: Caddyfile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate the production edge config
         run: |
           docker run --rm -e PORTAL_DOMAIN=portal.humiley.com \
@@ -180,6 +180,23 @@ jobs:
       - name: Vietnamese dictionary has no duplicate keys
         run: node tests/vi_duplicate_keys.js
 
+      # Vietnamese has two accepted accent placements on an open oa/oe/uy cluster. Both are correct;
+      # using both in one product is the defect. Two traps this gate exists to survive, both of which
+      # produced a FALSE all-clear before it was fixed: the dictionary is only ONE of the two
+      # translation surfaces (an inline _t2 pair is in no dictionary, and _t2('Cancel', 'Huỷ') sat in
+      # the file while a _VI-only scan called it clean), and some Vietnamese is written as \uXXXX
+      # escapes, so a scanner that does not decode them sees pure ASCII and reports nothing.
+      - name: One Vietnamese spelling, both translation surfaces
+        run: node tools/i18n/ortho-scan.js
+
+      # ...and the rest of the platform. The step above reads the dictionary and the template, which
+      # is where every i18n tool had been looking -- so the BACKEND was still on the old spelling the
+      # whole time that gate was green: VAT advisory questions, invoice-tracking labels, credit-note
+      # and variation statuses. Complementary, not redundant: ortho-scan.js decodes \uXXXX escapes
+      # but opens two files; this opens every file that carries Vietnamese but reads raw text.
+      - name: One Vietnamese spelling, across the whole platform
+        run: python3 tools/i18n/ortho-platform.py
+
       # The drawing register's own self-check, run against the shipped code rather than a copy.
       - name: Drawing register check
         run: node tests/eng_register_check.js
@@ -218,6 +235,15 @@ jobs:
       # against a pushed-out one, and printing a number when there is no baseline at all.
       - name: Schedule is measured against the plan that was agreed
         run: node tests/eng_baseline_drift.js
+
+      # The design dossier is the document a design file is handed over as, and its whole value is
+      # that it never claims a completeness it cannot support: a tidy index printed over an open
+      # HOLD, an unapproved drawing or a gate whose actions were never closed gets SIGNED, and the
+      # gap becomes deniable afterwards. Every check is asserted on its own — one "is it complete"
+      # test would pass while eleven of the twelve did nothing. Includes the silent-zero case: an
+      # EMPTY register satisfied every row-iterating check and was declared complete.
+      - name: The design dossier does not claim a completeness it cannot support
+        run: node tests/eng_dossier.js
 
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
