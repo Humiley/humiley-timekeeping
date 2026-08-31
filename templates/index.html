@@ -31059,6 +31059,39 @@ function qsCommercialReportPDF() {
       hint: 'against ' + money(rs.openThreatEmv) + ' of expected value on ' + (rs.openThreatCount || 0) + ' open threat(s)' },
   ], CODE, 'Commercial Report');
 
+  /* The money going out. A commercial review that reports the margin and never says whether the
+     job is paying its subcontractors faster than the client is paying it has left out the half
+     that actually runs the bank account. */
+  const sb = d.subcontracts || {};
+  if ((sb.packages || []).length || sb.certifiedGross) {
+    y = _qsPdfRows(doc, y, [
+      { label: 'SUBCONTRACT POSITION', strong: true, rule: true },
+      { label: 'Committed to subcontractors', value: money(sb.committed), indent: true,
+        hint: sb.packagesWithoutValue ? (sb.packagesWithoutValue + ' package(s) carry no recorded value and are not in this total') : '' },
+      { label: 'Certified out, gross', value: money(sb.certifiedGross), indent: true },
+      { label: 'Owed to subcontractors, not yet paid', value: money(sb.outstandingNet), indent: true },
+      { label: 'Certified to us by the client', indent: true,
+        value: sb.clientCertified == null ? 'not recorded' : money(sb.clientCertified) },
+      { label: 'Funded from our own cash', indent: true,
+        value: sb.certifiedAheadOfClient == null ? 'cannot be stated' : money(sb.certifiedAheadOfClient),
+        hint: sb.coverPct == null ? '' : ('cover ' + sb.coverPct + '%') },
+      { label: 'Retention security not being held', value: money(sb.retentionShortfall), indent: true },
+    ], CODE, 'Commercial Report');
+    const over = (sb.packages || []).filter(p => p.overCertified);
+    if (over.length) {
+      y = _qsPdfRows(doc, y, [{ label: 'Packages certified past their committed value', strong: true, rule: true }].concat(
+        over.map(p => ({ label: (p.pkgNo ? p.pkgNo + '  ' : '') + _pmPdfTxt(p.title || ''), indent: true,
+          value: money(p.overBy), hint: _pmPdfTxt(p.vendor || '') }))), CODE, 'Commercial Report');
+    }
+    const ahead = (sb.trades || []).filter(t => t.ahead);
+    if (ahead.length) {
+      y = _qsPdfRows(doc, y, [{ label: 'Trades certified out ahead of our own measure', strong: true, rule: true }].concat(
+        ahead.map(t => ({ label: t.label, indent: true, value: money(t.aheadBy),
+          hint: 'certified out ' + money(t.certifiedOut) + ', measured in ' + money(t.valuedIn) }))),
+        CODE, 'Commercial Report');
+    }
+  }
+
   const items = (d.exposures || {}).items || [];
   if (items.length) {
     y = _qsPdfRows(doc, y, [{ label: 'EXPOSURES', strong: true, rule: true }].concat(

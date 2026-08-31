@@ -200,3 +200,17 @@ def test_a_trade_whose_only_package_has_no_value_prints_a_dash_not_a_zero():
     i = html.index("function _qsSubTradeCard(")
     body = html[i:html.index("/* Certificates that cannot be placed", i)]
     assert "(!t.committed && t.noValue)" in body
+
+
+def test_the_monthly_commercial_report_carries_the_subcontract_position():
+    """A commercial review that states the margin and never says whether the job is paying its
+    subcontractors faster than the client is paying it has left out the half that runs the bank
+    account. It is the one document a commercial director actually reads."""
+    html = _html()
+    i = html.index("function qsCommercialReportPDF(")
+    body = html[i:html.index("async function qsApplyEot(", i)]
+    assert "SUBCONTRACT POSITION" in body
+    assert "d.subcontracts" in body
+    assert "sb.clientCertified == null ? 'not recorded'" in body, \
+        "an unrecorded client certificate must not print as nil in the report either"
+    assert "Trades certified out ahead of our own measure" in body
