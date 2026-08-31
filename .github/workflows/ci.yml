@@ -219,6 +219,15 @@ jobs:
       - name: Schedule is measured against the plan that was agreed
         run: node tests/eng_baseline_drift.js
 
+      # The design dossier is the document a design file is handed over as, and its whole value is
+      # that it never claims a completeness it cannot support: a tidy index printed over an open
+      # HOLD, an unapproved drawing or a gate whose actions were never closed gets SIGNED, and the
+      # gap becomes deniable afterwards. Every check is asserted on its own — one "is it complete"
+      # test would pass while eleven of the twelve did nothing. Includes the silent-zero case: an
+      # EMPTY register satisfied every row-iterating check and was declared complete.
+      - name: The design dossier does not claim a completeness it cannot support
+        run: node tests/eng_dossier.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops

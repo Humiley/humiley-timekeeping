@@ -29525,6 +29525,7 @@ async function engRenderWorkspace() {
     '<button class="btn btn-ghost btn-sm" onclick="engDesignPlanPDF(\'' + p.id + '\')" style="font-size:11px" title="Design & Development Plan (ISO 9001 8.3.2)">' + tkIcon('download', 12) + ' Design Plan</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="engMdrPDF(\'' + p.id + '\')" style="font-size:11px" title="Master Deliverable Register">' + tkIcon('download', 12) + ' MDR</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="engStatusPDF(\'' + p.id + '\')" style="font-size:11px" title="Design status report">' + tkIcon('download', 12) + ' Status</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="engDossierPDF(\'' + p.id + '\')" style="font-size:11px" title="Design dossier — the index the design file is handed over as, with what is still missing from it">' + tkIcon('download', 12) + ' Dossier</button>' +
     _engSpBtn(p) +
     (_engCanEdit(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'eng_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     _engTabBar(p) + '</div>';
@@ -31927,6 +31928,243 @@ function _engSave(doc, name, page, code) {
   const tp = doc.getNumberOfPages();
   for (let i = 1; i <= tp; i++) { doc.setPage(i); _brandFooter(doc, i, tp, code); }
   doc.save(name);
+}
+
+/* ── ENG DOSSIER ── (tests/eng_dossier.js extracts to the END marker; keep both)
+
+   The design dossier — the hồ sơ the design file is handed over as, and the thing the As-Built
+   gate has been asking for since this module shipped ("Design dossier compiled and indexed") with
+   nothing to produce it.
+
+   IT IS AN INDEX, NOT A BUNDLE. The files live in SharePoint; what nobody had was a statement of
+   what the design file CONTAINS and whether it is complete. Ten-year retention now keeps every
+   signed record (see _coll_delete), and ten years of records with no index is storage, not a
+   dossier.
+
+   THE ONE RULE THAT MAKES IT WORTH SIGNING: it never claims completeness it cannot support. A
+   handover document that prints a tidy index over an open HOLD, an unapproved drawing or a gate
+   whose carried-forward actions were never closed is worse than no document — somebody signs it,
+   and the gap becomes deniable. So the gaps are computed from the registers and printed IN the
+   dossier, at the front, under the heading that says what is missing.
+
+   `blocking` vs `note` is a real distinction, not a severity ornament. Blocking means the design
+   file cannot honestly be described as closed. A note is something a reader should know and that
+   does not, by itself, stop handover. */
+function _engDossierAudit(pid, data) {
+  /* `data` is passed in rather than read from _HR so this is testable and so the PDF and any
+     future screen cannot disagree about what "complete" means. */
+  const dels = (data.deliverables || []).filter(_engInScope);
+  const revs = data.revisions || [];
+  const gaps = [];
+  const add = (blocking, text, n, items) => { if (n) gaps.push({ blocking: blocking, text: text, n: n, items: (items || []).slice(0, 6) }); };
+  const ref = d => d.docNo || d.title || '?';
+
+  const revsOf = id => revs.filter(r => r.deliverableId === id);
+  const issued = d => revsOf(d.id).filter(r => String(r.issueStatus || '') !== 'VOID' && String(r.status || '').toLowerCase() === 'issued');
+
+  /* An EMPTY register is the silent-zero case, and it fails in the flattering direction: every
+     check below iterates rows, so a commission with nothing recorded satisfies all of them and
+     the dossier would have declared it complete. "Nothing is wrong" and "nothing was looked at"
+     are the same shape unless one of them is stated. */
+  add(true, 'the deliverable register is empty — there is no design file here to hand over',
+    dels.length ? 0 : 1, []);
+
+  const neverIssued = dels.filter(d => !issued(d).length);
+  add(true, 'deliverable(s) have no issued revision — the design file cannot index a document that was never issued',
+    neverIssued.length, neverIssued.map(ref));
+
+  const unchecked = [], unapproved = [];
+  dels.forEach(d => issued(d).forEach(r => {
+    if (!String(r.checkedBy || '').trim()) unchecked.push(ref(d) + ' ' + (r.rev || ''));
+    if (!String(r.issuedBy || r.approvedBy || '').trim()) unapproved.push(ref(d) + ' ' + (r.rev || ''));
+  }));
+  add(true, 'issued revision(s) with no checker recorded', unchecked.length, unchecked);
+  add(true, 'issued revision(s) with nobody recorded as issuing them', unapproved.length, unapproved);
+
+  const onHold = dels.filter(d => String(d.hold || '') === 'Yes');
+  add(true, 'deliverable(s) still marked on hold', onHold.length, onHold.map(ref));
+
+  const openHolds = (data.holds || []).filter(h => String(h.kind || 'hold').toLowerCase() === 'hold'
+    && ['open', 'raised', ''].indexOf(String(h.status || 'Open').toLowerCase()) >= 0);
+  add(true, 'open HOLD(s) on the design', openHolds.length, openHolds.map(h => h.ref || h.title || '?'));
+
+  const undecided = (data.deviations || []).filter(d =>
+    ['approved', 'rejected', 'withdrawn', 'closed'].indexOf(String(d.decision || '').toLowerCase()) < 0);
+  add(true, 'departure(s) from a standard never agreed', undecided.length, undecided.map(d => d.ref || d.title || '?'));
+
+  const uninformed = (data.risks || []).filter(r =>
+    ['transferred', 'transfer to others', 'residual'].indexOf(String(r.status || '').toLowerCase()) >= 0
+    && !String(r.informedBy || '').trim());
+  add(true, 'residual risk(s) passed on with no record of who was told', uninformed.length,
+    uninformed.map(r => r.ref || r.hazard || '?'));
+
+  /* A gate passed WITH ACTIONS is honest; a gate whose actions were never closed is an open
+     commitment sitting inside a document that says the stage is finished. */
+  const carried = (data.stages || []).filter(s =>
+    String(s.gateDecision || s.status || '') === 'Passed with actions'
+    && String(s.gateActions || '').trim() && !String(s.gateActionsClosedOn || '').trim());
+  add(true, 'gate(s) passed with actions that were never closed out', carried.length,
+    carried.map(s => _engStage(s.stage).label));
+
+  const openC = (data.comments || []).filter(c =>
+    ['closed', 'resolved', 'withdrawn', 'rejected'].indexOf(String(c.status || 'Open').toLowerCase()) < 0);
+  add(false, 'client comment(s) still open', openC.length, openC.map(c => c.commentNo || '?'));
+
+  const openTq = (data.tq || []).filter(t => String(t.status || 'Open').toLowerCase() === 'open');
+  add(false, 'technical quer(y/ies) never answered', openTq.length, openTq.map(t => t.tqNo || t.ref || '?'));
+
+  const awaiting = (data.transmittals || []).filter(t =>
+    String(t.responseRequired || 'No').toLowerCase().indexOf('yes') === 0
+    && !String(t.responseDate || '').trim()
+    && ['closed', 'responded'].indexOf(String(t.status || '').toLowerCase()) < 0);
+  add(false, 'transmittal(s) that asked for a response and never got one', awaiting.length,
+    awaiting.map(t => t.trnNo || t.ref || '?'));
+
+  const orphanInputs = (data.inputs || []).filter(i => !String(i.addressedBy || '').trim());
+  add(false, 'design input(s) never allocated to a deliverable', orphanInputs.length,
+    orphanInputs.map(i => i.ref || i.requirement || '?'));
+
+  const adopted = (data.standards || []).filter(s =>
+    ['adopted', 'current', 'in force'].indexOf(String(s.status || '').toLowerCase()) >= 0);
+  add(false, 'no code or standard is recorded as adopted — the dossier cannot say what the design was checked against',
+    adopted.length ? 0 : 1, []);
+
+  const sections = [
+    { key: 'commission', title: 'Commission particulars', n: 1 },
+    { key: 'inputs', title: 'Design inputs and traceability', n: (data.inputs || []).length },
+    { key: 'standards', title: 'Codes and standards adopted', n: (data.standards || []).length },
+    { key: 'deviations', title: 'Agreed departures from standards', n: (data.deviations || []).length },
+    { key: 'stages', title: 'Stage gates and decisions', n: (data.stages || []).length },
+    { key: 'mdr', title: 'Deliverables at final revision', n: dels.length },
+    { key: 'reviews', title: 'Reviews, verification and validation', n: (data.reviews || []).length },
+    { key: 'risks', title: 'Design risk register', n: (data.risks || []).length },
+    { key: 'holds', title: 'Holds and assumptions', n: (data.holds || []).length },
+    { key: 'changes', title: 'Approved design changes', n: (data.changes || []).length },
+    { key: 'comments', title: 'Comment resolution', n: (data.comments || []).length },
+    { key: 'transmittals', title: 'Transmittals issued', n: (data.transmittals || []).length }
+  ];
+  const blocking = gaps.filter(g => g.blocking);
+  return {
+    sections: sections,
+    gaps: gaps,
+    blocking: blocking.length,
+    notes: gaps.length - blocking.length,
+    /* "Complete" is about the BLOCKING gaps only, and it is stated as a verdict rather than left
+       for a reader to infer from an empty list — an absence of findings and a document that never
+       looked are the same shape on a page. */
+    complete: blocking.length === 0,
+    verdict: blocking.length === 0
+      ? 'Every check this dossier can make is satisfied. The design file can be described as closed.'
+      : 'This design file is NOT complete. ' + blocking.length + ' finding(s) below must be closed, superseded or explained before it is handed over as a closed file.'
+  };
+}
+/* ── END ENG DOSSIER ── */
+
+/* --- Design dossier: the index the design file is handed over as --- */
+function _engDossierData(pid) {
+  const g = c => _engScopeFor(c, pid);
+  return {
+    deliverables: g('eng_deliverables'), revisions: g('eng_revisions'), holds: g('eng_holds'),
+    deviations: g('eng_deviations'), risks: g('eng_risks'), stages: g('eng_stages'),
+    comments: g('eng_comments'), tq: g('eng_tq'), transmittals: g('eng_transmittals'),
+    inputs: g('eng_inputs'), standards: g('eng_standards'), reviews: g('eng_reviews'),
+    changes: g('eng_changes')
+  };
+}
+function engDossierPDF(pid) {
+  const p = _engProj(pid); if (!p) return;
+  const d = _engDossierData(pid);
+  const a = _engDossierAudit(pid, d);
+  const o = _engPdfOpen('Design Dossier — Index and Completeness',
+    _pmPdfTxt((p.code || '') + '  ' + (p.name || '')), 'HML-ENG-DOS'); if (!o) return;
+  const doc = o.doc; let y = o.y;
+  const S = (t) => { y = _engPdfSection(doc, t, y, 'HML-ENG-DOS', 'Design Dossier', _pmPdfTxt(p.code || p.name || '')); };
+  const T = (opts) => { const r = _engPdfTable(doc, Object.assign({ y: y, code: 'HML-ENG-DOS', title: 'Design Dossier', subtitle: _pmPdfTxt(p.code || p.name || '') }, opts)); y = r.y + 2; };
+
+  [['Commission', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client', p.client],
+  ['Client reference', p.clientRef], ['Facility', p.facility], ['Design Manager', p.designManager],
+  ['Lead Engineer', p.leadEngineer], ['QA / Approver', p.qaApprover],
+  ['Design period', _engFmt(p.startPlanned) + '  →  ' + _engFmt(p.endPlanned)],
+  ['Commission closed', p.closedOn ? _engFmt(p.closedOn) : 'not recorded as closed'],
+  ['Retention', (p.retentionYears || 10) + ' years from the close of the commission'],
+  ['Document numbering', _engNumFmt(p)], ['Revision scheme', p.revScheme || _ENG_REV_SCHEMES[0]],
+  ['Dossier compiled', _engFmt(_engToday()) + '   by ' + ((TK.user || {}).name || '')]
+  ].filter(r => String(r[1] || '').trim()).forEach(r => { y = _engPdfRow(doc, r[0], r[1], y); });
+
+  /* The verdict goes FIRST, before the index. A reader who stops after page one must not come away
+     believing the file is closed when it is not — which is precisely what a tidy contents page in
+     front of the findings would achieve. */
+  S('Completeness');
+  _pdfFont(doc, 'bold'); doc.setFontSize(9);
+  doc.setTextColor.apply(doc, a.complete ? [4, 120, 87] : [185, 28, 28]);
+  const V = doc.splitTextToSize(_pmPdfTxt(a.verdict), 180);
+  doc.text(V, 15, y); y += V.length * 4.6 + 2;
+  doc.setTextColor(40, 46, 54);
+  if (a.gaps.length) {
+    T({
+      cols: [{ label: '', w: 16, get: g => g.blocking ? 'MUST FIX' : 'NOTE' },
+      { label: 'N', w: 10, get: g => g.n },
+      { label: 'FINDING', w: 96, get: g => g.text },
+      { label: 'EXAMPLES', w: 58, get: g => (g.items || []).join(', ') }],
+      rows: a.gaps
+    });
+  } else {
+    _pdfFont(doc, 'normal'); doc.setFontSize(9);
+    doc.text(_pmPdfTxt('No findings. Every register this dossier reads is complete and consistent.'), 15, y);
+    y += 6;
+  }
+
+  S('Contents of the design file');
+  T({
+    cols: [{ label: 'SECTION', w: 110, get: s => s.title }, { label: 'RECORDS', w: 24, get: s => s.n }],
+    rows: a.sections
+  });
+
+  S('Deliverables at final revision');
+  const dels = d.deliverables.filter(_engInScope).slice()
+    .sort((x, z) => String(x.docNo || '').localeCompare(String(z.docNo || '')));
+  T({
+    cols: [{ label: 'DOCUMENT NO', w: 34, get: x => x.docNo },
+    { label: 'TITLE', w: 54, get: x => x.title }, { label: 'DISC', w: 20, get: x => x.discipline },
+    { label: 'REV', w: 12, get: x => (_engCurrentRev(x.id) || {}).rev },
+    { label: 'ISSUE', w: 14, get: x => (_engCurrentRev(x.id) || {}).issueStatus },
+    { label: 'CHECKED', w: 22, get: x => (_engCurrentRev(x.id) || {}).checkedBy },
+    { label: 'ISSUED BY', w: 24, get: x => (_engCurrentRev(x.id) || {}).issuedBy || 'not issued' }],
+    rows: dels.length ? dels : [{ docNo: '-', title: 'No deliverables recorded' }]
+  });
+
+  S('Stage gates');
+  T({
+    cols: [{ label: 'STAGE', w: 40, get: s => _engStage(s.stage).label },
+    { label: 'DECISION', w: 32, get: s => s.gateDecision || s.status },
+    { label: 'DATE', w: 22, get: s => _engFmt(s.gateSignedOn || s.gateDate) },
+    { label: 'SIGNED BY', w: 30, get: s => s.gateSignedBy },
+    { label: 'ACTIONS CARRIED FORWARD', w: 56, get: s => s.gateActions }],
+    rows: d.stages.length ? d.stages : [{ stage: '-', status: 'No gates recorded' }]
+  });
+
+  S('Codes and standards the design was checked against');
+  T({
+    cols: [{ label: 'CODE', w: 34, get: s => s.code }, { label: 'EDITION', w: 20, get: s => s.edition },
+    { label: 'TITLE', w: 72, get: s => s.title }, { label: 'OBLIGATION', w: 26, get: s => s.obligation },
+    { label: 'STATUS', w: 22, get: s => s.status }],
+    rows: d.standards.length ? d.standards : [{ code: '-', title: 'No codes recorded as adopted' }]
+  });
+
+  if (d.deviations.length) {
+    S('Agreed departures from standards');
+    T({
+      cols: [{ label: 'REF', w: 20, get: x => x.ref }, { label: 'STANDARD', w: 30, get: x => x.standardCode },
+      { label: 'DEPARTURE', w: 70, get: x => x.title || x.description },
+      { label: 'DECISION', w: 24, get: x => x.decision }, { label: 'DECIDED BY', w: 30, get: x => x.decidedBy }],
+      rows: d.deviations
+    });
+  }
+
+  _engSave(doc, 'DesignDossier_' + (p.code || p.name || 'design').replace(/[^A-Za-z0-9]+/g, '_') + '_' + _engToday() + '.pdf', 1, 'HML-ENG-DOS');
+  try { tkAudit('Design dossier compiled', p.name || '', a.complete ? 'complete' : a.blocking + ' blocking finding(s)'); } catch (e) { }
+  toast(a.complete ? 'Design dossier compiled — no findings' : 'Design dossier compiled — ' + a.blocking + ' finding(s) must be closed before handover',
+    a.complete ? 'success' : 'warn', 8000);
 }
 
 /* --- Design & Development Plan (ISO 9001 §8.3.2) --- */
