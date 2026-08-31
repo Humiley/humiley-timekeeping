@@ -245,6 +245,15 @@ jobs:
       - name: The design dossier does not claim a completeness it cannot support
         run: node tests/eng_dossier.js
 
+      # The competence rules shipped with no screen at all — no form, no tab, no renderer — so
+      # nobody could record an authorisation and the checks could never fire on real work. The gap
+      # finder must separate "no record at all" from "authorised for another discipline" (different
+      # remedies), and the screen must keep saying that a gap blocks NOTHING: the server lets the
+      # issue through on purpose, and a screen that implied otherwise would undo that decision
+      # without changing a line of the rule.
+      - name: The competence register shows the gap without blocking on it
+        run: node tests/eng_competence_view.js
+
       # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
       # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
       # there fails silently — it kills one block, every function defined below the break stops

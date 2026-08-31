@@ -29294,6 +29294,23 @@ Object.assign(_QA_SPECS, {
       { k: 'note', label: 'Notes', type: 'textarea' }
     ]
   },
+  /* Who the office holds competent to check what. The rules for this register — granted never
+     claimed, granted by the design authority, and an advisory note (never a refusal) when a
+     checker is authorised for another discipline — shipped without a form, so the register could
+     not be filled in and the checks could never fire on real work. */
+  eng_competence: {
+    title: 'Competence authorisation', coll: 'eng_competence', reload: 'eng_competence', fields: [
+      { k: 'person', label: 'Who', type: 'combo', dyn: 'eng_people' },
+      { k: 'scope', label: 'Competent to check — discipline', type: 'select', options: _ENG_DISC_KEYS },
+      { k: 'docTypes', label: 'Limited to which document types (blank = all in that discipline)' },
+      { k: 'basis', label: 'Basis — experience, qualification, licence number, years in this discipline', type: 'textarea' },
+      { k: 'evidence', label: 'Evidence (certificate / licence)', type: 'file' },
+      { k: 'validUntil', label: 'Review / expiry date', type: 'date' },
+      { k: 'limitations', label: 'Limitations — what this does NOT cover', type: 'textarea' },
+      { k: 'status', label: 'Status', type: 'select', options: ['Proposed', 'Authorised', 'Withdrawn'] },
+      { k: 'note', label: 'Notes', type: 'textarea' }
+    ]
+  },
   eng_holds: {
     title: 'Hold / Assumption', coll: 'eng_holds', reload: 'eng_holds', fields: [
       { k: 'kind', label: 'Kind — a HOLD stops an external issue, an ASSUMPTION is carried on the document', type: 'select', options: ['Hold', 'Assumption'] },
@@ -29494,6 +29511,7 @@ const _ENG_TABS = [
   { k: 'transmittals', g: 'issue', label: 'Transmittals', fn: 'engRenderTransmittals', need: ['eng_projects', 'eng_transmittals', 'eng_deliverables', 'eng_revisions'] },
   { k: 'awaiting', g: 'issue', label: 'Awaiting Response', fn: 'engRenderAwaiting', need: ['eng_projects', 'eng_transmittals', 'eng_chases'] },
   { k: 'team', g: 'plan', label: 'Team & Authority', fn: 'engRenderTeam', need: ['eng_projects', 'eng_team', 'eng_deliverables'] },
+  { k: 'competence', g: 'plan', label: 'Competence', fn: 'engRenderCompetence', need: ['eng_projects', 'eng_competence', 'eng_revisions', 'eng_deliverables'] },
   { k: 'documents', g: 'plan', label: 'Document Structure', fn: 'engRenderDocuments', need: ['eng_projects'] },
   /* Restricted. The log names a colleague and repeats what they were told when they were stopped,
      so it is for the people who run the commission — the Design Manager, the Lead Engineer, the QA
@@ -31495,6 +31513,118 @@ function engTrnIssue(id) {
 }
 
 /* ============================ 11. Team & signing authority ============================ */
+/* ── ENG COMPETENCE ── (tests/eng_competence_view.js extracts to the END marker; keep both)
+
+   Who the office holds competent to check what.
+
+   The rules for this register shipped without a screen. There was no form, no tab and no renderer,
+   so nobody could record a single authorisation — which meant the competence checks could never
+   fire on real work, and the "checked by" on every drawing stayed a name with nothing behind it.
+   The register existed in app.py, in its tests and in the refusal log's label map, and nowhere a
+   person could reach.
+
+   THE NON-RULE IS THE POINT, and the screen has to carry it. A drawing checked by somebody with no
+   competence record is NOT refused — competence records lag reality in a small office, and stopping
+   real work over an administrative gap is how a register earns the reputation that gets it ignored.
+   What the server does instead is note the mismatch in the refusal log as `advisory`. So this
+   screen's job is to make the gap VISIBLE and easy to close, never to threaten anybody with it. */
+function _engCompetenceGaps(revs, dels, comps) {
+  /* Which checkers have signed a drawing without an authorisation covering it.
+     Two different findings, kept apart because they need different actions: somebody with NO
+     record at all (authorise them, or correct the drawing) and somebody authorised for a different
+     discipline (either the record is too narrow or the wrong person checked it). */
+  const auth = (comps || []).filter(c => String(c.status || '') === 'Authorised');
+  const byPerson = {};
+  auth.forEach(c => { (byPerson[String(c.person || '').trim().toLowerCase()] ||= []).push(String(c.scope || '')); });
+  const seen = {}, none = [], wrong = [];
+  (revs || []).forEach(r => {
+    const who = String(r.checkedBy || '').trim();
+    if (!who) return;
+    const d = (dels || []).find(x => x.id === r.deliverableId) || {};
+    const disc = String(d.discipline || '');
+    const key = who.toLowerCase() + '|' + disc;
+    if (seen[key]) return;
+    seen[key] = 1;
+    const scopes = byPerson[who.toLowerCase()];
+    if (!scopes) { none.push({ person: who, discipline: disc }); return; }
+    if (disc && scopes.indexOf(disc) < 0) wrong.push({ person: who, discipline: disc, held: scopes.slice() });
+  });
+  return { none: none, wrong: wrong };
+}
+function engRenderCompetence(pid) {
+  const p = _engProj(pid); if (!p) return '';
+  const comps = _engScopeFor('eng_competence', pid);
+  const revs = _engScopeFor('eng_revisions', pid), dels = _engScopeFor('eng_deliverables', pid);
+  const auth = comps.filter(c => String(c.status || '') === 'Authorised');
+  const proposed = comps.filter(c => String(c.status || 'Proposed') === 'Proposed');
+  const today = _engToday();
+  const expired = auth.filter(c => c.validUntil && String(c.validUntil).slice(0, 10) < today);
+  const gaps = _engCompetenceGaps(revs, dels, comps);
+
+  const guide = _engGuide('competence', 'Competence — who this office holds able to check what',
+    '<p>The register has recorded <b>who checked</b> every drawing since the module shipped, and never said whether that person was held competent to check it. That is the question an auditor asks immediately after "who checked this?", and it is the one that undermines every signature already collected: a check by somebody the office never said could check that discipline is a check about nothing.</p>' +
+    '<p><b>Competence is granted, never claimed.</b> Somebody else records what you may check — that is the whole content of the word — and it is the Design Manager or Lead Engineer who grants it, the same authority that decides a gate, not a portal access level. You cannot authorise yourself, and a browser cannot write the authorisation: it is stamped from the signature.</p>' +
+    '<p><b>A missing record never stops an issue.</b> Competence records lag reality in a small office, and refusing a drawing over an administrative gap is how a register gets routed around. The server notes the mismatch as an advisory line in the refusal log and lets the work through. The panel below is that gap made visible, so it can be closed on purpose rather than discovered in an audit.</p>');
+
+  const kpis = _hrKpiRow([
+    _hrKpi('Authorised', auth.length, auth.length ? '#00B060' : '#F59E0B'),
+    _hrKpi('Awaiting authorisation', proposed.length, proposed.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Checkers with no record', gaps.none.length, gaps.none.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Expired', expired.length, expired.length ? '#EF4444' : '#00B060')
+  ]);
+
+  let gapCard = '';
+  if (gaps.none.length || gaps.wrong.length) {
+    const row = (g, why) => '<tr><td style="font-weight:600">' + _engEsc(g.person) + '</td>' +
+      '<td>' + _engEsc(g.discipline || '—') + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-light);max-width:320px">' + why + '</td></tr>';
+    gapCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+      '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">Checks already signed that this register does not cover</div></div>' +
+      '<div style="padding:10px 16px 0;font-size:12px;color:var(--text-light)">Nothing here was blocked and nothing needs undoing. Each line is either a record to add or a check that went to the wrong person — and knowing which is the point.</div>' +
+      '<div class="table-wrap"><table style="min-width:640px"><thead><tr><th>Checker</th><th>Discipline checked</th><th>What this means</th></tr></thead><tbody>' +
+      gaps.none.map(g => row(g, 'No competence record at all. Add one, or the signature stands on nothing an auditor can follow.')).join('') +
+      gaps.wrong.map(g => row(g, 'Authorised for ' + _engEsc(g.held.join(', ')) + ', not ' + _engEsc(g.discipline) + '. Either the record is too narrow, or the wrong person checked it.')).join('') +
+      '</tbody></table></div></div>';
+  }
+
+  const specs = [{ k: 'scope', label: 'Discipline' }, { k: 'status', label: 'Status' }];
+  const bar = _engFiltBar('eng_competence', comps, specs), rows = _engFiltApply('eng_competence', comps, specs);
+  const tbl = _engCard('Competence Register', 'eng_competence', 'Record competence', bar + _engTable('eng_competence', [
+    { label: 'Person', sk: 'person', render: r => '<div style="font-weight:700">' + _engEsc(r.person || '—') + '</div>' + (r.docTypes ? '<div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.docTypes) + '</div>' : '') },
+    { label: 'Competent to check', k: 'scope' },
+    { label: 'Basis', render: r => '<div style="max-width:260px;font-size:11.5px;color:var(--text-light)">' + _engEsc(String(r.basis || '—').slice(0, 140)) + '</div>' },
+    { label: 'Limitations', render: r => '<div style="max-width:180px;font-size:11.5px;color:var(--text-light)">' + _engEsc(String(r.limitations || '—').slice(0, 90)) + '</div>' },
+    { label: 'Valid until', sk: 'validUntil', render: r => r.validUntil ? '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.validUntil) + (String(r.validUntil).slice(0, 10) < today ? ' <span style="color:#EF4444;font-weight:700">expired</span>' : '') + '</span>' : '<span style="color:var(--text-light)">—</span>' },
+    { label: 'Status', render: r => _engBadge(r.status || 'Proposed', String(r.status || '') === 'Authorised' ? '#00B060' : String(r.status || '') === 'Withdrawn' ? '#6B7280' : '#F59E0B') },
+    {
+      label: 'Granted by', sk: 'x_sign', render: r => r.authorisedBy
+        ? '<div style="font-size:11px">✍ ' + _engEsc(r.authorisedBy) + '</div><div style="font-size:10px;color:var(--text-light)">' + _engFmt(r.authorisedOn) + '</div>'
+        : (_engIsLead(p) && !_engIsMe(r.person)
+          ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;color:var(--navy);white-space:nowrap" onclick="engCompetenceSign(\'' + r.id + '\')">' + tkIcon('check', 12) + ' Authorise &amp; sign</button>'
+          : '<span style="color:var(--text-light);font-size:11px">' + (_engIsMe(r.person) ? 'not yours to grant' : 'not authorised') + '</span>')
+    },
+    { label: 'Evidence', sk: 'x_file', render: r => _engFileCell('eng_competence', r) }
+  ], rows, { minw: 1180, empty: 'Nobody is recorded as competent to check anything on this commission. Until somebody is, "who checked this?" has no second half.' }));
+
+  return kpis + guide + gapCard + tbl;
+}
+function engCompetenceSign(id) {
+  const c = (_HR.eng_competence || []).find(x => x.id === id); if (!c) return;
+  if (_engIsMe(c.person)) { toast('Competence is granted, not claimed — somebody else records what you may check.', 'warn', 7000); return; }
+  if (!String(c.basis || '').trim()) { toast('Record the basis first — the experience, qualification or licence this rests on.', 'warn', 7000); return; }
+  tkESign({
+    coll: 'eng_competence', id: id, setStatus: 'Authorised',
+    meaning: 'Competence authorised — ' + (c.person || '') + ' to check ' + (c.scope || ''),
+    onDone: (saved) => {
+      if (saved) Object.assign(c, saved);
+      try { tkAudit('Design competence authorised', c.person || '', c.scope || ''); } catch (e) { }
+      toast('Authorised — ' + (c.person || '') + ' may check ' + (c.scope || ''), 'success', 6000);
+      try { _engReload(); } catch (e) { }
+    }
+  });
+}
+/* ── END ENG COMPETENCE ── */
+
 function engRenderTeam(pid) {
   const p = _engProj(pid); if (!p) return;
   const team = _engScopeFor('eng_team', pid), dels = _engScopeFor('eng_deliverables', pid);
