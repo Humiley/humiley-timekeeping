@@ -19,6 +19,7 @@ handover, so it takes a recorded disposition and a signed verification — not a
 the result to "Pass" with nothing recorded about who decided that.
 """
 import os
+import re
 
 import app
 import db
@@ -276,7 +277,13 @@ def test_the_charter_form_can_finally_fill_its_own_scope_section():
        button — which had no such fields. Exclusions and assumptions are the paragraphs you quote back
        when defending a variation claim or an extension-of-time notice."""
     src = _src()
-    spec = src.split("pm_projects: { title: 'Project Charter'")[1][:3000]
+    # To the END of the form, not a fixed number of characters. A character window silently stops
+    # covering the last fields the moment anybody adds one — which is exactly how this test came to
+    # fail over `constraints` on a change that added two unrelated contract fields above it.
+    after = src.split("pm_projects: { title: 'Project Charter'")[1]
+    # To the NEXT schema entry, not to the first `] },` — a select field's inline `options: [...] },`
+    # matches that too, which cut the slice off in the middle of the form.
+    spec = after[:re.search(r"\n  [a-z_]+: \{ title:", after).start()]
     for k in ("scopeInclusions", "scopeExclusions", "scopeAssumptions", "constraints"):
         assert "k: '%s'" % k in spec, "the project form still cannot capture " + k
 
