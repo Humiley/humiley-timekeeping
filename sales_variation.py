@@ -48,10 +48,10 @@ TRANSITIONS = {
 
 STATUS_LABELS = {
     DRAFT: ("Draft", "Nháp"),
-    ISSUED: ("Issued", "Đã gửi"),
+    ISSUED: ("Issued", "Đã phát hành"),
     APPLIED: ("Applied", "Đã áp dụng"),
     REJECTED: ("Rejected", "Bị từ chối"),
-    CANCELLED: ("Cancelled", "Đã huỷ"),
+    CANCELLED: ("Cancelled", "Đã hủy"),
 }
 
 
