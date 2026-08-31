@@ -246,11 +246,21 @@ def test_a_time_exposure_is_never_given_a_cost_impact():
 
 def test_applying_the_extension_never_touches_the_planned_finish():
     """endPlanned is what every variance on the project is measured against. Moving it would make
-    a late job look on time by rewriting the thing it was late against."""
+    a late job look on time by rewriting the thing it was late against.
+
+    This test used to also forbid the endpoint from mentioning pm_tasks at all, which was the right
+    rule while nothing could move an activity safely. A later pass gave it a way to: the programme
+    moves only when asked, only after the original dates are frozen into a baseline, and never by
+    recomputing anything from that baseline. Those rules are tested in test_qs_reschedule.py. The
+    invariant HERE is the one that did not change — the contract date beside it is never written.
+    """
     with open("app.py", encoding="utf-8") as fh:
         src = fh.read()
     i = src.index("def _qs_eot_ep(")
     body = src[i:src.index("def _qs_cvr_ep(", i)]
     assert 'upd["contractCompletionRevised"]' in body
-    for forbidden in ('upd["endPlanned"]', 'upd["endBaseline"]', 'pm_tasks'):
+    for forbidden in ('upd["endPlanned"]', 'upd["endBaseline"]'):
         assert forbidden not in body, "_qs_eot_ep writes %s — it must not" % forbidden
+    # And an activity still only moves behind both gates.
+    assert 'if body.get("reschedule"):' in body
+    assert 'if not body.get("freezeBaseline"):' in body

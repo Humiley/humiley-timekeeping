@@ -213,6 +213,12 @@ def _vnd(n):
     return "₫{:,.0f}".format(_num(n))
 
 
+def _pct1(v):
+    """A percentage for a SENTENCE, at one decimal. Kept apart from the rounding used for stored
+    figures: a warning reading "59.99999999%" is one nobody finishes."""
+    return "{:,.1f}".format(_num(v))
+
+
 def _le(a, b):
     """ISO date a <= b, treating a missing cut-off as "no cut-off" (everything is in).
 
@@ -2919,6 +2925,212 @@ def reschedule_plan(ctx):
         "note": "The original dates stay in the baseline, where every variance on this job is "
                 "measured against them. A revised date beside a frozen baseline is a re-plan; a "
                 "revised date on its own is a job that has quietly stopped being late.",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE COST OF QUALITY — PMBOK §8.1
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# Four categories, and the whole point is the ratio between the first two and the last two:
+#
+#   PREVENTION   stopping defects happening   — training, method statements, mock-ups, first-offs
+#   APPRAISAL    finding them                 — inspection, testing, commissioning, third-party
+#   INTERNAL     fixing them before handover  — rework, re-testing, scrapped material, standing time
+#   EXTERNAL     fixing them after handover   — call-backs, warranty, damages, a lost client
+#
+# Money spent on the first two buys down the last two. A job spending nothing on prevention and
+# large sums on rework is not a job with bad luck.
+#
+# ⚠️ THE FIGURE THIS PRODUCES IS ONLY AS GOOD AS THE CLASSIFICATION BEHIND IT, and a cost report
+# whose headline is a confident, small number nobody classified is the worst possible outcome: it
+# reads as "quality is cheap here". So this reports COVERAGE first — how much of the job's actual
+# cost carries a classification at all — and refuses to present ratios as meaningful below it.
+#
+# The NCR register's own cost is a CROSS-CHECK and is never added to the ledger figure. Two records
+# of the same rework, summed, is a number describing an event that happened once.
+
+COQ_PREVENTION = "prevention"
+COQ_APPRAISAL = "appraisal"
+COQ_INTERNAL = "internal failure"
+COQ_EXTERNAL = "external failure"
+
+COQ_CATEGORIES = (
+    {"code": COQ_PREVENTION, "label": "Prevention",
+     "labelVn": "Phòng ngừa", "hex": "#00B060", "group": "conformance",
+     "why": "Stopping defects happening at all: method statements, training, mock-ups, first-off "
+            "inspections, samples approved before an order is placed."},
+    {"code": COQ_APPRAISAL, "label": "Appraisal",
+     "labelVn": "Đánh giá, kiểm tra", "hex": "#3168A8", "group": "conformance",
+     "why": "Finding defects: inspection, witness testing, commissioning, third-party "
+            "certification, laboratory work, instrument calibration."},
+    {"code": COQ_INTERNAL, "label": "Internal failure",
+     "labelVn": "Sai hỏng nội bộ", "hex": "#F59E0B", "group": "nonconformance",
+     "why": "Putting defects right BEFORE handover: rework, re-testing, scrapped material, "
+            "standing time, an activity done twice."},
+    {"code": COQ_EXTERNAL, "label": "External failure",
+     "labelVn": "Sai hỏng sau bàn giao", "hex": "#EF4444", "group": "nonconformance",
+     "why": "Putting defects right AFTER handover: call-backs, warranty work, liquidated damages "
+            "for defects, and the client who does not come back."},
+)
+_COQ_BY_CODE = {c["code"]: c for c in COQ_CATEGORIES}
+COQ_CODES = tuple(c["code"] for c in COQ_CATEGORIES)
+
+# Below this share of actual cost carrying a classification, the ratios describe the sample and not
+# the job, and saying so is the difference between a measurement and a decoration.
+COQ_MEANINGFUL_COVERAGE = 60.0
+
+
+def _coq_code(v):
+    s = _norm(v)
+    if s in _COQ_BY_CODE:
+        return s
+    # The labels people pick in a dropdown, and the shorthand a QS types.
+    for c in COQ_CATEGORIES:
+        if s == _norm(c["label"]):
+            return c["code"]
+    if s in ("internal", "rework"):
+        return COQ_INTERNAL
+    if s in ("external", "warranty", "call-back", "callback"):
+        return COQ_EXTERNAL
+    return ""
+
+
+def cost_of_quality(ctx):
+    """What quality has cost this job, split the four ways PMBOK §8.1 splits it.
+
+    ctx: costs (pm_costs — `actual` and `coq`), ncrs (pm_quality — `cost`), cutoff.
+    """
+    ctx = ctx or {}
+    cutoff = str(ctx.get("cutoff") or "")[:10]
+    warn = []
+
+    def w(code, severity, msg, **extra):
+        warn.append(dict({"code": code, "severity": severity, "msg": msg}, **extra))
+
+    # ── from the cost ledger, which is the authority on what things cost ─────────────────────────
+    buckets = dict((c, 0.0) for c in COQ_CODES)
+    classified = unclassified = undated = 0.0
+    unknown_labels = set()
+    for c in (ctx.get("costs") or []):
+        # `actual` only. A cost line with no actual on it is a commitment, and a commitment has not
+        # cost anybody anything yet — the same rule the margin is computed under.
+        amt = _num(c.get("actual"))
+        if not amt:
+            continue
+        # An undated line is money that WAS spent. Excluding it — which is the right rule for a
+        # measurement, where work claimed in the wrong month moves money — inverts the consequence
+        # here: it makes a job with billions booked report a cost of quality of nil. It is counted
+        # and the fact that it sits in no period is reported, the same way an orphan certificate is
+        # counted in the subcontract totals.
+        period = str(c.get("period") or "")[:7]
+        if cutoff and period and period > cutoff[:7]:
+            continue
+        if cutoff and not period:
+            undated += amt
+        raw = str(c.get("coq") or "").strip()
+        code = _coq_code(raw)
+        if code:
+            buckets[code] += amt
+            classified += amt
+        else:
+            unclassified += amt
+            if raw:
+                unknown_labels.add(raw)
+
+    total_cost = r2(classified + unclassified)
+    coq = r2(sum(buckets.values()))
+    conformance = r2(buckets[COQ_PREVENTION] + buckets[COQ_APPRAISAL])
+    nonconformance = r2(buckets[COQ_INTERNAL] + buckets[COQ_EXTERNAL])
+    coverage = round(classified / total_cost * 100.0, 2) if total_cost else None
+
+    rows = []
+    for spec in COQ_CATEGORIES:
+        amt = r2(buckets[spec["code"]])
+        rows.append(dict(spec, amount=amt,
+                         pctOfCoq=(round(amt / coq * 100.0, 2) if coq else None),
+                         pctOfCost=(round(amt / total_cost * 100.0, 2) if total_cost else None)))
+
+    if undated:
+        w("cost_no_period", "medium",
+          "%s of booked cost carries no period, so it cannot be shown to fall before %s. It is "
+          "counted here, because it was spent — but this report cannot tell you when."
+          % (_vnd(undated), cutoff))
+    if unknown_labels:
+        w("coq_unknown_class", "medium",
+          "%d cost line(s) carry a quality class this module does not recognise, so they are "
+          "counted as unclassified: %s."
+          % (len(unknown_labels), ", ".join(sorted(unknown_labels)[:6])))
+
+    # ── the coverage statement, which comes before any ratio ─────────────────────────────────────
+    meaningful = bool(coverage is not None and coverage >= COQ_MEANINGFUL_COVERAGE)
+    if total_cost <= 0:
+        w("no_cost_booked", "medium",
+          "No actual cost has been booked on this job, so there is nothing to classify and no cost "
+          "of quality to report. That is an empty ledger, not a job with no quality cost.")
+    elif coverage is not None and coverage < COQ_MEANINGFUL_COVERAGE:
+        w("coq_mostly_unclassified", "high",
+          "Only %s%% of the %s booked on this job carries a quality classification. The figures "
+          "below describe that %s%% and not the job — a small cost of quality here means the "
+          "classification is missing, not that quality is cheap."
+          % (_pct1(coverage), _vnd(total_cost), _pct1(coverage)))
+
+    # ── the ratio that actually matters ──────────────────────────────────────────────────────────
+    # Money on prevention and appraisal buys down failure. A job whose quality spend is nearly all
+    # failure is not unlucky; it is paying to fix what it did not pay to prevent.
+    failure_share = round(nonconformance / coq * 100.0, 2) if coq else None
+    if meaningful and failure_share is not None and failure_share >= 50.0:
+        w("failure_cost_dominates", "high",
+          "%s%% of what quality has cost on this job was spent putting defects right rather than "
+          "preventing or finding them (%s of %s). Money spent on prevention and appraisal buys "
+          "this down; nothing else does."
+          % (_pct1(failure_share), _vnd(nonconformance), _vnd(coq)))
+    if meaningful and buckets[COQ_PREVENTION] <= 0 and nonconformance > 0:
+        w("no_prevention_spend", "medium",
+          "Nothing on this job is classified as prevention, and %s has been spent on failure. "
+          "Either the prevention spend is not being classified, or there is not any."
+          % _vnd(nonconformance))
+    if buckets[COQ_EXTERNAL] > 0:
+        w("external_failure_present", "high",
+          "%s of failure cost was incurred AFTER handover. That is the most expensive kind there "
+          "is and the only kind the client sees." % _vnd(buckets[COQ_EXTERNAL]))
+
+    # ── the cross-check, which is never added to the figure above ────────────────────────────────
+    ncr_cost, ncr_n = 0.0, 0
+    for n in (ctx.get("ncrs") or []):
+        amt = _rate(n.get("cost"))
+        if amt is None:
+            continue
+        ncr_cost += amt
+        ncr_n += 1
+    ncr_cost = r2(ncr_cost)
+    # Two records of the same rework, added together, is a number describing an event that happened
+    # once. They are reported side by side and the gap between them is the finding.
+    if ncr_n and nonconformance and abs(ncr_cost - nonconformance) > max(
+            1000.0, nonconformance * 0.1):
+        w("ncr_cost_disagrees", "medium",
+          "The non-conformance register puts the cost of putting defects right at %s; the cost "
+          "ledger, at %s. One of the two is incomplete — they are shown side by side and never "
+          "added, because both describe the same rework."
+          % (_vnd(ncr_cost), _vnd(nonconformance)))
+
+    return {
+        "rows": rows,
+        "prevention": r2(buckets[COQ_PREVENTION]), "appraisal": r2(buckets[COQ_APPRAISAL]),
+        "internalFailure": r2(buckets[COQ_INTERNAL]),
+        "externalFailure": r2(buckets[COQ_EXTERNAL]),
+        "conformance": conformance, "nonConformance": nonconformance,
+        "total": coq, "failureShare": failure_share,
+        "classifiedCost": r2(classified), "unclassifiedCost": r2(unclassified),
+        "undatedCost": r2(undated),
+        "totalCost": total_cost, "coverage": coverage, "meaningful": meaningful,
+        "pctOfCost": (round(coq / total_cost * 100.0, 2) if total_cost else None),
+        "ncrRegisterCost": ncr_cost if ncr_n else None, "ncrsPriced": ncr_n,
+        "warnings": warn,
+        "note": "Prevention and appraisal are what a job spends to stop defects and to find them. "
+                "Internal and external failure are what it spends because it did not. The ratio "
+                "between them is the report; the total on its own says very little. Nothing here "
+                "is added to the non-conformance register's own figure — both describe the same "
+                "rework, and summing them counts one event twice.",
     }
 
 

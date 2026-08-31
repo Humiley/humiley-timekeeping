@@ -16892,6 +16892,12 @@ const _QA_SPECS = {
        blank stays unallocated rather than being spread, which would put one trade's overspend in
        another trade's margin and look plausible in every column. */
     { k: 'discipline', label: 'Trade', type: 'select', options: 'qs_disciplines' },
+    /* PMBOK §8.1. Optional, and never guessed: prevention and appraisal are what a job spends to
+       stop defects and to find them; internal and external failure are what it spends because it
+       did not. The ratio between them is the report. Left blank the line is UNCLASSIFIED and the
+       cost-of-quality screen says how much of the job it could not see — a small figure over an
+       unclassified job reads as "quality is cheap here", which is the one thing it must not say. */
+    { k: 'coq', label: 'Quality cost class (PMBOK §8.1)', type: 'select', options: 'coq_classes' },
     { k: 'budget', label: 'Budget (₫)', type: 'money' }, { k: 'committed', label: 'Committed (₫)', type: 'money' },
     { k: 'actual', label: 'Actual (₫)', type: 'money' }, { k: 'invoiced', label: 'Invoiced (₫)', type: 'money' },
     { k: 'period', label: 'Period (YYYY-MM)' }, { k: 'vendor', label: 'Vendor' },
@@ -16908,6 +16914,10 @@ const _QA_SPECS = {
        the commercially meaningful decision — rework, repair, use-as-is or reject — and it is what a
        consultant or a GMP client's QA audit asks to see next to the signature that closed it. */
     { k: 'disposition', label: 'Disposition (NCR)', type: 'select', options: ['', 'Rework', 'Repair', 'Use as is (concession)', 'Reject / Replace'] },
+    /* What putting this right actually cost. Cross-checked against the cost ledger on the Quality
+       Cost screen and never added to it — both records describe the same rework, and summing them
+       counts one event twice. */
+    { k: 'cost', label: 'Cost of putting it right (₫)', type: 'money' },
     { k: 'rootCause', label: 'Root cause', type: 'textarea' },
     { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'preventiveAction', label: 'Preventive action (stop it recurring)', type: 'textarea' },
     { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
@@ -21089,6 +21099,13 @@ function _qaDynOptions(src, ex) {
       ? _pmScopeFor('pm_procurement', _pmPid()) : [];
     return rows.filter(r => r.pkgNo).map(r => ({
       v: r.pkgNo, l: r.pkgNo + ' \u2014 ' + String(r.title || '').slice(0, 50) + (r.vendor ? '  (' + r.vendor + ')' : '') }));
+  }
+  if (src === 'coq_classes') {
+    // Served by /api/qs/summary. The VALUE is the class code the engine groups on; only the label
+    // is translated, so switching language cannot silently re-classify a cost.
+    const d = (typeof _qsData === 'function') ? _qsData() : null;
+    return ((d && d.coqCategories) || []).map(c => ({
+      v: c.code, l: (typeof _t2 === 'function') ? _t2(c.label, c.labelVn) : c.label }));
   }
   if (src === 'qs_disciplines') {
     // Served by /api/qs/summary. The VALUE is the trade code — every rollup groups on it — and only
@@ -28735,6 +28752,7 @@ const _QS_TABS = [
   { k: 'cvr', label: 'Cost / Value', fn: '_qsRenderCvr' },
   { k: 'sub', label: 'Subcontracts', fn: '_qsRenderSubs' },
   { k: 'cash', label: 'Cash', fn: '_qsRenderCash' },
+  { k: 'coq', label: 'Quality Cost', fn: '_qsRenderCoq' },
   { k: 'final', label: 'Final Account', fn: '_qsRenderFinal' },
   { k: 'docs', label: 'QS Documents', fn: '_qsRenderDocs' }
 ];
@@ -29725,6 +29743,152 @@ function qsCashPDF() {
   y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['Finance Manager', ''], ['Project Manager', '']]);
   _qsFoot(doc, CODE);
   _qsSavePdf(doc, 'Cash-Position-' + (_pmProj() || {}).code + '.pdf', '13_QS_Commercial/03_Interim_Valuations_IPA');
+}
+
+/* ── 12. Cost of Quality — PMBOK §8.1 ──────────────────────────────────────────────────────────── */
+/* Money spent on prevention and appraisal buys down internal and external failure. A job spending
+   nothing on the first pair and large sums on the second is not a job with bad luck.
+
+   The coverage statement comes FIRST on this screen and not as a footnote, because a small cost of
+   quality over a job nobody classified reads as good news — and the worse the classification, the
+   better the news looks. */
+
+function _qsCoqCoverageCard(c) {
+  if (c.coverage == null) return '';
+  const thin = !c.meaningful;
+  return '<div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:3px solid ' + (thin ? '#EF4444' : 'var(--emerald)') + '">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px">' +
+    '<div class="card-title">' + _t('How much of this job the report could see') + '</div>' +
+    '<div style="font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;color:' + (thin ? '#EF4444' : 'var(--emerald)') + '">' + _qsPct(c.coverage) + '</div></div>' +
+    '<div style="height:8px;border-radius:4px;background:var(--soft-bg);overflow:hidden;margin:8px 0 6px">' +
+    '<div style="height:100%;width:' + Math.max(0, Math.min(100, c.coverage)) + '%;background:' + (thin ? '#EF4444' : 'var(--emerald)') + '"></div></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_qsMoney(c.classifiedCost) + ' ' + _t('of') + ' ' + _qsMoney(c.totalCost) + ' ' + _t('booked on this job carries a quality classification.') +
+      (thin ? ('  ' + _t('The figures below describe that share and not the job: a small cost of quality here means the classification is missing, not that quality is cheap.')) : '')) +
+    '</div></div>';
+}
+
+function _qsCoqSplitCard(c) {
+  const rows = (c.rows || []).map(x => '<tr style="border-top:1px solid var(--line-soft,#eef2f8)">' +
+    '<td style="padding:8px 10px;font-size:12.5px">' +
+      '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:2px;background:' + x.hex + '"></span>' +
+      '<b>' + _pmEsc(_t2(x.label, x.labelVn)) + '</b></span>' +
+      '<div style="font-size:10.5px;color:var(--text-light);line-height:1.5;margin-top:2px;max-width:520px">' + _pmEsc(x.why) + '</div></td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600">' + _qsMoney(x.amount) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:var(--text-light)">' + (x.pctOfCoq == null ? '—' : _qsPct(x.pctOfCoq)) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:var(--text-light)">' + (x.pctOfCost == null ? '—' : _qsPct(x.pctOfCost)) + '</td></tr>').join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('What quality has cost') + '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsCoqPDF()">' + tkIcon('download', 12) + ' PDF</button></div>' +
+    '<div class="table-wrap"><table style="min-width:660px;border-collapse:collapse"><thead><tr>' +
+    '<th style="padding:8px 10px;font-size:11px;text-align:left">' + _t('Category') + '</th>' +
+    '<th style="padding:8px 10px;font-size:11px;text-align:right">' + _t('Cost') + '</th>' +
+    '<th style="padding:8px 10px;font-size:11px;text-align:right">' + _t('of quality cost') + '</th>' +
+    '<th style="padding:8px 10px;font-size:11px;text-align:right">' + _t('of job cost') + '</th></tr></thead><tbody>' + rows +
+    '<tr style="border-top:2px solid var(--navy)">' +
+    '<td style="padding:9px 10px;font-weight:800;color:var(--navy)">' + _t('Cost of quality') + '</td>' +
+    '<td style="padding:9px 10px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:var(--navy)">' + _qsMoney(c.total) + '</td>' +
+    '<td style="padding:9px 10px"></td>' +
+    '<td style="padding:9px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:var(--navy)">' + (c.pctOfCost == null ? '—' : _qsPct(c.pctOfCost)) + '</td></tr>' +
+    '</tbody></table></div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' + _pmEsc(c.note || '') + '</div></div>';
+}
+
+/* The ratio, drawn. Conformance against non-conformance is the one picture this report exists to
+   put in front of somebody — and it is drawn only where the classification can carry it. */
+function _qsCoqRatioCard(c) {
+  if (!c.total) return '';
+  const nc = c.failureShare == null ? 0 : c.failureShare;
+  const bad = c.meaningful && nc >= 50;
+  const seg = (v, hex, lab) => v <= 0 ? '' :
+    '<div title="' + _tkEscA(lab + ': ' + _qsMoney(v)) + '" style="flex:' + v + ';background:' + hex + ';min-width:2px"></div>';
+  return '<div class="card" style="padding:14px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:9px">' +
+    '<div class="card-title">' + _t('Spent to prevent, against spent to put right') + '</div>' +
+    '<div style="font-size:12px;color:' + (bad ? '#EF4444' : 'var(--text-light)') + ';font-weight:' + (bad ? 700 : 400) + '">' +
+    _pmEsc(_t('Failure share') + ': ' + (c.failureShare == null ? '—' : _qsPct(c.failureShare))) + '</div></div>' +
+    '<div style="display:flex;height:22px;border-radius:5px;overflow:hidden;background:var(--soft-bg)">' +
+    seg(c.prevention, '#00B060', _t('Prevention')) + seg(c.appraisal, '#3168A8', _t('Appraisal')) +
+    seg(c.internalFailure, '#F59E0B', _t('Internal failure')) + seg(c.externalFailure, '#EF4444', _t('External failure')) +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-light);margin-top:6px">' +
+    '<span>' + _pmEsc(_t('Conformance') + '  ' + _qsMoney(c.conformance)) + '</span>' +
+    '<span>' + _pmEsc(_qsMoney(c.nonConformance) + '  ' + _t('Non-conformance')) + '</span></div>' +
+    (c.meaningful ? '' : '<div style="font-size:11px;color:#EF4444;margin-top:8px;font-weight:600">' +
+      _pmEsc(_t('Drawn from too little of the job to be read as a ratio.')) + '</div>') + '</div>';
+}
+
+/* The two records of the same rework, side by side. Never added: summing them counts one event
+   twice, and the gap between them is the finding. */
+function _qsCoqCrossCard(c) {
+  if (c.ncrRegisterCost == null) return '';
+  const gap = Math.abs(c.ncrRegisterCost - c.nonConformance) > 1000;
+  return '<div class="card" style="padding:14px 18px;margin-bottom:14px' + (gap ? ';border-left:3px solid #F59E0B' : '') + '">' +
+    '<div class="card-title" style="margin-bottom:8px">' + _t('The same rework, from two registers') + '</div>' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap">' +
+    ['<div style="flex:1;min-width:180px"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em">' + _t('Cost ledger') + '</div>' +
+      '<div style="font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--navy)">' + _qsMoney(c.nonConformance) + '</div></div>',
+    '<div style="flex:1;min-width:180px"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em">' + _t('Non-conformance register') + '</div>' +
+      '<div style="font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--navy)">' + _qsMoney(c.ncrRegisterCost) + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">' + _pmEsc(c.ncrsPriced + ' ' + _t('NCR(s) with a cost on them')) + '</div></div>'].join('') +
+    '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:9px;line-height:1.6">' +
+    _pmEsc(_t('These are never added together. Both describe the same rework, and summing them counts one event twice — the gap between them is what tells you one of the two is incomplete.')) + '</div></div>';
+}
+
+function _qsRenderCoq(pid) {
+  const d = _qsData();
+  if (!d) return _qsDeniedCard(pid);
+  const c = d.costOfQuality || {};
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Cost of quality'), _pmMoneyShort(c.total || 0), 'var(--navy)'),
+    _hrKpi(_t('Prevention + appraisal'), _pmMoneyShort(c.conformance || 0), 'var(--emerald)'),
+    _hrKpi(_t('Failure'), _pmMoneyShort(c.nonConformance || 0), (c.nonConformance || 0) > 0 ? '#EF4444' : 'var(--emerald)'),
+    _hrKpi(_t('Classified'), c.coverage == null ? '—' : _qsPct(c.coverage), c.meaningful ? 'var(--emerald)' : '#EF4444')
+  ]);
+  return kpis + _qsCoqCoverageCard(c) +
+    _qsWarnCard(c.warnings, _t('What the cost of quality is telling you')) +
+    _qsCoqRatioCard(c) + _qsCoqSplitCard(c) + _qsCoqCrossCard(c);
+}
+
+function qsCoqPDF() {
+  const d = _qsData(); if (!d) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const c = d.costOfQuality || {}, CODE = 'HML-QS-COQ', T = 'Cost of Quality';
+  let y = _qsPdfHdr(doc, T, CODE, _pmPdfTxt('as at ' + _pmFmt(_pmToday()))) + 2;
+  y = _qsPdfRows(doc, y, [
+    { label: 'Cost booked on this job', value: _qsMoney(c.totalCost) },
+    { label: 'Of which carries a quality classification', value: _qsMoney(c.classifiedCost),
+      hint: c.coverage == null ? '' : (c.coverage + '% coverage' + (c.meaningful ? '' : ' - the figures below describe that share and not the job')) },
+    { label: 'Prevention', value: _qsMoney(c.prevention), rule: true },
+    { label: 'Appraisal', value: _qsMoney(c.appraisal) },
+    { label: 'Spent to prevent and to find', value: _qsMoney(c.conformance), strong: true },
+    { label: 'Internal failure (before handover)', value: _qsMoney(c.internalFailure), rule: true },
+    { label: 'External failure (after handover)', value: _qsMoney(c.externalFailure) },
+    { label: 'Spent to put right', value: _qsMoney(c.nonConformance), strong: true },
+    { label: 'Cost of quality', value: _qsMoney(c.total), strong: true, rule: true,
+      hint: c.pctOfCost == null ? '' : (c.pctOfCost + '% of cost booked') },
+    { label: 'Failure share of quality cost',
+      value: c.failureShare == null ? 'n/a' : (c.failureShare + '%'),
+      hint: 'Money on prevention and appraisal buys this down; nothing else does.' }
+  ], CODE, T);
+  if (c.ncrRegisterCost != null) {
+    y += 3;
+    y = _qsPdfRows(doc, y, [
+      { label: 'The same rework, from two registers', strong: true, rule: true },
+      { label: 'Cost ledger', value: _qsMoney(c.nonConformance), indent: true },
+      { label: 'Non-conformance register', value: _qsMoney(c.ncrRegisterCost), indent: true,
+        hint: 'Never added to the figure above: both describe the same rework.' }
+    ], CODE, T);
+  }
+  if ((c.warnings || []).length) {
+    y += 3;
+    y = _qsPdfRows(doc, y, [{ label: 'Matters arising', strong: true, rule: true }].concat(
+      c.warnings.map(w => ({ label: '- ' + _pmPdfTxt(w.msg), indent: true }))), CODE, T);
+  }
+  y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['QA/QC Manager', ''], ['Project Manager', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, 'Cost-of-Quality-' + (_pmProj() || {}).code + '.pdf', '13_QS_Commercial/10_Quality_Gate_Records');
 }
 
 /* ── 8. Final account ─────────────────────────────────────────────────────────────────────────── */

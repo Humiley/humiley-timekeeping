@@ -10553,6 +10553,16 @@ class Handler(BaseHTTPRequestHandler):
                            or project.get("endBaseline")),
             "today": _now_iso()[:10]})
 
+        # PMBOK §8.1. The classification is a human judgement on the cost line — this module
+        # never guesses it, because a guessed class produces a confident cost of quality that is
+        # nobody's opinion. What it does insist on is COVERAGE: a small figure over a job nobody
+        # classified reads as "quality is cheap here", and that is the one thing this report must
+        # never say by accident.
+        coq = qsurvey.cost_of_quality({
+            "costs": [c for c in db.list_collection("pm_costs") if c.get("projectId") == pid],
+            "ncrs": rows["quality"],
+            "cutoff": live.get("cutoff") or ""})
+
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
             "daywork": rows["daywork"], "cutoff": "",
@@ -10578,6 +10588,7 @@ class Handler(BaseHTTPRequestHandler):
             "notice": notice,
             "subcontracts": sub,
             "cash": cash,
+            "costOfQuality": coq,
             "exposures": expo,
             "reserves": res,
             "cvr": cvr_calc,
@@ -10591,6 +10602,9 @@ class Handler(BaseHTTPRequestHandler):
             # browser. A second copy of "ISO 14644-1:2015" is a second copy that can go stale, and
             # the one on screen is the one somebody reads off a certificate.
             "disciplines": list(qsurvey.DISCIPLINES),
+            # Served, never a second copy in the browser: the four categories carry what belongs in
+            # each of them, and a stale copy of that text is how a cost gets classified wrongly.
+            "coqCategories": list(qsurvey.COQ_CATEGORIES),
             "commissioningTests": list(qsurvey.COMMISSIONING_TESTS),
             "at": _now_iso(),
         })
