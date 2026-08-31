@@ -7597,7 +7597,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" aria-label="Edit" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_schedules: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_schedules: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_qs_subvo: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
   // A QS register edit has to re-read /api/qs/summary: every figure on the tab is computed
   // server-side from these rows, so redrawing without refetching would show a table that has
   // changed under totals that have not.
@@ -16962,6 +16962,17 @@ const _QA_SPECS = {
     { k: 'grossClaimed', label: 'Gross claimed (₫)', type: 'money' }, { k: 'retentionDeducted', label: 'Retention deducted (₫)', type: 'money' },
     { k: 'netCertified', label: 'Net certified (₫)', type: 'money' }, { k: 'status', label: 'Status', type: 'select', options: ['Submitted', 'Certified', 'Paid'] },
     { k: 'certDate', label: 'Certified date', type: 'date' }, { k: 'note', label: 'Notes' }] },
+  /* A variation issued DOWN the chain. Deliberately a shorter lifecycle than our own variation
+     register: we are the employer here, so there is no submit-and-wait — we instruct, and we agree
+     a price. Only an AGREED one changes what the package is worth. */
+  pm_qs_subvo: { title: 'Subcontract Variation', coll: 'pm_qs_subvo', reload: 'pm_qs_subvo', fields: [
+    { k: 'subVoNo', label: 'Variation No.' }, { k: 'pkgNo', label: 'Package', type: 'select', options: 'pm_packages' },
+    { k: 'title', label: 'Description' },
+    { k: 'value', label: 'Value (₫) — negative for an omission', type: 'money' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Instructed', 'Agreed', 'Rejected'] },
+    { k: 'instructedOn', label: 'Instructed on', type: 'date' }, { k: 'agreedOn', label: 'Agreed on', type: 'date' },
+    { k: 'reason', label: 'Reason', type: 'select', options: ['Client variation passed down', 'Design change', 'Site condition', 'Scope omission', 'Error or rework', 'Acceleration', 'Other'] },
+    { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'attachment', label: 'Instruction / quotation (image or PDF)', type: 'file' }] },
   pm_stakeholders: { title: 'Stakeholder', coll: 'pm_stakeholders', reload: 'pm_stakeholders', fields: [
     { k: 'name', label: 'Name' }, { k: 'organization', label: 'Organization', type: 'combo', dyn: 'companies' }, { k: 'role', label: 'Role' },
     { k: 'internalExternal', label: 'Internal / External', type: 'select', options: ['Internal', 'External'] },
@@ -21643,7 +21654,7 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
-const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports',
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_qs_subvo', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports',
   'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning',
   'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
@@ -21968,7 +21979,7 @@ function _pmDocNoCmp(f) {
   };
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
-const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' }, pm_qs_variations: { f: 'voNo', tag: 'VO' }, pm_qs_daywork: { f: 'sheetNo', tag: 'DW' } };
+const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' }, pm_qs_variations: { f: 'voNo', tag: 'VO' }, pm_qs_daywork: { f: 'sheetNo', tag: 'DW' }, pm_qs_subvo: { f: 'subVoNo', tag: 'SVO' } };
 function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
 /* Zero-pad to three, and NEVER truncate past it.
    `('00' + seq).slice(-3)` was fine to 999 and then wrapped: 1000 became "000", 1001 became "001",
@@ -23621,6 +23632,7 @@ const _PM_COLL_LABEL = {
   pm_costs: 'Project costs and budget',
   pm_procurement: 'Subcontracts and packages',
   pm_procurement_payments: 'Payment certificates',
+  pm_qs_subvo: 'Subcontract variations',
   pm_qs_variations: 'Variations',
   pm_qs_materials: 'Materials on site',
   pm_qs_valuations: 'Interim valuations',
@@ -23643,7 +23655,7 @@ const _PM_TABS = [
   // fallback in _qsCrOf read it locally, and without it that button reports the change request
   // missing on a project where it is sitting right there.
   // Keep `need` on ONE line — tests/test_pm_tab_loading.py parses the array off it.
-  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning', 'pm_changes', 'pm_risks', 'pm_procurement', 'pm_procurement_payments'] },
+  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning', 'pm_changes', 'pm_risks', 'pm_procurement', 'pm_procurement_payments', 'pm_qs_subvo'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
   { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms', need: ['pm_comms', 'pm_issues'] },
@@ -29362,7 +29374,7 @@ function _qsSubPct(v) { return v == null ? '—' : _qsPct(v); }
 
 function _qsSubKpis(s) {
   return _hrKpiRow([
-    _hrKpi(_t('Committed'), _pmMoneyShort(s.committed || 0), 'var(--navy)'),
+    _hrKpi(_t('Committed'), _pmMoneyShort(s.revisedCommitted || 0), 'var(--navy)'),
     _hrKpi(_t('Certified out'), _pmMoneyShort(s.certifiedGross || 0), '#3168A8'),
     _hrKpi(_t('Retention held'), _pmMoneyShort(s.retentionHeld || 0), 'var(--emerald)'),
     _hrKpi(_t('Owed, not paid'), _pmMoneyShort(s.outstandingNet || 0), (s.outstandingNet || 0) > 0 ? '#F59E0B' : 'var(--emerald)')
@@ -29404,7 +29416,7 @@ function _qsSubPkgCard(s) {
     return '<div class="card" style="padding:26px 18px;text-align:center;margin-bottom:14px;color:var(--text-light);font-size:12.5px">' +
       _pmEsc(_t('No procurement packages on this project yet. Add them on the Procurement tab — this position is built from that register, not from a second copy of it.')) + '</div>';
   }
-  const head = ['Pkg', 'Package / scope', 'Subcontractor', 'Trade', 'Committed', 'Certified', '%', 'Retention held', 'Due', 'Short']
+  const head = ['Pkg', 'Package / scope', 'Subcontractor', 'Trade', 'Committed', 'Variations', 'Revised', 'Certified', '%', 'Retention held', 'Due', 'Short']
     .map((h, i) => '<th style="padding:8px 10px;font-size:11px;text-align:' + (i >= 4 ? 'right' : 'left') + ';white-space:nowrap">' + _t(h) + '</th>').join('');
   const rows = s.packages.map(p => {
     const bad = p.overCertified || p.retentionShort > 0 || p.value == null;
@@ -29414,6 +29426,10 @@ function _qsSubPkgCard(s) {
       '<td style="padding:7px 10px;font-size:12px">' + (p.vendor ? _pmBadge(p.vendor, '#3168A8') : '—') + '</td>' +
       '<td style="padding:7px 10px;font-size:12px">' + _qsDiscPill(p.discipline) + '</td>' +
       '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + (p.value == null ? '<span style="color:#EF4444;font-weight:700">' + _t('not recorded') + '</span>' : _qsMoney(p.value)) + '</td>' +
+      /* Agreed variations, and instructed ones underneath — the second is an exposure, not part of
+         what the package is worth, so it is never added into the column beside it. */
+      '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + (p.variations ? _qsMoney(p.variations) : '<span style="color:var(--text-light)">—</span>') + (p.variationsPending ? '<div style="font-size:10px;color:#F59E0B;font-weight:700">+' + _qsMoney(p.variationsPending) + ' ' + _t('pending') + '</div>' : '') + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600">' + (p.revisedValue == null ? '<span style="color:var(--text-light)">—</span>' : _qsMoney(p.revisedValue)) + '</td>' +
       '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600' + (p.overCertified ? ';color:#EF4444' : '') + '">' + _qsMoney(p.certifiedGross) + '</td>' +
       '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:var(--text-light)">' + _qsSubPct(p.pctCertified) + '</td>' +
       '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + _qsMoney(p.retentionHeld) + '</td>' +
@@ -29423,7 +29439,7 @@ function _qsSubPkgCard(s) {
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
     '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + _t('Packages and what has been certified against them') + '</div>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="qsSubcontractPDF()">' + tkIcon('download', 12) + ' PDF</button></div>' +
-    '<div class="table-wrap"><table style="min-width:920px;border-collapse:collapse"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table style="min-width:1120px;border-collapse:collapse"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
     (s.packagesWithoutValue ? '<div style="padding:9px 16px;background:var(--soft-bg);font-size:11.5px;color:#EF4444;font-weight:600">' +
       _pmEsc(_t('Packages with no committed value recorded') + ': ' + s.packagesWithoutValue + ' — ' + _t('nothing can say whether they are over-certified, and their value is not in the committed total above.')) + '</div>' : '') + '</div>';
 }
@@ -29437,13 +29453,14 @@ function _qsSubTradeCard(s) {
     '<td style="padding:7px 10px;font-size:12.5px">' + _qsDiscPill(t.code) + '</td>' +
     '<td style="padding:7px 10px;text-align:right;font-size:12px;color:var(--text-light);font-variant-numeric:tabular-nums">' + t.packages + '</td>' +
     '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + ((!t.committed && t.noValue) ? '<span style="color:var(--text-light)">—</span>' : _qsMoney(t.committed)) + (t.noValue ? '<div style="font-size:10px;color:#EF4444">' + t.noValue + ' ' + _t('without a value') + '</div>' : '') + '</td>' +
+    '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + (t.variations ? _qsMoney(t.variations) : '<span style="color:var(--text-light)">—</span>') + '</td>' +
     '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600">' + _qsMoney(t.certifiedOut) + '</td>' +
     '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + (t.valuedIn == null ? '<span style="color:var(--text-light)">' + _t('not measured') + '</span>' : _qsMoney(t.valuedIn)) + '</td>' +
     '<td style="padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:700;color:' + (t.ahead ? '#EF4444' : 'var(--text-light)') + '">' + (t.ahead ? _qsMoney(t.aheadBy) : '—') + '</td></tr>').join('');
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
     '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Certified out against measured in, by trade') + '</div></div>' +
     '<div class="table-wrap"><table style="min-width:680px;border-collapse:collapse"><thead><tr>' +
-    ['Trade', 'Pkgs', 'Committed', 'Certified out', 'Measured in', 'Ahead by'].map((h, i) => '<th style="padding:8px 10px;font-size:11px;text-align:' + (i ? 'right' : 'left') + ';white-space:nowrap">' + _t(h) + '</th>').join('') +
+    ['Trade', 'Pkgs', 'Committed', 'Variations', 'Certified out', 'Measured in', 'Ahead by'].map((h, i) => '<th style="padding:8px 10px;font-size:11px;text-align:' + (i ? 'right' : 'left') + ';white-space:nowrap">' + _t(h) + '</th>').join('') +
     '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
     '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
     _pmEsc(_t('A subcontractor’s measure and our own measure of the same physical work should track, with our margin between them. Certified out above measured in means we are paying for work we are not billing. A package carrying no trade sits in the totals and in no row here — it is not compared against the unallocated bill, because those are two different absences.')) + '</div></div>';
@@ -29469,13 +29486,34 @@ function _qsSubOrphanCard(s) {
     '</tbody></table></div></div>';
 }
 
+/* The register itself. It is a plain PM table like every other register, because a subcontract
+   variation is entered by the QS the same way a client one is — the difference is only which way
+   the instruction points. */
+function _qsSubVoCard(pid) {
+  const rows = (typeof _pmScopeFor === 'function' ? _pmScopeFor('pm_qs_subvo', pid) : [])
+    .slice().sort((a, b) => String(a.subVoNo || '').localeCompare(String(b.subVoNo || '')));
+  return _pmCard(_t('Subcontract Variations'), 'pm_qs_subvo', _t('Add variation'), _pmTable('pm_qs_subvo', [
+    { label: _t('No.'), sk: 'subVoNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.subVoNo || '—') + '</span>' },
+    { label: _t('Package'), sk: 'pkgNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
+    { label: _t('Description'), sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: _t('Reason'), sk: 'reason', render: r => r.reason ? _pmBadge(r.reason, '#8B5CF6') : '—' },
+    { label: _t('Value'), sk: 'value', align: 'right', render: r => '<span style="color:' + ((+r.value || 0) < 0 ? '#00B060' : 'var(--text)') + '">' + _pmMoney(r.value) + '</span>' },
+    { label: _t('Status'), sk: 'status', render: r => _pmBadge(r.status || 'Instructed', r.status === 'Agreed' ? '#00B060' : r.status === 'Rejected' ? '#94a3b8' : '#F59E0B') },
+    { label: _t('Instructed'), sk: 'instructedOn', render: r => _pmFmt(r.instructedOn) },
+    { label: _t('Agreed'), sk: 'agreedOn', render: r => _pmFmt(r.agreedOn) },
+    { label: _t('File'), render: r => _pmFileCell('pm_qs_subvo', r) }
+  ], rows)) +
+    '<div class="card" style="padding:9px 16px;margin:-14px 0 14px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Only an AGREED variation changes what a package is worth — the same rule our own variations follow. An instructed one is work being done at a price nobody has set, and it is carried as an exposure beside the package rather than added into it.')) + '</div>';
+}
+
 function _qsRenderSubs(pid) {
   const d = _qsData();
   if (!d) return _qsDeniedCard(pid);
   const s = d.subcontracts || {};
   return _qsSubKpis(s) +
     _qsWarnCard(s.warnings, _t('What the back-to-back position is telling you')) +
-    _qsSubFundCard(s) + _qsSubTradeCard(s) + _qsSubPkgCard(s) + _qsSubOrphanCard(s);
+    _qsSubFundCard(s) + _qsSubTradeCard(s) + _qsSubPkgCard(s) + _qsSubVoCard(pid) + _qsSubOrphanCard(s);
 }
 
 function qsSubcontractPDF() {
@@ -29485,7 +29523,10 @@ function qsSubcontractPDF() {
   let y = _qsPdfHdr(doc, T, CODE, _pmPdfTxt('as at ' + _pmFmt(_pmToday()))) + 2;
   y = _qsPdfRows(doc, y, [
     { label: 'Committed to subcontractors', value: _qsMoney(s.committed), hint: s.packagesWithoutValue ? (s.packagesWithoutValue + ' package(s) carry no recorded value and are not in this total') : '' },
-    { label: 'Certified out, gross', value: _qsMoney(s.certifiedGross) },
+    { label: 'Agreed subcontract variations', value: _qsMoney(s.variations) },
+    { label: 'Revised commitment', value: _qsMoney(s.revisedCommitted), strong: true },
+    { label: 'Instructed, not yet agreed', value: _qsMoney(s.variationsPending), hint: 'Work being done at a price nobody has set. Not in the revised commitment above.' },
+    { label: 'Certified out, gross', value: _qsMoney(s.certifiedGross), rule: true },
     { label: 'Retention held from subcontractors', value: _qsMoney(s.retentionHeld) },
     { label: 'Certified out, net', value: _qsMoney(s.certifiedNet), strong: true, rule: true },
     { label: 'Paid', value: _qsMoney(s.paidNet) },

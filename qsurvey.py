@@ -2247,14 +2247,23 @@ def exposures(ctx):
 SUB_OWED = ("certified", "paid")
 SUB_CLAIMED = ("submitted",)
 
+# A subcontract variation. Deliberately a SHORTER lifecycle than our own VARIATION_FLOW: we are the
+# employer down this chain, so there is no submit-and-wait — we instruct, and we agree a price.
+# Only an AGREED variation changes what the package is worth, for the same reason only an agreed
+# client variation enters a valuation. An instructed one is an exposure and is reported as one.
+SUBVO_INSTRUCTED = "instructed"
+SUBVO_AGREED = "agreed"
+SUBVO_REJECTED = "rejected"
+SUBVO_STATUSES = (SUBVO_INSTRUCTED, SUBVO_AGREED, SUBVO_REJECTED)
+
 
 def subcontract_position(ctx):
     """The subcontract commitment, what has been certified against it, and how that sits against
     both our own measure and the client's certificate.
 
-    ctx: packages (pm_procurement), certificates (pm_procurement_payments), valueByTrade
-    {code: value we have valued in}, clientCertified (gross certified BY the client, or None),
-    retentionFromUs (retention the client is holding), cutoff.
+    ctx: packages (pm_procurement), certificates (pm_procurement_payments), subVariations
+    (pm_qs_subvo), valueByTrade {code: value we have valued in}, clientCertified (gross certified
+    BY the client, or None), retentionFromUs (retention the client is holding), cutoff.
     """
     ctx = ctx or {}
     cutoff = str(ctx.get("cutoff") or "")[:10]
@@ -2274,7 +2283,8 @@ def subcontract_position(ctx):
              # `_rate`, not `_num`: a package with no value recorded is not a package worth nil.
              "value": _rate(p.get("value")), "retentionPct": _rate(p.get("retentionPct")),
              "certifiedGross": 0.0, "retentionHeld": 0.0, "certifiedNet": 0.0,
-             "paidNet": 0.0, "submitted": 0.0, "certs": 0}
+             "paidNet": 0.0, "submitted": 0.0, "certs": 0,
+             "variations": 0.0, "variationsPending": 0.0, "variationCount": 0}
         rows.append(r)
         key = _norm(no)
         if not key:
@@ -2285,6 +2295,43 @@ def subcontract_position(ctx):
               "be matched to one of them." % no, pkgNo=no)
         else:
             by_no[key] = r
+
+    # ── the subcontract variations ───────────────────────────────────────────────────────────────
+    # Read BEFORE the certificates, because what a package is worth is what decides whether a
+    # certificate against it is too big.
+    subvo_orphans = []
+    for v in (ctx.get("subVariations") or []):
+        ref = str(v.get("subVoNo") or "").strip() or "(no number)"
+        status = _norm(v.get("status")) or SUBVO_INSTRUCTED
+        if status == SUBVO_REJECTED:
+            continue
+        # An agreed variation is dated by its agreement; an instructed one by the instruction.
+        on = v.get("agreedOn") if status == SUBVO_AGREED else v.get("instructedOn")
+        if not _le(on, cutoff):
+            continue
+        # `_rate`, not `_num`: a variation nobody has priced is not a variation worth nil, and
+        # adding it at zero would make a package look explained when it is not.
+        amt = _rate(v.get("value"))
+        r = by_no.get(_norm(v.get("pkgNo")))
+        if r is None:
+            subvo_orphans.append(ref)
+            continue
+        if amt is None:
+            w("subcontract_variation_unpriced", "high",
+              "Subcontract variation %s on %s carries no value, so it cannot change what the "
+              "package is worth and cannot explain a certificate against it."
+              % (ref, r["pkgNo"] or r["title"]), pkgNo=r["pkgNo"], subVoNo=ref)
+            continue
+        r["variationCount"] += 1
+        if status == SUBVO_AGREED:
+            r["variations"] += amt
+        else:
+            r["variationsPending"] += amt
+    if subvo_orphans:
+        w("subcontract_variation_no_package", "high",
+          "%d subcontract variation(s) name no package in the register, so they change nothing "
+          "and explain nothing: %s."
+          % (len(subvo_orphans), ", ".join(sorted(subvo_orphans)[:6])), subVoNos=subvo_orphans)
 
     # ── the certificates ─────────────────────────────────────────────────────────────────────────
     # Orphans are counted in the PROJECT totals and excluded only from the package rows. The money
@@ -2352,19 +2399,35 @@ def subcontract_position(ctx):
 
     # ── what each package now says ───────────────────────────────────────────────────────────────
     for r in rows:
-        for k in ("certifiedGross", "retentionHeld", "certifiedNet", "paidNet", "submitted"):
+        for k in ("certifiedGross", "retentionHeld", "certifiedNet", "paidNet", "submitted",
+                  "variations", "variationsPending"):
             r[k] = r2(r[k])
-        v = r["value"]
+        # An unknown commitment plus a variation is still an unknown commitment. Revising from None
+        # would turn "nobody recorded what we bought" into a confident figure.
+        r["revisedValue"] = (None if r["value"] is None else r2(r["value"] + r["variations"]))
+        v = r["revisedValue"]
+        # Measured against the REVISED value, which is what the package is now worth.
         r["pctCertified"] = round(r["certifiedGross"] / v * 100.0, 2) if v else None
         r["overBy"] = 0.0
         r["overCertified"] = bool(v and r["certifiedGross"] > v + 0.005)
         if r["overCertified"]:
             r["overBy"] = r2(r["certifiedGross"] - v)
-            w("subcontract_over_certified", "high",
-              "%s (%s) is certified %s against a committed value of %s — %s more. Either a "
-              "subcontract variation was never recorded, or the package is over-certified."
-              % (r["pkgNo"] or r["title"], r["vendor"] or "no vendor", _vnd(r["certifiedGross"]),
-                 _vnd(v), _vnd(r["overBy"])), pkgNo=r["pkgNo"])
+            # The register can finally say WHICH of the two it is — the whole reason it exists.
+            if r["variationsPending"] >= r["overBy"] - 0.005 and r["variationsPending"] > 0:
+                w("subcontract_over_certified_pending_variation", "high",
+                  "%s (%s) is certified %s against %s — %s more, and %s of instructed variations "
+                  "are not yet agreed. Agree them and the certificate is covered; do not, and it "
+                  "is an over-certification."
+                  % (r["pkgNo"] or r["title"], r["vendor"] or "no vendor",
+                     _vnd(r["certifiedGross"]), _vnd(v), _vnd(r["overBy"]),
+                     _vnd(r["variationsPending"])), pkgNo=r["pkgNo"])
+            else:
+                w("subcontract_over_certified", "high",
+                  "%s (%s) is certified %s against %s including %s of agreed variations — %s more. "
+                  "No instructed variation accounts for it: this is an over-certification."
+                  % (r["pkgNo"] or r["title"], r["vendor"] or "no vendor",
+                     _vnd(r["certifiedGross"]), _vnd(v), _vnd(r["variations"]),
+                     _vnd(r["overBy"])), pkgNo=r["pkgNo"])
         elif v is None and (r["certifiedGross"] or r["submitted"]):
             w("subcontract_no_value", "high",
               "%s carries %s of certificates against no committed value, so nothing can say "
@@ -2405,11 +2468,12 @@ def subcontract_position(ctx):
         t = trades.setdefault(code, {
             "code": code, "label": d["label"] if d else discipline_label(code),
             "labelVn": d["labelVn"] if d else "Chưa phân bổ", "hex": d["hex"] if d else "#94A3B8",
-            "packages": 0, "committed": 0.0, "certifiedOut": 0.0, "retentionHeld": 0.0,
-            "noValue": 0})
+            "packages": 0, "committed": 0.0, "variations": 0.0, "certifiedOut": 0.0,
+            "retentionHeld": 0.0, "noValue": 0})
         t["packages"] += 1
         t["certifiedOut"] += r["certifiedGross"]
         t["retentionHeld"] += r["retentionHeld"]
+        t["variations"] += r["variations"]
         if r["value"] is None:
             t["noValue"] += 1
         else:
@@ -2420,8 +2484,9 @@ def subcontract_position(ctx):
         if code not in trades:
             continue
         t = trades[code]
-        for k in ("committed", "certifiedOut", "retentionHeld"):
+        for k in ("committed", "variations", "certifiedOut", "retentionHeld"):
             t[k] = r2(t[k])
+        t["revised"] = r2(t["committed"] + t["variations"])
         # UNALLOCATED is forced to None rather than read from `valued`. There is an unallocated row
         # in the bill too, and comparing packages nobody assigned to a trade against bill lines
         # nobody assigned to a trade compares two different absences and reads as a finding.
@@ -2443,6 +2508,8 @@ def subcontract_position(ctx):
     # ── the project position ─────────────────────────────────────────────────────────────────────
     committed = r2(sum(r["value"] for r in rows if r["value"] is not None))
     no_value = sum(1 for r in rows if r["value"] is None)
+    varied = r2(sum(r["variations"] for r in rows))
+    varied_pending = r2(sum(r["variationsPending"] for r in rows))
     cert_gross = r2(sum(r["certifiedGross"] for r in rows) + orphan_gross)
     ret_held = r2(sum(r["retentionHeld"] for r in rows) + orphan_ret)
     cert_net = r2(sum(r["certifiedNet"] for r in rows) + orphan_net)
@@ -2477,6 +2544,10 @@ def subcontract_position(ctx):
     return {
         "packages": rows, "trades": tr_out, "orphans": orphans,
         "committed": committed, "packagesWithoutValue": no_value,
+        # What we have agreed to pay on top of the packages, and what we have instructed and not
+        # yet agreed. The second is an exposure: the work is being done at a price nobody has set.
+        "variations": varied, "variationsPending": varied_pending,
+        "revisedCommitted": r2(committed + varied),
         "certifiedGross": cert_gross, "retentionHeld": ret_held, "certifiedNet": cert_net,
         "paidNet": paid_net, "outstandingNet": r2(cert_net - paid_net),
         "submittedNotCertified": submitted,
@@ -2502,11 +2573,6 @@ UNRESOLVED = (
     "separately. extension_of_time() computes the EXPOSURE — days late at the rate the contract "
     "states, capped where it states a cap, which is arithmetic — and stops there. Which remedy the "
     "employer takes, and when, is a legal position under the contract.",
-    "A VARIATION to a subcontract. pm_procurement holds one committed value per package and\n"
-    "nothing records an instruction issued down the chain, so subcontract_position() can say\n"
-    "a package is certified above what was bought but not which of the two reasons it is.\n"
-    "Inventing a subcontract variation register so the arithmetic closes would put a figure on\n"
-    "a payment position that no subcontract contains.",
     "The tax treatment of retention and of materials on site — see sales_contract.vat_ready(), "
     "which refuses for the same reason and names it.",
 )

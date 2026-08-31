@@ -77,16 +77,17 @@ def test_paid_is_counted_inside_certified_and_also_on_its_own():
 
 # ── certified past what was bought ───────────────────────────────────────────────────────────────
 
-def test_certifying_above_the_committed_value_is_named_with_both_of_its_causes():
-    """It is either a subcontract variation nobody recorded or an over-certification, and this
-    module has no register that can tell them apart. Guessing one would be wrong half the time."""
+def test_certifying_above_the_package_with_nothing_to_explain_it_is_an_over_certification():
+    """This used to be reported as one of two possible causes, because nothing recorded a
+    subcontract variation. With a register in place the module can say which it is, and with no
+    variation on the package there is only one answer left."""
     r = _p(certificates=[_cert(grossClaimed=4_500_000_000, retentionDeducted=225_000_000,
                                netCertified=4_275_000_000)])
     p = _pk(r)
     assert p["overCertified"] is True and p["overBy"] == 500_000_000
     w = [x for x in r["warnings"] if x["code"] == "subcontract_over_certified"][0]
     assert w["severity"] == "high"
-    assert "variation" in w["msg"] and "over-certified" in w["msg"]
+    assert "this is an over-certification" in w["msg"]
 
 
 def test_a_package_with_no_committed_value_says_so_rather_than_reading_as_nil():
@@ -327,10 +328,14 @@ def test_with_no_cut_off_an_undated_certificate_is_simply_in():
 
 # ── what it refuses to invent ────────────────────────────────────────────────────────────────────
 
-def test_the_module_says_out_loud_that_it_has_no_subcontract_variation_register():
+def test_the_module_no_longer_claims_it_cannot_see_a_subcontract_variation():
+    """UNRESOLVED named this gap for exactly as long as it was real. A refusal left standing after
+    the thing was built is a lie the next reader believes."""
     joined = " ".join(qs.UNRESOLVED)
-    assert "VARIATION to a subcontract" in joined
-    assert "pm_procurement" in joined
+    assert "VARIATION to a subcontract" not in joined
+    # The three that remain are genuinely still unresolved.
+    assert len(qs.UNRESOLVED) == 3
+    assert "Price fluctuation" in joined and "liquidated damages" in joined
 
 
 def test_an_empty_job_produces_a_position_rather_than_an_error():
@@ -350,3 +355,123 @@ def test_the_register_comes_out_in_package_number_order():
 def test_a_package_with_no_number_sorts_last_rather_than_first():
     r = _p(packages=[_pkg(id="x", pkgNo="", title="Unnumbered"), _pkg()])
     assert [p["pkgNo"] for p in r["packages"]] == ["PKG-001", ""]
+
+
+# ── subcontract variations: what a package is actually worth now ─────────────────────────────────
+
+def _vo(**kw):
+    return dict({"id": "v1", "subVoNo": "SVO-001", "pkgNo": "PKG-001",
+                 "title": "Additional fire dampers", "value": 300_000_000,
+                 "status": "Agreed", "instructedOn": "2026-04-10",
+                 "agreedOn": "2026-05-02"}, **kw)
+
+
+def test_an_agreed_variation_raises_what_the_package_is_worth():
+    r = _p(subVariations=[_vo()])
+    p = _pk(r)
+    assert p["variations"] == 300_000_000
+    assert p["revisedValue"] == 4_300_000_000
+    assert r["variations"] == 300_000_000
+    assert r["revisedCommitted"] == 4_300_000_000
+
+
+def test_an_instructed_variation_is_an_exposure_and_does_not_raise_the_package():
+    """The same rule our own variations follow: work is being done at a price nobody has set, and
+    counting it as agreed would make the commitment look settled when it is not."""
+    r = _p(subVariations=[_vo(status="Instructed", agreedOn="")])
+    p = _pk(r)
+    assert p["variations"] == 0 and p["variationsPending"] == 300_000_000
+    assert p["revisedValue"] == 4_000_000_000
+    assert r["variationsPending"] == 300_000_000
+
+
+def test_a_rejected_variation_changes_nothing_and_is_not_an_exposure():
+    r = _p(subVariations=[_vo(status="Rejected")])
+    p = _pk(r)
+    assert p["variations"] == 0 and p["variationsPending"] == 0
+    assert p["variationCount"] == 0
+
+
+def test_an_omission_is_a_negative_variation_and_lowers_the_package():
+    """Descoping a subcontractor is the commonest variation of all and the one most often left
+    unrecorded, because nobody chases a credit."""
+    r = _p(subVariations=[_vo(value=-500_000_000)])
+    assert _pk(r)["revisedValue"] == 3_500_000_000
+
+
+def test_a_variation_nobody_has_priced_is_reported_and_never_counted_at_nil():
+    """Counted at zero it would make a package look explained when nothing about it is settled."""
+    r = _p(subVariations=[_vo(value="")])
+    p = _pk(r)
+    assert p["variations"] == 0 and p["variationCount"] == 0
+    assert "subcontract_variation_unpriced" in _codes(r)
+
+
+def test_a_variation_on_an_unknown_commitment_leaves_it_unknown():
+    """Something plus an unknown is still an unknown. Revising from None would turn "nobody
+    recorded what we bought" into a confident figure."""
+    r = _p(packages=[_pkg(value="")], subVariations=[_vo()])
+    assert _pk(r)["revisedValue"] is None
+
+
+def test_a_variation_naming_no_package_explains_nothing_and_says_so():
+    r = _p(subVariations=[_vo(pkgNo="PKG-404")])
+    assert _pk(r)["variations"] == 0
+    assert "subcontract_variation_no_package" in _codes(r)
+
+
+def test_a_certificate_covered_by_an_agreed_variation_is_not_over_certification():
+    """This is the case that used to be reported as a possible fraud. The variation was always
+    there; the portal simply had nowhere to write it down."""
+    r = _p(subVariations=[_vo(value=600_000_000)],
+           certificates=[_cert(grossClaimed=4_500_000_000, retentionDeducted=225_000_000,
+                               netCertified=4_275_000_000)])
+    p = _pk(r)
+    assert p["revisedValue"] == 4_600_000_000
+    assert p["overCertified"] is False
+    assert not [x for x in r["warnings"] if x["code"].startswith("subcontract_over_certified")]
+
+
+def test_a_certificate_an_instructed_variation_would_cover_names_that_specifically():
+    """A different finding with a different fix: agree the variation, and the certificate is
+    covered. Reporting it as a plain over-certification would send a QS looking for the wrong
+    thing."""
+    r = _p(subVariations=[_vo(status="Instructed", agreedOn="", value=600_000_000)],
+           certificates=[_cert(grossClaimed=4_500_000_000, retentionDeducted=225_000_000,
+                               netCertified=4_275_000_000)])
+    w = [x for x in r["warnings"]
+         if x["code"] == "subcontract_over_certified_pending_variation"]
+    assert w and "not yet agreed" in w[0]["msg"]
+    assert "subcontract_over_certified" not in _codes(r)
+
+
+def test_an_instructed_variation_too_small_to_cover_the_gap_is_still_an_over_certification():
+    """It explains part of it and not the rest, and the rest is the finding."""
+    r = _p(subVariations=[_vo(status="Instructed", agreedOn="", value=100_000_000)],
+           certificates=[_cert(grossClaimed=4_500_000_000, retentionDeducted=225_000_000,
+                               netCertified=4_275_000_000)])
+    assert "subcontract_over_certified" in _codes(r)
+
+
+def test_percent_certified_is_measured_against_the_revised_value():
+    r = _p(subVariations=[_vo(value=1_000_000_000)])
+    assert _pk(r)["pctCertified"] == 20.0
+
+
+def test_an_agreed_variation_after_the_cut_off_is_not_in_this_position():
+    r = _p(cutoff="2026-04-30", subVariations=[_vo()])
+    assert _pk(r)["variations"] == 0
+
+
+def test_an_instructed_variation_is_dated_by_its_instruction_not_its_agreement():
+    """It has no agreement date yet, so dating it by one would drop every pending variation out of
+    every cut-off and hide the exposure entirely."""
+    r = _p(cutoff="2026-04-30", subVariations=[_vo(status="Instructed", agreedOn="")])
+    assert _pk(r)["variationsPending"] == 300_000_000
+
+
+def test_the_trade_rollup_carries_the_variations_and_a_revised_commitment():
+    r = _p(subVariations=[_vo()])
+    t = next(x for x in r["trades"] if x["code"] == qs.HVAC)
+    assert t["variations"] == 300_000_000
+    assert t["revised"] == 4_300_000_000

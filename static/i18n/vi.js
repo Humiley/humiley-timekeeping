@@ -6137,4 +6137,11 @@ window._VI = {
   'package not in the register': 'gói không có trong sổ đăng ký',
   'What the back-to-back position is telling you': 'Vị thế back-to-back đang nói lên điều gì',
   'Retention held to date (₫) — optional': 'Tiền giữ lại lũy kế (₫) — không bắt buộc',
+
+  /* ── QS: subcontract variations ── */
+  'Subcontract Variations': 'Phát sinh thầu phụ',
+  'Subcontract Variation': 'Phát sinh thầu phụ',
+  'Instructed': 'Đã ra lệnh',
+  'pending': 'chờ chốt giá',
+  'Only an AGREED variation changes what a package is worth — the same rule our own variations follow. An instructed one is work being done at a price nobody has set, and it is carried as an exposure beside the package rather than added into it.': 'Chỉ phát sinh ĐÃ CHỐT mới làm thay đổi giá trị gói thầu — đúng nguyên tắc mà phát sinh của ta cũng theo. Phát sinh mới ra lệnh là phần việc đang làm với mức giá chưa ai chốt, và được nêu như một khoản rủi ro bên cạnh gói thầu chứ không cộng vào.',
 };

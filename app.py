@@ -9846,7 +9846,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -10036,6 +10036,10 @@ class Handler(BaseHTTPRequestHandler):
                 "pm_qs_boq": "staff", "pm_qs_measure": "staff", "pm_qs_daywork": "staff",
                 "pm_qs_commissioning": "staff",
                 "pm_qs_variations": "manager", "pm_qs_materials": "manager",
+                # A subcontract variation commits the company to pay more. Same class of act
+                # as raising one on the client, and gated the same way — and because it is
+                # not in STAFF_WRITE, it must not be staff-readable either.
+                "pm_qs_subvo": "manager",
                 "pm_qs_valuations": "manager", "pm_qs_cvr": "manager",
                 # Not compensation data: a site manager has to know whether their crew is covered
                 # before sending them out, so this is manager-and-above, not management.
@@ -10200,7 +10204,8 @@ class Handler(BaseHTTPRequestHandler):
     # `qsurvey.py` computes the gross valuation and stops. Retention and advance recovery are computed by
     # sales_contract.application() and by nothing else — see the note it returns in `next`.
     QS_COLLS = ("pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork",
-                "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning")
+                "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning",
+                "pm_qs_subvo")
 
     def _qs_may_read(self, u, pid):
         """Whether this caller may read a project's commercial position, and why not if not.
@@ -10254,7 +10259,11 @@ class Handler(BaseHTTPRequestHandler):
                 # a subcontractor certified past his package — or certified with no retention
                 # deducted — was invisible to every commercial screen on the job.
                 "procurement": _of("pm_procurement"),
-                "procurementCerts": _of("pm_procurement_payments")}
+                "procurementCerts": _of("pm_procurement_payments"),
+                # What we have instructed DOWN the chain. Without it the position could say a
+                # package was certified above what was bought and not which of the two
+                # reasons it was, so UNRESOLVED had to name the gap.
+                "subVariations": _of("pm_qs_subvo")}
 
     @staticmethod
     def _qs_ctx(rows):
@@ -10523,6 +10532,7 @@ class Handler(BaseHTTPRequestHandler):
         # are different facts and lead to opposite decisions.
         sub = qsurvey.subcontract_position({
             "packages": rows["procurement"], "certificates": rows["procurementCerts"],
+            "subVariations": rows["subVariations"],
             "valueByTrade": value_by_trade,
             "clientCertified": certified,
             "retentionFromUs": (cert_row or {}).get("certifiedRetention"),

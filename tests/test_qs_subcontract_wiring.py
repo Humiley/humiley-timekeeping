@@ -214,3 +214,59 @@ def test_the_monthly_commercial_report_carries_the_subcontract_position():
     assert "sb.clientCertified == null ? 'not recorded'" in body, \
         "an unrecorded client certificate must not print as nil in the report either"
     assert "Trades certified out ahead of our own measure" in body
+
+
+# ── the subcontract variation register ───────────────────────────────────────────────────────────
+
+def test_the_variation_register_exists_as_a_form_somebody_can_fill_in():
+    """The engine gained the arithmetic first. A register with no form is a rule enforced against
+    data nobody can enter — the competence register shipped exactly that way."""
+    f = _schema(_html(), "pm_qs_subvo", "pm_stakeholders")
+    for k in ("subVoNo", "pkgNo", "value", "status", "instructedOn", "agreedOn", "reason"):
+        assert "k: '%s'" % k in f, "the register has no %s field" % k
+    assert "options: 'pm_packages'" in f, "it must point at the same picker the certificates use"
+
+
+def test_the_register_is_manager_and_above_on_both_gates():
+    """It commits the company to pay a subcontractor more. Read and write are two gates and they
+    must agree — staff-readable and not staff-writable is the shape that shipped once already and
+    made every save fail with 'Manager access required'."""
+    src = _app()
+    assert '"pm_qs_subvo": "manager"' in src
+    i = src.index("STAFF_WRITE = {")
+    assert "pm_qs_subvo" not in src[i:src.index("}", i)], "manager-read but staff-write"
+
+
+def test_the_register_joined_every_guard_list_a_qs_collection_belongs_to():
+    src = _app()
+    i = src.index("COLLECTIONS = {")
+    assert "pm_qs_subvo" in src[i:src.index("}", i)]
+    j = src.index("QS_COLLS = (")
+    assert "pm_qs_subvo" in src[j:src.index(")", j)]
+
+
+def test_the_variations_reach_the_engine_and_the_tab_loads_them():
+    src, html = _app(), _html()
+    assert '"subVariations": _of("pm_qs_subvo")' in src
+    i = src.index("qsurvey.subcontract_position({")
+    assert '"subVariations": rows["subVariations"]' in src[i:i + 700]
+    j = html.index("k: 'qs', label: 'QS / Commercial'")
+    assert "'pm_qs_subvo'" in html[j:html.index("] },", j)]
+
+
+def test_the_register_is_on_the_screen_and_not_only_in_the_payload():
+    html = _html()
+    assert "function _qsSubVoCard(" in html
+    i = html.index("function _qsRenderSubs(")
+    assert "_qsSubVoCard(pid)" in html[i:i + 900], "the card is defined and never rendered"
+
+
+def test_the_pending_variations_are_never_added_into_what_the_package_is_worth():
+    """On the screen as in the engine: instructed is an exposure printed beside the figure, never
+    inside it. Adding them would make a commitment look settled when nobody has priced it."""
+    html = _html()
+    i = html.index("function _qsSubPkgCard(")
+    body = html[i:html.index("/* Certified out against measured in", i)]
+    assert "p.variationsPending" in body and "pending" in body
+    for forbidden in ("p.variations + p.variationsPending", "p.value + p.variations"):
+        assert forbidden not in body, "the screen is summing variations itself: %s" % forbidden
