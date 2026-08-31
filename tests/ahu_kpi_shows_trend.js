@@ -47,6 +47,18 @@ const KPI = {
     onTimeDelivery: [{ month: '2026-08', n: 8, good: 8, pct: 100.0, enough: true }],
     unbucketed: { firstPassYield: 0, onTimeDelivery: 0 },
   },
+  rework: {
+    stations: [
+      { code: 'WS-04', rework: 3, useAsIs: 1, reject: 0, undecided: 0, total: 4, units: 2,
+        pins: ['PIN-1', 'PIN-2'] },
+      { code: 'WS-02', rework: 1, useAsIs: 0, reject: 0, undecided: 1, total: 2, units: 1,
+        pins: ['PIN-1'] },
+      { code: '(no step recorded)', rework: 2, useAsIs: 0, reject: 0, undecided: 0, total: 2,
+        units: 1, pins: ['PIN-3'] },
+    ],
+    unattributed: 2, reworkTotal: 6, ncrTotal: 8, unitsWithRework: 3, worstStation: 'WS-04',
+    note: 'Counts, not cost: the non-conformance form records no hours and no money.',
+  },
 };
 
 (async () => {
@@ -57,6 +69,7 @@ const KPI = {
   global._ahuA = (v) => String(v == null ? '' : v);
   global._ahuCard = (h) => '<div class="card">' + h + '</div>';
 
+  eval(take('function _ahuReworkPanel('));
   eval(take('function _ahuTrendStrip('));
   eval(take('async function ahuRenderSopKpi()'));
   await ahuRenderSopKpi();
@@ -89,12 +102,36 @@ const KPI = {
   must('the KPI with no series gets no strip, rather than an empty box',
        (h.match(/height:60px/g) || []).length === 2);
 
+  // ── where the rework happens ────────────────────────────────────────────────────────────────
+  // Shipped as an endpoint field with no renderer in #176, on purpose and said so at the time.
+  // This is the half that makes it answer anybody's question.
+  must('the rework table is drawn at all', h.includes('Where the rework happens'));
+  must('the worst station is called out', h.includes('Most rework: WS-04'));
+  must('each station is a row with its rework count',
+       /WS-04<\/td><td[^>]*>3</.test(h.replace(/\s+/g, '')), 
+       (h.match(/WS-04[^]{0,140}/) || ['(no WS-04 row)'])[0]);
+  must('use-as-is and reject are shown apart from rework, not folded in',
+       h.includes('Use as is') && h.includes('Reject'));
+  must('an NCR nobody dispositioned is visible as undecided', h.includes('Undecided'));
+
+  // The two judgements from the backend that must survive to the screen.
+  must('the unattributable row is LABELLED as not attributable, not shown as a station',
+       h.includes('not attributable'));
+  must('the no-cost caveat is rendered WITH the table, not left to documentation',
+       h.includes('records no hours and no money'));
+
   // An older server, or one KPI without a key, must not break the panel.
   delete KPI.trend;
   root.innerHTML = '';
   await ahuRenderSopKpi();
   must('a server with no trend block still renders the KPI panel',
        root.innerHTML.includes('91.7') && !root.innerHTML.includes('height:60px'));
+
+  delete KPI.rework;
+  root.innerHTML = '';
+  await ahuRenderSopKpi();
+  must('a server with no rework block draws no empty table',
+       root.innerHTML.includes('91.7') && !root.innerHTML.includes('Where the rework happens'));
 
   console.log(failed ? '\n' + failed + ' problem(s)' : '\nthe KPI panel shows the trend.');
   process.exit(failed ? 1 : 0);
