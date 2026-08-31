@@ -12239,6 +12239,12 @@ async function _finSpUploadAttachment(body, kind) {
    holding the APPROVED voucher PDF (decision + e-signatures) and the invoice/bill PDF together.
    Folders auto-create; failures surface as a toast so Finance knows the copy did not land. */
 async function _finSpArchiveApproved(item, kind) {
+  // Archiving uploads the actual bill/invoice, so it needs the bytes the list no longer carries.
+  try {
+    const _c = kind === 'claim' ? 'claims' : kind === 'travel' ? 'travel' : 'payments';
+    const _h = await _finEnsureFiles(_c, item && item.id);
+    if (_h) item = _h;
+  } catch (e) {}
   try {
     if (!item || item.spArchived) return;                    // already filed once — don't duplicate
     kind = kind || 'payment';
@@ -13476,6 +13482,8 @@ async function _finPaidDossierDoc(rec) {
   return doc;
 }
 async function tkFinShow(coll, id) {
+  // Bring the documents back before anything below reads them.
+  await _finEnsureFiles(coll, id);
   const r = (_HR[coll] || []).find(x => x.id === id); if (!r) { toast('Not found', 'warn'); return; }
   // A PAID payment shows the CONSOLIDATED dossier (voucher + approval + invoice + bank slip) as one PDF.
   if (coll === 'payments' && String(r.status || '').toLowerCase() === 'paid') {
@@ -13527,9 +13535,33 @@ function _finShowBtn(js, label) {
 /* Does a payment/travel/claim record carry a viewable bill (direct file, SharePoint, or on a claim line)? */
 function _recHasBill(r) {
   if (!r) return false;
-  if (r.attachment || r.spUrl) return true;
-  if (Array.isArray(r.items)) return r.items.some(i => i && (i.attachment || i.spUrl));
+  /* hasFile as well as the bytes. The list read strips the payloads — claims, travel and payments
+     each carry a bill or an invoice inline, so listing them shipped every document to draw a table
+     of Show buttons. Testing only the bytes here would hide the button on every record that HAS a
+     document, which reads as "the invoice is gone" rather than "it loads when you open it". */
+  if (r.attachment || r.hasFile || r.spUrl) return true;
+  if (Array.isArray(r.items)) return r.items.some(i => i && (i.attachment || i.hasFile || i.spUrl));
   return false;
+}
+/* Put the file bytes back on ONE record, in place, before a flow that actually needs them: the
+   detail view, the SharePoint archive, the paid dossier. Merged into _HR so every helper further
+   down — _finBillsHtml, _claimItems, _finPaidDossierDoc — keeps reading a complete record and needs
+   no change. Returns the record either way; on failure the caller carries on with what it has and
+   the existing "no file attached" paths report honestly, which is better than a half-built dossier
+   that claims success. */
+async function _finEnsureFiles(coll, id) {
+  const list = _HR[coll] || [];
+  const i = list.findIndex(x => x && x.id === id);
+  if (i < 0) return null;
+  const r = list[i];
+  const needs = (x) => x && !x.attachment && (x.hasFile ||
+    (Array.isArray(x.items) && x.items.some(it => it && it.hasFile && !it.attachment)));
+  if (!needs(r)) return r;
+  try {
+    const d = await tkApi('/api/coll/' + encodeURIComponent(coll) + '/' + encodeURIComponent(id));
+    if (d && d.item) { list[i] = d.item; return d.item; }
+  } catch (e) {}
+  return r;
 }
 const _finStCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : s === 'Partially approved' ? 'b-info' : 'b-warn';
 const _finKindHex = k => k === 'Payment' ? '#00B060' : k === 'Claim' ? '#8B5CF6' : '#3168A8';
@@ -14252,6 +14284,9 @@ async function _finSpArchivePaid(item, kind) {
     const coll = kind === 'claim' ? 'claims' : kind === 'travel' ? 'travel' : 'payments';
     const ref = _finSpRef(item, kind), sub = _finSpSubPath(item, kind);
     toast(_t2('Filing the payment slip to Finance SharePoint…', 'Đang lưu phiếu thanh toán vào SharePoint Tài chính…'), 'info', 3000);
+    // The dossier embeds the invoice, which the list read no longer carries. Fetch it first, or the
+    // filed PDF would be a voucher with the document silently missing — and it would report success.
+    try { const _h = await _finEnsureFiles(coll, item && item.id); if (_h) item = _h; } catch (e) {}
     const doc = await _finPaidDossierDoc(item);   // consolidated: voucher + approval + invoice + bank slip
     const vf = doc && _dataUriToFile(doc.output('datauristring'), ref + '-Payment-Slip.pdf');
     const r = vf && await _graphUploadFile(vf, _finSpProj(), sub);
