@@ -31807,7 +31807,6 @@ function engTabGroup(gk) {
   const first = _engGroupTabs(_engProj(), gk)[0];
   if (first) engTab(first.k);
 }
-/* ── END ENG TAB NAV ── */
 function _engSpBtn(p) {
   const base = (typeof _pmSpBase === 'function') ? _pmSpBase(p) : (p && p.sharepointUrl);
   if (!base) return '';
@@ -31837,10 +31836,24 @@ async function engTab(k) {
     if (body) body.innerHTML = '<div class="card" style="padding:18px;color:var(--text-light)"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('Could not load this tab') + '</div><div style="font-size:12.5px">' + _t('Check your connection and try again.') + '</div><button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="engTab(\'' + k + '\')">' + _t('Retry') + '</button></div>';
     return;
   }
-  try { (window[t.fn] || function () { })(_engPid()); }
+  // A renderer paints in one of two ways and BOTH have to work. Most call _engSet themselves;
+  // eight of the twenty-one ended `return guide + kpis + tbl` and their return value was thrown
+  // away here — so Codes & Standards, Deviations, Design Risk, Effort & Earned Value, Register
+  // Check, IDC Matrix, Holds & Assumptions and Awaiting Response painted NOTHING. The body kept
+  // whatever the previous tab had left in it, which is worse than blank: a blank panel reads as
+  // "no data", while the previous register's table under a new heading reads as this register's
+  // data. Nothing threw, so nothing was logged and nothing looked broken.
+  //
+  // Fixed here rather than in the eight functions, so a renderer written either way works and this
+  // cannot come back the next time somebody follows the wrong neighbour as a template.
+  try {
+    const out = (window[t.fn] || function () { })(_engPid());
+    if (typeof out === 'string' && out) { const b = document.getElementById('eng-tab-body'); if (b) b.innerHTML = out; }
+  }
   catch (e) { const b = document.getElementById('eng-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _engEsc(e.message) + '</div>'; }
 }
 
+/* ── END ENG TAB NAV ── */
 /* ============================ 1. Overview ============================ */
 function _engStageStrip(p, stages) {
   const inScope = String(p.stagesInScope || '').split(',').map(s => s.trim()).filter(Boolean);
