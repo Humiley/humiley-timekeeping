@@ -10238,7 +10238,11 @@ class Handler(BaseHTTPRequestHandler):
                 # The quality gate reads two registers this module does not own. They are fetched
                 # here rather than in the gate so the gate stays pure and testable, and so a
                 # valuation and its quality position are always read at the same moment.
-                "quality": _of("pm_quality"), "itps": _of("pm_quality_itp")}
+                "quality": _of("pm_quality"), "itps": _of("pm_quality_itp"),
+                # PMBOK §4.6. The change request is where a change is ASSESSED; the variation is
+                # where it is PRICED. Held apart, a variation could be agreed with nothing behind
+                # it and an approved change could go unbilled.
+                "changes": _of("pm_changes")}
 
     @staticmethod
     def _qs_ctx(rows):
@@ -10386,6 +10390,25 @@ class Handler(BaseHTTPRequestHandler):
             "valueByTrade": value_by_trade,
             "costByTrade": self._qs_cost_by_trade(pid)})
 
+        cc = qsurvey.change_control({"changes": rows["changes"],
+                                     "variations": rows["variations"],
+                                     "cutoff": live.get("cutoff") or ""})
+
+        # Physical progress, and the earned value that follows from it. The INDEPENDENT figure is
+        # the project's own percentComplete — read here rather than sent, and reported beside the
+        # measured one rather than averaged with it.
+        _live_trades = (live.get("trades") or {}).get("trades", [])
+        ev = qsurvey.earned_value({
+            "measured": (live.get("measured") or {}).get("total"),
+            "variations": (live.get("variations") or {}).get("total"),
+            "daywork": (live.get("daywork") or {}).get("total"),
+            "materials": (live.get("materials") or {}).get("total"),
+            "revisedContractSum": live.get("revisedContractSum"),
+            "bac": project.get("budget") or contract_sum,
+            "ac": cost_to_date,
+            "independentPct": project.get("percentComplete"),
+            "independentBasis": "the project's own percent complete"})
+
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
             "daywork": rows["daywork"], "cutoff": "",
@@ -10405,6 +10428,8 @@ class Handler(BaseHTTPRequestHandler):
             "series": series,
             "certifiedToDate": certified,
             "costToDate": cost_to_date,
+            "changeControl": cc,
+            "earnedValue": ev,
             "cvr": cvr_calc,
             "cvrHistory": [{"id": c.get("id"), "cutoff": c.get("cutoff") or "",
                             "marginPct": c.get("marginPct"), "margin": c.get("margin"),

@@ -1444,6 +1444,303 @@ def commissioning(ctx):
             "failed": failed, "outstanding": outstanding, "warnings": warnings}
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  INTEGRATED CHANGE CONTROL — PMBOK §4.6
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# The portal has held two registers about the same event and never joined them. `pm_changes` is the
+# CHANGE REQUEST: what the change is, what it does to scope, cost and time, and whether the business
+# accepted it. `pm_qs_variations` is the COMMERCIAL INSTRUMENT: what we charge the client for it.
+# A variation could be agreed at ₫980,000,000 with no impact assessment anywhere behind it, and a
+# change request could be approved with nobody raising a variation to bill for the work.
+#
+# THE ONE THING THIS MUST NOT DO IS SYNC THE TWO NUMBERS.
+# `pm_changes.impactCost` is what the change COSTS US — it moves the budget, and pmStatusPDF already
+# prints it beside the EVM figures. `pm_qs_variations.agreedValue` is what the CLIENT PAYS. They are
+# supposed to differ, and the difference is the margin on the variation. Copying one into the other,
+# or flagging every gap between them, would turn the module's most useful comparison into noise.
+#
+# What IS worth saying is when the price is BELOW the cost. That is a variation being built at a
+# loss, it is invisible in a project total, and it is the single most common way a contractor gives
+# margin away one instruction at a time.
+
+CR_APPROVED = "approved"
+CR_REJECTED = "rejected"
+CR_PENDING = "pending"
+
+
+def _cr_decision(c):
+    d = _norm(c.get("decision"))
+    return d if d in (CR_APPROVED, CR_REJECTED) else CR_PENDING
+
+
+def change_control(ctx):
+    """Reconcile the variation register against the change-request log.
+
+    Reports, never rewrites. Every finding below is a real state a contractor gets into, and the
+    right response to each depends on the contract — which is not something this module knows.
+
+    `ctx`: changes (pm_changes), variations (pm_qs_variations), cutoff.
+    """
+    ctx = ctx or {}
+    cutoff = str(ctx.get("cutoff") or "")[:10]
+    changes = list(ctx.get("changes") or [])
+    raws = list(ctx.get("variations") or [])
+
+    by_no, by_id = {}, {}
+    for c in changes:
+        no = str(c.get("crNo") or "").strip()
+        if no:
+            by_no[no.lower()] = c
+        if c.get("id"):
+            by_id[c.get("id")] = c
+
+    def _cr_for(raw):
+        ref = str(raw.get("crNo") or "").strip()
+        return by_no.get(ref.lower()) or by_id.get(raw.get("crId")) or (
+            by_id.get(ref) if ref else None)
+
+    linked_cr_ids = set()
+    unassessed, at_a_loss, against_rejected, ahead_of_decision, rows = [], [], [], [], []
+
+    for raw in raws:
+        v = variation_value(raw)
+        cr = _cr_for(raw)
+        if cr is not None and cr.get("id"):
+            linked_cr_ids.add(cr.get("id"))
+        row = {
+            "id": v["id"], "voNo": v["voNo"], "title": v["title"], "status": v["status"],
+            "agreedValue": raw.get("agreedValue"),
+            "amount": v["amount"],
+            "timeImpactDays": _num(raw.get("timeImpactDays")),
+            "crNo": (cr or {}).get("crNo") or str(raw.get("crNo") or "").strip(),
+            "crTitle": (cr or {}).get("title") or "",
+            "crDecision": _cr_decision(cr) if cr is not None else None,
+            "crImpactCost": _rate((cr or {}).get("impactCost")),
+            "crImpactDays": _num((cr or {}).get("impactScheduleDays")) if cr is not None else None,
+            "linked": cr is not None,
+        }
+        rows.append(row)
+
+        # A change being BUILT with no impact assessment behind it. `identified` is excluded: that
+        # is somebody noticing a possible change, which is exactly when there is nothing to assess
+        # yet. From `instructed` on, the work is happening.
+        if not row["linked"] and v["status"] in (V_INSTRUCTED, V_MEASURED, V_PRICED,
+                                                 V_SUBMITTED, V_AGREED):
+            unassessed.append(row)
+
+        if v["status"] == V_AGREED and row["crDecision"] == CR_REJECTED:
+            against_rejected.append(row)
+        if v["status"] == V_AGREED and row["crDecision"] == CR_PENDING and row["linked"]:
+            ahead_of_decision.append(row)
+
+        # Price below cost. Only where BOTH are known and the variation is agreed — a forecast
+        # against an estimate is not a loss, it is two guesses.
+        if (v["status"] == V_AGREED and v["amount"] is not None
+                and row["crImpactCost"] is not None and row["crImpactCost"] > 0
+                and v["amount"] < row["crImpactCost"]):
+            at_a_loss.append(dict(row, shortfall=r2(row["crImpactCost"] - v["amount"])))
+
+    # An approved change with money on it and nothing being claimed for it. This is the finding that
+    # pays for the whole join: the work is authorised, it is being built, and no variation exists to
+    # bill it. It is money left on the table and nothing else in the portal can see it.
+    unclaimed = []
+    for c in changes:
+        if _cr_decision(c) != CR_APPROVED:
+            continue
+        cost = _rate(c.get("impactCost"))
+        if not cost or cost <= 0:
+            continue
+        if c.get("id") in linked_cr_ids:
+            continue
+        if not _le(c.get("requestedDate") or c.get("date") or "", cutoff):
+            continue
+        unclaimed.append({"id": c.get("id"), "crNo": c.get("crNo") or "",
+                          "title": c.get("title") or "", "impactCost": r2(cost),
+                          "impactDays": _num(c.get("impactScheduleDays")),
+                          "requestedDate": c.get("requestedDate") or ""})
+
+    # Time that an agreed variation carries and that no approved change request accounts for. The
+    # programme has not been told, and an extension of time nobody claimed is an extension nobody
+    # gets — which is how liquidated damages arrive on a job that was delayed by the client.
+    time_unclaimed = [r for r in rows
+                      if r["status"] == V_AGREED and r["timeImpactDays"] > 0
+                      and (r["crDecision"] != CR_APPROVED or not (r["crImpactDays"] or 0))]
+
+    warnings = []
+    if unassessed:
+        warnings.append({
+            "code": "variation_without_change_request", "severity": "high",
+            "msg": "%d variation(s) are being built with no change request behind them, so nothing "
+                   "has assessed what they do to the budget or the programme."
+                   % len(unassessed),
+            "items": [{"itemNo": r["voNo"], "desc": r["title"]} for r in unassessed[:20]]})
+    if unclaimed:
+        warnings.append({
+            "code": "approved_change_not_claimed", "severity": "high",
+            "msg": "%s of APPROVED change has no variation raised against it. The work is "
+                   "authorised and nothing is billing for it."
+                   % _vnd(sum(c["impactCost"] for c in unclaimed)),
+            "items": [{"itemNo": c["crNo"], "desc": c["title"]} for c in unclaimed[:20]]})
+    if at_a_loss:
+        warnings.append({
+            "code": "variation_agreed_below_cost", "severity": "high",
+            "msg": "%d variation(s) are agreed BELOW their assessed cost, %s short in total. A "
+                   "project margin cannot show this — it is given away one instruction at a time."
+                   % (len(at_a_loss), _vnd(sum(r["shortfall"] for r in at_a_loss))),
+            "items": [{"itemNo": r["voNo"], "desc": "%s agreed, %s assessed cost"
+                       % (_vnd(r["amount"]), _vnd(r["crImpactCost"]))} for r in at_a_loss[:20]]})
+    if against_rejected:
+        warnings.append({
+            "code": "agreed_against_a_rejected_change", "severity": "high",
+            "msg": "%d variation(s) are agreed with the client while the change request behind them "
+                   "was REJECTED internally." % len(against_rejected),
+            "items": [{"itemNo": r["voNo"], "desc": "change request " + (r["crNo"] or "")}
+                      for r in against_rejected[:20]]})
+    if ahead_of_decision:
+        warnings.append({
+            "code": "agreed_ahead_of_the_decision", "severity": "medium",
+            "msg": "%d variation(s) were agreed with the client before their change request was "
+                   "decided." % len(ahead_of_decision),
+            "items": [{"itemNo": r["voNo"], "desc": "change request " + (r["crNo"] or "")}
+                      for r in ahead_of_decision[:20]]})
+    if time_unclaimed:
+        warnings.append({
+            "code": "time_impact_not_carried", "severity": "medium",
+            "msg": "%d agreed variation(s) carry %d day(s) of time impact that no approved change "
+                   "request accounts for. An extension of time nobody claimed is one nobody gets."
+                   % (len(time_unclaimed), int(sum(r["timeImpactDays"] for r in time_unclaimed))),
+            "items": [{"itemNo": r["voNo"],
+                       "desc": "%d day(s)" % int(r["timeImpactDays"])} for r in time_unclaimed[:20]]})
+
+    linked = [r for r in rows if r["linked"]]
+    return {
+        "rows": rows,
+        "linkedCount": len(linked),
+        "variationCount": len(rows),
+        "unassessed": unassessed,
+        "unclaimed": unclaimed,
+        "unclaimedValue": r2(sum(c["impactCost"] for c in unclaimed)),
+        "agreedBelowCost": at_a_loss,
+        "shortfall": r2(sum(r["shortfall"] for r in at_a_loss)),
+        "againstRejected": against_rejected,
+        "aheadOfDecision": ahead_of_decision,
+        "timeNotCarried": time_unclaimed,
+        "warnings": warnings,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  EARNED VALUE FROM MEASUREMENT — PMBOK §7.4
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# The Cost/EVM tab earns value from a percentage that is, at best, a roll-up of deliverable statuses
+# and at worst a number somebody typed. On a remeasurement contract there is a far better answer
+# sitting in this module: the work has been MEASURED, line by line, against rates in the contract.
+# A value-weighted percentage built from that is the strongest evidence of physical progress the
+# company has, and `_pmEvm` already grades its evidence — this adds the grade above the top one.
+#
+# TWO THINGS IT MUST GET RIGHT, and both are easy to get wrong in the flattering direction:
+#
+#   MATERIALS ON SITE ARE NOT PROGRESS. A pump delivered and paid for is in the gross valuation and
+#   is not built into anything. Counting it as physical progress reports a job further ahead than it
+#   is, in exactly the month the cash went out — so physical progress is measured works + agreed
+#   variations + approved daywork, and materials are excluded by name.
+#
+#   TWO PROGRESS FIGURES THAT DISAGREE ARE NOT AVERAGED. When the measurement says 61% and the WBS
+#   roll-up says 45%, the mean of the two is a number describing nothing. Both are reported, and the
+#   gap is the finding: either the programme has not been updated, or work is being measured that
+#   the deliverables do not know about.
+
+EV_BASIS_MEASURED = "measured"
+
+
+def earned_value(ctx):
+    """Physical progress from measurement, and the earned value that follows from it.
+
+    `ctx`:
+        measured / variations / daywork / materials   the valuation's four parts
+        revisedContractSum                            what the job is worth now
+        bac                                            budget at completion (OUR cost)
+        ac                                             actual cost to date
+        independentPct / independentBasis              the other progress figure, for comparison
+
+    Returns `pct: None` rather than a number whenever it cannot be computed. An invented percentage
+    here would flow straight into EV, CPI and the project's RAG colour.
+    """
+    ctx = ctx or {}
+    measured = r2(ctx.get("measured"))
+    variations = r2(ctx.get("variations"))
+    daywork = r2(ctx.get("daywork"))
+    materials = r2(ctx.get("materials"))
+    physical = r2(measured + variations + daywork)      # materials deliberately absent
+    gross = r2(physical + materials)
+
+    revised = _rate(ctx.get("revisedContractSum"))
+    pct = round(physical / revised * 100.0, 2) if revised else None
+
+    bac = _rate(ctx.get("bac"))
+    ac = _rate(ctx.get("ac"))
+    ev = None if (pct is None or bac is None) else r2(bac * pct / 100.0)
+    cpi = None if (ev is None or not ac) else round(ev / ac, 4)
+
+    ind = ctx.get("independentPct")
+    ind = None if ind in (None, "") else round(_num(ind), 2)
+    gap = None if (pct is None or ind is None) else round(pct - ind, 2)
+
+    warnings = []
+    if pct is None:
+        warnings.append({
+            "code": "no_measured_progress", "severity": "medium",
+            "msg": "The contract sum is not recorded, so measurement cannot be turned into a "
+                   "percentage and earned value still comes from the schedule roll-up."})
+    if materials and pct is not None:
+        warnings.append({
+            "code": "materials_excluded_from_progress", "severity": "low",
+            "msg": "%s of materials on site is in the valuation and is NOT counted as progress — "
+                   "it is delivered and paid for, not built in. Physical progress is %s of a "
+                   "%s gross valuation." % (_vnd(materials), _vnd(physical), _vnd(gross))})
+    # 5 points is a real divergence and not rounding. Below that, two methods measuring the same job
+    # are agreeing as closely as two methods ever do.
+    if gap is not None and abs(gap) >= 5:
+        warnings.append({
+            "code": "progress_methods_disagree", "severity": "high",
+            # The caller names the other source, so the sentence takes it whole rather than
+            # wrapping it in words of its own — "the the project's own percent complete roll-up"
+            # is what happens when a template assumes it will be handed a single noun.
+            "msg": "Measurement says the job is %.1f%% built; %s says %.1f%%. They are %.1f points "
+                   "apart. Either the programme has not been updated, or work is being measured "
+                   "that the deliverables do not know about — the two are not averaged."
+                   % (pct, ctx.get("independentBasis") or "the schedule roll-up", ind, abs(gap))})
+    if ev is not None and ac and cpi is not None and cpi < 0.95:
+        warnings.append({
+            "code": "measured_cpi_below_one", "severity": "high",
+            "msg": "Against measured progress the cost performance index is %.2f: %s earned for %s "
+                   "spent." % (cpi, _vnd(ev), _vnd(ac))})
+
+    return {
+        "physicalToDate": physical,
+        "grossToDate": gross,
+        "materialsExcluded": materials,
+        "revisedContractSum": revised,
+        "pct": pct,
+        "basis": EV_BASIS_MEASURED,
+        "bac": bac, "ac": ac, "ev": ev, "cpi": cpi,
+        # Named the way _pmEvm names it, because the screens share one convention: an index is
+        # printed through _pmIndexTxt(value, measurable) and NEVER bare. A confident 1.00 with
+        # nothing behind it is the failure tests/evm_index_honesty.js exists to stop, and a
+        # different-but-equivalent guard of my own would sit outside that check.
+        "cpiMeasurable": cpi is not None,
+        "independentPct": ind,
+        "independentBasis": ctx.get("independentBasis") or "",
+        "gap": gap,
+        "warnings": warnings,
+        # Said in the payload, because the number leaves this module and lands on an EVM screen
+        # measured in OUR money: the percentage is value-weighted from the CLIENT's rates, which is
+        # what makes it a good measure of physical progress and not a measure of cost.
+        "note": "Percent complete is value-weighted from measured quantities at contract rates, "
+                "excluding materials on site. Earned value applies it to the budget at completion.",
+    }
+
+
 # ── what this module will not decide ─────────────────────────────────────────────────────────────
 
 UNRESOLVED = (

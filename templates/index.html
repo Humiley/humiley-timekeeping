@@ -16971,6 +16971,10 @@ const _QA_SPECS = {
   pm_qs_variations: { title: 'Variation', coll: 'pm_qs_variations', reload: 'pm_qs_variations', fields: [
     { k: 'voNo', label: 'VO No.' }, { k: 'title', label: 'Title' },
     { k: 'discipline', label: 'Trade doing the work', type: 'select', options: 'qs_disciplines' },
+    /* PMBOK §4.6. The change request is where this change was ASSESSED — what it does to the
+       budget and the programme. Left blank, the variation is reported as being built with no
+       assessment behind it. */
+    { k: 'crNo', label: 'Change request No. (the assessment behind this variation)' },
     { k: 'origin', label: 'Origin', type: 'select', options: ['Client instruction', 'Design change', 'Site condition', 'Statutory requirement', 'Error / omission in the bill', 'Contractor proposal'] },
     { k: 'instructionRef', label: 'Instruction reference' },
     { k: 'instructedOn', label: 'Instructed on', type: 'date' },
@@ -21660,7 +21664,16 @@ function _pmEvm(p) {
   const bac = +p.budget || costs.reduce((s, c) => s + (+c.budget || 0), 0);
   const ac = costs.reduce((s, c) => s + (+c.actual || 0), 0) || (+p.actualCost || 0);
   const sr = pmScopeRollup(p.id);
-  const ratio = (sr.total ? sr.pctRaw : Math.max(0, Math.min(100, +p.percentComplete || 0))) / 100;
+  /* THE STRONGEST EVIDENCE WINS. This function already grades what it earned value from — a
+     schedule roll-up, a deliverable roll-up, or a number somebody typed. Quantities measured on
+     site against contract rates are better than all three, so when the QS module has computed a
+     percentage for THIS project it is used and the basis says so.
+     Only when it is present: every other caller (the portfolio, the RAG colour, the status PDF)
+     runs before /api/qs/summary is fetched, and must behave exactly as it did. */
+  const qsEv = ((_QS[p.id] || {}).earnedValue) || null;
+  const qsPct = (qsEv && qsEv.pct != null) ? qsEv.pct : null;
+  const ratio = (qsPct != null ? qsPct
+    : (sr.total ? sr.pctRaw : Math.max(0, Math.min(100, +p.percentComplete || 0)))) / 100;
   const ev = bac * ratio;
   const tp = _pmTimeElapsedPct(p);
   const phased = _pmPlannedTo(_pmPhasedPlan(costs, bac), _pmToday());
@@ -21689,7 +21702,8 @@ function _pmEvm(p) {
   return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, cpiMeasurable, spiMeasurable, eacMeasurable,
            eac, vac: eacMeasurable ? bac - eac : null, etc: eacMeasurable ? eac - ac : null,
            pct: ratio * 100, measurable, phasedPv: phased != null,
-           evBasis: sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed') };
+           evBasis: qsPct != null ? 'measured'
+             : (sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed')) };
 }
 function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const overdue = _pmOverdueMilestones(p.id); if (!e.measurable && overdue === 0) return 'Amber'; const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || overdue > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
 function _pmOverdueMilestones(pid) { const t = _pmToday(); return _pmScopeFor('pm_tasks', pid).filter(x => String(x.isMilestone) === 'Yes' && x.status !== 'Completed' && x.finish && x.finish < t).length; }
@@ -26916,6 +26930,32 @@ function _pmMonths(start, end) {
   for (let i = 0; i < 120; i++) { out.push(y + '-' + ('0' + (m + 1)).slice(-2)); if (y === e.getFullYear() && m === e.getMonth()) break; m++; if (m > 11) { m = 0; y++; } }
   return out;
 }
+/* WHAT THIS EARNED VALUE IS BUILT ON, said on the screen that prints it. */
+const _PM_EV_BASIS = {
+  measured: ['Measured on site', 'var(--emerald)',
+    'Quantities measured against contract rates in the QS module. The strongest evidence available.'],
+  deliverable: ['Deliverable roll-up', '#3168A8',
+    'Rolled up from the acceptance status of the WBS deliverables.'],
+  schedule: ['Schedule roll-up', '#3168A8',
+    'Derived from the activities that deliver each package.'],
+  typed: ['Typed percentage', '#F59E0B',
+    'An estimate of percent complete. The weakest basis, and every figure below depends on it.']
+};
+function _pmEvBasisStrip(ev, p) {
+  const b = _PM_EV_BASIS[ev.evBasis] || _PM_EV_BASIS.typed;
+  const q = ((_QS[p && p.id] || {}).earnedValue) || null;
+  /* When measurement and the project's own percentage disagree, BOTH are shown. Averaging them
+     would produce a number describing nothing; showing one would pick a winner silently. */
+  const gap = (q && q.gap != null && Math.abs(q.gap) >= 5)
+    ? '<div style="font-size:11.5px;color:#EF4444;font-weight:600;margin-top:5px">' +
+      _pmEsc(_t('Measurement and the project\'s own percent complete disagree by') + ' ' +
+             (Math.round(Math.abs(q.gap) * 10) / 10) + ' ' + _t('points. They are not averaged.')) + '</div>'
+    : '';
+  return '<div style="margin:-4px 0 12px;padding:9px 12px;background:var(--soft-bg);border-radius:8px;border-left:3px solid ' + b[1] + '">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _t('Earned value is based on') + '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:' + b[1] + '">' + _pmEsc(_t(b[0])) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);line-height:1.55;margin-top:2px">' + _pmEsc(_t(b[2])) + '</div>' + gap + '</div>';
+}
 function pmRenderCosts(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   const ev = _pmEvm(p);
@@ -26933,7 +26973,7 @@ function pmRenderCosts(pid) {
   const scurveCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:' + (_splan.phased ? '10' : '4') + 'px">Cost S-curve — planned vs actual</div>' +
     (_splan.phased ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' + _t('Planned is spread evenly — put a Period on each cost line to draw the real plan curve.') + '</div>') +
     '<div style="height:240px"><canvas id="pm-scurve"></canvas></div></div>';
-  const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
+  const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div>' + _pmEvBasisStrip(ev, p) + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
     // A null forecast prints an em dash and says why, rather than a figure with no basis.
     [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] == null ? 'var(--text-light)' : (r[1] < 0 ? '#EF4444' : 'var(--navy)')) + '">' + (r[1] == null ? '—' : _pmMoney(r[1])) + '</div></div>').join('') + '</div>' + (ev.eacMeasurable ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:9px">' + _pmEsc(_t('No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.')) + '</div>') + '</div>';
   const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
@@ -28788,7 +28828,9 @@ function _qsRenderDash(pid) {
     tile(_t('Forecast margin'), cvr.forecastMarginPct == null ? '—' : _qsPct(cvr.forecastMarginPct), (cvr.forecastMargin || 0) < 0 ? '#EF4444' : 'var(--emerald)', _t('At completion, from the last reconciliation.')) +
     '</div></div>';
 
-  return kpis + _qsWarnCard(live.warnings) + progCard + _qsTradeCard(d) + buildCard + riskCard + _qsValStripCard(d) + _qsGuideCard();
+  const _w = (live.warnings || []).concat(((d.changeControl || {}).warnings) || [])
+    .concat(((d.earnedValue || {}).warnings) || []);
+  return kpis + _qsWarnCard(_w) + progCard + _qsEvCard(d) + _qsTradeCard(d) + buildCard + riskCard + _qsValStripCard(d) + _qsGuideCard();
 }
 
 /* The valuation history as one strip: claimed against certified, month by month. A gap that opens
@@ -29067,7 +29109,12 @@ function _qsRenderVos(pid) {
     const amt = s === 'agreed' ? r.agreedValue : r.estimatedValue;
     return '<tr>' +
       '<td style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy);font-size:12px">' + _pmEsc(r.voNo || '—') + '</td>' +
-      '<td style="font-size:12px;font-weight:600">' + _pmEsc(r.title || '') + (r.instructionRef ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('Instruction') + ': ' + _pmEsc(r.instructionRef) + '</div>' : '') + '</td>' +
+      '<td style="font-size:12px;font-weight:600">' + _pmEsc(r.title || '') +
+        (r.instructionRef ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('Instruction') + ': ' + _pmEsc(r.instructionRef) + '</div>' : '') +
+        /* Whether an assessment exists behind this variation, at the row it belongs to. A blank
+           here is the state the change-control card counts, so it is named rather than left empty. */
+        (_qsCrOf(r) ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('Change request') + ': ' + _pmEsc(_qsCrOf(r)) + '</div>'
+          : '<div style="font-size:10.5px;color:#F59E0B;font-weight:600">' + _t('no change request') + '</div>') + '</td>' +
       '<td style="font-size:12px">' + _pmEsc(r.origin || '—') + '</td>' +
       '<td>' + (r.basis ? _pmBadge(_t(_QS_VBASIS[r.basis] || r.basis), '#8B5CF6') : '<span style="color:var(--text-light)">—</span>') + '</td>' +
       '<td style="white-space:nowrap;font-size:12px">' + _pmFmt(r.instructedOn) + '</td>' +
@@ -29085,7 +29132,7 @@ function _qsRenderVos(pid) {
       .map(k => '<span style="display:inline-block;background:' + _QS_VHEX[k] + '1f;color:' + _QS_VHEX[k] + ';font-weight:700;padding:2px 8px;border-radius:10px;margin:2px 3px">' + _t(_QS_VLABEL[k]) + '</span>').join('→') +
     '<div style="margin-top:6px">' + _pmEsc(_t('Work instructed and being built with no agreed price is the exposure figure on the Commercial tab. It is deliberately kept out of the valuation — a claim the client has not agreed is a dispute, not a certificate.')) + '</div></div></div>';
 
-  return kpis + flowCard + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
+  return kpis + flowCard + _qsCcCard(d) + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
     /* Explicit widths, because the browser's auto-layout gives a two-word "Client instruction" the
        same claim on the row as the variation's title, and the title is what the row is ABOUT. Left
        to itself it wrapped "Additional HEPA terminal filters, Zone 2" over five lines. */
@@ -30332,6 +30379,142 @@ function qsCommPDF() {
   y = _qsSignBlock(doc, y, [['Commissioning Engineer', ''], ['QA/QC Manager', ''], ['Client / Consultant', '']]);
   _qsFoot(doc, CODE);
   _qsSavePdf(doc, _qsFile('Commissioning_Schedule'), 'comm');
+}
+/* The change request behind a variation, by number or by id — the picker writes an id, a person
+   types a number, and a join that reads only one of them is silently half a join. */
+function _qsCrOf(v) {
+  if (!v) return '';
+  const no = String(v.crNo || '').trim();
+  if (no) return no;
+  if (!v.crId) return '';
+  const cr = _pmScopeFor('pm_changes', _pmPid()).find(x => x.id === v.crId);
+  return cr ? (cr.crNo || (cr.title || '').slice(0, 30)) : '';
+}
+
+/* ── integrated change control (PMBOK §4.6) ───────────────────────────────────────────────────────
+   The change request is where a change is ASSESSED; the variation is where it is PRICED. The two
+   registers describe the same event and the portal has never joined them. */
+function _qsCcCard(d) {
+  const cc = d.changeControl; if (!cc) return '';
+  const tile = (label, val, hex, sub, onclick) =>
+    '<div style="flex:1;min-width:190px;background:var(--soft-bg);border-radius:10px;padding:12px 14px' +
+    (onclick ? ';cursor:pointer' : '') + '"' + (onclick ? ' onclick="' + onclick + '"' : '') + '>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(label) + '</div>' +
+    '<div style="font-size:17px;font-weight:800;color:' + hex + ';font-variant-numeric:tabular-nums;margin:2px 0">' + val + '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);line-height:1.5">' + _pmEsc(sub) + '</div></div>';
+
+  const rows = (cc.unclaimed || []).map(c =>
+    '<tr style="border-bottom:1px solid var(--soft-bg)">' +
+    '<td style="padding:8px 10px;font-variant-numeric:tabular-nums;font-size:11.5px;white-space:nowrap">' + _pmEsc(c.crNo || '—') + '</td>' +
+    '<td style="padding:8px 10px;font-size:12px">' + _pmEsc(c.title || '') + '</td>' +
+    '<td style="padding:8px 10px;white-space:nowrap;font-size:12px">' + _pmFmt(c.requestedDate) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:#EF4444">' + _qsMoney(c.impactCost) + '</td>' +
+    '<td style="padding:8px 10px;white-space:nowrap"><button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 9px" onclick="qsVoFromCr(\'' + c.id + '\')">' + _t('Raise the variation') + '</button></td></tr>').join('');
+  const unclaimedCard = (cc.unclaimed || []).length
+    ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid #EF4444">' +
+      '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Approved change with nothing billing for it') + '</div></div>' +
+      '<div style="padding:8px 16px 2px;font-size:11.5px;color:var(--text-light)">' + _pmEsc(_t('The work is authorised and being built, and no variation exists to charge for it. Nothing else in the portal can see this.')) + '</div>' +
+      '<div class="table-wrap"><table style="min-width:720px;font-size:13px"><thead><tr><th>' + _t('CR No.') + '</th><th>' + _t('Change') + '</th><th>' + _t('Requested') + '</th><th style="text-align:right">' + _t('Assessed cost') + '</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+    : '';
+
+  const lossRows = (cc.agreedBelowCost || []).map(r =>
+    '<tr style="border-bottom:1px solid var(--soft-bg)">' +
+    '<td style="padding:8px 10px;font-variant-numeric:tabular-nums;font-size:11.5px">' + _pmEsc(r.voNo || '—') + '</td>' +
+    '<td style="padding:8px 10px;font-size:12px">' + _pmEsc(r.title || '') + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(r.crImpactCost) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(r.amount) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:#EF4444">' + _qsMoney(r.shortfall) + '</td></tr>').join('');
+  const lossCard = (cc.agreedBelowCost || []).length
+    ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid #EF4444">' +
+      '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Agreed below the assessed cost') + '</div></div>' +
+      '<div style="padding:8px 16px 2px;font-size:11.5px;color:var(--text-light)">' + _pmEsc(_t('Margin given away one instruction at a time. A project margin cannot show it.')) + '</div>' +
+      '<div class="table-wrap"><table style="min-width:720px;font-size:13px"><thead><tr><th>' + _t('VO No.') + '</th><th>' + _t('Variation') + '</th><th style="text-align:right">' + _t('Assessed cost') + '</th><th style="text-align:right">' + _t('Agreed price') + '</th><th style="text-align:right">' + _t('Short by') + '</th></tr></thead><tbody>' + lossRows + '</tbody></table></div></div>'
+    : '';
+
+  /* Said once, because it is the distinction the whole card turns on and getting it backwards
+     would make a healthy variation look like a defect. */
+  const stance = '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('A change request holds what the change COSTS US; a variation holds what the CLIENT PAYS. They are meant to differ — the difference is the margin — so a gap between them is never reported as an error. Only a price below the cost is.')) + '</div>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Integrated change control') + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + cc.linkedCount + ' ' + _t('of') + ' ' + cc.variationCount + ' ' + _t('variations linked to a change request') + '</span></div>' +
+    '<div style="padding:12px 16px;display:flex;gap:10px;flex-wrap:wrap">' +
+    tile(_t('Approved, not billed'), _pmMoneyShort(cc.unclaimedValue || 0), (cc.unclaimedValue || 0) ? '#EF4444' : 'var(--emerald)', _t('Authorised change with no variation raised.')) +
+    tile(_t('Agreed below cost'), _pmMoneyShort(cc.shortfall || 0), (cc.shortfall || 0) ? '#EF4444' : 'var(--emerald)', _t('Variations being built at a loss.')) +
+    tile(_t('No assessment behind them'), (cc.unassessed || []).length, (cc.unassessed || []).length ? '#F59E0B' : 'var(--emerald)', _t('Being built with no change request.')) +
+    tile(_t('Time not carried'), (cc.timeNotCarried || []).length, (cc.timeNotCarried || []).length ? '#F59E0B' : 'var(--emerald)', _t('Agreed days no approved change accounts for.')) +
+    '</div>' + stance + '</div>' + unclaimedCard + lossCard;
+}
+
+/* One click from an approved change request to the variation that bills it. The link is written as
+   the change request's ID, not its number: a CR that gets renumbered would otherwise silently
+   orphan every variation pointing at it. */
+async function qsVoFromCr(crId) {
+  const cr = _pmScopeFor('pm_changes', _pmPid()).find(x => x.id === crId);
+  if (!cr) { toast(_t('That change request is no longer on the register.'), 'warn'); return; }
+  const v = await _qsForm({
+    title: _t('Raise a variation for this change'),
+    body: _t('The variation starts where every variation starts — identified — and carries the change request with it. What the client is charged is decided later, when it is agreed.'),
+    fields: [{ k: 'title', label: _t('Title'), value: cr.title || '' },
+    { k: 'discipline', label: _t('Trade doing the work'), type: 'select', options: _qsDisciplines().map(d => _t2(d.label, d.labelVn)) },
+    { k: 'estimatedValue', label: _t('Our estimate of the price (₫)'), type: 'money', value: '' },
+    { k: 'timeImpactDays', label: _t('Time impact (days)'), type: 'number', value: cr.impactScheduleDays || '' }],
+    ok: _t('Raise it')
+  });
+  if (!v) return;
+  const ds = _qsDisciplines().find(d => _t2(d.label, d.labelVn) === v.discipline);
+  const r = await _qsPost('/api/coll/pm_qs_variations', {
+    projectId: _pmPid(), title: v.title, discipline: ds ? ds.code : '',
+    estimatedValue: v.estimatedValue, timeImpactDays: v.timeImpactDays,
+    origin: 'Client instruction', crId: cr.id, crNo: cr.crNo || ''
+  }, _t('Variation raised against') + ' ' + (cr.crNo || _t('the change request')));
+  if (r) qsTab('vo');
+}
+
+/* ── earned value from measurement (PMBOK §7.4) ──────────────────────────────────────────────── */
+function _qsEvCard(d) {
+  const e = d.earnedValue; if (!e) return '';
+  const bar = (label, pct, hex, sub) =>
+    '<div style="margin-bottom:11px"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">' +
+    '<span style="font-size:12.5px;color:var(--text)">' + _pmEsc(label) + '</span>' +
+    '<span style="font-size:15px;font-weight:800;color:' + hex + ';font-variant-numeric:tabular-nums">' + (pct == null ? '—' : _qsPct(pct)) + '</span></div>' +
+    '<div style="height:10px;border-radius:5px;background:var(--soft-bg);overflow:hidden"><div style="height:100%;width:' + Math.max(0, Math.min(100, pct || 0)) + '%;background:' + hex + '"></div></div>' +
+    (sub ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:3px">' + _pmEsc(sub) + '</div>' : '') + '</div>';
+
+  const gap = e.gap;
+  const compare = (e.independentPct == null)
+    ? '<div style="font-size:11.5px;color:var(--text-light);line-height:1.6">' + _pmEsc(_t('Nothing else on this project states a percent complete, so there is nothing to compare the measurement with.')) + '</div>'
+    : bar(_t('The project\'s own percent complete'), e.independentPct, '#94A3B8', '') +
+      '<div style="font-size:11.5px;color:' + (Math.abs(gap || 0) >= 5 ? '#EF4444' : 'var(--text-light)') + ';line-height:1.6;font-weight:' + (Math.abs(gap || 0) >= 5 ? 600 : 400) + '">' +
+      _pmEsc(Math.abs(gap || 0) >= 5
+        ? _t('The two are far enough apart to be a finding. They are not averaged — a mean of two figures that disagree describes nothing.')
+        : _t('The two agree as closely as two methods ever do.')) + '</div>';
+
+  const money = (e.ev == null) ? '' :
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">' +
+    [[_t('Budget at completion'), _qsMoney(e.bac), 'var(--navy)'],
+     [_t('Earned value'), _qsMoney(e.ev), '#3168A8'],
+     [_t('Actual cost'), _qsMoney(e.ac), 'var(--text)'],
+     /* Through the portal's own helper, like every other surface that prints an index. Rolling
+        my own guard here would be equivalent in behaviour and invisible to the scanner that keeps
+        all of them honest. */
+     [_t('CPI'), _pmIndexTxt(e.cpi, e.cpiMeasurable), _pmIndexHex(e.cpi, e.cpiMeasurable)]]
+      .map(x => '<div style="flex:1;min-width:130px"><div style="font-size:10.5px;color:var(--text-light)">' + _pmEsc(x[0]) + '</div>' +
+        '<div style="font-size:15px;font-weight:800;color:' + x[2] + ';font-variant-numeric:tabular-nums">' + x[1] + '</div></div>').join('') + '</div>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Physical progress, measured') + '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmTab(\'cost\')">' + _t('Open Cost / EVM') + '</button></div>' +
+    '<div style="padding:14px 16px">' +
+    bar(_t('Measured on site, at contract rates'), e.pct, 'var(--emerald)',
+      _qsMoney(e.physicalToDate) + ' ' + _t('of') + ' ' + _qsMoney(e.revisedContractSum)) +
+    compare + money + '</div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Materials on site are in the valuation and are NOT progress — delivered and paid for, built into nothing. Counting them would report the job further ahead in exactly the month the cash went out.')) +
+    (e.materialsExcluded ? ' <b>' + _qsMoney(e.materialsExcluded) + '</b> ' + _pmEsc(_t('excluded here.')) : '') + '</div></div>';
 }
 /* ══ END QS ══════════════════════════════════════════════════════════════════════════════════ */
 
