@@ -6169,4 +6169,17 @@ window._VI = {
   'Working capital gap': 'Thiếu hụt vốn lưu động',
   'a month': 'mỗi tháng',
   'month(s) remaining': 'tháng còn lại',
+
+  /* ── QS: moving the programme for a granted extension ── */
+  'Move the programme as well?': 'Có dời cả tiến độ không?',
+  'The revised completion date is recorded. The activities on the programme have not moved.': 'Ngày hoàn thành sau điều chỉnh đã được ghi nhận. Các công việc trên tiến độ chưa được dời.',
+  'Moving them shifts every unfinished activity affected by the delay forward by': 'Việc dời sẽ đẩy mọi công việc chưa hoàn thành bị ảnh hưởng bởi sự chậm trễ này lùi thêm',
+  'Work that is already complete stays where it is.': 'Công việc đã hoàn thành vẫn giữ nguyên vị trí.',
+  'The original dates are frozen into a baseline first, and every variance on this job stays measured against them. Nothing about the planned finish on the charter changes.': 'Các mốc thời gian ban đầu được đóng băng thành đường cơ sở trước, và mọi sai lệch của dự án vẫn được đo trên đường cơ sở đó. Ngày hoàn thành theo kế hoạch trên bản tuyên bố dự án không thay đổi.',
+  'Freeze the baseline and move the programme': 'Đóng băng đường cơ sở và dời tiến độ',
+  'Could not move the programme': 'Không dời được tiến độ',
+  'Programme moved': 'Đã dời tiến độ',
+  'activity(ies)': 'công việc',
+  'baselined': 'đã đóng băng đường cơ sở',
+  'Baseline finish': 'Kết thúc theo đường cơ sở',
 };

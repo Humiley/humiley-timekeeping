@@ -10785,6 +10785,42 @@ class Handler(BaseHTTPRequestHandler):
                        (saved.get("title") or "")[:120])
         return self._json({"ok": True, "item": saved})
 
+    @staticmethod
+    def _qs_delay_event(variations):
+        """The earliest instruction carrying a time impact — the day the programme was hit.
+
+        Activities planned to finish BEFORE it were never affected by it, and moving them would
+        push work that finished on time into the future. With no such date nothing can be shown to
+        fall before the delay, and reschedule_plan() says so rather than silently treating the
+        whole programme as unaffected.
+        """
+        dates = [str(v.get("instructedOn") or "")[:10] for v in (variations or [])
+                 if qsurvey._num(v.get("timeImpactDays")) > 0
+                 and str(v.get("status") or "").strip().lower() not in
+                 (qsurvey.V_IDENTIFIED, qsurvey.V_REJECTED, qsurvey.V_WITHDRAWN)]
+        dates = [d for d in dates if d]
+        return min(dates) if dates else ""
+
+    def _qs_baseline_tasks(self, u, pid, tasks):
+        """Freeze the programme where it stands, once.
+
+        Every variance on this job is measured against these dates, so they are copied BEFORE
+        anything moves and are never written over: a task that already carries a baseline keeps
+        the one it has. The stamp records that this is the plan as at the day it was frozen, which
+        is not necessarily the plan at contract signature — and the payload says so, because a
+        baseline taken late is still a baseline and pretending otherwise helps nobody.
+        """
+        now, who, n = self._utc_now(), (u.get("name") or u.get("email")), 0
+        for t in tasks:
+            if t.get("baselineFinish") or not (t.get("start") or t.get("finish")):
+                continue
+            db.put_collection_item("pm_tasks", dict(
+                t, baselineStart=str(t.get("start") or "")[:10],
+                baselineFinish=str(t.get("finish") or "")[:10],
+                baselineFrozenAt=now, baselineFrozenBy=who))
+            n += 1
+        return n
+
     def _qs_eot_ep(self, u, body):
         """Record the granted extension of time on the project.
 
@@ -10826,11 +10862,54 @@ class Handler(BaseHTTPRequestHandler):
         upd["eotGrantedDaysTotal"] = eot["grantedDays"]
         upd["eotAppliedAt"] = self._utc_now()
         upd["eotAppliedBy"] = u.get("name") or u.get("email")
+
+        # ── the programme ────────────────────────────────────────────────────────────────────────
+        # Only on request, and only after the original plan is frozen where variance can still be
+        # measured against it. `endPlanned` is STILL never touched: the revised date lives beside
+        # it, and both are shown.
+        resched = None
+        if body.get("reschedule"):
+            event = self._qs_delay_event(rows["variations"])
+            plan = qsurvey.reschedule_plan({
+                "tasks": rows["tasks"], "grantedDays": eot["grantedDays"], "eventDate": event,
+                "baselineFrozen": True})
+            frozen = 0
+            if plan["needsBaseline"]:
+                if not body.get("freezeBaseline"):
+                    return self._err(
+                        "%d activity(ies) have no baseline. Moving them would destroy the only "
+                        "record of the plan this job is measured against. Send 'freezeBaseline' to "
+                        "freeze the programme as it stands now and then apply the extension."
+                        % len(plan["needsBaseline"]), 409)
+                frozen = self._qs_baseline_tasks(u, pid, rows["tasks"])
+                rows["tasks"] = [t for t in db.list_collection("pm_tasks")
+                                 if t.get("projectId") == pid]
+                plan = qsurvey.reschedule_plan({
+                    "tasks": rows["tasks"], "grantedDays": eot["grantedDays"],
+                    "eventDate": event, "baselineFrozen": True})
+
+            by_id = {t.get("id"): t for t in rows["tasks"]}
+            for mv in plan["moves"]:
+                t = by_id.get(mv["id"])
+                if not t:
+                    continue
+                # Written from what the plan RETURNED and from nothing else. The days are derived
+                # from what has already been applied, so a second call moves nothing.
+                db.put_collection_item("pm_tasks", dict(
+                    t, start=mv["toStart"] or t.get("start"),
+                    finish=mv["toFinish"] or t.get("finish"),
+                    eotShiftApplied=mv["nowApplied"]))
+            resched = dict(plan, baselinesFrozen=frozen, moved=len(plan["moves"]))
+            self._qs_audit(u, "Programme rescheduled for the granted extension", project, "",
+                           "%d activity(ies) moved %d day(s); %d baselined"
+                           % (len(plan["moves"]), eot["grantedDays"], frozen))
+
         saved = db.put_collection_item("pm_projects", upd)
         self._qs_audit(u, "EOT applied to the project", project, "",
                        "%s granted day(s): %s -> %s"
                        % (eot["grantedDays"], eot["contractCompletion"], eot["revisedCompletion"]))
-        return self._json({"ok": True, "item": saved, "extensionOfTime": eot})
+        return self._json({"ok": True, "item": saved, "extensionOfTime": eot,
+                           "reschedule": resched})
 
     def _qs_cvr_ep(self, u, body):
         """Record a cost-value reconciliation for a cut-off.

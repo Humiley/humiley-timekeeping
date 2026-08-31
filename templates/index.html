@@ -21534,6 +21534,16 @@ const _pmEsc = s => _crmEsc(s == null ? '' : s);
 const _pmInPeriod = (d) => { try { return _crmInPeriod(d); } catch (e) { return true; } };
 function _pmToday() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }   // LOCAL day — toISOString() is UTC and shifts +07 mornings to yesterday
 function _pmFmt(d) { try { return d ? tkFmtDate(d) : '—'; } catch (e) { return d || '—'; } }
+/* Whole days from a to b, or 0 when either is missing. Parsed as UTC midnight so a timezone with
+   a DST shift in between cannot turn 30 days into 29. Returns 0 rather than null for an absent
+   date because every caller uses it to decide whether to PRINT a variance, and a variance that
+   cannot be computed is not a variance of some other size. */
+function _pmDaysBetween(a, b) {
+  if (!a || !b) return 0;
+  const d = x => new Date(String(x).slice(0, 10) + 'T00:00:00Z').getTime();
+  const x = d(a), y = d(b);
+  return (isNaN(x) || isNaN(y)) ? 0 : Math.round((y - x) / 86400000);
+}
 function _pmNum(v) { return +String(v == null ? '' : v).replace(/[^0-9.\-]/g, '') || 0; }
 function _pmDateDiff(a, b) { if (!a || !b) return null; const d1 = new Date(a), d2 = new Date(b); if (isNaN(d1) || isNaN(d2)) return null; return Math.round((d2 - d1) / 86400000); }
 function _pmBadge(txt, hex) { return '<span class="badge" style="background:' + hex + '1f;color:' + hex + ';font-size:10px;font-weight:700">' + _pmEsc(txt) + '</span>'; }
@@ -26762,6 +26772,18 @@ function pmRenderSchedule(pid) {
           ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '');
       } },
     { label: 'Assignee', sk: 'assignee', w: '1%', nowrap: true, render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', w: '1%', nowrap: true, render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', w: '1%', nowrap: true, render: r => _pmFmt(r.finish) },
+    /* The agreed plan, frozen the first time a granted extension moved the programme. It is read
+       from the row and never editable: a baseline anybody can retype is not a baseline, and it is
+       what every variance on this job is measured against. Blank until the job is baselined —
+       an em dash, because "no baseline" and "a baseline of today" are different facts. */
+    { label: 'Baseline finish', sk: 'baselineFinish', w: '1%', nowrap: true,
+      tip: 'The finish date this activity was agreed to, frozen before any extension moved it. Variance is measured against this and not against the live date beside it.',
+      render: r => {
+        if (!r.baselineFinish) return '<span style="color:var(--text-light)">—</span>';
+        const d = _pmDaysBetween(r.baselineFinish, r.finish);
+        return '<span style="font-variant-numeric:tabular-nums">' + _pmFmt(r.baselineFinish) + '</span>' +
+          (d ? '<span style="font-size:9.5px;display:block;line-height:1;font-weight:700;color:' + (d > 0 ? '#F59E0B' : 'var(--emerald)') + '">' + (d > 0 ? '+' : '') + d + 'd</span>' : '');
+      } },
     { label: 'Float', align: 'right', w: '1%', nowrap: true, tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
       render: r => (cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].inNet) ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
     { label: '%', sk: 'pctComplete', align: 'right', w: '1%', nowrap: true, render: r => {
@@ -31320,6 +31342,35 @@ async function qsApplyEot() {
   });
   if (!ok) return;
   await _qsPost('/api/qs/eot', { projectId: _pmPid() }, _t('Revised completion recorded'));
+  await qsRescheduleOffer(e);
+}
+
+/* Moving the programme is a SECOND decision, asked separately, because it is a different act with
+   a different consequence: recording a date changes what the contract says, rescheduling changes
+   what everybody works to. The server refuses to do it until the original plan is frozen, and this
+   asks for that freeze in the words it actually means. */
+async function qsRescheduleOffer(e) {
+  const pid = _pmPid();
+  const ok = await tkConfirm({
+    title: _t('Move the programme as well?'),
+    body: [_t('The revised completion date is recorded. The activities on the programme have not moved.'),
+      '',
+      _t('Moving them shifts every unfinished activity affected by the delay forward by') + ' ' + e.grantedDays + ' ' + _t('day(s).') + ' ' +
+      _t('Work that is already complete stays where it is.'),
+      '',
+      _t('The original dates are frozen into a baseline first, and every variance on this job stays measured against them. Nothing about the planned finish on the charter changes.')
+    ].join('\n'),
+    confirmText: _t('Freeze the baseline and move the programme')
+  });
+  if (!ok) return;
+  const r = await tkApi('/api/qs/eot', 'POST',
+    { projectId: pid, reschedule: true, freezeBaseline: true });
+  if (!r || r.error) { toast((r && r.error) || _t('Could not move the programme'), 'warn', 9000); return; }
+  const rs = r.reschedule || {};
+  toast(_t('Programme moved') + ': ' + (rs.moved || 0) + ' ' + _t('activity(ies)') +
+    (rs.baselinesFrozen ? ('  ·  ' + rs.baselinesFrozen + ' ' + _t('baselined')) : ''), 'success', 9000);
+  await qsLoad(pid, true);
+  if (typeof _pmReload === 'function') await _pmReload();
 }
 /* ══ END QS ══════════════════════════════════════════════════════════════════════════════════ */
 

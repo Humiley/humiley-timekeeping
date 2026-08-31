@@ -2802,6 +2802,126 @@ def cash_flow(ctx):
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  MOVING THE PROGRAMME — what a granted extension is allowed to do to the schedule
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# extension_of_time() records the revised completion date and touches nothing else, on purpose: the
+# planned finish is what every variance on the job is measured against, and moving it makes a late
+# job look on time by rewriting the thing it was late against. The engineering module learned this
+# the expensive way — SPI was computed from a live planned date, so moving a slipped date reset it
+# to 1.00 with no record that the plan had ever moved.
+#
+# But an extension the client HAS granted is a real change to the agreed programme, and a schedule
+# that never reflects it is a schedule nobody can plan against. Both are true. The reconciliation is
+# the one PMBOK §6.6 gives: you may re-plan, but only after the original is frozen where variance
+# can still be measured against it.
+#
+# So this refuses to move anything until a baseline exists, and once it does:
+#
+#   - Work that is DONE does not move. You cannot delay what has already happened.
+#   - Work planned to finish before the delay event does not move — it was never affected.
+#   - Every move is DERIVED from the days already applied, so applying twice does not shift twice
+#     and the project manager's own re-planning in between is not wiped out.
+#
+# It computes the moves and returns them. Writing them is the endpoint's job, and it writes only
+# what this returns.
+
+BASELINE_NONE = "no baseline"
+HELD_DONE = "already complete"
+HELD_NO_DATES = "no planned dates"
+HELD_BEFORE_EVENT = "planned to finish before the delay"
+HELD_UP_TO_DATE = "already carries the full extension"
+
+
+def _task_done(t):
+    if str(t.get("actualFinish") or "").strip():
+        return True
+    if _num(t.get("pctComplete")) >= 100:
+        return True
+    return _norm(t.get("status")) in ("complete", "completed", "done", "closed")
+
+
+def reschedule_plan(ctx):
+    """Which activities a granted extension moves, and where to.
+
+    ctx: tasks (pm_tasks), grantedDays, eventDate (the earliest instruction carrying time impact),
+    baselineFrozen (whether the programme has been baselined).
+    """
+    ctx = ctx or {}
+    granted = int(_num(ctx.get("grantedDays")))
+    event = str(ctx.get("eventDate") or "")[:10]
+    tasks = ctx.get("tasks") or []
+    warn = []
+
+    def w(code, severity, msg, **extra):
+        warn.append(dict({"code": code, "severity": severity, "msg": msg}, **extra))
+
+    # ── the baseline ─────────────────────────────────────────────────────────────────────────────
+    # A task with dates and no baseline is a task whose original plan is about to be lost. This is
+    # the ONLY thing that can stop the whole operation, and it stops it rather than proceeding and
+    # mentioning it afterwards.
+    needs = [t.get("id") for t in tasks
+             if (t.get("start") or t.get("finish")) and not t.get("baselineFinish")]
+    frozen = bool(ctx.get("baselineFrozen")) and not needs
+
+    moves, held = [], []
+    if granted <= 0:
+        w("nothing_granted", "medium",
+          "No extension has been granted, so there is nothing to move. A claim is not a grant.")
+        return {"moves": [], "held": [], "grantedDays": 0, "needsBaseline": needs,
+                "baselineFrozen": frozen, "warnings": warn, "eventDate": event}
+
+    for t in tasks:
+        tid, name = t.get("id"), t.get("name") or ""
+        start, finish = str(t.get("start") or "")[:10], str(t.get("finish") or "")[:10]
+        applied = int(_num(t.get("eotShiftApplied")))
+        if _task_done(t):
+            held.append({"id": tid, "name": name, "reason": HELD_DONE})
+            continue
+        if not start and not finish:
+            held.append({"id": tid, "name": name, "reason": HELD_NO_DATES})
+            continue
+        # Work planned to finish before the event was never affected by it. Moving it would push
+        # completed-on-time activities into the future and make the whole programme unreadable.
+        if event and finish and finish < event:
+            held.append({"id": tid, "name": name, "reason": HELD_BEFORE_EVENT})
+            continue
+        delta = granted - applied
+        if delta <= 0:
+            held.append({"id": tid, "name": name, "reason": HELD_UP_TO_DATE})
+            continue
+        moves.append({
+            "id": tid, "name": name, "days": delta,
+            "fromStart": start, "toStart": _add_days(start, delta) if start else "",
+            "fromFinish": finish, "toFinish": _add_days(finish, delta) if finish else "",
+            "alreadyApplied": applied, "nowApplied": granted})
+
+    if needs:
+        w("no_baseline", "high",
+          "%d activity(ies) carry planned dates and no baseline. Moving them would destroy the "
+          "only record of the plan this job is measured against, so nothing is moved until the "
+          "programme is baselined." % len(needs), count=len(needs))
+    if not event:
+        w("no_delay_event", "medium",
+          "No instruction carrying a time impact has a date on it, so nothing can be shown to fall "
+          "before the delay. Every unfinished activity is treated as affected.")
+    done = [h for h in held if h["reason"] == HELD_DONE]
+    if done:
+        w("completed_work_not_moved", "low",
+          "%d activity(ies) are already complete and are left where they are. You cannot delay "
+          "work that has happened." % len(done))
+    return {
+        "moves": moves if frozen else [],
+        "plannedMoves": moves,
+        "held": held, "grantedDays": granted, "eventDate": event,
+        "needsBaseline": needs, "baselineFrozen": frozen,
+        "warnings": warn,
+        "note": "The original dates stay in the baseline, where every variance on this job is "
+                "measured against them. A revised date beside a frozen baseline is a re-plan; a "
+                "revised date on its own is a job that has quietly stopped being late.",
+    }
+
+
 # ── what this module will not decide ─────────────────────────────────────────────────────────────
 
 UNRESOLVED = (
