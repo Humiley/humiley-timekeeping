@@ -2563,6 +2563,245 @@ def subcontract_position(ctx):
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  THE CASH POSITION — what has been certified, what has actually moved, and what is owed
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# A contractor does not fail because a job loses money. It fails because the money leaves before it
+# arrives. Every figure this needs already existed and no screen had ever put them on one timeline:
+# the client's certificates (with their dates) on one side, the subcontractors' on the other.
+#
+# The distinction the whole report turns on is CERTIFIED versus PAID. A certificate is a promise
+# with a date on it; cash is what is in the account. The valuation series has carried `certifiedOn`
+# and `paidOn` since it was built and nothing has ever read the second one.
+#
+# Two things it refuses to do:
+#
+#   - It never nets a receivable against a payable and calls the result a cash balance. They fall
+#     due on different days to different people, and a positive net has never once stopped a
+#     subcontractor suspending for non-payment.
+#   - It does not schedule the release of retention. When it comes back depends on practical
+#     completion and the defects period, which live in the contract and not in this portal —
+#     sales_contract.retention_release() owns that and refuses without those dates.
+
+# A month with no movement is still a month. Printing only the months that had a certificate makes
+# a gap look like continuity, and a gap in a contractor's cash-in is the single most important
+# thing this report can show.
+CASH_MAX_MONTHS = 60
+
+
+def _month(iso):
+    s = str(iso or "")[:7]
+    return s if len(s) == 7 and s[4] == "-" else ""
+
+
+def _month_add(m, n):
+    y, mo = int(m[:4]), int(m[5:7])
+    t = (y * 12 + mo - 1) + n
+    return "%04d-%02d" % (t // 12, t % 12 + 1)
+
+
+def _month_span(a, b):
+    return (int(b[:4]) * 12 + int(b[5:7])) - (int(a[:4]) * 12 + int(a[5:7]))
+
+
+def cash_flow(ctx):
+    """The money in and the money out, on one timeline, with what is owed in each direction.
+
+    ctx: valuations (the series from _qs_series — certifiedGross, certifiedRetention, certifiedOn,
+    paidOn, status), subCertificates (pm_procurement_payments), revisedContractSum, certifiedToDate,
+    completion (the date the job is due to finish), today, cutoff.
+    """
+    ctx = ctx or {}
+    today = str(ctx.get("today") or "")[:10]
+    warn = []
+
+    def w(code, severity, msg, **extra):
+        warn.append(dict({"code": code, "severity": severity, "msg": msg}, **extra))
+
+    # ── money IN: the client's certificates ──────────────────────────────────────────────────────
+    # A certificate states GROSS TO DATE. The payment it actually generates is the movement since
+    # the one before it — adding the gross figures together would count the whole job once a month.
+    rows_in, prev_gross, prev_ret = [], 0.0, 0.0
+    undated_in = []
+    for v in (ctx.get("valuations") or []):
+        st = _norm(v.get("status"))
+        if st not in (VAL_CERTIFIED, VAL_PAID):
+            continue
+        gross = _rate(v.get("certifiedGross"))
+        if gross is None:
+            continue
+        # Retention is optional on the record. Absent, the movement is computed on gross alone and
+        # the row says so — a retention silently taken as nil would overstate every payment.
+        ret = _rate(v.get("certifiedRetention"))
+        net_to_date = r2(gross - (ret if ret is not None else 0.0))
+        movement = r2(net_to_date - (prev_gross - prev_ret))
+        on = str(v.get("certifiedOn") or "")[:10]
+        paid_on = str(v.get("paidOn") or "")[:10]
+        if not on:
+            undated_in.append(v.get("valNo") or v.get("id") or "?")
+        rows_in.append({
+            "valNo": v.get("valNo") or "", "certifiedOn": on, "paidOn": paid_on,
+            "grossToDate": r2(gross), "retentionToDate": (r2(ret) if ret is not None else None),
+            "netToDate": net_to_date, "movement": movement,
+            "paid": st == VAL_PAID,
+            # Certified and not paid is a receivable. Paid with no date is still paid — the date is
+            # missing, not the money — so it is counted and the absence is reported separately.
+            "receivable": 0.0 if st == VAL_PAID else movement})
+        prev_gross, prev_ret = gross, (ret if ret is not None else 0.0)
+
+    if undated_in:
+        w("certificate_in_no_date", "medium",
+          "%d client certificate(s) carry no certified date, so the money they represent sits in "
+          "no month on this timeline: %s." % (len(undated_in), ", ".join(map(str, undated_in[:6]))))
+    paid_no_date = [r["valNo"] for r in rows_in if r["paid"] and not r["paidOn"]]
+    if paid_no_date:
+        w("payment_in_no_date", "medium",
+          "%d valuation(s) are marked paid with no payment date. The cash is counted; it simply "
+          "lands in no month: %s." % (len(paid_no_date), ", ".join(paid_no_date[:6])))
+    no_ret = [r["valNo"] for r in rows_in if r["retentionToDate"] is None]
+    if no_ret:
+        w("certificate_in_no_retention", "low",
+          "%d client certificate(s) do not record the retention held, so their payment is computed "
+          "on the gross alone and may be overstated: %s."
+          % (len(no_ret), ", ".join(no_ret[:6])))
+
+    # ── money OUT: the subcontractors' certificates ──────────────────────────────────────────────
+    # These are per-certificate amounts, not to-date figures, so they add up directly. Opposite
+    # shape to the one above, and reading them the same way would be wrong in both directions.
+    rows_out, undated_out = [], []
+    for c in (ctx.get("subCertificates") or []):
+        st = _norm(c.get("status"))
+        if st not in SUB_OWED:
+            continue
+        net = _rate(c.get("netCertified"))
+        if net is None:
+            net = r2(_num(c.get("grossClaimed")) - _num(c.get("retentionDeducted")))
+        on = str(c.get("certDate") or "")[:10]
+        if not on:
+            undated_out.append(c.get("certNo") or "?")
+        rows_out.append({"certNo": c.get("certNo") or "", "pkgNo": c.get("pkgNo") or "",
+                         "certifiedOn": on, "paidOn": str(c.get("paidOn") or "")[:10],
+                         "net": r2(net), "paid": st == "paid",
+                         "payable": 0.0 if st == "paid" else r2(net)})
+    out_paid_no_date = [r["certNo"] for r in rows_out if r["paid"] and not r["paidOn"]]
+    if out_paid_no_date:
+        w("payment_out_no_date", "medium",
+          "%d subcontractor certificate(s) are marked paid with no payment date. The cash is "
+          "counted; it simply lands in no month: %s."
+          % (len(out_paid_no_date), ", ".join(map(str, out_paid_no_date[:6]))))
+    if undated_out:
+        w("certificate_out_no_date", "medium",
+          "%d subcontractor certificate(s) carry no certified date, so what we owe on them sits in "
+          "no month: %s." % (len(undated_out), ", ".join(map(str, undated_out[:6]))))
+
+    # ── the timeline ─────────────────────────────────────────────────────────────────────────────
+    months = set()
+    for r in rows_in:
+        for k in ("certifiedOn", "paidOn"):
+            if _month(r[k]):
+                months.add(_month(r[k]))
+    for r in rows_out:
+        for k in ("certifiedOn", "paidOn"):
+            if _month(r[k]):
+                months.add(_month(r[k]))
+    periods = []
+    if months:
+        lo, hi = min(months), max(months)
+        span = _month_span(lo, hi)
+        if span >= CASH_MAX_MONTHS:
+            w("timeline_truncated", "medium",
+              "The records span %d months; the timeline shows the first %d from %s."
+              % (span + 1, CASH_MAX_MONTHS, lo))
+            span = CASH_MAX_MONTHS - 1
+        run = 0.0
+        for i in range(span + 1):
+            m = _month_add(lo, i)
+            cert_in = r2(sum(r["movement"] for r in rows_in if _month(r["certifiedOn"]) == m))
+            recv = r2(sum(r["movement"] for r in rows_in
+                          if r["paid"] and _month(r["paidOn"]) == m))
+            cert_out = r2(sum(r["net"] for r in rows_out if _month(r["certifiedOn"]) == m))
+            # By the PAYMENT date, never the certificate date. They are different months and
+            # the difference is the entire point of this report — the client side has always drawn
+            # this distinction and the outgoing side silently did not, so money that left in June
+            # was drawn as leaving in April.
+            paid_out = r2(sum(r["net"] for r in rows_out
+                              if r["paid"] and _month(r["paidOn"]) == m))
+            run = r2(run + recv - paid_out)
+            periods.append({"period": m, "certifiedIn": cert_in, "receivedIn": recv,
+                            "certifiedOut": cert_out, "paidOut": paid_out,
+                            # Cash that actually moved, not certificates that were issued.
+                            "netCash": r2(recv - paid_out), "cumulativeCash": run})
+
+    receivable = r2(sum(r["receivable"] for r in rows_in))
+    payable = r2(sum(r["payable"] for r in rows_out))
+    received = r2(sum(r["movement"] for r in rows_in if r["paid"]))
+    paid_out_total = r2(sum(r["net"] for r in rows_out if r["paid"]))
+
+    if payable > receivable + 0.005:
+        w("owed_out_exceeds_owed_in", "high",
+          "We owe subcontractors %s and are owed %s. The difference, %s, has to come from "
+          "somewhere else." % (_vnd(payable), _vnd(receivable), _vnd(payable - receivable)))
+
+    # ── the forecast ─────────────────────────────────────────────────────────────────────────────
+    # Straight-line, and it says so. Spreading the remaining value evenly is an ASSUMPTION and not
+    # a plan — the shape of the real curve lives in the programme, and this module does not read it.
+    revised = _rate(ctx.get("revisedContractSum"))
+    certified = _rate(ctx.get("certifiedToDate"))
+    completion = str(ctx.get("completion") or "")[:10]
+    forecast = None
+    if not completion:
+        w("no_completion_date", "medium",
+          "No contract completion date is recorded, so what is left to certify cannot be spread "
+          "over anything. The forecast is unavailable, not nil.")
+    elif revised is None:
+        w("no_contract_sum", "medium",
+          "No revised contract sum, so there is no figure to forecast against.")
+    else:
+        left = r2(revised - (certified or 0.0))
+        base = _month(today) or (periods[-1]["period"] if periods else "")
+        end = _month(completion)
+        n = _month_span(base, end) if (base and end) else 0
+        if n <= 0:
+            w("completion_passed", "medium",
+              "The completion date %s is not in the future, so what is left to certify cannot be "
+              "spread over remaining months. %s is still outstanding." % (completion, _vnd(left)))
+        elif left <= 0:
+            forecast = {"monthsRemaining": n, "remainingValue": left, "perMonth": 0.0,
+                        "rows": [], "basis": "nothing left to certify"}
+        else:
+            per = r2(left / n)
+            forecast = {
+                "monthsRemaining": n, "remainingValue": left, "perMonth": per,
+                "rows": [{"period": _month_add(base, i + 1), "certifiedIn": per}
+                         for i in range(n)],
+                "basis": "the remaining value spread evenly over the months to completion",
+            }
+            w("forecast_is_straight_line", "low",
+              "The forecast spreads %s evenly over %d month(s) to %s. That is an assumption, not a "
+              "plan: it ignores the programme, the retention release and every payment term in the "
+              "contract." % (_vnd(left), n, completion))
+
+    return {
+        "periods": periods, "certificatesIn": rows_in, "certificatesOut": rows_out,
+        "receivable": receivable, "payable": payable,
+        "received": received, "paidOut": paid_out_total,
+        # Reported side by side and never subtracted into one "cash position": they fall due on
+        # different days to different people, and a healthy net has never stopped a subcontractor
+        # suspending for non-payment.
+        "workingCapitalGap": r2(payable - receivable) if payable > receivable else 0.0,
+        "cashToDate": r2(received - paid_out_total),
+        "retentionFromUs": _rate(ctx.get("retentionFromUs")),
+        "retentionFromSubs": _rate(ctx.get("retentionFromSubs")),
+        "forecast": forecast,
+        "warnings": warn,
+        "note": "Receivable and payable are stated side by side and never netted. They fall due on "
+                "different days to different people, and a positive net has never stopped a "
+                "subcontractor suspending for non-payment. Retention is shown as held, not "
+                "scheduled — when it comes back depends on practical completion and the defects "
+                "period, which are in the contract and not in this module.",
+    }
+
+
 # ── what this module will not decide ─────────────────────────────────────────────────────────────
 
 UNRESOLVED = (

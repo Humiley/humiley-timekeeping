@@ -16961,7 +16961,11 @@ const _QA_SPECS = {
     { k: 'period', label: 'Period (YYYY-MM)' },
     { k: 'grossClaimed', label: 'Gross claimed (₫)', type: 'money' }, { k: 'retentionDeducted', label: 'Retention deducted (₫)', type: 'money' },
     { k: 'netCertified', label: 'Net certified (₫)', type: 'money' }, { k: 'status', label: 'Status', type: 'select', options: ['Submitted', 'Certified', 'Paid'] },
-    { k: 'certDate', label: 'Certified date', type: 'date' }, { k: 'note', label: 'Notes' }] },
+    { k: 'certDate', label: 'Certified date', type: 'date' },
+    /* When the money actually left. The cash timeline places a payment by THIS date and a
+       certificate by the one above it — they are different months, and that difference is the
+       whole point of the Cash tab. */
+    { k: 'paidOn', label: 'Paid on', type: 'date' }, { k: 'note', label: 'Notes' }] },
   /* A variation issued DOWN the chain. Deliberately a shorter lifecycle than our own variation
      register: we are the employer here, so there is no submit-and-wait — we instruct, and we agree
      a price. Only an AGREED one changes what the package is worth. */
@@ -28708,6 +28712,7 @@ const _QS_TABS = [
   { k: 'comm', label: 'Commissioning', fn: '_qsRenderComm' },
   { k: 'cvr', label: 'Cost / Value', fn: '_qsRenderCvr' },
   { k: 'sub', label: 'Subcontracts', fn: '_qsRenderSubs' },
+  { k: 'cash', label: 'Cash', fn: '_qsRenderCash' },
   { k: 'final', label: 'Final Account', fn: '_qsRenderFinal' },
   { k: 'docs', label: 'QS Documents', fn: '_qsRenderDocs' }
 ];
@@ -29554,6 +29559,150 @@ function qsSubcontractPDF() {
   y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['Commercial Manager', ''], ['Project Manager', '']]);
   _qsFoot(doc, CODE);
   _qsSavePdf(doc, 'Subcontract-Position-' + (_pmProj() || {}).code + '.pdf', '13_QS_Commercial/09_Cost_Value_Reconciliation');
+}
+
+/* ── 11. Cash — certified against actually moved (the money that runs the company) ────────────── */
+/* A contractor does not fail because a job loses money. It fails because the money leaves before it
+   arrives. Every figure here is served; the browser draws bars and computes nothing. */
+
+/* Receivable and payable side by side, never subtracted into one number — they fall due on
+   different days to different people. */
+function _qsCashOwedCard(c) {
+  const gap = c.workingCapitalGap || 0;
+  const cell = (lab, val, hint, hex) => '<div style="flex:1;min-width:160px">' +
+    '<div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em">' + _pmEsc(lab) + '</div>' +
+    '<div style="font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;color:' + (hex || 'var(--navy)') + ';margin-top:2px">' + val + '</div>' +
+    (hint ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px;line-height:1.5">' + _pmEsc(hint) + '</div>' : '') + '</div>';
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid ' + (gap ? '#EF4444' : 'var(--emerald)') + '">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('What is owed, in each direction') + '</div></div>' +
+    '<div style="padding:14px 16px;display:flex;gap:18px;flex-wrap:wrap">' +
+    cell(_t('Owed to us'), _qsMoney(c.receivable), _t('Certified by the client and not yet paid.'), 'var(--emerald)') +
+    cell(_t('Owed by us'), _qsMoney(c.payable), _t('Certified to subcontractors and not yet paid.'), '#F59E0B') +
+    cell(_t('Received to date'), _qsMoney(c.received), '') +
+    cell(_t('Paid out to date'), _qsMoney(c.paidOut), '') +
+    '</div>' +
+    (gap ? '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:#EF4444;font-weight:700;line-height:1.6">' +
+      _pmEsc(_t('We owe more than we are owed by') + ' ' + _qsMoney(gap) + '. ' + _t('That difference has to come from somewhere else.')) + '</div>' : '') +
+    '<div style="padding:10px 16px;border-top:1px solid var(--line-soft,#eef2f8);display:flex;gap:18px;flex-wrap:wrap">' +
+    cell(_t('Retention the client holds from us'), c.retentionFromUs == null ? '—' : _qsMoney(c.retentionFromUs), c.retentionFromUs == null ? _t('Not recorded on any client certificate.') : '') +
+    cell(_t('Retention we hold from subcontractors'), c.retentionFromSubs == null ? '—' : _qsMoney(c.retentionFromSubs), '') +
+    '</div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' + _pmEsc(c.note || '') + '</div></div>';
+}
+
+/* The timeline. Bars are drawn from the served figures — nothing here decides what a month is
+   worth, and every month between the first and last is present even when nothing moved, because a
+   gap in a contractor's cash-in is the thing this chart exists to show. */
+function _qsCashChart(c) {
+  const ps = c.periods || [];
+  if (!ps.length) {
+    return '<div class="card" style="padding:26px 18px;text-align:center;margin-bottom:14px;color:var(--text-light);font-size:12.5px">' +
+      _pmEsc(_t('No dated certificate on either side yet, so there is no timeline to draw.')) + '</div>';
+  }
+  const mx = Math.max.apply(null, ps.map(p => Math.max(Math.abs(p.receivedIn || 0), Math.abs(p.paidOut || 0), Math.abs(p.certifiedIn || 0))).concat([1]));
+  const bars = ps.map(p => {
+    const h = v => Math.max(1, Math.abs(v || 0) / mx * 74);
+    return '<div style="flex:1;min-width:62px;text-align:center;display:flex;flex-direction:column;justify-content:flex-end;height:100%">' +
+      '<div style="display:flex;gap:2px;align-items:flex-end;justify-content:center;height:82px">' +
+      '<div title="' + _tkEscA(_t('Certified in') + ': ' + _qsMoney(p.certifiedIn)) + '" style="width:11px;height:' + h(p.certifiedIn) + 'px;background:#C7D6E8;border-radius:2px 2px 0 0"></div>' +
+      '<div title="' + _tkEscA(_t('Received') + ': ' + _qsMoney(p.receivedIn)) + '" style="width:11px;height:' + h(p.receivedIn) + 'px;background:var(--emerald);border-radius:2px 2px 0 0"></div>' +
+      '<div title="' + _tkEscA(_t('Paid out') + ': ' + _qsMoney(p.paidOut)) + '" style="width:11px;height:' + h(p.paidOut) + 'px;background:#EF4444;border-radius:2px 2px 0 0"></div>' +
+      '</div>' +
+      '<div style="font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;color:' + ((p.cumulativeCash || 0) < 0 ? '#EF4444' : 'var(--text)') + ';margin-top:4px">' + _pmMoneyShort(p.cumulativeCash) + '</div>' +
+      '<div style="font-size:10px;color:var(--text-light);white-space:nowrap">' + _pmEsc(p.period) + '</div></div>';
+  }).join('');
+  const key = (hex, lab) => '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px"><span style="width:9px;height:9px;border-radius:2px;background:' + hex + '"></span>' + _pmEsc(lab) + '</span>';
+  return '<div class="card" style="padding:14px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
+    '<div class="card-title">' + _t('Money in and money out, by month') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + key('#C7D6E8', _t('Certified in')) + key('var(--emerald)', _t('Received')) + key('#EF4444', _t('Paid out')) + '</div></div>' +
+    '<div style="overflow-x:auto"><div style="display:flex;gap:6px;align-items:flex-end;min-width:' + (ps.length * 68) + 'px;height:130px">' + bars + '</div></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px;line-height:1.6">' +
+    _pmEsc(_t('The figure under each month is cash to date — what has actually moved, not what has been certified. A certificate is a promise with a date on it.')) + '</div></div>';
+}
+
+function _qsCashForecastCard(c) {
+  const f = c.forecast;
+  if (!f) {
+    const why = (c.warnings || []).find(w => ['no_completion_date', 'no_contract_sum', 'completion_passed'].indexOf(w.code) >= 0);
+    return why ? '<div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:3px solid #94A3B8">' +
+      '<div class="card-title" style="margin-bottom:5px">' + _t('Forecast') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' + _pmEsc(why.msg) + '</div></div>' : '';
+  }
+  const rows = (f.rows || []).map(r => '<tr style="border-top:1px solid var(--line-soft,#eef2f8)">' +
+    '<td style="padding:6px 10px;font-size:12.5px">' + _pmEsc(r.period) + '</td>' +
+    '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px">' + _qsMoney(r.certifiedIn) + '</td></tr>').join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Forecast to completion') + '</div></div>' +
+    '<div style="padding:10px 16px;font-size:12.5px;color:var(--text)">' +
+    _pmEsc(_t('Left to certify') + ': ') + '<b style="font-variant-numeric:tabular-nums">' + _qsMoney(f.remainingValue) + '</b>' +
+    _pmEsc('  ·  ' + f.monthsRemaining + ' ' + _t('month(s) remaining') + '  ·  ') +
+    '<b style="font-variant-numeric:tabular-nums">' + _qsMoney(f.perMonth) + '</b>' + _pmEsc(' ' + _t('a month')) + '</div>' +
+    '<div class="table-wrap"><table style="min-width:320px;border-collapse:collapse"><thead><tr>' +
+    '<th style="padding:8px 10px;font-size:11px;text-align:left">' + _t('Month') + '</th>' +
+    '<th style="padding:8px 10px;font-size:11px;text-align:right">' + _t('Certified in') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:#F59E0B;font-weight:600;line-height:1.6">' +
+    _pmEsc(_t('This is an assumption, not a plan. It spreads what is left evenly and ignores the programme, the retention release and every payment term in the contract.')) + '</div></div>';
+}
+
+function _qsRenderCash(pid) {
+  const d = _qsData();
+  if (!d) return _qsDeniedCard(pid);
+  const c = d.cash || {};
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Owed to us'), _pmMoneyShort(c.receivable || 0), 'var(--emerald)'),
+    _hrKpi(_t('Owed by us'), _pmMoneyShort(c.payable || 0), '#F59E0B'),
+    _hrKpi(_t('Cash to date'), _pmMoneyShort(c.cashToDate || 0), (c.cashToDate || 0) < 0 ? '#EF4444' : 'var(--navy)'),
+    _hrKpi(_t('Working capital gap'), _pmMoneyShort(c.workingCapitalGap || 0), (c.workingCapitalGap || 0) > 0 ? '#EF4444' : 'var(--emerald)')
+  ]);
+  return kpis + _qsWarnCard(c.warnings, _t('What the cash position is telling you')) +
+    _qsCashOwedCard(c) + _qsCashChart(c) + _qsCashForecastCard(c);
+}
+
+function qsCashPDF() {
+  const d = _qsData(); if (!d) { toast(_t('Commercial figures are not available at your access level.'), 'warn'); return; }
+  const doc = _pmDoc(); if (!doc) { toast(_t('PDF library not loaded'), 'warn'); return; }
+  const c = d.cash || {}, CODE = 'HML-QS-CSH', T = 'Cash Position';
+  let y = _qsPdfHdr(doc, T, CODE, _pmPdfTxt('as at ' + _pmFmt(_pmToday()))) + 2;
+  y = _qsPdfRows(doc, y, [
+    { label: 'Certified by the client, not yet paid', value: _qsMoney(c.receivable), strong: true },
+    { label: 'Certified to subcontractors, not yet paid', value: _qsMoney(c.payable), strong: true },
+    { label: 'Shortfall to be funded elsewhere', value: _qsMoney(c.workingCapitalGap), rule: true,
+      hint: 'These are NOT netted into a cash position: they fall due on different days to different people.' },
+    { label: 'Received to date', value: _qsMoney(c.received), rule: true },
+    { label: 'Paid out to date', value: _qsMoney(c.paidOut) },
+    { label: 'Cash to date', value: _qsMoney(c.cashToDate), strong: true },
+    { label: 'Retention the client holds from us', rule: true,
+      value: c.retentionFromUs == null ? 'not recorded' : _qsMoney(c.retentionFromUs) },
+    { label: 'Retention we hold from subcontractors',
+      value: c.retentionFromSubs == null ? 'not recorded' : _qsMoney(c.retentionFromSubs),
+      hint: 'Shown as held, not scheduled. When it comes back is in the contract, not in this module.' }
+  ], CODE, T);
+  if ((c.periods || []).length) {
+    y += 3;
+    y = _qsPdfRows(doc, y, [{ label: 'Month by month', strong: true, rule: true }].concat(
+      c.periods.map(p => ({ label: p.period, indent: true,
+        value: _qsMoney(p.receivedIn) + ' in / ' + _qsMoney(p.paidOut) + ' out',
+        hint: 'cash to date ' + _qsMoney(p.cumulativeCash) }))), CODE, T);
+  }
+  if (c.forecast) {
+    y += 3;
+    y = _qsPdfRows(doc, y, [
+      { label: 'Forecast to completion', strong: true, rule: true },
+      { label: 'Left to certify', value: _qsMoney(c.forecast.remainingValue), indent: true },
+      { label: 'Months remaining', value: String(c.forecast.monthsRemaining), indent: true },
+      { label: 'Straight-line per month', value: _qsMoney(c.forecast.perMonth), indent: true,
+        hint: 'An assumption, not a plan: it ignores the programme and every payment term in the contract.' }
+    ], CODE, T);
+  }
+  if ((c.warnings || []).length) {
+    y += 3;
+    y = _qsPdfRows(doc, y, [{ label: 'Matters arising', strong: true, rule: true }].concat(
+      c.warnings.map(w => ({ label: '- ' + _pmPdfTxt(w.msg), indent: true }))), CODE, T);
+  }
+  y = _qsSignBlock(doc, y, [['Quantity Surveyor', ''], ['Finance Manager', ''], ['Project Manager', '']]);
+  _qsFoot(doc, CODE);
+  _qsSavePdf(doc, 'Cash-Position-' + (_pmProj() || {}).code + '.pdf', '13_QS_Commercial/03_Interim_Valuations_IPA');
 }
 
 /* ── 8. Final account ─────────────────────────────────────────────────────────────────────────── */

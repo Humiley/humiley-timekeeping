@@ -10538,6 +10538,21 @@ class Handler(BaseHTTPRequestHandler):
             "retentionFromUs": (cert_row or {}).get("certifiedRetention"),
             "cutoff": live.get("cutoff") or ""})
 
+        # The cash position. Every figure it needs already existed — `paidOn` has been on the
+        # valuation row since the register was built and nothing had ever read it. The completion
+        # date is the REVISED one where an extension has been granted, because that is the date the
+        # remaining work now has to be spread over.
+        cash = qsurvey.cash_flow({
+            "valuations": series,
+            "subCertificates": rows["procurementCerts"],
+            "revisedContractSum": live.get("revisedContractSum"),
+            "certifiedToDate": certified,
+            "retentionFromUs": (cert_row or {}).get("certifiedRetention"),
+            "retentionFromSubs": sub.get("retentionHeld"),
+            "completion": (eot.get("revisedCompletion") or project.get("endPlanned")
+                           or project.get("endBaseline")),
+            "today": _now_iso()[:10]})
+
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
             "daywork": rows["daywork"], "cutoff": "",
@@ -10562,6 +10577,7 @@ class Handler(BaseHTTPRequestHandler):
             "extensionOfTime": eot,
             "notice": notice,
             "subcontracts": sub,
+            "cash": cash,
             "exposures": expo,
             "reserves": res,
             "cvr": cvr_calc,
