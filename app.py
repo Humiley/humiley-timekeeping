@@ -10242,7 +10242,11 @@ class Handler(BaseHTTPRequestHandler):
                 # PMBOK §4.6. The change request is where a change is ASSESSED; the variation is
                 # where it is PRICED. Held apart, a variation could be agreed with nothing behind
                 # it and an approved change could go unbilled.
-                "changes": _of("pm_changes")}
+                "changes": _of("pm_changes"),
+                # The programme (for the forecast completion date) and the risk register (for the
+                # expected value of what is still open). Both belong to other parts of the module
+                # and are fetched here so the whole commercial position is read at one moment.
+                "tasks": _of("pm_tasks"), "risks": _of("pm_risks")}
 
     @staticmethod
     def _qs_ctx(rows):
@@ -10257,6 +10261,54 @@ class Handler(BaseHTTPRequestHandler):
                 "variations": rows["variations"], "daywork": rows["daywork"],
                 "materials": rows["materials"],
                 "quality": rows.get("quality"), "itps": rows.get("itps")}
+
+    @staticmethod
+    def _qs_budget_by_trade(rows_costs):
+        """Budgeted cost per trade, from pm_costs. `budget` only — `committed` is an order placed
+        and `actual` is money gone; neither is the plan."""
+        out = {}
+        for c in rows_costs:
+            amt = qsurvey._num(c.get("budget"))
+            if not amt:
+                continue
+            code = str(c.get("discipline") or "").strip().lower()
+            if code not in qsurvey.DISCIPLINE_CODES:
+                code = qsurvey.UNALLOCATED
+            out[code] = out.get(code, 0.0) + amt
+        return {k: qsurvey.r2(v) for k, v in out.items()}
+
+    @staticmethod
+    def _qs_forecast_completion(tasks):
+        """When the programme says the job finishes: the latest finish among activities that are
+        not complete, falling back to the latest finish on record.
+
+        Returns "" rather than today when there is no programme. A date invented here would flow
+        into the delay figure and, from there, into a liquidated-damages exposure.
+        """
+        open_finishes = [str(t.get("finish") or "")[:10] for t in tasks
+                         if str(t.get("status") or "") != "Completed" and t.get("finish")]
+        if open_finishes:
+            return max(open_finishes)
+        allf = [str(t.get("finish") or "")[:10] for t in tasks if t.get("finish")]
+        return max(allf) if allf else ""
+
+    @staticmethod
+    def _qs_open_threat_emv(risks):
+        """Expected monetary value of the OPEN THREATS, using the same probability map the Risk
+        tab draws with — an opportunity is not a call on the contingency."""
+        pmap = {1: 0.1, 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.9}
+        total, n = 0.0, 0
+        for r in risks:
+            if str(r.get("status") or "") == "Closed":
+                continue
+            if str(r.get("direction") or "Threat").strip().lower() == "opportunity":
+                continue
+            p = pmap.get(int(qsurvey._num(r.get("probability"))), 0.0)
+            cost = qsurvey._num(r.get("costImpact"))
+            if p and cost:
+                total += p * cost
+            n += 1
+        return qsurvey.r2(total), n
 
     @staticmethod
     def _qs_cost_by_trade(pid):
@@ -10388,7 +10440,9 @@ class Handler(BaseHTTPRequestHandler):
             "forecastCost": latest_cvr.get("forecastCost"),
             "previousMargin": prev_margin,
             "valueByTrade": value_by_trade,
-            "costByTrade": self._qs_cost_by_trade(pid)})
+            "costByTrade": self._qs_cost_by_trade(pid),
+            "budgetByTrade": self._qs_budget_by_trade(
+                [c for c in db.list_collection("pm_costs") if c.get("projectId") == pid])})
 
         cc = qsurvey.change_control({"changes": rows["changes"],
                                      "variations": rows["variations"],
@@ -10408,6 +10462,21 @@ class Handler(BaseHTTPRequestHandler):
             "ac": cost_to_date,
             "independentPct": project.get("percentComplete"),
             "independentBasis": "the project's own percent complete"})
+
+        eot = qsurvey.extension_of_time({
+            "contractCompletion": project.get("endPlanned") or project.get("endBaseline"),
+            "forecastCompletion": self._qs_forecast_completion(rows["tasks"]),
+            "variations": rows["variations"], "changes": rows["changes"],
+            "ldPerDay": project.get("ldPerDay"), "ldCap": project.get("ldCap"),
+            "cutoff": live.get("cutoff") or ""})
+
+        _emv, _nthreat = self._qs_open_threat_emv(rows["risks"])
+        res = qsurvey.reserves({
+            "contingencyReserve": project.get("contingencyReserve"),
+            "managementReserve": project.get("managementReserve"),
+            "provisions": latest_cvr.get("provisions") if latest_cvr else 0,
+            "variationShortfall": cc.get("shortfall"),
+            "openThreatEmv": _emv, "openThreatCount": _nthreat})
 
         final = qsurvey.final_account({
             "contractSum": contract_sum, "variations": rows["variations"],
@@ -10430,6 +10499,8 @@ class Handler(BaseHTTPRequestHandler):
             "costToDate": cost_to_date,
             "changeControl": cc,
             "earnedValue": ev,
+            "extensionOfTime": eot,
+            "reserves": res,
             "cvr": cvr_calc,
             "cvrHistory": [{"id": c.get("id"), "cutoff": c.get("cutoff") or "",
                             "marginPct": c.get("marginPct"), "margin": c.get("margin"),

@@ -304,3 +304,13 @@ def test_the_change_control_join_reads_both_reference_shapes():
     i = html.index("function _qsCrOf(v)")
     body = html[i:html.index("}", html.index("return cr ?", i))]
     assert "crNo" in body and "crId" in body
+
+
+def test_the_qs_tab_loads_the_change_request_log():
+    """The server reads pm_changes for the report, but the BROWSER needs it too: the one-click
+    "raise the variation" and the crId fallback in _qsCrOf both read it locally. Without it that
+    button reports the change request missing on a project where it is sitting right there."""
+    html = _html()
+    i = html.index("k: 'qs', label: 'QS / Commercial'")
+    entry = html[i:html.index("] },", i)]
+    assert "'pm_changes'" in entry, "the QS tab does not load the change-request log"

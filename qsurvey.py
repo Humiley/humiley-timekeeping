@@ -704,13 +704,23 @@ def cvr(ctx):
     # put one trade's overspend in another trade's margin.
     vbt = {str(k): r2(v) for k, v in (ctx.get("valueByTrade") or {}).items()}
     cbt = {str(k): r2(v) for k, v in (ctx.get("costByTrade") or {}).items()}
+    # The trade's own BUDGET, from pm_costs. Margin says whether a trade is making money; budget
+    # variance says whether it is doing so by spending more than the job was priced to spend. A
+    # trade can be comfortably profitable AND well over its budget, and only one of those two
+    # numbers ever appears in a project total.
+    bbt = {str(k): r2(v) for k, v in (ctx.get("budgetByTrade") or {}).items()}
     trade_rows = []
-    for code in sorted(set(vbt) | set(cbt), key=lambda c: (c == UNALLOCATED, c)):
-        tv, tc = vbt.get(code, 0.0), cbt.get(code, 0.0)
+    for code in sorted(set(vbt) | set(cbt) | set(bbt), key=lambda c: (c == UNALLOCATED, c)):
+        tv, tc, tb = vbt.get(code, 0.0), cbt.get(code, 0.0), bbt.get(code)
         tm = r2(tv - tc)
         trade_rows.append({
             "code": code, "label": discipline_label(code),
             "value": tv, "cost": tc, "margin": tm,
+            "budget": tb,
+            # None, not 0, when the trade carries no budget — "no plan to measure against" and
+            # "exactly on plan" are different facts and the screen prints them differently.
+            "budgetVariance": (None if tb is None else r2(tb - tc)),
+            "overBudget": bool(tb is not None and tc > tb),
             "marginPct": round(tm / tv * 100.0, 2) if tv else None,
             # Cost booked against a trade with no value is either work not yet measured or work
             # billed to the wrong trade. Both matter and neither is visible in a project total.
@@ -755,6 +765,20 @@ def cvr(ctx):
             "msg": "The job is in profit overall, but %s. A project total cannot show this."
                    % "; ".join("%s is %s behind" % (t["label"], _vnd(abs(t["margin"])))
                                for t in losing[:4])})
+    over = [t for t in trade_rows if t["overBudget"]]
+    if over:
+        warnings.append({
+            "code": "trade_over_its_budget", "severity": "high",
+            "msg": "%s over budget. A trade can be in profit and still be spending more than the "
+                   "job was priced to spend, and the margin alone never shows it."
+                   % "; ".join("%s is %s" % (t["label"], _vnd(abs(t["budgetVariance"])))
+                               for t in over[:4])})
+    unbudgeted = [t for t in trade_rows if t["budget"] is None and t["cost"]]
+    if unbudgeted:
+        warnings.append({
+            "code": "trade_spending_with_no_budget", "severity": "medium",
+            "msg": "%s carry cost with no budget line behind them, so nothing measures what they "
+                   "were meant to spend." % ", ".join(t["label"] for t in unbudgeted[:4])})
     orphan_cost = [t for t in trade_rows if t["costWithoutValue"]]
     if orphan_cost:
         warnings.append({
@@ -1741,14 +1765,252 @@ def earned_value(ctx):
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  EXTENSION OF TIME — PMBOK §6.6, and the distinction the whole thing turns on
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# A variation carries `timeImpactDays`. That is a CLAIM FOR TIME. It is not an extension of time.
+#
+# Only the client GRANTING an extension moves the contract completion date, and until they do, the
+# contractor is still liable for finishing on the original one — while building work that cannot be
+# finished by then. That gap is the single most expensive thing on a construction contract and it is
+# invisible in every register the portal had: the variation register shows the money, the programme
+# shows the dates, and nothing put "we have claimed 46 days and been granted 21" on one screen.
+#
+# It is exactly the same shape as instructed-versus-agreed on the money side, and it is reported the
+# same way: the claim is exposure, the grant is a fact, and the difference is named.
+#
+# LIQUIDATED DAMAGES. Days late multiplied by a rate the contract states, capped where the contract
+# states a cap, is ARITHMETIC and is computed. WHETHER those damages are deducted from a payment
+# certificate, set off, or claimed separately is a legal position under the contract and is NOT
+# computed — see UNRESOLVED. The figure is labelled exposure and never liability.
+
+
+def _days_between(a, b):
+    """Whole days from ISO date a to ISO date b, or None if either is missing or unparseable.
+
+    Deliberately not a fallback to 0: "no dates" and "on time" are different facts, and a 0 here
+    would report a project with no programme as finishing exactly on the day.
+    """
+    import datetime
+    try:
+        d1 = datetime.date(*[int(x) for x in str(a)[:10].split("-")])
+        d2 = datetime.date(*[int(x) for x in str(b)[:10].split("-")])
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return (d2 - d1).days
+
+
+def _add_days(iso, n):
+    import datetime
+    try:
+        d = datetime.date(*[int(x) for x in str(iso)[:10].split("-")])
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return (d + datetime.timedelta(days=int(n or 0))).isoformat()
+
+
+def extension_of_time(ctx):
+    """What has been claimed, what has been granted, and how late the job is against each.
+
+    `ctx`:
+        contractCompletion   the date in the contract (pm_projects.endPlanned)
+        forecastCompletion   when the programme now says it finishes
+        variations           the register; timeImpactDays is CLAIMED, eotGrantedDays is GRANTED
+        changes              approved change requests may also carry granted days
+        ldPerDay / ldCap     liquidated damages, only if the contract states them
+        cutoff
+    """
+    ctx = ctx or {}
+    cutoff = str(ctx.get("cutoff") or "")[:10]
+    original = str(ctx.get("contractCompletion") or "")[:10] or None
+    forecast = str(ctx.get("forecastCompletion") or "")[:10] or None
+
+    claimed, granted, rows = 0.0, 0.0, []
+    for raw in (ctx.get("variations") or []):
+        v = variation_value(raw)
+        c_days = _num(raw.get("timeImpactDays"))
+        g_days = _num(raw.get("eotGrantedDays"))
+        if not c_days and not g_days:
+            continue
+        # A claim only counts once the variation itself is real work — an idea nobody instructed
+        # carries no time either.
+        counts = v["status"] in (V_INSTRUCTED, V_MEASURED, V_PRICED, V_SUBMITTED, V_AGREED)
+        if counts and _le(raw.get("instructedOn") or v["agreedOn"], cutoff):
+            claimed += c_days
+        if g_days and _le(raw.get("eotGrantedOn") or "", cutoff):
+            granted += g_days
+        rows.append({"id": v["id"], "voNo": v["voNo"], "title": v["title"], "status": v["status"],
+                     "claimedDays": c_days, "grantedDays": g_days,
+                     "eotRef": raw.get("eotRef") or "",
+                     "eotGrantedOn": raw.get("eotGrantedOn") or "",
+                     "outstandingDays": max(0.0, c_days - g_days)})
+
+    # An approved change request may grant time directly, without a variation behind it.
+    for c in (ctx.get("changes") or []):
+        if _cr_decision(c) != CR_APPROVED:
+            continue
+        g = _num(c.get("eotGrantedDays"))
+        if g and _le(c.get("eotGrantedOn") or c.get("requestedDate") or "", cutoff):
+            granted += g
+
+    revised = _add_days(original, granted) if original else None
+    # Delay against the date we are actually contracted to: the ORIGINAL plus what has been GRANTED.
+    delay = _days_between(revised, forecast) if (revised and forecast) else None
+    delay = max(0, delay) if delay is not None else None
+    # And against the original, so the two are visible side by side — the difference between them
+    # is precisely what the granted extension is worth.
+    delay_vs_original = _days_between(original, forecast) if (original and forecast) else None
+    delay_vs_original = max(0, delay_vs_original) if delay_vs_original is not None else None
+
+    ld_rate = _rate(ctx.get("ldPerDay"))
+    ld_cap = _rate(ctx.get("ldCap"))
+    ld = None
+    if ld_rate is not None and ld_rate > 0 and delay:
+        ld = r2(ld_rate * delay)
+        if ld_cap is not None and ld_cap > 0:
+            ld = min(ld, r2(ld_cap))
+
+    outstanding = r2(claimed - granted)
+    warnings = []
+    if not original:
+        warnings.append({
+            "code": "no_contract_completion", "severity": "medium",
+            "msg": "No contract completion date is recorded, so nothing can say whether this job is "
+                   "late or how much extension has been granted against it."})
+    if outstanding > 0:
+        warnings.append({
+            "code": "time_claimed_not_granted", "severity": "high",
+            "msg": "%d day(s) of time have been claimed and not granted. Until the client grants "
+                   "them the contract completion date has not moved, and the work is being built "
+                   "against the original one." % int(outstanding)})
+    if delay:
+        warnings.append({
+            "code": "forecast_past_the_revised_completion", "severity": "high",
+            "msg": "The programme forecasts completion %d day(s) after the revised contract date "
+                   "of %s.%s" % (delay, revised,
+                                 (" Liquidated damages exposure at the contract rate is %s."
+                                  % _vnd(ld)) if ld else "")})
+    if delay and ld is None:
+        warnings.append({
+            "code": "no_ld_rate", "severity": "medium",
+            "msg": "The job is forecast late and the contract's liquidated damages rate is not "
+                   "recorded, so the exposure cannot be put in money."})
+    if ld is not None and ld_cap and ld >= r2(ld_cap):
+        warnings.append({
+            "code": "ld_at_the_cap", "severity": "high",
+            "msg": "Liquidated damages exposure has reached the contract cap of %s. Beyond the cap "
+                   "further delay costs no more in damages — which is usually the point at which "
+                   "the other remedies in the contract become the risk." % _vnd(ld_cap)})
+
+    return {
+        "contractCompletion": original,
+        "grantedDays": r2(granted),
+        "claimedDays": r2(claimed),
+        "outstandingDays": outstanding,
+        "revisedCompletion": revised,
+        "forecastCompletion": forecast,
+        "delayDays": delay,
+        "delayVsOriginalDays": delay_vs_original,
+        "ldPerDay": ld_rate,
+        "ldCap": ld_cap,
+        "ldExposure": ld,
+        "rows": rows,
+        "warnings": warnings,
+        "note": "Days CLAIMED are a position; days GRANTED are what moved the completion date. "
+                "Liquidated damages here are an exposure at the rate the contract states — whether "
+                "they are deducted, set off or claimed separately is a term of the contract.",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+#  RESERVE ANALYSIS — PMBOK §11.7
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# The project already holds a contingency reserve and a management reserve, and nothing has ever
+# asked the question they exist to answer: IS WHAT IS LEFT STILL ENOUGH FOR THE RISKS STILL OPEN?
+#
+# The two reserves are not interchangeable and the difference is not cosmetic. CONTINGENCY covers
+# identified risks — it is inside the cost baseline and the project manager spends it. MANAGEMENT
+# RESERVE covers what nobody identified; it sits OUTSIDE the baseline and is released by the
+# sponsor. Drawing management reserve down for a known risk is how a project reports itself covered
+# while spending money it was never authorised to spend, so this never draws it down and says so.
+
+
+def reserves(ctx):
+    """What is left in contingency, and whether it still covers the open threats.
+
+    `ctx`:
+        contingencyReserve / managementReserve   from the project
+        provisions                               known future losses, from the CVR
+        variationShortfall                       agreed below assessed cost, from change control
+        openThreatEmv                            expected monetary value of open threats
+        openThreatCount
+    """
+    ctx = ctx or {}
+    cont = _rate(ctx.get("contingencyReserve"))
+    mgmt = _rate(ctx.get("managementReserve"))
+    provisions = r2(ctx.get("provisions"))
+    shortfall = r2(ctx.get("variationShortfall"))
+    drawn = r2(provisions + shortfall)
+    remaining = None if cont is None else r2(cont - drawn)
+    emv = r2(ctx.get("openThreatEmv"))
+    gap = None if remaining is None else r2(emv - remaining)
+
+    warnings = []
+    if cont is None or cont <= 0:
+        warnings.append({
+            "code": "no_contingency", "severity": "medium",
+            "msg": "No contingency reserve is recorded on this project, so there is nothing to "
+                   "measure the open risks against. Every risk that materialises comes straight "
+                   "out of the margin."})
+    elif remaining is not None and remaining < 0:
+        warnings.append({
+            "code": "contingency_exhausted", "severity": "high",
+            "msg": "Contingency is exhausted and %s beyond it has been drawn. From here every "
+                   "further provision reduces the margin directly." % _vnd(abs(remaining))})
+    elif gap is not None and gap > 0:
+        warnings.append({
+            "code": "contingency_below_open_risk", "severity": "high",
+            "msg": "%s of contingency is left against %s of expected value on %d open threat(s) — "
+                   "short by %s. That is the reserve question, and it is the one a project total "
+                   "never asks." % (_vnd(remaining), _vnd(emv),
+                                    int(_num(ctx.get("openThreatCount"))), _vnd(gap))})
+    if mgmt and (provisions or shortfall):
+        warnings.append({
+            "code": "management_reserve_is_not_for_this", "severity": "low",
+            "msg": "%s of management reserve is held and is deliberately NOT drawn down here. It "
+                   "covers what nobody identified and is released by the sponsor; spending it on a "
+                   "known risk reports the project covered with money it was not authorised to "
+                   "spend." % _vnd(mgmt)})
+
+    return {
+        "contingencyReserve": cont,
+        "managementReserve": mgmt,
+        "provisions": provisions,
+        "variationShortfall": shortfall,
+        "drawn": drawn,
+        "remaining": remaining,
+        "drawnPct": (round(drawn / cont * 100.0, 2) if cont else None),
+        "openThreatEmv": emv,
+        "openThreatCount": int(_num(ctx.get("openThreatCount"))),
+        "shortfallAgainstRisk": (gap if (gap is not None and gap > 0) else 0.0),
+        "adequate": (None if remaining is None else remaining >= emv),
+        "warnings": warnings,
+        "note": "Contingency is inside the cost baseline and covers identified risks. Management "
+                "reserve is outside it, covers what nobody identified, and is released by the "
+                "sponsor — it is never drawn down by this analysis.",
+    }
+
+
 # ── what this module will not decide ─────────────────────────────────────────────────────────────
 
 UNRESOLVED = (
     "Price fluctuation (rise and fall). A contract with an escalation clause needs its base date "
     "and its published index series. Neither is held anywhere in this portal, and a fabricated "
     "index moves real money on every certificate.",
-    "Liquidated damages. Whether LDs are deducted from a certificate or claimed separately is a "
-    "term of the contract and a legal position, not arithmetic.",
+    "Whether liquidated damages are DEDUCTED from a payment certificate, set off, or claimed "
+    "separately. extension_of_time() computes the EXPOSURE — days late at the rate the contract "
+    "states, capped where it states a cap, which is arithmetic — and stops there. Which remedy the "
+    "employer takes, and when, is a legal position under the contract.",
     "The tax treatment of retention and of materials on site — see sales_contract.vat_ready(), "
     "which refuses for the same reason and names it.",
 )

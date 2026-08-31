@@ -16771,6 +16771,12 @@ const _QA_SPECS = {
     { k: 'contractType', label: 'Contract type', type: 'select', options: ['Lump Sum', 'Unit Rate / BoQ', 'Cost Plus', 'Time & Materials', 'EPC / Turnkey', 'Design-Build', 'PMC Fee (% of CapEx)', 'Man-month'] },
     { k: 'contractValue', label: 'Contract value (₫)', type: 'money' }, { k: 'budget', label: 'Approved budget (₫)', type: 'money' },
     { k: 'contingencyReserve', label: 'Contingency reserve (₫)', type: 'money' }, { k: 'managementReserve', label: 'Management reserve (₫)', type: 'money' },
+    /* Liquidated damages. The RATE and the CAP are terms of the contract and are recorded;
+       whether damages are deducted from a certificate, set off, or claimed separately is a
+       legal position the portal does not take. Without a rate the delay exposure cannot be
+       put in money and the QS tab says so instead of guessing. */
+    { k: 'ldPerDay', label: 'Liquidated damages per day (₫)', type: 'money' },
+    { k: 'ldCap', label: 'Liquidated damages cap (₫)', type: 'money' },
     { k: 'startPlanned', label: 'Planned start', type: 'date' }, { k: 'endPlanned', label: 'Planned finish', type: 'date' },
     { k: 'status', label: 'Status', type: 'select', options: ['Pipeline', 'Initiating', 'Planning', 'Executing', 'Monitoring & Controlling', 'On Hold', 'Closing', 'Completed', 'Closed', 'Cancelled'] },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
@@ -16984,7 +16990,13 @@ const _QA_SPECS = {
        checks the transition and records who agreed it), and the server strips them from this form.
        A field the server silently drops is worse than no field: it reads as saved. */
     { k: 'pctComplete', label: '% of this variation built', type: 'number' },
-    { k: 'timeImpactDays', label: 'Time impact (days)', type: 'number' },
+    /* CLAIMED time. This is a position, not an entitlement. */
+    { k: 'timeImpactDays', label: 'Time impact claimed (days)', type: 'number' },
+    /* GRANTED time — what the client actually allowed, and the only thing that moves the
+       contract completion date. Left blank, the claim above shows as outstanding. */
+    { k: 'eotGrantedDays', label: 'Extension of time GRANTED (days)', type: 'number' },
+    { k: 'eotGrantedOn', label: 'Extension granted on', type: 'date' },
+    { k: 'eotRef', label: 'Extension of time reference' },
     { k: 'description', label: 'Scope of the change', type: 'textarea' },
     { k: 'attachment', label: 'Instruction / quotation (image or PDF)', type: 'file' }] },
   pm_qs_daywork: { title: 'Daywork Sheet', coll: 'pm_qs_daywork', reload: 'pm_qs_daywork', fields: [
@@ -23566,7 +23578,11 @@ const _PM_TABS = [
   // The commercial tab. Its money comes from /api/qs/summary (manager+), NOT from these
   // registers — they are listed so a denied one is NAMED in the access banner rather than
   // rendering as an empty register that reads like "nothing ever happened here".
-  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning'] },
+  // pm_changes is here for the BROWSER: the one-click "raise the variation" and the crId
+  // fallback in _qsCrOf read it locally, and without it that button reports the change request
+  // missing on a project where it is sitting right there.
+  // Keep `need` on ONE line — tests/test_pm_tab_loading.py parses the array off it.
+  { k: 'qs', label: 'QS / Commercial', fn: 'pmRenderQS', need: ['pm_projects', 'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning', 'pm_changes'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
   { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms', need: ['pm_comms', 'pm_issues'] },
@@ -28829,7 +28845,9 @@ function _qsRenderDash(pid) {
     '</div></div>';
 
   const _w = (live.warnings || []).concat(((d.changeControl || {}).warnings) || [])
-    .concat(((d.earnedValue || {}).warnings) || []);
+    .concat(((d.earnedValue || {}).warnings) || [])
+    .concat(((d.extensionOfTime || {}).warnings) || [])
+    .concat(((d.reserves || {}).warnings) || []);
   return kpis + _qsWarnCard(_w) + progCard + _qsEvCard(d) + _qsTradeCard(d) + buildCard + riskCard + _qsValStripCard(d) + _qsGuideCard();
 }
 
@@ -29132,7 +29150,7 @@ function _qsRenderVos(pid) {
       .map(k => '<span style="display:inline-block;background:' + _QS_VHEX[k] + '1f;color:' + _QS_VHEX[k] + ';font-weight:700;padding:2px 8px;border-radius:10px;margin:2px 3px">' + _t(_QS_VLABEL[k]) + '</span>').join('→') +
     '<div style="margin-top:6px">' + _pmEsc(_t('Work instructed and being built with no agreed price is the exposure figure on the Commercial tab. It is deliberately kept out of the valuation — a claim the client has not agreed is a dispute, not a certificate.')) + '</div></div></div>';
 
-  return kpis + flowCard + _qsCcCard(d) + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
+  return kpis + flowCard + _qsCcCard(d) + _qsEotCard(d) + _pmCard(_t('Variation Register'), 'pm_qs_variations', _t('Add variation'),
     /* Explicit widths, because the browser's auto-layout gives a two-word "Client instruction" the
        same claim on the row as the variation's title, and the title is what the row is ABOUT. Left
        to itself it wrapped "Additional HEPA terminal filters, Zone 2" over five lines. */
@@ -29270,7 +29288,7 @@ function _qsRenderCvr(pid) {
     hist.slice().reverse().map(h => '<tr><td>' + _pmFmt(h.cutoff) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(h.valueToDate) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(h.costToDate) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' + ((h.margin || 0) < 0 ? '#EF4444' : 'var(--emerald)') + '">' + _qsMoney(h.margin) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + (h.marginPct == null ? '—' : _qsPct(h.marginPct)) + '</td></tr>').join('') +
     '</tbody></table></div></div>' : '';
 
-  return kpis + _qsWarnCard(c.warnings, _t('What this reconciliation is telling you')) + table + _qsCvrTradeCard(d) + fc + trend + histTbl;
+  return kpis + _qsWarnCard(c.warnings, _t('What this reconciliation is telling you')) + table + _qsCvrTradeCard(d) + _qsReserveCard(d) + fc + trend + histTbl;
 }
 
 /* ── 8. Final account ─────────────────────────────────────────────────────────────────────────── */
@@ -30298,6 +30316,11 @@ function _qsCvrTradeCard(d) {
     '<td style="padding:8px 10px">' + _qsDiscPill(t.code) + '</td>' +
     '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(t.value) + '</td>' +
     '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">' + _qsMoney(t.cost) + '</td>' +
+    /* The BUDGET this trade was priced to spend, and the variance against it. A trade can be
+       comfortably in profit and well over budget; margin alone never shows the second. A trade
+       with no budget prints an em dash, not a confident zero variance. */
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">' + _qsMoney(t.budget) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:' + (t.overBudget ? 700 : 400) + ';color:' + (t.overBudget ? '#EF4444' : (t.budgetVariance == null ? 'var(--text-light)' : 'var(--emerald)')) + '">' + _qsMoney(t.budgetVariance) + '</td>' +
     '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:' + (t.margin < 0 ? '#EF4444' : 'var(--emerald)') + '">' + _qsMoney(t.margin) + '</td>' +
     '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:' + (t.margin < 0 ? '#EF4444' : 'var(--emerald)') + '">' + (t.marginPct == null ? '—' : _qsPct(t.marginPct)) + '</td>' +
     '<td style="padding:8px 10px;font-size:11px;color:var(--text-light)">' + (t.costWithoutValue ? _pmEsc(_t('cost booked, nothing valued')) : '') + '</td></tr>').join('');
@@ -30305,8 +30328,8 @@ function _qsCvrTradeCard(d) {
     '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Margin by trade') + '</div></div>' +
     '<div style="padding:8px 16px 2px;font-size:11.5px;color:var(--text-light)">' +
     _pmEsc(_t('The report a project total cannot produce. Cost that nobody allocated to a trade stays unallocated — spreading it would put one trade\'s overspend in another trade\'s margin, and it would look plausible in every column.')) + '</div>' +
-    '<div class="table-wrap"><table style="min-width:760px;font-size:13px"><thead><tr>' +
-    [['Trade', ''], ['Value', 'text-align:right'], ['Cost', 'text-align:right'], ['Margin', 'text-align:right'], ['Margin %', 'text-align:right'], ['', '']]
+    '<div class="table-wrap"><table style="min-width:1000px;font-size:13px"><thead><tr>' +
+    [['Trade', ''], ['Value', 'text-align:right'], ['Cost', 'text-align:right'], ['Budget', 'text-align:right'], ['vs budget', 'text-align:right'], ['Margin', 'text-align:right'], ['Margin %', 'text-align:right'], ['', '']]
       .map(c => '<th style="' + c[1] + '">' + (c[0] ? _t(c[0]) : '') + '</th>').join('') +
     '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
 }
@@ -30515,6 +30538,99 @@ function _qsEvCard(d) {
     '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
     _pmEsc(_t('Materials on site are in the valuation and are NOT progress — delivered and paid for, built into nothing. Counting them would report the job further ahead in exactly the month the cash went out.')) +
     (e.materialsExcluded ? ' <b>' + _qsMoney(e.materialsExcluded) + '</b> ' + _pmEsc(_t('excluded here.')) : '') + '</div></div>';
+}
+/* ── extension of time (PMBOK §6.6) ───────────────────────────────────────────────────────────────
+   A variation's time impact is a CLAIM. Only the client granting it moves the completion date, and
+   until they do the job is liable for the original one while building work that cannot meet it. */
+function _qsEotCard(d) {
+  const e = d.extensionOfTime; if (!e) return '';
+  const late = (e.delayDays || 0) > 0;
+  const tile = (label, val, hex, sub) =>
+    '<div style="flex:1;min-width:172px;background:var(--soft-bg);border-radius:10px;padding:12px 14px">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(label) + '</div>' +
+    '<div style="font-size:17px;font-weight:800;color:' + hex + ';font-variant-numeric:tabular-nums;margin:2px 0">' + val + '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);line-height:1.5">' + _pmEsc(sub) + '</div></div>';
+
+  /* Contract date → granted → revised → forecast, on one line, because the whole point is that
+     these four are usually held in four different places and never compared. */
+  const step = (label, val, hex, strong) =>
+    '<div style="flex:1;min-width:130px"><div style="font-size:10.5px;color:var(--text-light)">' + _pmEsc(label) + '</div>' +
+    '<div style="font-size:' + (strong ? '15' : '14') + 'px;font-weight:' + (strong ? 800 : 600) + ';color:' + hex + ';font-variant-numeric:tabular-nums">' + val + '</div></div>';
+  const chain = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--soft-bg)">' +
+    step(_t('Contract completion'), _pmFmt(e.contractCompletion), 'var(--text)') +
+    step(_t('Extension granted'), (e.grantedDays ? '+' + e.grantedDays + ' ' + _t('days') : '—'), e.grantedDays ? 'var(--emerald)' : 'var(--text-light)') +
+    step(_t('Revised completion'), _pmFmt(e.revisedCompletion), 'var(--navy)', true) +
+    step(_t('Programme forecast'), _pmFmt(e.forecastCompletion), late ? '#EF4444' : 'var(--emerald)', true) +
+    step(_t('Late by'), (e.delayDays == null ? '—' : (e.delayDays ? e.delayDays + ' ' + _t('days') : _t('not late'))), late ? '#EF4444' : 'var(--emerald)', true) +
+    '</div>';
+
+  const rows = (e.rows || []).filter(r => r.claimedDays || r.grantedDays).map(r =>
+    '<tr style="border-bottom:1px solid var(--soft-bg)">' +
+    '<td style="padding:8px 10px;font-variant-numeric:tabular-nums;font-size:11.5px;white-space:nowrap">' + _pmEsc(r.voNo || '—') + '</td>' +
+    '<td style="padding:8px 10px;font-size:12px">' + _pmEsc((r.title || '').slice(0, 56)) + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">' + (r.claimedDays || '—') + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:' + (r.grantedDays ? 'var(--emerald)' : 'var(--text-light)') + ';font-weight:' + (r.grantedDays ? 700 : 400) + '">' + (r.grantedDays || '—') + '</td>' +
+    '<td style="padding:8px 10px;font-size:11.5px;font-variant-numeric:tabular-nums">' + _pmEsc(r.eotRef || '—') + '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:' + (r.outstandingDays ? '#F59E0B' : 'var(--text-light)') + ';font-weight:' + (r.outstandingDays ? 700 : 400) + '">' + (r.outstandingDays || '—') + '</td></tr>').join('');
+  const table = rows ? '<div class="table-wrap"><table style="min-width:760px;font-size:13px"><thead><tr>' +
+    [['VO No.', ''], ['Variation', ''], ['Days claimed', 'text-align:right'], ['Days granted', 'text-align:right'], ['EOT ref', ''], ['Outstanding', 'text-align:right']]
+      .map(c => '<th style="' + c[1] + '">' + _t(c[0]) + '</th>').join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' : '';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px' + (late ? ';border-left:3px solid #EF4444' : '') + '">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Extension of time') + '</div></div>' + chain +
+    '<div style="padding:12px 16px;display:flex;gap:10px;flex-wrap:wrap">' +
+    tile(_t('Days claimed'), e.claimedDays || 0, (e.claimedDays || 0) ? '#F59E0B' : 'var(--text-light)', _t('Time impact on instructed variations.')) +
+    tile(_t('Days granted'), e.grantedDays || 0, (e.grantedDays || 0) ? 'var(--emerald)' : 'var(--text-light)', _t('What the client has actually allowed.')) +
+    tile(_t('Not yet granted'), e.outstandingDays || 0, (e.outstandingDays || 0) ? '#EF4444' : 'var(--emerald)', _t('Claimed and still refused or undecided.')) +
+    tile(_t('LD exposure'), e.ldExposure == null ? '—' : _pmMoneyShort(e.ldExposure), e.ldExposure ? '#EF4444' : 'var(--text-light)',
+      e.ldPerDay == null ? _t('No damages rate recorded on the contract.') : _t('At the rate the contract states.')) +
+    '</div>' + table +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Days CLAIMED are a position; days GRANTED are what moved the completion date. Liquidated damages here are an exposure at the contract rate — whether they are deducted, set off or claimed separately is a term of the contract and is not decided here.')) + '</div></div>';
+}
+
+/* ── reserve analysis (PMBOK §11.7) ─────────────────────────────────────────────────────────────
+   The question the two reserves exist to answer and nothing has ever asked: is what is left still
+   enough for the risks that are still open? */
+function _qsReserveCard(d) {
+  const r = d.reserves; if (!r) return '';
+  const cont = r.contingencyReserve || 0;
+  const drawnPct = Math.max(0, Math.min(100, r.drawnPct || 0));
+  const short = r.shortfallAgainstRisk || 0;
+  /* Two bars on one scale: what has been drawn, and what the open threats are expected to cost.
+     Side by side is the comparison; a single number for either is not. */
+  const scale = Math.max(cont, (r.drawn || 0) + (r.openThreatEmv || 0), 1);
+  const bar = (label, val, hex, note) =>
+    '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">' +
+    '<span style="font-size:12px;color:var(--text)">' + _pmEsc(label) + '</span>' +
+    '<span style="font-size:13px;font-weight:700;color:' + hex + ';font-variant-numeric:tabular-nums">' + _qsMoney(val) + '</span></div>' +
+    '<div style="height:9px;border-radius:5px;background:var(--soft-bg);overflow:hidden"><div style="height:100%;width:' +
+    Math.max(0, Math.min(100, (val || 0) / scale * 100)) + '%;background:' + hex + '"></div></div>' +
+    (note ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">' + _pmEsc(note) + '</div>' : '') + '</div>';
+
+  const verdict = r.adequate === null
+    ? '<div style="font-size:12.5px;color:var(--text-light)">' + _pmEsc(_t('No contingency is recorded, so there is nothing to measure the open risks against — every risk that materialises comes straight out of the margin.')) + '</div>'
+    : (r.adequate
+      ? '<div style="font-size:12.5px;color:var(--emerald);font-weight:600">' + _pmEsc(_t('What is left covers the open threats.')) + '</div>'
+      : '<div style="font-size:12.5px;color:#EF4444;font-weight:600">' + _pmEsc(_t('Short by')) + ' ' + _qsMoney(short) + ' ' + _pmEsc(_t('against the open threats.')) + '</div>');
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px' + (short ? ';border-left:3px solid #EF4444' : '') + '">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div class="card-title">' + _t('Reserve analysis') + '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmTab(\'risk\')">' + _t('Open the Risk register') + '</button></div>' +
+    '<div style="padding:14px 16px">' +
+    bar(_t('Contingency reserve'), cont, 'var(--navy)', '') +
+    bar(_t('Drawn down'), r.drawn, '#F59E0B',
+      _t('Provisions') + ' ' + _qsMoney(r.provisions) + ' + ' + _t('variations agreed below cost') + ' ' + _qsMoney(r.variationShortfall) +
+      (r.drawnPct == null ? '' : '  ·  ' + drawnPct + '% ' + _t('of the reserve'))) +
+    bar(_t('Remaining'), r.remaining, (r.remaining || 0) < 0 ? '#EF4444' : 'var(--emerald)', '') +
+    bar(_t('Expected value of open threats'), r.openThreatEmv, '#8B5CF6',
+      r.openThreatCount + ' ' + _t('open threat(s) on the risk register')) +
+    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' + verdict + '</div></div>' +
+    '<div style="padding:10px 16px;background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _pmEsc(_t('Contingency sits inside the cost baseline and covers identified risks. Management reserve sits outside it, covers what nobody identified, and is released by the sponsor — it is deliberately never drawn down here.')) +
+    (r.managementReserve ? ' <b>' + _qsMoney(r.managementReserve) + '</b> ' + _pmEsc(_t('held and untouched.')) : '') + '</div></div>';
 }
 /* ══ END QS ══════════════════════════════════════════════════════════════════════════════════ */
 
