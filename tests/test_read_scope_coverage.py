@@ -74,11 +74,22 @@ SHARED = {
     "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules",
     "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms",
     "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis",
-    "pm_sitereports", "pm_weekreports", "pm_portfolioSnapshots",
-    # Registered, and reached by nothing: no reader, no writer, no test anywhere in the tree.
-    # Left in COLLECTIONS rather than removed here, because removing it is a separate decision
-    # from recording that it is dead — but it should not be mistaken for a live shared register.
-    "pm_execNotes",
+    "pm_sitereports", "pm_weekreports",
+    # DEAD. Each of these three appears in app.py ONLY inside the COLLECTIONS literal (two of them
+    # also in STAFF_WRITE) and nowhere in templates/index.html at all: no endpoint serves them, no
+    # screen reads or writes them, no test touches them. They are live API surface with no owner —
+    # readable by anyone with the PM app, and pm_quality_itp_items is staff-WRITABLE.
+    #
+    # An earlier version of this comment listed pm_portfolioSnapshots and pm_quality_itp_items up
+    # with the live project registers above, which stated in writing that they were shared working
+    # data. They are not; they are unreferenced. That mistake is the reason this file exists — a
+    # claim about who can read something, made in prose, that nothing checked.
+    #
+    # NOT removed here. Deleting a collection from COLLECTIONS makes any rows already in production
+    # unreachable through the API, and this repository cannot see production's data. Recording that
+    # they are dead is a different decision from deleting them, and only the first is safe to take
+    # without looking.
+    "pm_execNotes", "pm_portfolioSnapshots", "pm_quality_itp_items",
     # Design control. Measured and recorded in test_eng_commission_boundary.py: a staff account
     # sees every commission's registers. Workable inside one design office where everyone is
     # staff; NOT a boundary a client-facing view can be built on. eng_refusals was pulled out of
@@ -110,6 +121,35 @@ def test_every_collection_has_an_answer_to_who_can_read_it():
         "here), or add it to SHARED above with the reason it is shared. Both are legitimate; "
         "leaving the question unanswered is what produced the eng_refusals leak."
         % "\n  ".join(unclassified))
+
+
+# Named above as reached by nothing. A comment saying so is exactly the kind of claim this file
+# was written because nobody checked — the previous version of it described two of these as live
+# shared project registers.
+DEAD = ("pm_execNotes", "pm_portfolioSnapshots", "pm_quality_itp_items")
+
+
+def test_the_dead_collections_are_still_dead():
+    """If somebody wires one of these up, this fails and the comment above gets corrected rather
+    than quietly becoming false. It is also how the claim gets re-checked instead of trusted."""
+    import os
+    src = _src()
+    page = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "templates", "index.html"), encoding="utf-8").read()
+    for name in DEAD:
+        # Every mention in app.py should be inside one of the big set literals — COLLECTIONS,
+        # STAFF_WRITE — and nowhere else. More than that means something now uses it.
+        lines = {ln for ln, text in enumerate(src.splitlines(), 1) if name in text}
+        literal_lines = {ln for ln in lines
+                         if "COLLECTIONS = {" in src.splitlines()[ln - 1]
+                         or "STAFF_WRITE = {" in src.splitlines()[ln - 1]}
+        assert lines == literal_lines, (
+            "%s is now referenced in app.py outside the COLLECTIONS/STAFF_WRITE literals "
+            "(lines %s). It is no longer dead — move it out of DEAD and describe what reads it."
+            % (name, sorted(lines - literal_lines)))
+        assert name not in page, (
+            "%s is now used by the front end. It is no longer dead — move it out of DEAD and "
+            "say in SHARED what screen reads it." % name)
 
 
 def test_nothing_is_listed_as_shared_and_scoped_at_once():
