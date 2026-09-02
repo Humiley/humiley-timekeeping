@@ -50,20 +50,38 @@ new Function(PRELUDE +
   // harness that left it undefined would run the composed path's other half and report success
   // about code it never executed.
   take('function _pdWeight(', '_pdWeight') +
+  'const _PD_COLL = "pm_detail";\n' +
+  // Same shape one level up: _pmTaskPctRoll's depth-0 entry point answers from the pass-scoped
+  // memo declared above _pmEvm, and the walk it delegates to is a separate function now.
+  take('let _pmMemo = null;', '_pmMemo') +
+  take('function _pmMemoNow(', '_pmMemoNow') +
+  take('function _pmMemoDrop(', '_pmMemoDrop') +
+  take('function _pmMemoKeys(', '_pmMemoKeys') +
+  // _pmWbsChildren answers from a per-array index held in a module-level WeakMap. Lifting the
+  // function without the map it reads is how a slice reports ReferenceError instead of an answer.
+  take('const _pmWbsKidIdx = ', '_pmWbsKidIdx') +
+  take('function _pmWbsChildIndex(', '_pmWbsChildIndex') +
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   take('function _pmDelivBuckets(', '_pmDelivBuckets') +
   take('function _pmDelivRoll(', '_pmDelivRoll') +
   take('function _pmStatusFromPct(', '_pmStatusFromPct') +
   take('function pmWbsRollup(', 'pmWbsRollup') +
+  take('function _pmWbsRollupCompute(', '_pmWbsRollupCompute') +
   take('function pmScopeRollup(', 'pmScopeRollup') +
-  '\nObject.assign(this, { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _pmDelivRoll, _HR });').call(api);
+  '\nObject.assign(this, { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _pmDelivRoll, _pmMemoDrop, _HR });').call(api);
 const { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _pmDelivRoll } = api;
 const HR = api._HR;
 
 const PID = 'p1';
-const setDeliverables = rows => { HR.pm_deliverables = rows.map(r => Object.assign({ projectId: PID }, r)); };
-const setTasks = rows => { HR.pm_tasks = rows.map(r => Object.assign({ projectId: PID }, r)); };
+/* pmWbsRollup memoises for the life of ONE render pass (see _pmMemoNow). Replacing a
+   collection changes its array identity and invalidates it, but this file also changes DETAIL,
+   which replaces nothing — so every setter ends the pass explicitly. A test that changed only
+   DETAIL and then re-read the roll-up would otherwise be served the previous answer. */
+const endPass = () => api._pmMemoDrop();
+const setDeliverables = rows => { endPass(); HR.pm_deliverables = rows.map(r => Object.assign({ projectId: PID }, r)); };
+const setTasks = rows => { endPass(); HR.pm_tasks = rows.map(r => Object.assign({ projectId: PID }, r)); };
 // _pdTaskPct is the detail roll-up; stub it so this file tests the LEVELS ABOVE it. Its own maths
 // is covered by detail_schedule_math.js against the real code.
 let DETAIL = {};                       // taskRef/wbs -> { pct, n }
@@ -100,7 +118,8 @@ setDeliverables([{ percentComplete: 100, status: 'Accepted' }, { percentComplete
 ok('accepted deliverables are counted separately', pmScopeRollup(PID).accepted === 1);
 
 /* ── the registers it reads are the whole point of this test ────────────────── */
-const rollupSrc = take('function pmWbsRollup(', 'pmWbsRollup');
+// The body moved behind a one-pass memo; the assertions below are about the body.
+const rollupSrc = take('function _pmWbsRollupCompute(', '_pmWbsRollupCompute');
 ok('the roll-up reads the WBS spine', /_pmScopeFor\('pm_deliverables', pid\)/.test(rollupSrc));
 ok('the roll-up also reads the master schedule', /_pmScopeFor\('pm_tasks', pid\)/.test(rollupSrc),
    'this is the link the owner asked for: activities must reach the project total');
@@ -160,7 +179,7 @@ near('a mixed project blends derived and typed packages', pmScopeRollup(PID).pct
 ok('and says how many of each', pmWbsRollup(PID).derived === 1 && pmWbsRollup(PID).typed === 1);
 
 // A measured sub-item beats a typed activity percentage — the site's own report wins.
-DETAIL = { '1': { pct: 25, n: 3 } };
+DETAIL = { '1': { pct: 25, n: 3 } }; endPass();
 setDeliverables([{ id: 'D1', percentComplete: 0, weight: 1 }]);
 setTasks([{ wbs: '1', delivId: 'D1', pctComplete: 90, start: '2026-07-01', finish: '2026-07-10' }]);
 near('measured sub-items override the typed activity figure', pmScopeRollup(PID).pctRaw, 25);
@@ -242,7 +261,8 @@ ok('it weights them rather than averaging', /_pdRollup\(rows\)\.acc/.test(src));
 }
 
 /* ── the EV fallback, which is where a typed number can become money ────────── */
-const evm = take('function _pmEvm(', '_pmEvm');
+// Likewise _pmEvm: the flags asserted below live in _pmEvmCompute, behind its memo wrapper.
+const evm = take('function _pmEvmCompute(', '_pmEvmCompute');
 ok('EV takes its ratio from the scope roll-up', /const sr = pmScopeRollup\(p\.id\)/.test(evm));
 ok('EV multiplies that ratio by BAC', /const ev = bac \* ratio/.test(evm));
 ok('CPI is derived from EV', /cpi = \(ac > 0 && bac > 0\) \? ev \/ ac/.test(evm));

@@ -199,5 +199,23 @@ console.log('\nA hidden image is not downloaded\n');
      'FIRST match, so if the mark comes first the letterhead gets an image with no src');
 }
 
+// ══ the service worker must not download the shell a second time ═══════════════════════════════
+console.log('\nInstalling the service worker revalidates; it does not re-download\n');
+{
+  /* Both 'reload' and 'no-cache' bypass a stale precache, which is why neither can simply be
+     dropped. The difference is what an UNCHANGED file costs. With 'reload' a first visit fetched
+     the 832 KB shell TWICE — once for the page, once for the install — and every deploy did it
+     again, because activate() drops the old cache and CACHE bumps on every release. */
+  ok('the precache uses a conditional request', /cache: 'no-cache'/.test(sw),
+     "static/sw.js still installs with cache: 'reload', so every first visit and every deploy " +
+     'downloads the whole shell a second time');
+  ok('and it is not simply cacheless', !/cache: 'reload'/.test(sw),
+     "'reload' is still in the file — if a second addAll kept it, the saving is only partial");
+  ok('the shell is still precached at install', /SHELL\.map\(u => new Request\(u,/.test(sw),
+     'the offline claim depends on this list being fetched at install');
+  ok("and '/' is still in that list", /const SHELL = \['\/'/.test(sw),
+     'without the document itself the PWA cannot open offline');
+}
+
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

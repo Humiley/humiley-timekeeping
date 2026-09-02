@@ -59,7 +59,8 @@ ok('an unmeasured index takes a neutral colour, not red or green',
 ok('a measured index still gets its RAG colour', _pmIndexHex(0.5, true) !== 'var(--text-light)');
 
 /* ── the flags exist and mean what they say ─────────────────────────────────── */
-const evm = take('function _pmEvm(', '_pmEvm');
+// _pmEvm is a one-pass memo wrapper now; the flags these assertions are about live in the body.
+const evm = take('function _pmEvmCompute(', '_pmEvmCompute');
 ok('cpiMeasurable requires earned value AND actual cost',
    /const cpiMeasurable = ev > 0 && ac > 0 && bac > 0/.test(evm));
 ok('spiMeasurable requires PV derived independently of EV',

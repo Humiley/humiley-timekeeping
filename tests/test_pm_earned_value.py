@@ -207,7 +207,9 @@ def test_the_s_curve_draws_the_phased_plan_when_there_is_one():
 def test_evm_uses_the_phased_pv_when_available():
     with open(IDX, encoding="utf-8") as fh:
         src = fh.read()
-    evm = _fn(src, "_pmEvm")
+    # _pmEvm is now a thin memo wrapper; _pmEvmCompute holds the arithmetic. Reading the wrapper
+    # would assert nothing about the earned value, while still passing on a green board.
+    evm = _fn(src, "_pmEvmCompute")
     assert "_pmPlannedTo(_pmPhasedPlan(costs, bac), _pmToday())" in evm
     assert "phased != null ? phased : (tp != null ? bac * tp : ev)" in evm, \
         "PV must prefer the time-phased plan and fall back to the linear one"

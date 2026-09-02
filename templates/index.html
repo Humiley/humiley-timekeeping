@@ -5981,8 +5981,24 @@ async function doLogin(role, opts = {}) {
       _staffName = TK.user.name || _staffName;
       _staffInitials = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
     }
+    /* /api/portal used to wait for the whole of tkBootstrap, which is four parallel calls plus
+       their parsing, and it needs none of it — only TK.token, which the login above has already set.
+       Started here it overlaps instead of queueing behind: worth ~145 ms at 60 ms RTT and ~285 ms at
+       250 ms, which is a phone on 4G at a site.
+
+       STRICTLY AFTER the login above: on the fresh demo path TK.token does not exist until
+       tkLoginDemo resolves, and tkLoadPortal reads it when the fetch is issued.
+
+       Safe to hold as a bare promise: tkLoadPortal wraps its whole body in try/catch, so it resolves
+       rather than rejects and an offline boot stays as silent as it was.
+
+       The other half of this — issuing /api/config and the /api/me probe together — is deliberately
+       NOT done. That probe pins a token snapshot, and the session self-heal can replace the token
+       underneath it, which would destroy a freshly healed session and drop the user on the login
+       screen. A tenth of a second is not worth that. */
+    const _pPortal = tkLoadPortal();
     await tkBootstrap();
-    await tkLoadPortal();
+    await _pPortal;
     try { tkLoadColl('handovers'); } catch (e) {}
   } catch (e) {
     console.warn('Backend unavailable — using local demo data:', e.message);
@@ -21852,8 +21868,56 @@ function _pmIndexWhy(ev) {
   if (!ev.spiMeasurable) out.push(_t('SPI needs a baseline or a time-phased cost plan'));
   return out.join(' · ');
 }
+/* ── One render, one answer ───────────────────────────────────────────────────────────────────────
+ * The Projects list asks the same questions over and over about the same unchanged data:
+ * _pmEffectiveRag(p) is called three times per project (the KPI row, the Portfolio Health card and
+ * the table row) and calls _pmEvm each time; _pmPortfolioCard calls _pmEvm a fourth time; every one
+ * of those runs pmWbsRollup, and pmFillProjects runs it a fifth. Twelve projects therefore recompute
+ * the whole deliverable -> activity -> detail chain sixty times for sixty identical answers.
+ *
+ * THE CACHE LIVES FOR ONE SYNCHRONOUS PASS AND NOT ONE MOMENT LONGER. That is the load-bearing
+ * decision, and it is not the same as keying on the _HR array identities. Array identity catches a
+ * reload (tkLoadColl assigns `_HR[name] = j.items || []`) but it CANNOT catch an in-place field
+ * edit — pdDailyEntrySave does `r.log = log` on a live detail row, replacing no array at all — and a
+ * roll-up that outlived the render would then serve a percentage from before the entry was saved.
+ * Showing a stale, lower number without erroring is the worst outcome available here, so the cache
+ * is dropped by a microtask queued the instant it is created: every call inside one render pass
+ * shares it, and the next pass, after any await or any event, starts from nothing.
+ *
+ * The array identities are checked as well, so the two guards have to fail together to serve a stale
+ * answer. They are cheap, and they make the cache correct even if some future caller holds a render
+ * open across a reload.
+ *
+ * Not memoised: _pmTaskPctRoll's RECURSION. Its result depends on `_depth` — a subtree cut off at
+ * the depth-12 guard is a different answer from the same subtree walked from its own root — so only
+ * the depth-0 entry points share a result, which is exactly the three-per-activity repeat on the
+ * Activities tab. Every internal step still walks. */
+let _pmMemo = null;
+function _pmMemoNow() {
+  if (_pmMemo) return _pmMemo;
+  _pmMemo = { wbs: new Map(), evm: new Map(), roll: new Map() };
+  Promise.resolve().then(_pmMemoDrop);
+  return _pmMemo;
+}
+function _pmMemoDrop() { _pmMemo = null; }
+/* The collections every memoised answer is derived from. _PD_COLL is read at CALL time, not at
+   parse time — these functions are only ever reached from a render, long after the file has run. */
+function _pmMemoKeys() {
+  const H = (typeof _HR !== 'undefined' && _HR) ? _HR : {};
+  return { tsk: H['pm_tasks'] || null, dlv: H['pm_deliverables'] || null,
+           det: H[_PD_COLL] || null, cst: H['pm_costs'] || null };
+}
 function _pmEvm(p) {
   if (!p) return { bac: 0, ev: 0, pv: 0, ac: 0, cv: 0, sv: 0, cpi: 1, spi: 1, eac: 0, vac: 0, etc: 0, pct: 0, measurable: false, phasedPv: false };
+  // _QS is read exactly the way the body below reads it: a measured percentage arriving from
+  // /api/qs/summary replaces that project's whole payload, so its identity IS the dependency.
+  const _m = _pmMemoNow().evm, _k = _pmMemoKeys(), _q = _QS[p.id] || null, _h = _m.get(p.id);
+  if (_h && _h.p === p && _h.tsk === _k.tsk && _h.dlv === _k.dlv && _h.det === _k.det && _h.cst === _k.cst && _h.qs === _q) return _h.val;
+  const _v = _pmEvmCompute(p);
+  _m.set(p.id, { p: p, tsk: _k.tsk, dlv: _k.dlv, det: _k.det, cst: _k.cst, qs: _q, val: _v });
+  return _v;
+}
+function _pmEvmCompute(p) {
   const costs = _pmScopeFor('pm_costs', p.id);
   const bac = +p.budget || costs.reduce((s, c) => s + (+c.budget || 0), 0);
   const ac = costs.reduce((s, c) => s + (+c.actual || 0), 0) || (+p.actualCost || 0);
@@ -22012,6 +22076,13 @@ function _pmDelivRoll(d, mine, pid, allTasks) {
    _pdGroupOf already surfaces unlinked detail lines. Folding them into a catch-all would hand
    them scope weight nobody assigned. */
 function pmWbsRollup(pid) {
+  const _m = _pmMemoNow().wbs, _k = _pmMemoKeys(), _h = _m.get(pid);
+  if (_h && _h.tsk === _k.tsk && _h.dlv === _k.dlv && _h.det === _k.det) return _h.val;
+  const _v = _pmWbsRollupCompute(pid);
+  _m.set(pid, { tsk: _k.tsk, dlv: _k.dlv, det: _k.det, val: _v });
+  return _v;
+}
+function _pmWbsRollupCompute(pid) {
   const ds = _pmScopeFor('pm_deliverables', pid);
   const ts = _pmScopeFor('pm_tasks', pid);
   const byDeliv = _pmDelivBuckets(ts);
@@ -25153,17 +25224,54 @@ function _pdRollup(rows, day) {
 }
 /* The master activity's % when detail lines exist beneath it — derived, never typed. */
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
+/* The children of every WBS node in one array, built once per array.
+ *
+ * _pmWbsChildren used to re-filter the WHOLE activity list on every call, and _pmTaskPctRoll calls
+ * it once per activity and again for every node it recurses into — so one pass of the '%' column
+ * over a project was O(activities^2). Measured on 12 projects x 400 activities: 34,260 calls
+ * scanning 13.7M task records, 395.6 ms of client CPU per render of the Projects list.
+ *
+ * Keyed on the IDENTITY of the array handed in, exactly as _pdMasterIndex and _pdRowsByRef are
+ * keyed on the identity of the _HR arrays they read. Every caller builds that array with
+ * _pmScopeFor / _pmScope, which returns a fresh array on each call, so a reload can never be served
+ * a stale index; and the only field this reads is `wbs`, which nothing anywhere assigns in place —
+ * checked, there is no `.wbs =` in this file. A WeakMap rather than a one-slot cache because
+ * pmRenderSchedule's sorted `allTasks` is captured by the _pmSchedBuild pane thunks and is asked
+ * for its children again on a later tick, interleaved with other arrays.
+ *
+ * PARENT KEY, not prefix matching. `1.2.3` belongs to `1.2` and to nothing else: the old predicate
+ * kept a code that starts with `w + '.'` AND has exactly one more dot-segment, and for any such
+ * code the text before its LAST dot is exactly `w`. So bucketing by that is the same set — `1.10`
+ * lands under `1`, never under `1.1`, and a grandchild `1.2.3.1` lands under `1.2.3`, never under
+ * `1.2`. A code with no dot has no parent and joins no bucket, which is what the old `!w` guard
+ * did from the other side. Buckets are filled in array order, so the children come back in the
+ * order the filter produced them.
+ *
+ * The array handed back is the map's own, like _pdRowsByRef's. _pmTaskPctRoll is the only caller
+ * and only reads it; anything that needs to sort or splice the result must copy it first. */
+const _pmWbsKidIdx = new WeakMap();
+function _pmWbsChildIndex(allTasks) {
+  let m = _pmWbsKidIdx.get(allTasks);
+  if (m) return m;
+  m = new Map();
+  allTasks.forEach(t => {
+    const c = String(t.wbs || '').trim();
+    const cut = c.lastIndexOf('.');
+    if (cut <= 0) return;                       // no parent segment (and a leading '.' has none either)
+    const par = c.slice(0, cut);
+    const at = m.get(par);
+    if (at) at.push(t); else m.set(par, [t]);
+  });
+  _pmWbsKidIdx.set(allTasks, m);
+  return m;
+}
 /* The direct children of a WBS node: one level deeper, and prefixed by it. `1.2` owns `1.2.1` and
    `1.2.3`, but not `1.2.3.1` — that belongs to `1.2.3`, so the roll-up recurses instead of
    double-counting a grandchild against its parent AND its grandparent. */
 function _pmWbsChildren(task, allTasks) {
   const w = String((task && task.wbs) || '').trim();
-  if (!w) return [];
-  const depth = w.split('.').length;
-  return (allTasks || []).filter(t => {
-    const c = String(t.wbs || '').trim();
-    return c && c !== w && c.indexOf(w + '.') === 0 && c.split('.').length === depth + 1;
-  });
+  if (!w || !allTasks) return [];
+  return _pmWbsChildIndex(allTasks).get(w) || [];
 }
 /* What an activity is ACTUALLY at, and where that number came from.
 
@@ -25178,6 +25286,21 @@ function _pmWbsChildren(task, allTasks) {
    three-child parent. The depth guard is belt-and-braces: WBS is a prefix tree and cannot cycle. */
 function _pmTaskPctRoll(task, allTasks, pid, _depth) {
   _depth = _depth || 0;
+  /* Only the depth-0 entry points share an answer. The result depends on _depth — a subtree cut off
+     by the guard below is a different answer from the same subtree walked from its own root — so the
+     RECURSION is never memoised, only the three-times-per-activity repeat the Activities tab makes:
+     the Completed KPI, the '%' column and the Status column each roll the same activity up from
+     nothing. See _pmMemoNow for why the cache lives exactly one synchronous pass and no longer. */
+  if (!_depth) {
+    const _m = _pmMemoNow().roll, _k = _pmMemoKeys(), _h = _m.get(task);
+    if (_h && _h.arr === allTasks && _h.pid === pid && _h.tsk === _k.tsk && _h.det === _k.det) return _h.val;
+    const _v = _pmTaskPctRollWalk(task, allTasks, pid, 0);
+    _m.set(task, { arr: allTasks, pid: pid, tsk: _k.tsk, det: _k.det, val: _v });
+    return _v;
+  }
+  return _pmTaskPctRollWalk(task, allTasks, pid, _depth);
+}
+function _pmTaskPctRollWalk(task, allTasks, pid, _depth) {
   const typed = { pct: _pmPct(task && task.pctComplete), from: 'typed', n: 0 };
   if (_depth > 12) return typed;
   const kids = _pmWbsChildren(task, allTasks);
@@ -25186,7 +25309,7 @@ function _pmTaskPctRoll(task, allTasks, pid, _depth) {
     kids.forEach(k => {
       const kw = _pdWeight(k);
       w += kw;
-      sum += kw * _pmTaskPctRoll(k, allTasks, pid, _depth + 1).pct;
+      sum += kw * _pmTaskPctRollWalk(k, allTasks, pid, _depth + 1).pct;
     });
     return { pct: w ? _pmPct(sum / w) : 0, from: 'children', n: kids.length };
   }
