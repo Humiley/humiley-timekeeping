@@ -54,6 +54,7 @@ import ahu_selection    # the AeroSelect selection handoff: read a selection in 
 import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
 import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
 import ahu_rework       # which stations generate the rework, from the NCRs' own stepCode (pure)
+import ahu_order_pack   # can a whole ORDER be handed over, and what is holding it (pure)
 import ahu_notify       # who to tell when a step fails, a gate is held or an NCR ages (pure)
 import ahu_eurovent     # Eurovent 6/18-2022: what the industry recommends, as reference (pure)
 import ahu_calibration  # what measured the number, and whether it was fit to (pure)
@@ -4529,6 +4530,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._ahu_kpi_ep(u, qs))
         if path == "/api/ahu/board":
             return self._guard(lambda u: self._ahu_board_ep(u))
+        if path.startswith("/api/ahu/order/") and path.endswith("/pack"):
+            _oid = path[len("/api/ahu/order/"):-len("/pack")]
+            return self._guard(lambda u: self._ahu_order_pack_ep(u, urllib.parse.unquote(_oid)))
         if path.startswith("/api/ahu/unit/") and path.endswith("/dossier"):
             _uid = path[len("/api/ahu/unit/"):-len("/dossier")]
             return self._guard(lambda u: self._ahu_dossier_ep(u, urllib.parse.unquote(_uid)))
@@ -6797,6 +6801,35 @@ class Handler(BaseHTTPRequestHandler):
                        "blockers": ahu.gate_blockers(st["gate"], ctx)}
                       for st in ahu_route.STAGES if st.get("gate")],
         }))
+
+    def _ahu_order_pack_ep(self, u, oid):
+        """Can this ORDER be handed over, and what is holding it.
+
+        The per-unit dossier is the evidence; this is the covering answer over the whole package,
+        because that is the thing a customer buys and an auditor reviews. Reviewing eight units
+        meant opening eight dossiers and holding the result in your head.
+
+        An order that does not exist is a 404. An order that exists with no units against it is NOT
+        a 404 and NOT ready — it is answered, with the reason, because "this order has nothing
+        registered against it" is a real and useful finding rather than an error.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        order = db.get_collection_item("ahu_orders", oid)
+        if not order:
+            return self._err("Order not found.", 404)
+        # One index for every unit on the order — the per-unit context loop is the quadratic shape
+        # that made the board take four seconds at 87 units.
+        idx = ahu.ctx_index()
+        rows = []
+        for unit in idx["units"].values():
+            if str(unit.get("orderId") or "") != str(oid):
+                continue
+            ctx = ahu.load_ctx(unit.get("id"), idx)
+            rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "ncr": ctx["ncr"],
+                         "dispatch": ctx["dispatch"], "state": ahu.unit_state(ctx)})
+        return self._json(self._ahu_json_safe(ahu_order_pack.pack(order, rows)))
 
     def _ahu_dossier_ep(self, u, uid):
         blocked = self._ahu_gate(u)
