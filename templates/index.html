@@ -18331,37 +18331,8 @@ async function _graphFetch(url, opts, max) {
 }
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-async function spGet(list, filter = '') {
-  const token = await _getToken();
-  if (!token) return { value: [] };
-  const url = `${GRAPH}/sites/${SP_CONFIG.siteId}/lists/${list}/items?expand=fields${filter ? '&$filter=' + encodeURIComponent(filter) : ''}`;
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-  return r.json();
-}
 
-async function spPost(list, fields) {
-  const token = await _getToken();
-  if (!token) return null;
-  const url = `${GRAPH}/sites/${SP_CONFIG.siteId}/lists/${list}/items`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields })
-  });
-  return r.json();
-}
 
-async function spPatch(list, itemId, fields) {
-  const token = await _getToken();
-  if (!token) return null;
-  const url = `${GRAPH}/sites/${SP_CONFIG.siteId}/lists/${list}/items/${itemId}/fields`;
-  const r = await fetch(url, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(fields)
-  });
-  return r.json();
-}
 
 /* ──────────────────────────────────────────────────────────
    4. GEO / ATTENDANCE HELPERS
@@ -42168,54 +42139,22 @@ async function doCheckin() {
   const btn = document.getElementById('btn-checkin');
   const _setBusy = (on) => { if (!btn) return; btn.disabled = on; btn.innerHTML = on ? '<span>Getting GPS…</span>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Check In'; };
 
-  if (true) {  /* always use standalone Python backend (SharePoint removed) */
-    _setBusy(true);
-    const _go = (lat, lon, acc) => {
-      _setBusy(false);
-      const r = _applyGpsFix(lat, lon, acc || 50);
-      // Always allow check-in in demo — GPS is informational
-      _commitCheckin(lat, lon, r.inZone ? r.geo.zone : 'My Location (' + lat.toFixed(4) + '°, ' + lon.toFixed(4) + '°)');
-    };
-    /* Use cached position if recent (< 3 min) */
-    if (_lastGpsLat !== null && (Date.now() - _gpsTimestamp) < 180000) { _go(_lastGpsLat, _lastGpsLon, 50); return; }
-    if (!navigator.geolocation) { _setBusy(false); _commitCheckin(null, null, 'Office Location'); return; }
-    navigator.geolocation.getCurrentPosition(
-      pos => _go(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
-      ()  => { _setBusy(false); _commitCheckin(null, null, 'Office Location'); },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
-    );
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const { latitude, longitude } = pos.coords;
-    const zonesResp = await spGet('Approved_Locations');
-    const zones = (zonesResp.value || []).map(i => ({
-      name: i.fields.Title, lat: parseFloat(i.fields.Latitude),
-      lon: parseFloat(i.fields.Longitude), radius: parseFloat(i.fields.RadiusMeters || 200)
-    }));
-    const geo = _checkGeofence(latitude, longitude, zones);
-    if (!geo.ok) { toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Outside approved zone — check-in denied', 'error'); if(btn){btn.disabled=false;btn.textContent='Check In';} return; }
-    const now = new Date();
-    const fields = {
-      Title: _account?.username || 'User',
-      CheckInTime: now.toISOString(),
-      Latitude: latitude, Longitude: longitude,
-      LocationName: geo.zone,
-      Status: _getAttendanceStatus(now.toTimeString().slice(0,5))
-    };
-    const res = await spPost('Attendance_Records', fields);
-    if (res && res.id) {
-      _checkedIn = true;
-      sessionStorage.setItem('attendance_item_id', res.id);
-      _updateCheckinUI(now.toTimeString().slice(0,5), '' + geo.zone, true);
-      toast(_t('Checked in — ') + geo.zone);
-    } else { toast('Check-in failed — try again', 'error'); }
-    if(btn){btn.disabled=false;}
-  }, err => {
-    toast(_t('GPS error: ') + _errMsg(err), 'error');
-    if(btn){btn.disabled=false;btn.textContent='Check In';}
-  }, { enableHighAccuracy: true, timeout: 10000 });
+  /* always use standalone Python backend (SharePoint removed) */
+  _setBusy(true);
+  const _go = (lat, lon, acc) => {
+    _setBusy(false);
+    const r = _applyGpsFix(lat, lon, acc || 50);
+    // Always allow check-in in demo — GPS is informational
+    _commitCheckin(lat, lon, r.inZone ? r.geo.zone : 'My Location (' + lat.toFixed(4) + '°, ' + lon.toFixed(4) + '°)');
+  };
+  /* Use cached position if recent (< 3 min) */
+  if (_lastGpsLat !== null && (Date.now() - _gpsTimestamp) < 180000) { _go(_lastGpsLat, _lastGpsLon, 50); return; }
+  if (!navigator.geolocation) { _setBusy(false); _commitCheckin(null, null, 'Office Location'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => _go(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+    ()  => { _setBusy(false); _commitCheckin(null, null, 'Office Location'); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+  );
 }
 
 async function doCheckout() {
@@ -42223,72 +42162,61 @@ async function doCheckout() {
   const btn = document.getElementById('btn-checkout');
   if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
 
-  if (true) {  /* always use standalone Python backend (SharePoint removed) */
-    /* ── GPS-required check-out ── */
-    const _runCheckout = (lat, lon) => {
-      const geo = _checkGeofence(lat, lon, _DEMO_ZONES);
-      if (!geo.ok) {
-        const nearest = _DEMO_ZONES.map(z => ({
-          name: z.name, dist: Math.round(_haversineMetres(lat, lon, z.lat, z.lon))
-        })).sort((a,b) => a.dist - b.dist)[0];
-        toast('Check-out denied — ' + (nearest ? nearest.dist + 'm outside ' + nearest.name : 'outside all approved zones'), 'error', 7000);
-        _updateCheckinGpsBadge(lat, lon, false, nearest ? nearest.dist + 'm from ' + nearest.name : 'Outside zone');
-        if (btn) { btn.disabled = false; btn.textContent = 'Check Out'; }
-        return;
-      }
-      _checkedIn = false;
-      const now = new Date();
-      const outStr = now.toTimeString().slice(0,5);
-      _updateCheckinUI(null, null, false, outStr);
-      if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; btn.textContent = 'Check Out'; }
-      const rec = _DEMO_ATTENDANCE.find(r => (r.name === _staffName || r.name === 'Huy Nguyen Duc') && !r.out);
-      if (rec) {
-        rec.out = outStr;
-        const [ih,im] = (rec.in||'08:00').split(':').map(Number);
-        const [oh,om] = outStr.split(':').map(Number);
-        const totalMin = (oh*60+om) - (ih*60+im);
-        rec.hrs = Math.floor(totalMin/60) + 'h ' + (totalMin%60) + 'm';
-        filterTable();
-      }
-      toast('Checked out at ' + outStr + ' · ' + geo.zone + ' (GPS verified)');
-    };
+  /* always use standalone Python backend (SharePoint removed) */
+  /* ── GPS-required check-out ── */
+  const _runCheckout = (lat, lon) => {
+    const geo = _checkGeofence(lat, lon, _DEMO_ZONES);
+    if (!geo.ok) {
+      const nearest = _DEMO_ZONES.map(z => ({
+        name: z.name, dist: Math.round(_haversineMetres(lat, lon, z.lat, z.lon))
+      })).sort((a,b) => a.dist - b.dist)[0];
+      toast('Check-out denied — ' + (nearest ? nearest.dist + 'm outside ' + nearest.name : 'outside all approved zones'), 'error', 7000);
+      _updateCheckinGpsBadge(lat, lon, false, nearest ? nearest.dist + 'm from ' + nearest.name : 'Outside zone');
+      if (btn) { btn.disabled = false; btn.textContent = 'Check Out'; }
+      return;
+    }
+    _checkedIn = false;
+    const now = new Date();
+    const outStr = now.toTimeString().slice(0,5);
+    _updateCheckinUI(null, null, false, outStr);
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; btn.textContent = 'Check Out'; }
+    const rec = _DEMO_ATTENDANCE.find(r => (r.name === _staffName || r.name === 'Huy Nguyen Duc') && !r.out);
+    if (rec) {
+      rec.out = outStr;
+      const [ih,im] = (rec.in||'08:00').split(':').map(Number);
+      const [oh,om] = outStr.split(':').map(Number);
+      const totalMin = (oh*60+om) - (ih*60+im);
+      rec.hrs = Math.floor(totalMin/60) + 'h ' + (totalMin%60) + 'm';
+      filterTable();
+    }
+    toast('Checked out at ' + outStr + ' · ' + geo.zone + ' (GPS verified)');
+  };
 
-    /* Demo check-out — always succeeds, uses cached GPS if available */
-    const _finishOut = (lat, lon) => {
-      _checkedIn = false;
-      const now = new Date(), outStr = now.toTimeString().slice(0,5);
-      _updateCheckinUI(null, null, false, outStr);
-      const rec = _DEMO_ATTENDANCE.find(r => !r.out);
-      if (rec) { rec.out = outStr; const [ih,im]=(rec.in||'08:00').split(':').map(Number),[oh,om]=outStr.split(':').map(Number),tot=(oh*60+om)-(ih*60+im); rec.hrs=Math.floor(tot/60)+'h '+(tot%60)+'m'; try{filterTable();}catch(e){} }
-      /* persist to backend */
-      tkPersist('/api/attendance/checkout', { date: _today(), time: outStr });
-      if (btn) { btn.disabled = true; btn.style.background = '#e2e8f0'; btn.style.color = '#94a3b8'; }
-      /* Re-gate check-in based on GPS position */
-      if (_lastGpsLat !== null) { setTimeout(() => _applyGpsFix(_lastGpsLat, _lastGpsLon, 50), 100); }
-      else { const btnIn = document.getElementById('btn-checkin'); if (btnIn) { btnIn.disabled = false; } }
-      _showCheckinMsg('Checked out at <strong>' + outStr + '</strong>', 'ok');
-      toast('Checked out at ' + outStr);
-    };
-    if (_lastGpsLat !== null) { _finishOut(_lastGpsLat, _lastGpsLon); return; }
-    if (navigator.geolocation) {
-      if (btn) { btn.textContent = ''; }
-      navigator.geolocation.getCurrentPosition(
-        pos => { _lastGpsLat=pos.coords.latitude; _lastGpsLon=pos.coords.longitude; _gpsTimestamp=Date.now(); _finishOut(_lastGpsLat,_lastGpsLon); },
-        ()   => _finishOut(null, null),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-      );
-    } else { _finishOut(null, null); }
-    return;
-  }
-
-  const itemId = sessionStorage.getItem('attendance_item_id');
-  if (!itemId) { toast('Session error — refresh and retry', 'error'); return; }
-  const now = new Date();
-  await spPatch('Attendance_Records', itemId, { CheckOutTime: now.toISOString() });
-  _checkedIn = false;
-  _updateCheckinUI(null, null, false, now.toTimeString().slice(0,5));
-  toast('Checked out at ' + now.toTimeString().slice(0,5));
-  if(btn){btn.disabled=false;btn.textContent='Check Out';}
+  /* Demo check-out — always succeeds, uses cached GPS if available */
+  const _finishOut = (lat, lon) => {
+    _checkedIn = false;
+    const now = new Date(), outStr = now.toTimeString().slice(0,5);
+    _updateCheckinUI(null, null, false, outStr);
+    const rec = _DEMO_ATTENDANCE.find(r => !r.out);
+    if (rec) { rec.out = outStr; const [ih,im]=(rec.in||'08:00').split(':').map(Number),[oh,om]=outStr.split(':').map(Number),tot=(oh*60+om)-(ih*60+im); rec.hrs=Math.floor(tot/60)+'h '+(tot%60)+'m'; try{filterTable();}catch(e){} }
+    /* persist to backend */
+    tkPersist('/api/attendance/checkout', { date: _today(), time: outStr });
+    if (btn) { btn.disabled = true; btn.style.background = '#e2e8f0'; btn.style.color = '#94a3b8'; }
+    /* Re-gate check-in based on GPS position */
+    if (_lastGpsLat !== null) { setTimeout(() => _applyGpsFix(_lastGpsLat, _lastGpsLon, 50), 100); }
+    else { const btnIn = document.getElementById('btn-checkin'); if (btnIn) { btnIn.disabled = false; } }
+    _showCheckinMsg('Checked out at <strong>' + outStr + '</strong>', 'ok');
+    toast('Checked out at ' + outStr);
+  };
+  if (_lastGpsLat !== null) { _finishOut(_lastGpsLat, _lastGpsLon); return; }
+  if (navigator.geolocation) {
+    if (btn) { btn.textContent = ''; }
+    navigator.geolocation.getCurrentPosition(
+      pos => { _lastGpsLat=pos.coords.latitude; _lastGpsLon=pos.coords.longitude; _gpsTimestamp=Date.now(); _finishOut(_lastGpsLat,_lastGpsLon); },
+      ()   => _finishOut(null, null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  } else { _finishOut(null, null); }
 }
 
 let _durTimerHandle = null;
@@ -43688,55 +43616,43 @@ async function submitLeave() {
   const days = _calcWorkingDays(start, end, _tkMe());
   if (!(days > 0)) { toast(_t('The selected range is all weekend and public holidays — no leave would be used.'), 'warn'); return; }
 
-  if (true) {  /* always use standalone Python backend (SharePoint removed) */
-    const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
-    /* 21 CFR Part 11: submitting a leave request is a signed record — re-authenticate,
-       create it, then stamp the submitter's signature onto the new record. */
-    tkESign({
-      coll: 'leave',
-      meaning: 'Submit — Leave ' + type + ' · ' + start + ' → ' + end + ' (' + days + ' day' + (days !== 1 ? 's' : '') + ')',
-      createFn: async () => {
-        const res = await tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason });
-        return { id: res && res.id, res: res };
-      },
-      onDone: async (item, created) => {
-        const res = created && created.res;
-        try { await tkBootstrap(); tkRenderApprovals(); tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
-        if (res && res.token && res.managerEmail) {
-          try { await tkEmailLeaveApproval(res, { type, start, end, days, reason }); } catch (e) { console.warn('leave email:', e.message); }
-        } else if (res && !res.managerEmail) {
-          toast('Submitted. No direct manager set — ask HR to assign one for approval routing.', 'warn', 6000);
-        }
-        /* The list is redrawn from what the server now holds, instead of a card being assembled
-           here from the form values. The hand-built one carried Approve and Reject buttons and was
-           prepended to the REQUESTER's own pending list, so somebody who had just submitted leave
-           saw an Approve button on their own request. Clicking it called spPatch('Leave_Requests',
-           'new', ...) — SharePoint, with a literal id of 'new' — and then toasted "Leave approved".
-           The portal was untouched: still pending, balance not applied, nothing signed. The only
-           thing that changed was that the employee had been told it was approved.
-
-           tkBootstrap() above has already refetched; this just draws what came back. A leave
-           decision belongs to the signed flow in tkRenderApprovals and to nothing else. */
-        try { tkRenderLeaveView(); } catch (e) { }
-        const tabs = document.querySelectorAll('#leave-tabs .tab');
-        if (tabs[0]) { const cur = parseInt(tabs[0].textContent.match(/\d+/)?.[0] || '0'); tabs[0].textContent = 'Pending (' + (cur + 1) + ')'; }
-        closeModal('leaveModal');
-        setTimeout(() => { switchLeaveTab('pending', document.querySelector('#leave-tabs .tab')); }, 100);
-        toast('Leave request submitted & signed — ' + days + ' working day(s)');
+  /* always use standalone Python backend (SharePoint removed) */
+  const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
+  /* 21 CFR Part 11: submitting a leave request is a signed record — re-authenticate,
+     create it, then stamp the submitter's signature onto the new record. */
+  tkESign({
+    coll: 'leave',
+    meaning: 'Submit — Leave ' + type + ' · ' + start + ' → ' + end + ' (' + days + ' day' + (days !== 1 ? 's' : '') + ')',
+    createFn: async () => {
+      const res = await tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason });
+      return { id: res && res.id, res: res };
+    },
+    onDone: async (item, created) => {
+      const res = created && created.res;
+      try { await tkBootstrap(); tkRenderApprovals(); tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
+      if (res && res.token && res.managerEmail) {
+        try { await tkEmailLeaveApproval(res, { type, start, end, days, reason }); } catch (e) { console.warn('leave email:', e.message); }
+      } else if (res && !res.managerEmail) {
+        toast('Submitted. No direct manager set — ask HR to assign one for approval routing.', 'warn', 6000);
       }
-    });
-    return;
-  }
+      /* The list is redrawn from what the server now holds, instead of a card being assembled
+         here from the form values. The hand-built one carried Approve and Reject buttons and was
+         prepended to the REQUESTER's own pending list, so somebody who had just submitted leave
+         saw an Approve button on their own request. Clicking it wrote to the SharePoint list with a
+         literal id of 'new' — that helper is gone now — and then toasted "Leave approved".
+         The portal was untouched: still pending, balance not applied, nothing signed. The only
+         thing that changed was that the employee had been told it was approved.
 
-  const fields = {
-    Title: _account?.username || 'User',
-    LeaveType: type, StartDate: start, EndDate: end,
-    Reason: reason, Days: days, Status: 'Pending',
-    SubmittedDate: new Date().toISOString()
-  };
-  const res = await spPost('Leave_Requests', fields);
-  if (res && res.id) { toast(`Leave submitted — ${days} working day(s)`); closeModal('leaveModal'); }
-  else toast('Submission failed — try again', 'error');
+         tkBootstrap() above has already refetched; this just draws what came back. A leave
+         decision belongs to the signed flow in tkRenderApprovals and to nothing else. */
+      try { tkRenderLeaveView(); } catch (e) { }
+      const tabs = document.querySelectorAll('#leave-tabs .tab');
+      if (tabs[0]) { const cur = parseInt(tabs[0].textContent.match(/\d+/)?.[0] || '0'); tabs[0].textContent = 'Pending (' + (cur + 1) + ')'; }
+      closeModal('leaveModal');
+      setTimeout(() => { switchLeaveTab('pending', document.querySelector('#leave-tabs .tab')); }, 100);
+      toast('Leave request submitted & signed — ' + days + ' working day(s)');
+    }
+  });
 }
 
 /* ──────────────────────────────────────────────────────────

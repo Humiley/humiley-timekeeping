@@ -1,21 +1,20 @@
-/* The SharePoint write paths are unreachable, and have to stay that way.
+/* SharePoint is gone. Nothing may write to it again.
  *
- * Before the standalone Python backend, leave and attendance were written to SharePoint lists. Both
- * call sites are still in the page, each behind `if (true) { ...; return; }` with the comment
- * "always use standalone Python backend (SharePoint removed)".
+ * Leave and attendance used to be written to SharePoint lists. When the standalone Python backend
+ * arrived, those call sites were not removed — they were fenced off behind `if (true) { ...;
+ * return; }` with a comment saying SharePoint had been removed, and left in the page.
  *
- * They are harmless while nothing reaches them, and they are NOT deleted here: removing them means
- * unwrapping an `if (true)` and everything after a `return` inside a 4 MB single-file app, which is
- * control-flow surgery for no functional gain. What is worth preventing is somebody tidying up the
- * `if (true)` — it reads like a pointless always-true condition, and deleting it is the obvious
- * "cleanup". That would make the SharePoint code live again, against a SharePoint that is no longer
- * configured:
+ * That was survivable but not stable. `if (true)` reads like a pointless always-true condition,
+ * and deleting it is the obvious cleanup — which would have put the SharePoint code back in
+ * service against a backend that no longer exists: a leave request POSTed to a list nobody reads
+ * while the portal recorded nothing, a check-in written to Attendance_Records, and the user told
+ * in both cases that it worked. Failing in the direction that looks like success.
  *
- *   - a leave request would be POSTed to a list nobody reads, with Status 'Pending', while the
- *     portal recorded nothing — and the user would be told it was submitted;
- *   - a check-in would be written to Attendance_Records instead of the portal.
- *
- * Both fail silently in the direction that looks like success, which is why a comment is not enough.
+ * SharePoint is now decommissioned and the branches are deleted outright, along with spGet, spPost
+ * and spPatch. This file changed with them: it used to assert the guards were still in place, and
+ * now asserts that neither the helpers nor the list names come back. The earlier version would
+ * have passed forever on a file where the guards were removed correctly, which is why it could not
+ * simply be left alone.
  *
  *   node tests/sharepoint_paths_stay_dead.js
  */
@@ -30,53 +29,43 @@ function t(name, fn) {
   catch (e) { console.log('  FAIL  ' + name + '\n        ' + e.message); fail++; }
 }
 
-/* Is `call` positioned after a guard that returns unconditionally before it? */
-function guardedBefore(callNeedle) {
-  const at = src.indexOf(callNeedle);
-  if (at < 0) return { found: false };
-  const before = src.slice(0, at);
-  const guard = before.lastIndexOf('if (true) {');
-  if (guard < 0) return { found: true, guarded: false };
-  const ret = before.indexOf('return;', guard);
-  return { found: true, guarded: ret > guard, guardAt: guard };
-}
-
-console.log('\nthe SharePoint writes sit behind an unconditional guard');
-[['leave submission', "spPost('Leave_Requests'"],
- ['check-in', "spGet('Approved_Locations')"]
-].forEach(([label, needle]) => t(label, () => {
-  const r = guardedBefore(needle);
-  if (!r.found) return;   // deleted outright is a fine outcome — nothing to guard
-  if (!r.guarded) {
-    throw new Error('the SharePoint ' + label + ' path is reachable again. It writes to a ' +
-      'SharePoint that is no longer configured and reports success either way — the portal ' +
-      'records nothing. Delete the path, do not un-guard it.');
+console.log('\nthe SharePoint helpers are gone');
+['spGet', 'spPost', 'spPatch'].forEach(fn => t(fn + ' does not exist', () => {
+  /* Definition OR call. Excluding `.spGet(` so a method on some unrelated object is not mistaken
+     for one of these — the point is the global helper, not the four letters. */
+  const n = (src.match(new RegExp('(?<![\\w$.])' + fn + '\\s*\\(', 'g')) || []).length;
+  if (n) {
+    throw new Error(fn + ' is back (' + n + ' occurrence(s)). SharePoint is decommissioned: a ' +
+      'write there reaches nothing and reports success, and the portal records none of it.');
   }
 }));
 
-t('the guards still say why they are there', () => {
-  const n = (src.match(/always use standalone Python backend \(SharePoint removed\)/g) || []).length;
-  if (n < 2) {
-    throw new Error('expected both `if (true)` guards to carry the explanation of what they hold ' +
-      'back; found ' + n + '. Without it the condition reads as dead weight and gets tidied away.');
-  }
+console.log('\nno SharePoint list is addressed any more');
+t('the three list names appear in no call', () => {
+  const bad = ['Leave_Requests', 'Attendance_Records', 'Approved_Locations']
+    .filter(l => new RegExp("\\bsp[A-Za-z]*\\(\\s*'" + l + "'").test(src));
+  if (bad.length) throw new Error('still written: ' + bad.join(', '));
 });
 
-t('no NEW SharePoint list is being written', () => {
-  /* Counting call sites was the wrong instrument: the regex also matches the three function
-     DEFINITIONS and the explanatory comment beside the leave fix, so the number moves for reasons
-     that are not integrations. Which LISTS are addressed is the fact worth pinning — a new name
-     here is a new integration against a backend that is gone. */
-  const lists = [...new Set(
-    [...src.matchAll(/\bsp(?:Get|Post|Patch)\(\s*'([A-Za-z_]+)'/g)].map(m => m[1])
-  )].sort();
-  const known = ['Approved_Locations', 'Attendance_Records', 'Leave_Requests'];
-  const extra = lists.filter(l => known.indexOf(l) < 0);
-  if (extra.length) {
-    throw new Error('new SharePoint list(s) being addressed: ' + extra.join(', ') +
-      '. SharePoint is not the backend any more — a write there reaches nothing and reports ' +
-      'success, and the portal records none of it.');
+console.log('\nand the guards they hid behind are gone with them');
+t('no `if (true)` SharePoint fence remains', () => {
+  const n = (src.match(/if \(true\) \{\s*\/\* always use standalone Python backend/g) || []).length;
+  if (n) {
+    throw new Error(n + ' fence(s) remain. They only existed to hold back the SharePoint code; ' +
+      'with that deleted they are an always-true condition wrapping the only path there is.');
   }
+});
+t('the code they wrapped is still there', () => {
+  /* The unwrap had to keep the body. If a fence was deleted along with what it guarded, these
+     would be gone too — and the failure would be silent, because a check-in that never runs looks
+     like a user who did not press the button. */
+  ['async function doCheckin(', 'async function doCheckout(', 'async function submitLeave(']
+    .forEach(sig => {
+      if (src.indexOf(sig) < 0) throw new Error('missing ' + sig + ')');
+    });
+  ['_commitCheckin(', 'tkESign({', 'tkRenderLeaveView()'].forEach(needle => {
+    if (src.indexOf(needle) < 0) throw new Error('the real path lost ' + needle);
+  });
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
