@@ -376,6 +376,21 @@ jobs:
       - name: Attendance history is fetched by the screens that read it
         run: node tests/attendance_history_is_on_demand.js
 
+      # _pmWbsChildren re-filtered the whole activity array per call, inside a per-activity
+      # recursion: 65,343 whole-array scans and 26.1M task records read for one Projects render at
+      # 12 projects x 400 activities. The index made that 12x faster and the memo the rest, 52x end
+      # to end. This counts SCANS AND RECORDS READ, not milliseconds — the quadratic came back once
+      # already, and a stopwatch on an idle runner is exactly what failed to notice.
+      - name: The WBS roll-up does not re-scan the activity list
+        run: node tests/wbs_children_cost.js
+
+      # /api/portal now overlaps tkBootstrap instead of queueing behind it. Both halves of that are
+      # invisible in a passing app: started one line too early the token is undefined, the request
+      # 401s, tkLoadPortal swallows it, and canPay/canPublishDocs silently stay undefined for the
+      # session. This pins the order.
+      - name: The boot requests are issued in the right order
+        run: node tests/boot_request_order.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the

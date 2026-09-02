@@ -13,7 +13,7 @@
    Re-read main immediately before merging and bump again if someone got there first. And verify a
    deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
    against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
-const CACHE = 'hml-pwa-v681';
+const CACHE = 'hml-pwa-v695';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
   '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js',   // self-hosted libs — precache for offline
   // The two weights the document preloads. Poppins came from Google until now, which meant the brand
@@ -27,7 +27,14 @@ const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png'
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
+      /* 'no-cache', not 'reload'. Both bypass a STALE precache — that is the point of either, and
+         why this is not simply dropped. The difference is what an UNCHANGED file costs: 'reload'
+         forces a full unconditional download, so a first visit fetched the 832 KB shell twice
+         (once for the page, once for the install) and every deploy did it again, because activate()
+         drops the old cache and CACHE bumps on every release. 'no-cache' still revalidates every
+         entry, so nothing stale is ever precached — it just takes the 304 when the file has not
+         moved. */
+      .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'no-cache' }))))
       .catch(() => {})
       .then(() => self.skipWaiting())
   );

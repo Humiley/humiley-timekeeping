@@ -277,9 +277,19 @@ def test_measurement_outranks_every_other_progress_basis():
     """The whole point: quantities measured against contract rates beat a roll-up and a typed
     number, so when the QS module has a percentage _pmEvm must use it and say so."""
     html = _html()
-    i = html.index("function _pmEvm(p) {")
+    # The arithmetic moved into _pmEvmCompute when _pmEvm gained a memo wrapper. This slice happened
+    # to still reach it, which is worse than failing: it would keep passing while measuring the
+    # wrong function the moment the wrapper grew.
+    i = html.index("function _pmEvmCompute(p) {")
     body = html[i:html.index("function _pmEffectiveRag", i)]
-    assert "earnedValue" in body and "qsPct" in body, "_pmEvm no longer reads the QS percentage"
+    # The whole statement, INCLUDING what follows the field name. A substring check anchored only on
+    # the left is satisfied by any longer identifier: `"earnedValue" in body` passes on
+    # `earnedValueX`, and so does `"(_QS[p.id] || {}).earnedValue"`. Both were tried by mutation and
+    # both stayed green while the code had stopped reading the QS payload entirely. The trailing
+    # `) || null` is what makes the name have to end where it should.
+    assert "((_QS[p.id] || {}).earnedValue) || null" in body, \
+        "_pmEvmCompute no longer reads the QS payload"
+    assert "qsPct" in body, "_pmEvmCompute no longer derives the measured percentage"
     assert "'measured'" in body, "_pmEvm no longer reports the measured basis"
     # And it must fall back untouched when QS has not been loaded — every other caller (the
     # portfolio, the RAG colour, the status PDF) runs before /api/qs/summary is fetched.

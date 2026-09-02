@@ -49,8 +49,20 @@ const F = new Function(
   // The real ladder every other screen uses. _pmDelivRoll calls it now, so the register and the
   // Activities tab cannot print two different percentages for the same activity.
   take('function _pdWeight(', '_pdWeight') +
+  'const _PD_COLL = "pm_detail";\n' +
+  // Same shape one level up: _pmTaskPctRoll's depth-0 entry point answers from the pass-scoped
+  // memo declared above _pmEvm, and the walk it delegates to is a separate function now.
+  take('let _pmMemo = null;', '_pmMemo') +
+  take('function _pmMemoNow(', '_pmMemoNow') +
+  take('function _pmMemoDrop(', '_pmMemoDrop') +
+  take('function _pmMemoKeys(', '_pmMemoKeys') +
+  // _pmWbsChildren answers from a per-array index held in a module-level WeakMap. Lifting the
+  // function without the map it reads is how a slice reports ReferenceError instead of an answer.
+  take('const _pmWbsKidIdx = ', '_pmWbsKidIdx') +
+  take('function _pmWbsChildIndex(', '_pmWbsChildIndex') +
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   // NOTE: this slice runs to the next '\nfunction ', which is _pmDelivRoll — so it already carries
   // the `const _PM_DELIV_SIGNED` declared between them. Injecting SIGNED here as well is a
   // redeclaration and a SyntaxError. SIGNED is asserted against `src` instead, below.

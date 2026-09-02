@@ -104,8 +104,19 @@ const ENV =
   'let _pmCpmMemo = { sig: "", out: null };\n' +
   take('function _pmCPMCompute(', '_pmCPMCompute') +
   take('function _pmCPM(', '_pmCPM') +
+  // Same shape one level up: _pmTaskPctRoll's depth-0 entry point answers from the pass-scoped
+  // memo declared above _pmEvm, and the walk it delegates to is a separate function now.
+  take('let _pmMemo = null;', '_pmMemo') +
+  take('function _pmMemoNow(', '_pmMemoNow') +
+  take('function _pmMemoDrop(', '_pmMemoDrop') +
+  take('function _pmMemoKeys(', '_pmMemoKeys') +
+  // _pmWbsChildren answers from a per-array index held in a module-level WeakMap. Lifting the
+  // function without the map it reads is how a slice reports ReferenceError instead of an answer.
+  take('const _pmWbsKidIdx = ', '_pmWbsKidIdx') +
+  take('function _pmWbsChildIndex(', '_pmWbsChildIndex') +
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   take('function _pmStatusFromPct(', '_pmStatusFromPct') +
   take('function _pmTaskStatus(', '_pmTaskStatus') +
   take('function _schExportMaster(', '_schExportMaster') +
