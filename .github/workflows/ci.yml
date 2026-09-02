@@ -197,6 +197,19 @@ jobs:
       - name: One Vietnamese spelling, across the whole platform
         run: python3 tools/i18n/ortho-platform.py
 
+      # Spelling and duplicate-key gates both check strings that ARE translated. Neither can see a
+      # string that was never translated at all, and neither could the DOM sweeps -- a sweep only
+      # visits the screens it opens. The entire General Ledger module therefore shipped in English
+      # while all three gates were green: 45 strings, one of the most consequential screens in the
+      # product, and a missing key is not a malformed one.
+      #
+      # _t('X') returns X when X is not a key, so this proves an English render from the SOURCE,
+      # with no navigation. Two categories, because only one is fixable by translating: a
+      # self-contained literal needs a dictionary entry, while toast('Checked in at ' + time) builds
+      # its string at runtime and can never match a key however complete the dictionary is.
+      - name: Every string the code asks to translate has a translation
+        run: node tools/i18n/missing.js
+
       # The drawing register's own self-check, run against the shipped code rather than a copy.
       - name: Drawing register check
         run: node tests/eng_register_check.js
