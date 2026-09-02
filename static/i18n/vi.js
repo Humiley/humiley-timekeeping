@@ -6310,4 +6310,14 @@ window._VI = {
   'Checked out at {0}': 'Đã chấm ra lúc {0}',
   'Checked out at {0}. Select your location to check in again.': 'Đã chấm ra lúc {0}. Hãy chọn vị trí để chấm vào lần nữa.',
 
+  /* ── Ledger: registers vs books ── */
+  'Reversed out of the ledger': 'Đã đảo bút toán khỏi sổ cái',
+  'These were posted and then reversed. The money is out of the books and they cannot be posted again — correcting them takes a manual journal, not a button.': 'Các chứng từ này đã ghi sổ rồi bị đảo. Tiền đã ra khỏi sổ sách và không thể ghi sổ lại — muốn sửa phải lập bút toán thủ công, không có nút bấm.',
+  'The registers against the books': 'Sổ nghiệp vụ đối chiếu với sổ cái',
+  'Agrees': 'Khớp',
+  'Differs by': 'Chênh lệch',
+  'Subcontract obligation': 'Nghĩa vụ với thầu phụ',
+  'Registers': 'Sổ nghiệp vụ',
+  'Ledger': 'Sổ cái',
+  'Difference': 'Chênh lệch',
 };
