@@ -6209,4 +6209,8 @@ window._VI = {
   'Non-conformance register': 'Sổ đăng ký không phù hợp',
   'NCR(s) with a cost on them': 'phiếu NCR có ghi chi phí',
   'These are never added together. Both describe the same rework, and summing them counts one event twice — the gap between them is what tells you one of the two is incomplete.': 'Hai con số này không bao giờ được cộng lại. Cả hai đều mô tả cùng một phần sửa chữa, cộng vào là tính một sự việc hai lần — chính khoảng chênh giữa chúng cho biết một trong hai đang thiếu.',
+
+  /* ── Ledger: the subcontract accrual ── */
+  'Subcontract settlement': 'Thanh toán chứng chỉ thầu phụ',
+  'Subcontract certificate': 'Chứng chỉ thanh toán thầu phụ',
 };

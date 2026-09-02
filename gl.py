@@ -63,8 +63,8 @@ ROUNDING_CREDIT = "711"
 
 # The sources that may post. Named rather than free text, so a typo becomes an error instead of a
 # fifth kind of document nobody can find again.
-PAYRUN, INVOICE, CREDIT_NOTE, RECEIPT, PAYMENT, PURCHASE, MANUAL = (
-    "payrun", "invoice", "creditNote", "receipt", "payment", "purchase", "manual")
+PAYRUN, INVOICE, CREDIT_NOTE, RECEIPT, PAYMENT, PURCHASE, MANUAL, SUBCERT = (
+    "payrun", "invoice", "creditNote", "receipt", "payment", "purchase", "manual", "subcert")
 SOURCES = {
     PAYRUN: "Payroll",
     INVOICE: "Sales invoice",
@@ -72,6 +72,10 @@ SOURCES = {
     RECEIPT: "Customer receipt",
     PAYMENT: "Payment",
     PURCHASE: "Purchase",
+    # The obligation a subcontractor's certificate creates, weeks before the money leaves. It is a
+    # different document from the payment that settles it and posts a different entry — see
+    # subcontract_journal, and the limitation purchase_journal documented before it existed.
+    SUBCERT: "Subcontract certificate",
     MANUAL: "Manual journal",
 }
 
