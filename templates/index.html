@@ -4657,7 +4657,20 @@ async function _pushEnroll(interactive) {
       // subscription can no longer be signed for — drop it and re-subscribe.
       try {
         const k = sub.options && sub.options.applicationServerKey;
-        if (k && _b64urlFromBuf(k) !== _VAPID_PUB) { await sub.unsubscribe(); sub = null; }
+        if (k && _b64urlFromBuf(k) !== _VAPID_PUB) {
+          // Tell the SERVER before dropping it here. The browser unsubscribing is invisible to the
+          // portal: the row stays, and every later send tries an endpoint that can never accept
+          // one again. /api/push/unsubscribe existed for exactly this and was called by nothing —
+          // found by asking which routes nothing calls, not by anyone noticing the sends fail.
+          //
+          // The endpoint has to be read BEFORE unsubscribe(), because afterwards the object is
+          // gone. Best-effort: a device whose subscription is being replaced must still get a
+          // working one even if the tidy-up call fails, so this never blocks the re-subscribe.
+          const dead = sub.endpoint;
+          await sub.unsubscribe();
+          sub = null;
+          if (dead) { try { await tkApi('/api/push/unsubscribe', { method: 'POST', body: { endpoint: dead } }); } catch (e) { } }
+        }
       } catch (e) {}
     }
     if (!sub) {

@@ -237,6 +237,16 @@ jobs:
       - name: A leave decision only happens through the signed flow
         run: node tests/leave_decisions_are_signed.js
 
+      # Leave and attendance used to be written to SharePoint lists. Both call sites are still in
+      # the page behind `if (true) { ...; return; }` — harmless while nothing reaches them, and NOT
+      # deleted because that means unwrapping a guard and everything after a return inside a 4 MB
+      # file. The risk is somebody tidying away the `if (true)`, which reads like a pointless
+      # always-true condition: the SharePoint code would go live against a backend that no longer
+      # exists, a leave request would be POSTed to a list nobody reads while the portal recorded
+      # nothing, and the user would be told it was submitted.
+      - name: The SharePoint write paths stay unreachable
+        run: node tests/sharepoint_paths_stay_dead.js
+
       # The other two design gates check LOGIC and would pass on markup carrying an unclosed <div>
       # — which, in a card layout, swallows everything below it into the card. Nothing throws; the
       # page is just wrong from that point down, and no source-level test can see it. This runs a
