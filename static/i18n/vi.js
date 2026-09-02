@@ -6286,6 +6286,7 @@ window._VI = {
   'GPS error: ': 'Lỗi GPS: ',
   'Zone deleted: ': 'Đã xóa vùng: ',
 
+<<<<<<< HEAD
 
   /* ── Ledger: registers vs books ── */
   'Reversed out of the ledger': 'Đã đảo bút toán khỏi sổ cái',
@@ -6297,4 +6298,30 @@ window._VI = {
   'Registers': 'Sổ nghiệp vụ',
   'Ledger': 'Sổ cái',
   'Difference': 'Chênh lệch',
+=======
+  /* ── messages that carry a value: the TRANSLATION places {0}/{1}, not the code ── */
+  'Combining the claim + {0} bill(s) into one PDF…': 'Đang gộp đề nghị + {0} hóa đơn thành một tệp PDF…',
+  'Renumber 1…{0}': 'Đánh số lại 1…{0}',
+  'Baseline taken — {0} of {1} deliverables carry a planned date': 'Đã chốt kế hoạch gốc — {0}/{1} sản phẩm có ngày kế hoạch',
+  'Authorised — {0} may check {1}': 'Đã ủy quyền — {0} được phép kiểm tra {1}',
+  'Refusal log exported ({0} rows)': 'Đã xuất nhật ký từ chối ({0} dòng)',
+  'Checked out at {0} · {1} (GPS verified)': 'Đã chấm ra lúc {0} · {1} (đã xác thực GPS)',
+  'GPS: {0} — {1} from zone': 'GPS: {0} — cách vùng {1}',
+  'GPS unavailable — simulated position is within {0} zone ({1}). You may proceed.': 'Không có GPS — vị trí mô phỏng nằm trong vùng {0} ({1}). Bạn có thể tiếp tục.',
+  'GPS unavailable — simulated position is {0} from {1}. Enable GPS or use the simulator buttons.': 'Không có GPS — vị trí mô phỏng cách {1} {0}. Hãy bật GPS hoặc dùng các nút mô phỏng.',
+  'Leave request submitted & signed — {0} working day(s)': 'Đã gửi và ký đơn nghỉ phép — {0} ngày làm việc',
+  'Note saved for {0} — {1}': 'Đã lưu ghi chú cho {0} — {1}',
+  'Showing {0} position on map — {1}m from HQ': 'Đang hiển thị vị trí của {0} trên bản đồ — cách trụ sở {1}m',
+  'Check-out denied — {0}m outside {1}': 'Từ chối chấm ra — cách ranh giới {1} {0}m',
+  'Check-out denied — outside all approved zones': 'Từ chối chấm ra — ở ngoài mọi vùng đã duyệt',
+  'Location: In Zone · {0}': 'Vị trí: Trong vùng · {0}',
+  'Location: {0}m from {1}': 'Vị trí: cách {1} {0}m',
+  'Location: detected': 'Vị trí: đã xác định',
+  'Verified: You are at {0} ({1} from centre · Real GPS) — ready to check in': 'Đã xác thực: Bạn đang ở {0} (cách tâm {1} · GPS thật) — sẵn sàng chấm vào',
+  'Verified: You are at {0} ({1} from centre) — ready to check in': 'Đã xác thực: Bạn đang ở {0} (cách tâm {1}) — sẵn sàng chấm vào',
+
+  'Checked out at {0}': 'Đã chấm ra lúc {0}',
+  'Checked out at {0}. Select your location to check in again.': 'Đã chấm ra lúc {0}. Hãy chọn vị trí để chấm vào lần nữa.',
+
+>>>>>>> origin/main
 };

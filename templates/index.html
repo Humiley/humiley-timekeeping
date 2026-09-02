@@ -4448,7 +4448,7 @@ async function _tkDoCheckout(t, otHours, otReason) {
   if (btnOut) { btnOut.disabled = true; btnOut.style.background = '#e2e8f0'; btnOut.style.color = '#94a3b8'; btnOut.style.cursor = 'not-allowed'; }
   const sel = document.getElementById('ci-zone-select'); if (sel) sel.disabled = false;
   const status = document.getElementById('ci-verify-status');
-  if (status) status.innerHTML = 'Checked out at ' + t + '. Select your location to check in again.';
+  if (status) status.innerHTML = _tp('Checked out at {0}. Select your location to check in again.', t);
   if (typeof toast === 'function') {
     if (otHours && otHours > 0) toast(_t2('Checked out at ', 'Đã chấm công ra lúc ') + t + _t2(' · overtime ', ' · tăng ca ') + otHours + _t2('h requested (pending approval)', ' giờ đã gửi duyệt (chờ phê duyệt)'), undefined, 5500);
     else toast(_t2('Checked out at ' + t, 'Đã chấm công ra lúc ' + t));
@@ -4527,7 +4527,7 @@ function tkRenderCheckin() {
   const hero = document.getElementById('ci-hero-status');
   if (hero) {
     if (_checkedIn || (todayRow && (todayRow.in || todayRow.clock_in) && !(todayRow.out || todayRow.clock_out))) hero.innerHTML = '● Checked in' + (todayRow && (todayRow.in || todayRow.clock_in) ? ' since ' + (todayRow.in || todayRow.clock_in) : '');
-    else if (todayRow && (todayRow.out || todayRow.clock_out)) hero.textContent = 'Checked out at ' + (todayRow.out || todayRow.clock_out);
+    else if (todayRow && (todayRow.out || todayRow.clock_out)) hero.textContent = _tp('Checked out at {0}', (todayRow.out || todayRow.clock_out));
     else hero.textContent = 'Not checked in';
   }
   // KPI strip — week / month / year (selectable)
@@ -5458,6 +5458,25 @@ function _t(x) {
     }
     return x;
   } catch (e) { return x; }
+}
+
+/* A message with a value in it cannot be translated by concatenation.
+   toast('Checked in at ' + t) hands _t() a string built at runtime, so it never matches a key no
+   matter how complete the dictionary is — and splitting it into _t('Checked in at ') + t only
+   works because English happens to put the value last. Vietnamese does not always: "cách {1} {0}m"
+   puts the distance and the landmark the other way round, and fragment concatenation cannot
+   express that.
+
+   So the whole sentence is the key, and the values are placed by the TRANSLATION:
+     _tp('Check-out denied — {0}m outside {1}', dist, name)
+     'Từ chối chấm ra — cách ranh giới {1} {0}m'
+   A value that is absent leaves its placeholder visible rather than printing "undefined". */
+function _tp(s, ...vals) {
+  try {
+    return String(_t(s)).replace(/\{(\d+)\}/g, function (m, i) {
+      return vals[i] === undefined || vals[i] === null ? m : String(vals[i]);
+    });
+  } catch (e) { return s; }
 }
 /* Inline bilingual pair — returns the Vietnamese line when the UI is in VN, else English. */
 function _t2(en, vn) { try { return (typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? (vn || en) : en; } catch (e) { return en; } }
@@ -12645,7 +12664,7 @@ async function tkClaimSave() {
   const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, claimType: claimKind, travelId: travelId, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   const _billFiles = items.filter(it => it.attachment).map(it => ({ name: (it.category || 'bill') + (it.attachmentName ? ' — ' + it.attachmentName : ''), url: it.attachment, type: '' }));
   if (_billFiles.length) {
-    toast('Combining the claim + ' + _billFiles.length + ' bill(s) into one PDF…', 'info', 2500);
+    toast(_tp('Combining the claim + {0} bill(s) into one PDF…', _billFiles.length), 'info', 2500);
     const rows = [['Claim', title], ['Requested by', body.name], ['Department', body.dept], ['Type', claimKind], ['Items', String(items.length)], ['Total', _PAY_FMT(total)]].concat(items.map((it, i) => ['Item ' + (i + 1), (it.category || '') + ' — ' + _PAY_FMT(it.amount) + (it.note ? ' (' + it.note + ')' : '')]));
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Expense Claim', rows, title + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _billFiles);
     if (pdf && pdf.complete) { body.attachment = pdf.data; body.attachmentName = 'Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) + '.pdf'; }
@@ -27324,7 +27343,7 @@ function pmRenderQuality(pid) {
     (_pmSeeAll() && itp.length > 1
       ? '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="pmItpRenumber(\'' + pid + '\')" title="' +
         _tkEscA(_t('Close the gaps so the register reads 1, 2, 3 …')) + '">' +
-        _t('Renumber 1…' + itp.length) + '</button>'
+        _tp('Renumber 1…{0}', itp.length) + '</button>'
       : ''));
   _pmSet(kpis + tbl + _pmItpTimeline(itp) + itpTbl);
 }
@@ -33033,7 +33052,7 @@ async function engTakeBaseline(pid) {
   try {
     const res = await tkApi('/api/eng/baseline', { method: 'POST', body: { projectId: pid, reason: String(reason).trim() } });
     try { tkAudit('Design baseline taken', p.name || '', String(reason).trim()); } catch (e) { }
-    toast('Baseline taken — ' + (res.dated || 0) + ' of ' + (res.count || 0) + ' deliverables carry a planned date', 'success', 7000);
+    toast(_tp('Baseline taken — {0} of {1} deliverables carry a planned date', (res.dated || 0), (res.count || 0)), 'success', 7000);
     try { delete _HR.eng_baselines; } catch (e) { }
     await _engNeed(['eng_baselines']);
     engTab('overview');
@@ -34802,7 +34821,7 @@ function engCompetenceSign(id) {
     onDone: (saved) => {
       if (saved) Object.assign(c, saved);
       try { tkAudit('Design competence authorised', c.person || '', c.scope || ''); } catch (e) { }
-      toast('Authorised — ' + (c.person || '') + ' may check ' + (c.scope || ''), 'success', 6000);
+      toast(_tp('Authorised — {0} may check {1}', (c.person || ''), (c.scope || '')), 'success', 6000);
       try { _engReload(); } catch (e) { }
     }
   });
@@ -35118,7 +35137,7 @@ function engRefusalsCSV(pid) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = 'Refusals_' + (p.code || p.name || 'design').replace(/[^A-Za-z0-9]+/g, '_') + '_' + _engToday() + '.csv';
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-    toast('Refusal log exported (' + rows.length + ' rows)', 'success');
+    toast(_tp('Refusal log exported ({0} rows)', rows.length), 'success');
   } catch (e) { toast('Export failed: ' + _errMsg(e), 'error', 6000); }
 }
 /* ── END ENG REFUSAL LOG ── */
@@ -39377,6 +39396,72 @@ async function ahuRenderUnits() {
     '</tr></thead><tbody>' + rows + '</tbody></table></div>');
 }
 
+/* ───────────────────────── Handover pack, per ORDER ─────────────────────────
+   A customer buys an order; until now every screen answered per unit, so reviewing a package of
+   eight meant opening eight dossiers and holding the result in your head.
+
+   The verdict is drawn in three states, never two. READY and NOT READY are the obvious pair;
+   NOTHING_TO_REVIEW — an order with no units registered against it — is its own state because it is
+   somebody else's problem entirely. Painting it red alongside a unit stuck at framing would send the
+   production lead to look at a sales gap.
+
+   There is deliberately no progress bar and no percentage here: seven finished units and one stuck
+   is not 87% of a handover, and a bar is exactly the thing a reader rounds up. */
+async function ahuOrderPack(id) {
+  const box = document.getElementById('ahu-order-pack'); if (!box) return;
+  box.innerHTML = _ahuCard('<div style="color:var(--text-light);font-size:12.5px">Checking the ' +
+    'whole order…</div>') + '<div style="height:12px"></div>';
+  let d;
+  try { d = await tkApi('/api/ahu/order/' + encodeURIComponent(id) + '/pack'); }
+  catch (e) {
+    box.innerHTML = _ahuCard('<div style="color:#C00000;font-size:12.5px">Could not build the ' +
+      'handover pack: ' + _ahuEsc(e.message) + '</div>') + '<div style="height:12px"></div>';
+    return;
+  }
+  const st = d.status;
+  const tone = st === 'READY' ? '#00B060' : (st === 'NOTHING_TO_REVIEW' ? '#A16207' : '#DC2626');
+  const headline = st === 'READY' ? 'Ready to hand over'
+    : st === 'NOTHING_TO_REVIEW' ? 'Nothing to review'
+      : 'Not ready to hand over';
+
+  const unitRow = u => '<tr>' +
+    '<td style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' +
+    _ahuEsc(u.pin || u.unitId || '—') + '</td>' +
+    '<td>' + _ahuEsc(u.tag || '') + '</td>' +
+    '<td style="font-size:12px;color:var(--text-light)">' +
+    _ahuEsc(u.stageTitle || ('Stage ' + (u.stage || 1))) + '</td>' +
+    '<td>' + (u.ready ? _ahuBadge('Ready', '#00B060')
+      : _ahuBadge(u.blockers.length + ' blocker(s)', '#DC2626')) + '</td>' +
+    '<td style="font-size:11.5px;color:var(--text-light);line-height:1.5">' +
+    (u.blockers.length ? _ahuEsc(u.blockers.join(' ')) : '—') + '</td></tr>';
+
+  box.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+    '<div><span style="font-weight:800;color:' + tone + ';font-size:15px">' + _ahuEsc(headline) + '</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)"> — ' +
+    _ahuEsc((d.order || {}).poNumber || id) +
+    // The count the verdict was computed OVER, next to the verdict: "ready" over nothing is the
+    // failure this whole module is written around.
+    ', over ' + _ahuEsc(d.unitCount) + ' unit(s)</span></div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" ' +
+    'onclick="document.getElementById(\'ahu-order-pack\').innerHTML=\'\'">Close</button></div>' +
+    (d.why && d.why.length
+      ? '<div style="border-left:3px solid ' + tone + ';padding:7px 11px;margin-bottom:10px;' +
+        'background:var(--soft-bg);border-radius:0 7px 7px 0">' +
+        '<div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px">' +
+        'What is holding it</div><ul style="margin:0;padding-left:17px;font-size:11.5px;' +
+        'line-height:1.6;color:var(--text)">' +
+        d.why.map(w => '<li>' + _ahuEsc(w) + '</li>').join('') + '</ul></div>'
+      : '') +
+    (d.units && d.units.length
+      ? '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:640px;font-size:12px">' +
+        '<thead><tr><th>PIN</th><th>Tag</th><th>Stage</th><th>State</th><th>Blockers</th></tr></thead>' +
+        '<tbody>' + d.units.map(unitRow).join('') + '</tbody></table></div>'
+      : '') +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:9px;line-height:1.5">' +
+    _ahuEsc(d.note) + '</div>') + '<div style="height:12px"></div>';
+}
+
 /* ───────────────────────── Orders & contracts ───────────────────────── */
 async function ahuRenderOrders() {
   const root = document.getElementById('ahu-orders-root'); if (!root) return;
@@ -39405,11 +39490,15 @@ async function ahuRenderOrders() {
       '<td>' + reviewed + '</td>' +
       '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_orders\',\'' +
       _ahuA(o.id) + '\')">Edit</button>' +
+      // The order-level question, on the order-level screen. Available whatever the unit count —
+      // an order with none registered is a real answer, not a reason to hide the button.
+      '<button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:5px" onclick="ahuOrderPack(\'' +
+      _ahuA(o.id) + '\')">Handover check</button>' +
       (o.contractReviewSigned ? '' :
         '<button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:5px" onclick="ahuSignOrder(\'' +
         _ahuA(o.id) + '\')">' + tkIcon('check', 12) + ' Sign review</button>') + '</td></tr>';
   }).join('');
-  root.innerHTML = _ahuCard(
+  root.innerHTML = '<div id="ahu-order-pack"></div>' + _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
     '<div style="font-weight:800;color:var(--navy)">' + orders.length + ' order(s)</div>' + add + '</div>' +
     '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:820px"><thead><tr>' +
@@ -42222,7 +42311,8 @@ async function doCheckout() {
       const nearest = _DEMO_ZONES.map(z => ({
         name: z.name, dist: Math.round(_haversineMetres(lat, lon, z.lat, z.lon))
       })).sort((a,b) => a.dist - b.dist)[0];
-      toast('Check-out denied — ' + (nearest ? nearest.dist + 'm outside ' + nearest.name : 'outside all approved zones'), 'error', 7000);
+      toast(nearest ? _tp('Check-out denied — {0}m outside {1}', nearest.dist, nearest.name)
+                             : _t('Check-out denied — outside all approved zones'), 'error', 7000);
       _updateCheckinGpsBadge(lat, lon, false, nearest ? nearest.dist + 'm from ' + nearest.name : 'Outside zone');
       if (btn) { btn.disabled = false; btn.textContent = 'Check Out'; }
       return;
@@ -42241,7 +42331,7 @@ async function doCheckout() {
       rec.hrs = Math.floor(totalMin/60) + 'h ' + (totalMin%60) + 'm';
       filterTable();
     }
-    toast('Checked out at ' + outStr + ' · ' + geo.zone + ' (GPS verified)');
+    toast(_tp('Checked out at {0} · {1} (GPS verified)', outStr, geo.zone));
   };
 
   /* Demo check-out — always succeeds, uses cached GPS if available */
@@ -42258,7 +42348,7 @@ async function doCheckout() {
     if (_lastGpsLat !== null) { setTimeout(() => _applyGpsFix(_lastGpsLat, _lastGpsLon, 50), 100); }
     else { const btnIn = document.getElementById('btn-checkin'); if (btnIn) { btnIn.disabled = false; } }
     _showCheckinMsg('Checked out at <strong>' + outStr + '</strong>', 'ok');
-    toast('Checked out at ' + outStr);
+    toast(_tp('Checked out at {0}', outStr));
   };
   if (_lastGpsLat !== null) { _finishOut(_lastGpsLat, _lastGpsLon); return; }
   if (navigator.geolocation) {
@@ -42416,7 +42506,7 @@ function simGPS(lat, lon, label, dist) {
   _setLocationLabel(lat, lon, label);
   // Move the live SVG map marker
   _updateMapMarker(lat, lon, inZone);
-  toast('GPS: ' + label + ' — ' + dist + ' from zone');
+  toast(_tp('GPS: {0} — {1} from zone', label, dist));
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -42446,7 +42536,9 @@ function verifyCurrentLocation() {
         if (badgeEl) { badgeEl.textContent = 'Detected'; badgeEl.style.background='#205090'; badgeEl.style.color='#fff'; }
       }
     }
-    toast('Location: ' + (r.inZone ? 'In Zone · ' + r.geo.zone : (r.nearest ? r.nearest.dist + 'm from ' + r.nearest.name : 'detected')), r.inZone ? 'success' : undefined, 4000);
+    toast(r.inZone ? _tp('Location: In Zone · {0}', r.geo.zone)
+      : (r.nearest ? _tp('Location: {0}m from {1}', r.nearest.dist, r.nearest.name)
+      : _t('Location: detected')), r.inZone ? 'success' : undefined, 4000);
   }, err => {
     if (btn){btn.disabled=false;btn.innerHTML=origHTML;}
     toast(err.code===1 ? 'Allow GPS in browser settings' : 'GPS unavailable — try again', 'error', 5000);
@@ -42481,7 +42573,8 @@ function verifyAtZone(zoneName, zoneLat, zoneLon, zoneRadius) {
       /* show real address for confirmed location */
       _setLocationLabel(lat, lon, '' + zoneName);
       _updateMapMarker(lat, lon, true);
-      toast('Verified: You are at ' + zoneName + ' (' + distStr + ' from centre' + (isRealGPS ? ' · Real GPS' : '') + ') — ready to check in', undefined, 5000);
+      toast(isRealGPS ? _tp('Verified: You are at {0} ({1} from centre · Real GPS) — ready to check in', zoneName, distStr)
+                      : _tp('Verified: You are at {0} ({1} from centre) — ready to check in', zoneName, distStr), undefined, 5000);
     } else {
       // Not at this zone — show address of actual location + distance
       _updateMapMarker(lat, lon, false);
@@ -42505,9 +42598,9 @@ function verifyAtZone(zoneName, zoneLat, zoneLon, zoneRadius) {
         const inZone  = distM <= zoneRadius;
         const distStr = distM >= 1000 ? (distM / 1000).toFixed(1) + 'km' : distM + 'm';
         if (inZone) {
-          toast('GPS unavailable — simulated position is within ' + zoneName + ' zone (' + distStr + '). You may proceed.', undefined, 5000);
+          toast(_tp('GPS unavailable — simulated position is within {0} zone ({1}). You may proceed.', zoneName, distStr), undefined, 5000);
         } else {
-          toast('GPS unavailable — simulated position is ' + distStr + ' from ' + zoneName + '. Enable GPS or use the simulator buttons.', 'error', 5000);
+          toast(_tp('GPS unavailable — simulated position is {0} from {1}. Enable GPS or use the simulator buttons.', distStr, zoneName), 'error', 5000);
         }
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -43702,7 +43795,7 @@ async function submitLeave() {
       if (tabs[0]) { const cur = parseInt(tabs[0].textContent.match(/\d+/)?.[0] || '0'); tabs[0].textContent = 'Pending (' + (cur + 1) + ')'; }
       closeModal('leaveModal');
       setTimeout(() => { switchLeaveTab('pending', document.querySelector('#leave-tabs .tab')); }, 100);
-      toast('Leave request submitted & signed — ' + days + ' working day(s)');
+      toast(_tp('Leave request submitted & signed — {0} working day(s)', days));
     }
   });
 }
@@ -47411,7 +47504,7 @@ function submitNote() {
   const action = document.getElementById('note-action')?.value;
   if (!note) { toast('Please enter a note', 'warn'); return; }
   closeModal('noteModal');
-  toast('Note saved for ' + emp + ' — ' + action);
+  toast(_tp('Note saved for {0} — {1}', emp, action));
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -47430,7 +47523,7 @@ function viewAnomalyOnMap(lat, lon, empName) {
     _setLocationLabel(lat, lon, '' + empName);
     const gpsBadge = document.getElementById('gps-status-badge');
     if (gpsBadge) { gpsBadge.textContent = inZ?'● In Zone':'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Outside Zone'; gpsBadge.className = inZ?'badge b-ok':'badge b-danger'; }
-    toast('Showing ' + empName + ' position on map — ' + Math.round(distM) + 'm from HQ');
+    toast(_tp('Showing {0} position on map — {1}m from HQ', empName, Math.round(distM)));
   }, 150);
 }
 
