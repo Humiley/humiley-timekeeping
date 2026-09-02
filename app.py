@@ -16786,12 +16786,21 @@ class Handler(BaseHTTPRequestHandler):
                              "the signed figures, never from a draft." % ym, 400)
 
         region = str(db.get_setting("portal_siRegion", "") or "I").strip().upper() or "I"
+        # A company that has been told a different base salary by its social insurance office sets
+        # it here and it wins. Absent, the DECREE in force for the period decides — not whichever
+        # figure was newest when statutory.py was written, which is what a module-level constant
+        # meant and why a June 2024 return was capped on July 2024's number.
         try:
-            base_salary = int(db.get_setting("portal_baseSalary", "") or statutory.BASE_SALARY)
+            base_salary = int(db.get_setting("portal_baseSalary", "") or 0) or None
         except (TypeError, ValueError):
-            base_salary = statutory.BASE_SALARY
+            base_salary = None
+        # The first of the month being declared. These decrees take effect on the first, so the
+        # first day of the period is the day that decides which one governed it — and it is the
+        # PERIOD's day, never today: a return refiled next year must produce the same figures.
+        on_date = ym + "-01"
         lines = run.get("lines") or []
-        contrib = statutory.contributions(lines, region=region, base_salary=base_salary)
+        contrib = statutory.contributions(lines, region=region, on_date=on_date,
+                                          base_salary=base_salary)
         pit = statutory.pit_summary(lines)
         return self._json({"ok": True, "period": run.get("period") or ym, "ym": ym,
                            "contributions": contrib, "pit": pit,
