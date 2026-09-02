@@ -79,6 +79,7 @@ import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import gl               # the general ledger: what balances, what posts, what closes (pure)
+import gl_reconcile     # do the registers and the books agree, and what is missing (pure)
 import subcontract_journal   # the obligation a subcontractor's certificate creates (pure)
 import sales_journal    # the entries a certified claim, a receipt and a credit note make (pure)
 import purchase_journal # the entries a PAID payment request makes — cash out (pure)
@@ -17905,6 +17906,7 @@ class Handler(BaseHTTPRequestHandler):
             "warnings": lambda d: sales_journal.application_warnings(d),
             "label": lambda d: "Claim %s" % (d.get("appNo") or d.get("id") or ""),
             "detail": lambda d: _money_vnd(float(d.get("certifiedThis") or 0)),
+            "amount": lambda d: float(d.get("certifiedThis") or 0),
             "not_ready": "Only a CERTIFIED claim posts. A draft is a proposal, and a claim is "
                          "certified by e-signature — that signature is what makes it revenue.",
         },
@@ -17915,6 +17917,7 @@ class Handler(BaseHTTPRequestHandler):
             "warnings": lambda d: [],
             "label": lambda d: "Receipt %s" % (d.get("receiptNo") or d.get("id") or ""),
             "detail": lambda d: _money_vnd(float(d.get("amount") or 0)),
+            "amount": lambda d: float(d.get("amount") or 0),
             "not_ready": "",
         },
         gl.PURCHASE: {
@@ -17927,6 +17930,7 @@ class Handler(BaseHTTPRequestHandler):
             "label": lambda d: "Payment %s" % (d.get("reqNo") or d.get("id") or ""),
             "detail": lambda d: "%s · %s" % (_money_vnd(float(d.get("amount") or 0)),
                                              d.get("category") or "-"),
+            "amount": lambda d: float(d.get("amount") or 0),
             "not_ready": "Only a PAID payment posts. An approved request is a commitment; the money "
                          "has not left, and the disbursement is e-signed with a bank slip — that "
                          "signature is what makes it a cash movement.",
@@ -17945,6 +17949,7 @@ class Handler(BaseHTTPRequestHandler):
             "label": lambda d: "Subcontract certificate %s" % (d.get("certNo") or d.get("id") or ""),
             "detail": lambda d: "%s · %s" % (_money_vnd(float(d.get("grossClaimed") or 0)),
                                              d.get("pkgNo") or "no package"),
+            "amount": lambda d: float(d.get("grossClaimed") or 0),
             "not_ready": "Only a CERTIFIED or PAID certificate posts. A submitted one is the "
                          "subcontractor's claim, not our liability — the same rule the sell side "
                          "applies to an uncertified application.",
@@ -17956,6 +17961,7 @@ class Handler(BaseHTTPRequestHandler):
             "warnings": lambda d: [],
             "label": lambda d: "Credit note %s" % (d.get("creditNo") or d.get("id") or ""),
             "detail": lambda d: _money_vnd(float(d.get("creditThis") or d.get("value") or 0)),
+            "amount": lambda d: float(d.get("creditThis") or d.get("value") or 0),
             "not_ready": "Only an ISSUED credit note posts — a draft has not been given to anybody.",
         },
     }
@@ -18025,17 +18031,39 @@ class Handler(BaseHTTPRequestHandler):
         # WHAT THIS MONTH STILL OWES THE LEDGER. A trial balance is correct about the entries it has
         # and silent about the ones nobody posted, so "the books are complete" is precisely the claim
         # it cannot make. The unposted list sits beside it and makes that claim checkable.
-        posted = {(b["source"], b["source_id"]) for b in db.gl_batches(period=period)
-                  if b["kind"] == gl.POST}
+        # A document that has been POSTED stays out of the "not in the ledger" list, whether or not
+        # its posting was later reversed — `gl_batches` carries a UNIQUE (source, source_id, kind),
+        # so a reversed document can never be posted again and offering it a Post button would be
+        # offering an action that cannot succeed.
+        #
+        # But it is not in the books either. A reversal takes the money back out and leaves the
+        # month short by the document's whole value, with nothing on any screen saying so — the one
+        # action that exists to CORRECT a posting made the document invisible. So it is reported
+        # HERE, in its own list, as what it actually is: reversed out, and not coming back without
+        # a manual journal.
+        _batches = db.gl_batches(period=period)
+        posted = {(b["source"], b["source_id"]) for b in _batches if b["kind"] == gl.POST}
+        _reversed_ids = {(b["source"], b["source_id"]) for b in _batches if b["kind"] == gl.REVERSE}
+        reversed_out = [
+            {"source": b["source"], "sourceId": b["source_id"],
+             "label": gl.SOURCES.get(b["source"], b["source"]),
+             "memo": b.get("memo") or "", "batch": b["id"],
+             "amount": float(b.get("debit") or 0),
+             "postedBy": b.get("posted_by") or "", "at": b.get("posted_at") or ""}
+            for b in _batches if b["kind"] == gl.REVERSE]
         pending = []
         for r in db.list_collection("payruns"):
             rp = str(r.get("period") or "").strip()
             if (rp == period and "final" in str(r.get("status") or "").lower()
                     and (r.get("lines") or [])
                     and (gl.PAYRUN, "payrun:" + rp) not in posted):
+                _gross = sum(float((l.get("calc") or {}).get("grossPay") or l.get("gross") or 0)
+                             for l in (r.get("lines") or []))
                 pending.append({"source": gl.PAYRUN, "sourceId": "payrun:" + rp,
                                 "label": "Payroll %s" % rp,
-                                "detail": "%d employee(s)" % len(r.get("lines") or [])})
+                                "detail": "%d employee(s) · %s"
+                                          % (len(r.get("lines") or []), _money_vnd(_gross)),
+                                "amount": _gross})
                 break
 
         # The sell side, document by document. A claim, a receipt and a credit note each belong to
@@ -18055,6 +18083,7 @@ class Handler(BaseHTTPRequestHandler):
                 pending.append({"source": src, "sourceId": sid, "id": d.get("id"),
                                 "label": spec["label"](_d), "detail": spec["detail"](_d),
                                 "warnings": spec["warnings"](_d),
+                                "amount": (spec["amount"](_d) if spec.get("amount") else 0.0),
                                 # Why it will not post, from the same check the posting runs. A
                                 # screen saying "could not post" and not why sends somebody to the
                                 # accountant with no question to ask.
@@ -18062,9 +18091,80 @@ class Handler(BaseHTTPRequestHandler):
                                             if src == gl.SUBCERT else "")})
 
 
+        # ── DO THE REGISTERS AND THE BOOKS AGREE ────────────────────────────────────────────
+        # The unposted list asks "what has not been posted" one document at a time. This asks the
+        # same question from the other end: the subcontract registers hold an obligation, 331 and
+        # 3388 hold the accounts, and the two state the same money. They agree to the dong when
+        # nothing is missing — so a difference is a list of documents, not a number to explain.
+        #
+        # It lives HERE and not on the QS screen because it reads ledger balances, and the ledger
+        # is management-level while the QS module is manager-level. Putting account balances on a
+        # manager's screen would widen who can see the company's books, which is not this
+        # feature's decision to make.
+        _sub_certs = [c for c in db.list_collection("pm_procurement_payments")
+                      if str(c.get("status") or "").strip().lower() in qsurvey.SUB_OWED]
+        _reg_gross = qsurvey.r2(sum(qsurvey._num(c.get("grossClaimed")) for c in _sub_certs))
+        _reg_ret = qsurvey.r2(sum(qsurvey._num(c.get("retentionDeducted")) for c in _sub_certs))
+        _sub_acc = self._gl_subcontract_accounts()
+        _cost_acc = str(_sub_acc.get("cost") or subcontract_journal.COST_ACC)
+        _pay_acc = str(_sub_acc.get("payable") or subcontract_journal.PAYABLE_ACC)
+        _ret_acc = str(_sub_acc.get("retention") or subcontract_journal.RETENTION_ACC)
+
+        def _bal(rows_, acc, side):
+            for r in rows_:
+                if str(r.get("account")) == acc:
+                    return float(r.get(side) or 0) - float(r.get("credit" if side == "debit"
+                                                                else "debit") or 0)
+            return 0.0
+
+        # Across EVERY period, not this one. A payable is a balance the company carries forward;
+        # comparing one month's movement against a register that holds the whole job would report
+        # every earlier certificate as missing.
+        _all_rows = gl.trial_balance(db.gl_rows()).get("rows", [])
+        _unposted_subcerts = [{"label": p.get("label"), "amount": p.get("amount"),
+                               "blocked": p.get("blocked") or ""}
+                              for p in pending if p.get("source") == gl.SUBCERT]
+        # A reversed certificate explains a difference exactly as a never-posted one does — the
+        # money is out of the books either way — but the FIX is different, so they are handed over
+        # separately rather than added into one list.
+        _reversed_subcerts = [{"label": r["memo"] or r["sourceId"], "amount": r["amount"]}
+                              for r in reversed_out if r["source"] == gl.SUBCERT]
+        reconcile = gl_reconcile.subcontract_reconciliation({
+            "registerGross": _reg_gross,
+            "registerNet": qsurvey.r2(_reg_gross - _reg_ret),
+            "registerRetention": _reg_ret,
+            "ledgerCost": _bal(_all_rows, _cost_acc, "debit"),
+            "ledgerPayable": _bal(_all_rows, _pay_acc, "credit"),
+            "ledgerRetention": _bal(_all_rows, _ret_acc, "credit"),
+            # Settlements have been DEBITED out of the payable; the register counts everything ever
+            # certified, so they are added back or every payment reads as a discrepancy.
+            "settledOut": max(0.0, _bal(_all_rows, _pay_acc, "debit")),
+            "unposted": _unposted_subcerts,
+            "reversedOut": _reversed_subcerts})
+
+        # WHAT THE MISSING DOCUMENTS ARE WORTH. The list said how MANY and never how much, so
+        # "three documents unposted" read the same whether it was ₫3m or ₫3bn — and the figure a
+        # person closing a month needs is the second one. Totalled per source, because a payroll
+        # run and a subcontractor's certificate are not the same kind of gap.
+        pending_total = round(sum(float(p.get("amount") or 0) for p in pending), 2)
+        pending_by_source = {}
+        for p in pending:
+            k = p.get("source") or ""
+            b = pending_by_source.setdefault(k, {"source": k, "label": gl.SOURCES.get(k, k),
+                                                 "count": 0, "amount": 0.0})
+            b["count"] += 1
+            b["amount"] = round(b["amount"] + float(p.get("amount") or 0), 2)
+
         return self._json({
             "ok": True,
             "period": period,
+            "pendingTotal": pending_total,
+            # Posted, then reversed, and unable to be posted again. Money the books once carried and
+            # now do not, which no screen reported.
+            "reversedOut": reversed_out,
+            "reversedOutTotal": round(sum(r["amount"] for r in reversed_out), 2),
+            "reconciliation": reconcile,
+            "pendingBySource": sorted(pending_by_source.values(), key=lambda b: -b["amount"]),
             "periods": seen,
             "closedPeriods": sorted(closed),
             "closed": period in closed,

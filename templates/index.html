@@ -10403,7 +10403,11 @@ async function tkRenderLedger() {
      make on its own. */
   const pending = (r.pending || []).length
     ? '<div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:3px solid var(--warning)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">' +
       '<div style="font-weight:700;color:var(--navy);font-size:13px">' + _t('Signed, and not in the ledger') + '</div>' +
+      /* The list said how MANY and never how much, so "three documents" read the same whether it
+         was ₫3m or ₫3bn — and the figure somebody closing a month needs is the second one. */
+      '<div style="font-size:15px;font-weight:800;color:var(--warning);font-variant-numeric:tabular-nums">' + _crmEsc(money(r.pendingTotal || 0)) + '</div></div>' +
       '<div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' +
       _t('This period balances on what has been posted. These documents are signed and have not been posted, so the books are not complete yet.') + '</div>' +
       (r.pending || []).map(p =>
@@ -10427,6 +10431,54 @@ async function tkRenderLedger() {
             JSON.stringify(p.source) + ',' + JSON.stringify(p.id || '') + ')">' +
             _t('Post to ledger') + '</button>'
           : '') + '</div>').join('') + '</div>'
+    : '';
+
+  /* A document posted and then reversed is out of the books — and gl_batches carries a UNIQUE
+     (source, source_id, kind), so it can never be posted again. It therefore belongs in NEITHER
+     list above: not in the ledger, and not postable. Reported here as what it actually is, because
+     a reversal used to leave the month short by the document's whole value with nothing anywhere
+     saying so. */
+  const reversedOut = (r.reversedOut || []).length
+    ? '<div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:3px solid var(--danger)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-weight:700;color:var(--navy);font-size:13px">' + _t('Reversed out of the ledger') + '</div>' +
+      '<div style="font-size:15px;font-weight:800;color:var(--danger);font-variant-numeric:tabular-nums">' + _crmEsc(money(r.reversedOutTotal || 0)) + '</div></div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' +
+      _t('These were posted and then reversed. The money is out of the books and they cannot be posted again — correcting them takes a manual journal, not a button.') + '</div>' +
+      (r.reversedOut || []).map(x =>
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px">' +
+        '<div><b>' + _crmEsc(x.label || '') + '</b> <span style="color:var(--text-light)">' + _crmEsc(x.memo || '') + '</span></div>' +
+        '<div style="font-variant-numeric:tabular-nums;white-space:nowrap">' + _crmEsc(money(x.amount || 0)) + '</div></div>').join('') +
+      '</div>'
+    : '';
+
+  /* The registers against the books. The unposted list asks "what has not been posted" one document
+     at a time; this asks the same question from the other end and reports the difference AS the
+     documents that cause it. */
+  const rec = r.reconciliation || {};
+  const recCard = (rec.rows || []).length
+    ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid ' + (rec.agrees ? 'var(--emerald)' : 'var(--danger)') + '">' +
+      '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<div class="card-title">' + _t('The registers against the books') + '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:' + (rec.agrees ? 'var(--emerald)' : 'var(--danger)') + '">' +
+      (rec.agrees ? _t('Agrees') : (_t('Differs by') + ' ' + _crmEsc(money(rec.differenceTotal || 0)))) + '</div></div>' +
+      '<div class="table-wrap"><table style="min-width:600px;font-size:12.5px"><thead><tr>' +
+      '<th style="text-align:left">' + _t('Subcontract obligation') + '</th>' +
+      '<th style="text-align:right">' + _t('Registers') + '</th>' +
+      '<th style="text-align:right">' + _t('Ledger') + '</th>' +
+      '<th style="text-align:right">' + _t('Difference') + '</th></tr></thead><tbody>' +
+      (rec.rows || []).map(x =>
+        '<tr><td>' + _crmEsc(_t2(x.label, x.labelVn)) + ' <span style="color:var(--text-light);font-size:11px">' + _crmEsc(x.account || '') + '</span></td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _crmEsc(money(x.register)) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _crmEsc(money(x.ledger)) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:' + (x.agrees ? 400 : 800) + ';color:' + (x.agrees ? 'var(--text-light)' : 'var(--danger)') + '">' +
+        (x.agrees ? '—' : _crmEsc(money(x.difference))) + '</td></tr>').join('') +
+      '</tbody></table></div>' +
+      ((rec.warnings || []).length
+        ? '<div style="padding:9px 16px;font-size:11.5px;line-height:1.6">' +
+          (rec.warnings || []).map(w => '<div style="color:' + (w.severity === 'high' ? 'var(--danger)' : 'var(--warning)') + '">&#9888; ' + _crmEsc(w.msg) + '</div>').join('') + '</div>'
+        : '') +
+      '<div style="padding:9px 16px;background:var(--soft-bg);font-size:11px;color:var(--text-light);line-height:1.6">' + _crmEsc(rec.note || '') + '</div></div>'
     : '';
 
   const closedBar = r.closed
@@ -10505,7 +10557,7 @@ async function tkRenderLedger() {
     '<div style="flex:1 1 145px;min-width:135px"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' +
     _t('Trial balance') + '</div><div style="font-size:15px;margin-top:2px">' + verdict + '</div></div>' +
     '</div></div>' +
-    closedBar + pending +
+    closedBar + pending + reversedOut + recCard +
     (_glView === 'statements'
       ? '<div id="gl-statements">' + tkSkeleton() + '</div>'
       : (rows
