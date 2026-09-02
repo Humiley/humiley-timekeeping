@@ -13,7 +13,7 @@
    Re-read main immediately before merging and bump again if someone got there first. And verify a
    deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
    against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
-const CACHE = 'hml-pwa-v676';
+const CACHE = 'hml-pwa-v679';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
   '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js',   // self-hosted libs — precache for offline
   // The two weights the document preloads. Poppins came from Google until now, which meant the brand

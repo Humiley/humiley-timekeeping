@@ -39344,6 +39344,72 @@ async function ahuRenderUnits() {
     '</tr></thead><tbody>' + rows + '</tbody></table></div>');
 }
 
+/* ───────────────────────── Handover pack, per ORDER ─────────────────────────
+   A customer buys an order; until now every screen answered per unit, so reviewing a package of
+   eight meant opening eight dossiers and holding the result in your head.
+
+   The verdict is drawn in three states, never two. READY and NOT READY are the obvious pair;
+   NOTHING_TO_REVIEW — an order with no units registered against it — is its own state because it is
+   somebody else's problem entirely. Painting it red alongside a unit stuck at framing would send the
+   production lead to look at a sales gap.
+
+   There is deliberately no progress bar and no percentage here: seven finished units and one stuck
+   is not 87% of a handover, and a bar is exactly the thing a reader rounds up. */
+async function ahuOrderPack(id) {
+  const box = document.getElementById('ahu-order-pack'); if (!box) return;
+  box.innerHTML = _ahuCard('<div style="color:var(--text-light);font-size:12.5px">Checking the ' +
+    'whole order…</div>') + '<div style="height:12px"></div>';
+  let d;
+  try { d = await tkApi('/api/ahu/order/' + encodeURIComponent(id) + '/pack'); }
+  catch (e) {
+    box.innerHTML = _ahuCard('<div style="color:#C00000;font-size:12.5px">Could not build the ' +
+      'handover pack: ' + _ahuEsc(e.message) + '</div>') + '<div style="height:12px"></div>';
+    return;
+  }
+  const st = d.status;
+  const tone = st === 'READY' ? '#00B060' : (st === 'NOTHING_TO_REVIEW' ? '#A16207' : '#DC2626');
+  const headline = st === 'READY' ? 'Ready to hand over'
+    : st === 'NOTHING_TO_REVIEW' ? 'Nothing to review'
+      : 'Not ready to hand over';
+
+  const unitRow = u => '<tr>' +
+    '<td style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' +
+    _ahuEsc(u.pin || u.unitId || '—') + '</td>' +
+    '<td>' + _ahuEsc(u.tag || '') + '</td>' +
+    '<td style="font-size:12px;color:var(--text-light)">' +
+    _ahuEsc(u.stageTitle || ('Stage ' + (u.stage || 1))) + '</td>' +
+    '<td>' + (u.ready ? _ahuBadge('Ready', '#00B060')
+      : _ahuBadge(u.blockers.length + ' blocker(s)', '#DC2626')) + '</td>' +
+    '<td style="font-size:11.5px;color:var(--text-light);line-height:1.5">' +
+    (u.blockers.length ? _ahuEsc(u.blockers.join(' ')) : '—') + '</td></tr>';
+
+  box.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+    '<div><span style="font-weight:800;color:' + tone + ';font-size:15px">' + _ahuEsc(headline) + '</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)"> — ' +
+    _ahuEsc((d.order || {}).poNumber || id) +
+    // The count the verdict was computed OVER, next to the verdict: "ready" over nothing is the
+    // failure this whole module is written around.
+    ', over ' + _ahuEsc(d.unitCount) + ' unit(s)</span></div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" ' +
+    'onclick="document.getElementById(\'ahu-order-pack\').innerHTML=\'\'">Close</button></div>' +
+    (d.why && d.why.length
+      ? '<div style="border-left:3px solid ' + tone + ';padding:7px 11px;margin-bottom:10px;' +
+        'background:var(--soft-bg);border-radius:0 7px 7px 0">' +
+        '<div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px">' +
+        'What is holding it</div><ul style="margin:0;padding-left:17px;font-size:11.5px;' +
+        'line-height:1.6;color:var(--text)">' +
+        d.why.map(w => '<li>' + _ahuEsc(w) + '</li>').join('') + '</ul></div>'
+      : '') +
+    (d.units && d.units.length
+      ? '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:640px;font-size:12px">' +
+        '<thead><tr><th>PIN</th><th>Tag</th><th>Stage</th><th>State</th><th>Blockers</th></tr></thead>' +
+        '<tbody>' + d.units.map(unitRow).join('') + '</tbody></table></div>'
+      : '') +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:9px;line-height:1.5">' +
+    _ahuEsc(d.note) + '</div>') + '<div style="height:12px"></div>';
+}
+
 /* ───────────────────────── Orders & contracts ───────────────────────── */
 async function ahuRenderOrders() {
   const root = document.getElementById('ahu-orders-root'); if (!root) return;
@@ -39372,11 +39438,15 @@ async function ahuRenderOrders() {
       '<td>' + reviewed + '</td>' +
       '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_orders\',\'' +
       _ahuA(o.id) + '\')">Edit</button>' +
+      // The order-level question, on the order-level screen. Available whatever the unit count —
+      // an order with none registered is a real answer, not a reason to hide the button.
+      '<button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:5px" onclick="ahuOrderPack(\'' +
+      _ahuA(o.id) + '\')">Handover check</button>' +
       (o.contractReviewSigned ? '' :
         '<button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:5px" onclick="ahuSignOrder(\'' +
         _ahuA(o.id) + '\')">' + tkIcon('check', 12) + ' Sign review</button>') + '</td></tr>';
   }).join('');
-  root.innerHTML = _ahuCard(
+  root.innerHTML = '<div id="ahu-order-pack"></div>' + _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
     '<div style="font-weight:800;color:var(--navy)">' + orders.length + ' order(s)</div>' + add + '</div>' +
     '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:820px"><thead><tr>' +
