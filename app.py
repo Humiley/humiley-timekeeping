@@ -74,6 +74,7 @@ import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import gl               # the general ledger: what balances, what posts, what closes (pure)
+import subcontract_journal   # the obligation a subcontractor's certificate creates (pure)
 import sales_journal    # the entries a certified claim, a receipt and a credit note make (pure)
 import purchase_journal # the entries a PAID payment request makes — cash out (pure)
 import demo_data         # which rows came from the shipped sample, and which only look like it (pure)
@@ -17569,6 +17570,52 @@ class Handler(BaseHTTPRequestHandler):
             acc = {}
         return acc if isinstance(acc, dict) else {}
 
+    @staticmethod
+    def _gl_subcontract_accounts():
+        """The company's own numbers for subcontract cost and the retention it holds, over
+        subcontract_journal's documented defaults. Whether subcontract cost belongs in 627, 154 or
+        632 is genuinely contestable for a contractor, and guessing on their behalf produces books
+        that look right and are not theirs."""
+        try:
+            acc = db.get_setting("portal_subcontractAccounts") or {}
+            if isinstance(acc, str):
+                acc = json.loads(acc or "{}") or {}
+        except Exception:
+            acc = {}
+        return acc if isinstance(acc, dict) else {}
+
+    @staticmethod
+    def _gl_status_ok(spec, doc):
+        """Whether this document is in a state that posts.
+
+        `status` is a string OR a tuple, because a subcontractor's certificate accrues on
+        certification and STAYS accrued once it is paid — matching one status only would leave
+        every already-paid certificate permanently unposted, and then the payment that settles it
+        would clear a payable nothing ever credited.
+        """
+        want = spec.get("status")
+        if not want:
+            return True
+        have = str(doc.get("status") or "").strip().lower()
+        return have in ((want,) if isinstance(want, str) else tuple(want))
+
+    def _gl_subcert_doc(self, cert):
+        """The certificate with its package's trade attached.
+
+        Resolved HERE and not inside the journal: the journal is pure and takes one document, and
+        the trade lives on pm_procurement. A certificate whose package is missing simply carries no
+        trade, and the journal posts to the default account and says so.
+        """
+        pkg_no = str(cert.get("pkgNo") or "").strip().lower()
+        if not pkg_no:
+            return cert
+        for p in db.list_collection("pm_procurement"):
+            if (str(p.get("pkgNo") or "").strip().lower() == pkg_no
+                    and p.get("projectId") == cert.get("projectId")):
+                return dict(cert, discipline=p.get("discipline") or "",
+                            vendor=cert.get("vendor") or p.get("vendor") or "")
+        return cert
+
     # Each sell-side source: the collection it lives in, the status that makes it postable, the
     # field carrying its own document date, and the function that turns it into entries.
     #
@@ -17609,6 +17656,24 @@ class Handler(BaseHTTPRequestHandler):
                          "has not left, and the disbursement is e-signed with a bank slip — that "
                          "signature is what makes it a cash movement.",
         },
+        # The BUY side's accrual, and the one document that closes the limitation
+        # purchase_journal documented: nothing in the portal booked a payable when an obligation
+        # arose, so there was no 331 balance because nothing credited one.
+        gl.SUBCERT: {
+            "coll": "pm_procurement_payments",
+            # Both, deliberately — see _gl_status_ok. The obligation does not stop existing
+            # because somebody has since paid it.
+            "status": ("certified", "paid"),
+            "dates": ("certDate", "ts"),
+            "entries": lambda d, a: subcontract_journal.entries(d, a),
+            "warnings": lambda d: subcontract_journal.warnings(d),
+            "label": lambda d: "Subcontract certificate %s" % (d.get("certNo") or d.get("id") or ""),
+            "detail": lambda d: "%s · %s" % (_money_vnd(float(d.get("grossClaimed") or 0)),
+                                             d.get("pkgNo") or "no package"),
+            "not_ready": "Only a CERTIFIED or PAID certificate posts. A submitted one is the "
+                         "subcontractor's claim, not our liability — the same rule the sell side "
+                         "applies to an uncertified application.",
+        },
         gl.CREDIT_NOTE: {
             "coll": "sales_credits", "status": "issued",
             "dates": ("issuedOn", "issuedAt", "ts"),
@@ -17639,7 +17704,7 @@ class Handler(BaseHTTPRequestHandler):
         doc = db.get_collection_item(spec["coll"], doc_id)
         if not doc:
             return None, "No such document."
-        if spec["status"] and str(doc.get("status") or "").strip().lower() != spec["status"]:
+        if not self._gl_status_ok(spec, doc):
             return None, spec["not_ready"]
         date = self._gl_doc_date(doc, spec["dates"])
         if not date:
@@ -17649,8 +17714,16 @@ class Handler(BaseHTTPRequestHandler):
         # Each side has its own map: a category means something different on the buy side from a
         # revenue account on the sell side, and one shared dict would let an override for one leak
         # into the other.
-        accounts = (self._gl_purchase_accounts() if source == gl.PURCHASE
-                    else self._gl_sales_accounts())
+        # Each side has its own map, and the subcontract accrual has a third: a category means
+        # something different on the buy side from a revenue account on the sell side, and one
+        # shared dict would let an override for one leak into the other.
+        if source == gl.SUBCERT:
+            accounts = self._gl_subcontract_accounts()
+            doc = self._gl_subcert_doc(doc)
+        elif source == gl.PURCHASE:
+            accounts = self._gl_purchase_accounts()
+        else:
+            accounts = self._gl_sales_accounts()
         try:
             lines = spec["entries"](doc, accounts)
             batch = gl.batch(source, "%s:%s" % (source, doc_id), date, lines,
@@ -17695,7 +17768,7 @@ class Handler(BaseHTTPRequestHandler):
         # says about a period — a claim certified on 2 August for July work is August revenue.
         for src, spec in self.GL_SALES_SOURCES.items():
             for d in db.list_collection(spec["coll"]):
-                if spec["status"] and str(d.get("status") or "").strip().lower() != spec["status"]:
+                if not self._gl_status_ok(spec, d):
                     continue
                 date = self._gl_doc_date(d, spec["dates"])
                 if not date or date[:7] != period:
@@ -17703,9 +17776,15 @@ class Handler(BaseHTTPRequestHandler):
                 sid = "%s:%s" % (src, d.get("id"))
                 if (src, sid) in posted:
                     continue
+                _d = self._gl_subcert_doc(d) if src == gl.SUBCERT else d
                 pending.append({"source": src, "sourceId": sid, "id": d.get("id"),
-                                "label": spec["label"](d), "detail": spec["detail"](d),
-                                "warnings": spec["warnings"](d)})
+                                "label": spec["label"](_d), "detail": spec["detail"](_d),
+                                "warnings": spec["warnings"](_d),
+                                # Why it will not post, from the same check the posting runs. A
+                                # screen saying "could not post" and not why sends somebody to the
+                                # accountant with no question to ask.
+                                "blocked": (subcontract_journal.check(_d)
+                                            if src == gl.SUBCERT else "")})
 
 
         return self._json({

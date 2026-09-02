@@ -10383,8 +10383,11 @@ async function tkRenderLedger() {
         ((p.warnings || []).length
           ? '<div style="font-size:11.5px;color:var(--warning);margin-top:3px">' +
             (p.warnings || []).map(w => '&#9888; ' + _crmEsc(w)).join('<br>') + '</div>'
+          : '') +
+        (p.blocked
+          ? '<div style="font-size:11.5px;color:var(--danger);margin-top:3px;font-weight:600">&#10007; ' + _crmEsc(p.blocked) + '</div>'
           : '') + '</div>' +
-        (canPost && !r.closed
+        (canPost && !r.closed && !p.blocked
           /* Payroll posts by PERIOD (one run a month); a claim, a receipt or a credit note posts by
              ID, because there are many in a month and each carries its own date. The server derives
              the period from that date either way — this only says WHICH document. */
@@ -12958,7 +12961,7 @@ function tkTravelDecision(id, status) {
 function tkTCDecision(id, status) { return tkInboxClaim(id, status); }
 
 /* ════════ Payment Requests — request / approve / pay register (operations & purchasing) ════════ */
-const _PAY_CATS = ['Operating expense', 'Purchase — Goods', 'Purchase — Service', 'Utilities', 'Rent / Lease', 'Repair / Maintenance', 'Logistics / Freight', 'Subcontractor', 'Marketing', 'Travel-related', 'Tax / Statutory', 'Other'];
+const _PAY_CATS = ['Operating expense', 'Purchase — Goods', 'Purchase — Service', 'Utilities', 'Rent / Lease', 'Repair / Maintenance', 'Logistics / Freight', 'Subcontractor', 'Subcontract settlement', 'Marketing', 'Travel-related', 'Tax / Statutory', 'Other'];
 const _PAY_METHODS = ['Bank transfer', 'Cash', 'Company card', 'Cheque'];
 const _payCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : 'b-warn';
 function _payNextNo() {

@@ -40,6 +40,11 @@ CATEGORY_ACC = {
     "Repair / Maintenance": "642",    # 627 if the plant being repaired is production
     "Logistics / Freight": "641",     # CONTESTABLE: freight-in is often capitalised into 156
     "Subcontractor": "627",           # CONTESTABLE: many contractors use 632 or 154
+    # Settling a subcontract certificate that has ALREADY accrued. It clears the payable that
+    # subcontract_journal credited; it does not recognise the cost, because the certificate did
+    # that when the obligation arose. Chosen by a person: no field links a payment request to a
+    # certificate, and guessing here debits the wrong account for real money.
+    "Subcontract settlement": "331",
     "Marketing": "641",               # Chi phí bán hàng
     "Travel-related": "642",
     "Tax / Statutory": "3339",        # Thuế khác — which tax matters, so this is usually overridden
@@ -137,6 +142,11 @@ def warnings(payment, accounts=None):
                    "portal accrues it first, so until a settlement is booked as a liability this "
                    "leaves 334 with a debit balance — which the balance sheet shows in red rather "
                    "than tidying away.")
+    if cat == "Subcontract settlement":
+        out.append("This clears the payable a subcontractor's certificate accrued (331). It does "
+                   "NOT recognise cost — the certificate did that. If no certificate was posted "
+                   "for this work, 331 goes into debit and the cost is missing from the accounts "
+                   "entirely; the balance sheet shows that in red rather than tidying it away.")
     if cat == "Purchase — Goods":
         out.append("Goods bought for resale are posted to stock (156), not to expense. They reach "
                    "the profit and loss when they are sold, which nothing in the portal records "
