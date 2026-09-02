@@ -2657,6 +2657,80 @@ def _hrsp_put(sub_dirs, filename, raw, ctype):
     return (it or {}).get("webUrl") or ""
 
 
+def _hrsp_name(ref, filename, fallback="document.pdf"):
+    """A file name that cannot collide inside a shared library.
+
+    _hrsp_put hands _sp_safe_leaf an EMPTY id, and that is precisely the branch which does not
+    prefix a content hash — while Graph's default on PUT is replace. Two candidates who both
+    upload the file their laptop called "cv.pdf" would otherwise finish as one file in the folder
+    with two records linking to whichever landed last. Every caller here therefore passes the
+    record's own reference (a document code, a decision number, a candidate id) and it becomes
+    part of the name.
+    """
+    base = os.path.basename(str(filename or "").replace("\\", "/")).strip() or fallback
+    ref = re.sub(r"[\\/:*?\"<>|]+", "_", str(ref or "").strip()).strip(" .-")[:40]
+    return (ref + " - " + base) if ref else base
+
+
+def _hrsp_file(sub_dirs, filename, data_uri):
+    """File one data: URI into the HR library. Returns (webUrl, error) and NEVER raises.
+
+    Every caller has already written its record by the time this runs, so a SharePoint outage has
+    to cost the filing and nothing else — a policy that published, or a decision that issued, must
+    not be undone because a folder link is stale.
+
+    The data: pattern is the tolerant one on purpose. jsPDF emits
+    "data:application/pdf;filename=generated.pdf;base64,..." and the strict form used elsewhere in
+    this file refuses it, which would look exactly like an unreadable upload for the two families
+    whose PDF is drawn in the browser.
+    """
+    m = re.match(r"^data:([^;,]+);(?:[^,]*;)?base64,(.*)$", str(data_uri or ""), re.S)
+    if not m:
+        return "", "That file could not be read."
+    try:
+        b64 = m.group(2)
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+    except Exception:
+        return "", "That file could not be read."
+    if not raw:
+        return "", "That file is empty."
+    if len(raw) > _INVTRACK_FILE_MAX:
+        return "", ("That file is too large to file in SharePoint (limit %d MB)."
+                    % (_INVTRACK_FILE_MAX // (1024 * 1024)))
+    try:
+        return (_hrsp_put(sub_dirs, filename, raw, m.group(1) or "application/pdf") or ""), ""
+    except Exception as e:
+        return "", (_graph_err_text(e)[:200] or "SharePoint refused the upload.")
+
+
+def _hrdoc_file_to_sp(item):
+    """Give a published policy a home in the HR library.
+
+    A company policy lives in the portal as a base64 blob on one row, which means the document of
+    record exists in exactly one place nobody can browse. This files a COPY and records the link in
+    `fileUrl` — the field _hrdoc_has_file, the acknowledgement gate in _coll_add and the browser's
+    tkOnbOpen all already read, and which _coll_list already declines to blank.
+
+    It deliberately does NOT delete the bytes afterwards, unlike the JD filer. Three separate
+    readers decide whether a document is signable by looking for them, and a SharePoint link
+    inherits the LIBRARY's permissions rather than the document's own audience — so the portal goes
+    on serving the audience-scoped copy and the library is an archive, not the only copy.
+    """
+    data = str(item.get("file") or "")
+    if not data.startswith("data:"):
+        return
+    year = str(item.get("effectiveFrom") or "")[:4]
+    if not (len(year) == 4 and year.isdigit()):
+        year = time.strftime("%Y")
+    ref = item.get("code") or item.get("id") or item.get("title") or ""
+    web, err = _hrsp_file(["Policies", year],
+                          _hrsp_name(ref, item.get("fileName"), "policy.pdf"), data)
+    if web:
+        item["fileUrl"] = web
+    elif err:
+        item["fileError"] = err
+
+
 def _finsp_ref(item, kind):
     """Folder-safe reference — mirrors the frontend _finSpRef so both produce the SAME folder name
        (Hà Nội → Ha_Noi), otherwise the server and the browser would file into two different trees."""
@@ -4528,6 +4602,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._decision_create_ep(u, body), manager=True)
         if path == "/api/hr/letter":
             return self._guard(lambda u: self._letter_issue_ep(u, body))
+        if path == "/api/hr/issued-file":
+            return self._guard(lambda u: self._hr_issued_file_ep(u, body), manager=True)
         if path == "/api/hr/appraisal/open":
             return self._guard(lambda u: self._appraisal_open_ep(u, body), manager=True)
         if path.startswith("/api/hr/appraisal/close/"):
@@ -9964,9 +10040,13 @@ class Handler(BaseHTTPRequestHandler):
                        "sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
                        "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},
                        "sales_variations": {"_rev", "id"}, "sales_credits": {"_rev", "id"},   # nothing: every change goes through the endpoint
-                       "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
+                       # hasFile is DERIVED by the register read below, never stored. Leaving it
+                       # out would make the both-directions diff treat a row read from the list and
+                       # sent straight back as an illegal edit of a frozen document.
+                       "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "hasFile",
+                                     "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
-                                     "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
+                                     "issuedBy", "issuedById", "issuedAt", "hasFile", "_rev", "id"},
                        # What happened is evidence and is not rewritten afterwards. What was
                        # LEARNED afterwards — the declaration, the report, days lost, the cause,
                        # what was done about it — is added as it becomes known.
@@ -11120,8 +11200,8 @@ class Handler(BaseHTTPRequestHandler):
             # of your contract, and a portal that holds it and refuses to show it to you is worse
             # than one that never held it.
             if name in ("contracts", "decisions", "hrletters"):
-                return self._json({"ok": True, "items": [
-                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")]})
+                return self._json({"ok": True, "items": self._issued_doc_lite([
+                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")])})
             return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
         # minimum access level to read
         need = self.READ_MIN.get(name)
@@ -11138,8 +11218,8 @@ class Handler(BaseHTTPRequestHandler):
             # so it is theirs to see the status of. Everyone else's is out of reach — READ_MIN keeps
             # a line manager from enumerating who is applying for a mortgage or job-hunting.
             if name in ("contracts", "decisions", "hrletters"):
-                return self._json({"ok": True, "items": [
-                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")]})
+                return self._json({"ok": True, "items": self._issued_doc_lite([
+                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")])})
             if name == "payruns":
                 mine = []
                 for r in db.list_collection(name):
@@ -11156,6 +11236,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Access restricted to %s level or above." % need, 403)
         items = db.list_collection(name)
         lvl = self._caller_level(u)
+        if name in ("decisions", "hrletters"):
+            items = self._issued_doc_lite(items)
         # Health records are the most sensitive rows in the portal. READ_MIN lets a manager reach
         # this collection so they can check their own crew before a site day — it was never meant to
         # hand them the whole company's medical cadence, disability status and scanned certificates.
@@ -11326,6 +11408,21 @@ class Handler(BaseHTTPRequestHandler):
         # self-approving via the unauthenticated /capprove link.
         items = [{k: v for k, v in it.items() if k != "token"} for it in items]
         return self._json({"items": items})
+
+    @staticmethod
+    def _issued_doc_lite(rows):
+        """A register lists its documents; it does not ship them.
+
+        decisions and hrletters keep the ISSUED PDF on the row whenever SharePoint could not take
+        it, and both are read as a list — by HR for the register and by an employee reading their
+        own file. Sending every PDF to draw a table is the defect that made the project Quality tab
+        time out at 30 seconds; /api/coll/<name>/<id> serves the bytes when somebody opens one.
+
+        hasFile is what the table reads instead, and it counts a SharePoint link as a document —
+        because once filed, that IS where the document is.
+        """
+        return [dict(r, file="", hasFile=bool(r.get("file") or r.get("fileUrl")))
+                if isinstance(r, dict) else r for r in rows]
 
     @staticmethod
     def _strip_file_bytes(it):
@@ -12210,6 +12307,12 @@ class Handler(BaseHTTPRequestHandler):
             item["publishedById"] = u.get("id") or ""
             item.pop("updatedBy", None)
             item.pop("updatedAt", None)
+            # Only the server may say where a document was filed. The same rule the acknowledgement
+            # PDF already enforces on `webUrl`: a link the client can set is a link that can point
+            # anywhere, and this one is offered to every employee asked to read the document.
+            item.pop("fileUrl", None)
+            item.pop("fileError", None)
+            _hrdoc_file_to_sp(item)
         if name == "hrdoc_acks":
             _doc = db.get_collection_item("hrdocs", str(item.get("docId") or "")) or {}
             if not _doc:
@@ -13692,9 +13795,22 @@ class Handler(BaseHTTPRequestHandler):
         rec["cvName"] = name
         rec["cvAt"] = _now_iso()
         rec["cvBy"] = u.get("name") or u.get("id") or ""
+        # A copy in the HR library, so a CV is somewhere HR can actually browse. The bytes stay on
+        # the row on purpose, and this is the one filer that keeps them deliberately rather than by
+        # default: /api/hr/cv/<id> writes a "CV opened" row into the tamper-evident chain every time
+        # somebody reads one, and that control exists only while the portal is the way in. A link
+        # into a shared library is read by whoever the library lets in, unrecorded.
+        # cvUrl, not a new key: it is what hasCv already reads and what _coll_update already carries
+        # forward, and a name outside that list is silently dropped by the next PATCH.
+        web, err = _hrsp_file(["Recruitment", time.strftime("%Y")],
+                              _hrsp_name(cid, name, "cv.pdf"), data)
+        if web:
+            rec["cvUrl"] = web
         db.put_collection_item("candidates", rec)
-        self._audit_cv(u, "CV attached", rec, name)
-        return self._json({"ok": True, "id": cid, "cvName": name, "hasCv": True})
+        self._audit_cv(u, "CV attached", rec,
+                       name + (" — filed to SharePoint" if web else " — kept in the portal"))
+        return self._json({"ok": True, "id": cid, "cvName": name, "hasCv": True,
+                           "filed": bool(web), "cvUrl": web, "fileError": "" if web else err})
 
     def _cv_file_ep(self, u, cid):
         """The bytes of one candidate's CV."""
@@ -13709,6 +13825,7 @@ class Handler(BaseHTTPRequestHandler):
         # step is that a named person did it. Recorded server-side so it cannot be skipped.
         self._audit_cv(u, "CV opened", rec, rec.get("cvName") or "")
         return self._json({"ok": True, "id": rec.get("id"), "file": rec.get("cvFile") or "",
+                           "cvUrl": rec.get("cvUrl") or "",
                            "fileName": rec.get("cvName") or "cv.pdf"})
 
     # ── occupational accidents ───────────────────────────────────────────────────────────────────
@@ -14260,6 +14377,71 @@ class Handler(BaseHTTPRequestHandler):
                                                          as_of=self._vn_day(),
                                                          doc_no=rec["no"] or rec["id"])
         return self._json(out)
+
+    def _hr_issued_file_ep(self, u, body):
+        """File the PDF of an issued decision or confirmation letter into the HR library.
+
+        These two are the only documents this company issues that it keeps NO copy of. The PDF is
+        drawn in the browser at issue time and goes straight to the issuer's Downloads folder; the
+        row holds the facts, not the paper. A reprint therefore re-renders from the record against
+        TODAY's employee row — so the reprint of a salary decision changes when the salary changes,
+        and the archived PDF is the only thing that can ever be the document that was signed.
+
+        Which is why this stores the bytes the BROWSER printed rather than rendering again here:
+        there is no PDF writer on the server (pypdf only reads), and a second renderer would be a
+        second document.
+        """
+        b = body or {}
+        coll = {"decision": "decisions", "letter": "hrletters"}.get(str(b.get("kind") or "").strip())
+        if not coll:
+            return self._err("Unknown document kind.", 400)
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to file an issued "
+                             "document.", 403)
+        rec = db.get_collection_item(coll, str(b.get("id") or "")) if b.get("id") else None
+        if not rec:
+            return self._err("That document no longer exists.", 404)
+        if coll == "hrletters" and str(rec.get("status") or "") != "Issued":
+            return self._err("Only an issued letter is filed. Issue it first.", 400)
+        # Archive ONCE. The document was issued once; a second upload against the same record would
+        # be a different PDF wearing the same reference number, which is the whole failure the
+        # archive exists to prevent.
+        if rec.get("fileUrl") or str(rec.get("file") or "").startswith("data:"):
+            return self._json({"ok": True, "already": True, "filed": bool(rec.get("fileUrl")),
+                               "fileUrl": rec.get("fileUrl") or ""})
+        data = str(b.get("file") or "")
+        emp = db.get_employee(str(rec.get("empId") or "")) or {}
+        ref = str(rec.get("no") or "").strip() or str(rec.get("id") or "")
+        nm = str(b.get("name") or "").strip() or (ref + ".pdf")
+        nm = re.sub(r"[\r\n\t/\\]", " ", nm)[:120]
+        web, err = _hrsp_file(["Employees",
+                               self._hr_emp_folder(emp) if emp else (str(rec.get("empId") or "")
+                                                                     or "Unassigned"),
+                               "Decisions" if coll == "decisions" else "Letters"],
+                              _hrsp_name(ref, nm), data)
+        rec = dict(rec)
+        if web:
+            rec["fileUrl"] = web
+            rec["fileName"] = nm
+        else:
+            # SharePoint is not configured, or refused. Keeping the bytes is strictly better than
+            # today, where the company keeps nothing at all — and the register read blanks them, so
+            # a list of decisions stays a list of decisions.
+            # No fileError field: decisions and hrletters are ISSUED_ONLY and a key outside
+            # ISSUED_EDITABLE makes every later edit illegal. The reason goes back in the response.
+            if not data.startswith("data:"):
+                return self._err(err or "No file received.", 400)
+            rec["file"] = data
+            rec["fileName"] = nm
+        db.put_collection_item(coll, rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Issued document filed", "target": coll + "/" + str(rec.get("id") or ""),
+            "detail": "%s · %s (%s) · %s" % (nm, rec.get("empName") or "", rec.get("empId") or "",
+                                             "filed to SharePoint" if web else "kept in the portal"),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "filed": bool(web), "fileUrl": web,
+                           "fileName": nm, "error": "" if web else err})
 
     # ── the client social-compliance audit pack ─────────────────────────────────────────────────
 
@@ -18789,16 +18971,24 @@ class Handler(BaseHTTPRequestHandler):
             # blind overwrite would therefore delete the attachment on any edit that did not re-upload
             # it — the exact opposite of what "just fixing a typo" should do. Only an explicit
             # removeFile flag clears it.
+            _newfile = str(item.get("file") or "").startswith("data:")
+            item.pop("fileUrl", None)      # server-owned, exactly like the ack PDF's webUrl
+            item.pop("fileError", None)
             if item.get("removeFile"):
                 item["file"] = ""
                 item["fileName"] = ""
-            elif not item.get("file") and _prev.get("file"):
-                item["file"] = _prev.get("file")
-                item.setdefault("fileName", _prev.get("fileName") or "")
+            elif _newfile:
+                pass                       # a fresh upload: filed below, no stale link carried over
+            elif _prev.get("file") or _prev.get("fileUrl"):
+                item["file"] = _prev.get("file") or ""
                 if not item.get("fileName"):
                     item["fileName"] = _prev.get("fileName") or ""
+                if _prev.get("fileUrl"):
+                    item["fileUrl"] = _prev.get("fileUrl")
             item.pop("removeFile", None)
             item.pop("hasFile", None)      # a derived read-only flag, never stored
+            if _newfile:
+                _hrdoc_file_to_sp(item)
             item["updatedBy"] = u.get("name") or ""
             item["updatedAt"] = self._utc_now()
             # An edit that changes the version is a re-issue: it invalidates every signature, because

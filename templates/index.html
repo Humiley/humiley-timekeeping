@@ -45299,6 +45299,29 @@ function _qdBody() {
   };
 }
 
+/* ── ISSUED DOCUMENT ARCHIVE ──────────────────────────────────────────────────────────────────
+   A quyết định and a giấy xác nhận are drawn HERE, in the browser, and until now that was the only
+   place either ever existed: the PDF went to the issuer's Downloads folder and the portal kept the
+   facts, not the paper. A reprint re-renders from those facts against TODAY's employee record, so
+   the reprint of a salary decision changes when the salary changes — the filed PDF is the only
+   thing that can ever be the document that was signed.
+
+   Filing must never be able to unmake the decision. It is already issued and every Art. 34/36/45
+   and 122–127 check has already passed, so a failure here costs the copy and nothing else, and
+   says so instead of resolving quietly. */
+async function _hrArchiveIssued(kind, id, pdf) {
+  if (!id || !pdf || !pdf.data) return null;
+  try {
+    const r = await tkApi('/api/hr/issued-file', { method: 'POST', body: {
+      kind: kind, id: id, file: pdf.data, name: pdf.name } });
+    if (r && r.already) return r;
+    if (r && r.filed) toast(_t2('Filed to SharePoint', 'Đã lưu vào SharePoint'), 'success');
+    else toast(_t2('Kept in the portal — no HR SharePoint folder is set',
+                   'Đã lưu trong cổng — chưa đặt thư mục SharePoint Nhân sự'), 'warn', 5000);
+    return r;
+  } catch (e) { return null; }
+}
+
 async function _qdIssue() {
   const btn = document.getElementById('qdIssueBtn');
   if (btn) { btn.disabled = true; btn.textContent = _t('Issuing…'); }
@@ -45313,7 +45336,10 @@ async function _qdIssue() {
   }
   closeModal('contractDraftModal');
   toast(_t2('Decision issued', 'Đã ban hành quyết định'), 'success');
-  try { await _qdPdf(res.document, true); } catch (e) {}
+  try {
+    const pdf = await _qdPdf(res.document, true);
+    await _hrArchiveIssued('decision', (res.decision || {}).id, pdf);
+  } catch (e) {}
   try { await tkRenderDecisions(); } catch (e) {}
 }
 
@@ -45393,6 +45419,7 @@ async function _qdPdf(doc, save) {
   for (let i = 1; i <= tot; i++) { p.setPage(i); _brandFooter(p, i, tot, doc.prefix || 'QĐ', 'QUYẾT ĐỊNH'); }
   const name = 'QD-' + (emp.id || '') + '-' + (doc.issuedOn || '') + '.pdf';
   if (save) p.save(name); else window.open(p.output('bloburl'), '_blank');
+  return { name: name, data: p.output('datauristring') };   // the bytes actually printed, for the archive
 }
 
 /* ── Confirmation letters ───────────────────────────────────────────────────────────────────────
@@ -45482,7 +45509,13 @@ async function _xnSubmit(issue) {
   closeModal('contractDraftModal');
   toast(issue ? _t2('Letter issued', 'Đã cấp giấy xác nhận')
               : _t2('Request sent to HR', 'Đã gửi yêu cầu tới Nhân sự'), 'success');
-  if (res.document) { try { await _xnPdf(res.document, true); } catch (e) {} }
+  if (res.document) {
+    try {
+      const pdf = await _xnPdf(res.document, true);
+      // Only an ISSUED letter is filed. A request is not yet a document.
+      if (issue) await _hrArchiveIssued('letter', (res.letter || {}).id, pdf);
+    } catch (e) {}
+  }
   try { await tkRenderDecisions(); } catch (e) {}
 }
 
@@ -45495,7 +45528,10 @@ async function _xnIssue(id) {
       id: rec.id, empId: rec.empId, purpose: rec.purpose, addressedTo: rec.addressedTo,
       leaveApproved: rec.leaveApproved, issue: true, no: rec.no } });
     toast(_t2('Letter issued', 'Đã cấp giấy xác nhận'), 'success');
-    if (res.document) await _xnPdf(res.document, true);
+    if (res.document) {
+      const pdf = await _xnPdf(res.document, true);
+      await _hrArchiveIssued('letter', (res.letter || {}).id || rec.id, pdf);
+    }
     await tkRenderDecisions();
   } catch (e) { toast(_errMsg(e), 'error', 6000); }
 }
@@ -45555,6 +45591,7 @@ async function _xnPdf(doc, save) {
   for (let i = 1; i <= tot; i++) { p.setPage(i); _brandFooter(p, i, tot, 'BM.HR-01-06', 'GIẤY XÁC NHẬN CÔNG TÁC'); }
   const name = 'XN-' + (doc.empId || '') + '-' + (doc.issuedOn || '') + '.pdf';
   if (save) p.save(name); else window.open(p.output('bloburl'), '_blank');
+  return { name: name, data: p.output('datauristring') };   // the bytes actually printed, for the archive
 }
 
 /* ── The employer's legal identity ──────────────────────────────────────────────────────────────

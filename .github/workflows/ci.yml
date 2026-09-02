@@ -326,6 +326,13 @@ jobs:
       - name: The tender Overview screen renders
         run: node tests/tender_overview_renders.js
 
+      # A quyet dinh and a giay xac nhan are drawn in the BROWSER, so the browser is the only place
+      # that can hand the archive the document that was actually issued. If _qdPdf/_xnPdf stop
+      # RETURNING the printed bytes, the archive call gets `undefined`, returns without a request,
+      # and every decision issues successfully while the company files nothing — no error anywhere.
+      - name: An issued decision or letter reaches the archive
+        run: node tests/issued_documents_reach_the_archive.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the
