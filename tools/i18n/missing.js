@@ -55,13 +55,18 @@ const ALLOWED = new Map([
   ['margin', 'a mid-sentence fragment in a composed tender label'],
 ]);
 
-// The concatenated backlog, as measured at the commit that introduced this gate. Lower it when the
-// messages are restructured; raising it means new untranslatable messages were written, which is
-// the thing this number exists to make visible.
-const CONCAT_BASELINE = 15;
+// Was 15. All fifteen have been restructured onto _tp(), so the correct floor is now ZERO: any new
+// concatenated message is a regression, not a backlog item. Raising this number again should take
+// an argument, not a commit.
+const CONCAT_BASELINE = 0;
 
 const CALLS = [
   ['_t', /(?<![\w$])_t\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*(\)|\+)/g],
+  // _tp(template, ...values) is the fix for a message that carries a value: the whole sentence is
+  // the key and the TRANSLATION places {0}/{1}. Its first argument is looked up exactly like _t's,
+  // so it is scanned the same way -- and it must be, or moving a message onto _tp would hide it
+  // from this gate rather than fix it.
+  ['_tp', /(?<![\w$])_tp\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*(,|\)|\+)/g],
   ['toast', /(?<![\w$])toast\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*(,|\)|\+)/g],
 ];
 
