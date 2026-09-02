@@ -229,6 +229,14 @@ jobs:
       - name: Every tab dispatcher paints what its renderer returns
         run: node tests/tab_dispatchers_paint.js
 
+      # After submitting leave, the page hand-built an approval card from the form values and
+      # prepended it to the REQUESTER's own pending list — with Approve and Reject on it. Clicking
+      # Approve wrote to SharePoint with a literal id of 'new' and toasted "Leave approved" while
+      # the portal stayed pending, unbalanced and unsigned. A decision belongs to /api/esign and
+      # the three-level chain; this keeps every other route to one closed.
+      - name: A leave decision only happens through the signed flow
+        run: node tests/leave_decisions_are_signed.js
+
       # The other two design gates check LOGIC and would pass on markup carrying an unclosed <div>
       # — which, in a card layout, swallows everything below it into the card. Nothing throws; the
       # page is just wrong from that point down, and no source-level test can see it. This runs a

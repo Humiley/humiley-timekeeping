@@ -43671,35 +43671,17 @@ async function submitLeave() {
         } else if (res && !res.managerEmail) {
           toast('Submitted. No direct manager set — ask HR to assign one for approval routing.', 'warn', 6000);
         }
-        const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
-        const clr = tkAvatarColor(emp);
-        const subDate = tkFmtDateObj(new Date());
-        const newCard = document.createElement('div');
-        newCard.className = 'approval-card';
-        newCard.innerHTML = `
-          <div class="approval-card-hdr">
-            <div class="ava-md" style="background:${clr}">${initials}</div>
-            <div style="flex:1">
-              <div style="font-size:14px;font-weight:700">${emp}</div>
-              <div style="font-size:12px;color:var(--text-light)">Management · Submitted ${subDate}</div>
-            </div>
-            <span class="badge b-warn">Pending Manager</span>
-          </div>
-          <div class="approval-meta">
-            <div class="approval-meta-item">Leave Type<span>${type}</span></div>
-            <div class="approval-meta-item">Duration<span>${days} Day${days!==1?'s':''}</span></div>
-            <div class="approval-meta-item">Dates<span>${start} – ${end}</span></div>
-          </div>
-          <div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px">
-            <strong>Reason:</strong> ${reason}
-          </div>
-          <div class="approval-actions">
-            <button class="btn btn-ghost btn-sm" onclick="viewLeaveDetail(this)">View Details</button>
-            <button class="btn-reject" onclick="rejectLeaveCard(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-            <button class="btn-approve" onclick="approveLeaveCard(this,'new')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-          </div>`;
-        const pending = document.getElementById('leave-pending');
-        if (pending) { const list = pending.querySelector('div'); if (list) list.prepend(newCard); }
+        /* The list is redrawn from what the server now holds, instead of a card being assembled
+           here from the form values. The hand-built one carried Approve and Reject buttons and was
+           prepended to the REQUESTER's own pending list, so somebody who had just submitted leave
+           saw an Approve button on their own request. Clicking it called spPatch('Leave_Requests',
+           'new', ...) — SharePoint, with a literal id of 'new' — and then toasted "Leave approved".
+           The portal was untouched: still pending, balance not applied, nothing signed. The only
+           thing that changed was that the employee had been told it was approved.
+
+           tkBootstrap() above has already refetched; this just draws what came back. A leave
+           decision belongs to the signed flow in tkRenderApprovals and to nothing else. */
+        try { tkRenderLeaveView(); } catch (e) { }
         const tabs = document.querySelectorAll('#leave-tabs .tab');
         if (tabs[0]) { const cur = parseInt(tabs[0].textContent.match(/\d+/)?.[0] || '0'); tabs[0].textContent = 'Pending (' + (cur + 1) + ')'; }
         closeModal('leaveModal');
@@ -43753,45 +43735,7 @@ async function quickReject(btn) {
 /* ──────────────────────────────────────────────────────────
    12. MANAGER APPROVAL
 ────────────────────────────────────────────────────────── */
-async function managerApprove(btnOrCard, itemId) {
-  // accept either the clicked button or the card element itself
-  const cardEl = btnOrCard.closest('.approval-card');
-  if (!cardEl) return;
-  const commentEl = cardEl.querySelector('input[type="text"]');
-  const comment = commentEl ? commentEl.value.trim() : '';
-  if (DEMO_MODE()) {
-    _resolveCard(cardEl, 'approved');
-    toast('Approved & notification sent to ' + (typeof itemId === 'string' ? itemId : 'employee') + ' via Teams');
-    return;
-  }
-  await spPatch('Leave_Requests', itemId, {
-    Status: 'Approved', ManagerComment: comment,
-    ApprovedDate: new Date().toISOString(), ApprovedBy: _account?.username
-  });
-  _resolveCard(cardEl, 'approved');
-  toast('Leave approved');
-}
 
-async function managerReject(btnOrCard, itemId) {
-  const cardEl = btnOrCard.closest ? btnOrCard.closest('.approval-card') : btnOrCard;
-  if (!cardEl) return;
-  // Ask for rejection reason
-  const name = cardEl.querySelector('[style*="font-weight:700"]')?.textContent?.trim() || 'this request';
-  const reason = prompt('Rejection reason for ' + name + ' (required):');
-  if (reason === null) return; // cancelled
-  if (!reason.trim()) { toast('Please provide a rejection reason.', 'warn'); return; }
-  if (DEMO_MODE()) {
-    _resolveCard(cardEl, 'rejected', reason.trim());
-    toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Leave rejected — "' + reason.trim() + '"', 'warn');
-    return;
-  }
-  await spPatch('Leave_Requests', itemId, {
-    Status: 'Rejected', ManagerComment: reason.trim(),
-    RejectedDate: new Date().toISOString()
-  });
-  _resolveCard(cardEl, 'rejected', reason.trim());
-  toast('Leave rejected', 'warn');
-}
 
 function _resolveCard(cardEl, status, reason) {
   if (!cardEl) return;
@@ -43865,15 +43809,7 @@ function _updateLeavePendingCount() {
 /* ──────────────────────────────────────────────────────────
    13. LEAVE / ATTENDANCE CARD ACTIONS
 ────────────────────────────────────────────────────────── */
-async function approveLeaveCard(btn, itemId) {
-  const card = btn.closest('.approval-card');
-  await managerApprove(card, itemId);
-}
 
-async function rejectLeaveCard(btn, itemId) {
-  const card = btn.closest('.approval-card');
-  await managerReject(card, itemId);
-}
 
 /* ──────────────────────────────────────────────────────────
    14. HR ADMIN
@@ -47448,55 +47384,6 @@ async function tkDeleteSchedule(id) {
 /* ══════════════════════════════════════════════════════════
    LEAVE DETAIL VIEW
 ══════════════════════════════════════════════════════════ */
-function viewLeaveDetail(btn) {
-  const card = btn.closest('.approval-card');
-  if (!card) return;
-  const name    = card.querySelector('[style*="font-weight:700"]')?.textContent?.trim() || '—';
-  const meta    = card.querySelectorAll('.approval-meta-item span');
-  const type    = meta[0]?.textContent || '—';
-  const dur     = meta[1]?.textContent || '—';
-  const dates   = meta[2]?.textContent || '—';
-  const reason  = card.querySelector('[style*="background:var(--soft-bg)"]')?.textContent?.replace('Reason:','').trim() || '—';
-  const subInfo = card.querySelector('.approval-card-hdr [style*="font-size:12px"]')?.textContent?.trim() || '—';
-  const balNote = card.querySelector('[style*="font-size:11px"]')?.textContent?.trim() || '';
-
-  const overlay = document.getElementById('leaveDetailOverlay');
-  if (overlay) { overlay.remove(); }
-  const el = document.createElement('div');
-  el.id = 'leaveDetailOverlay';
-  el.className = 'modal-overlay';
-  el.style.display = 'flex';
-  el.innerHTML = `
-  <div class="modal" style="max-width:480px">
-    <div class="modal-header" style="margin-bottom:16px">
-      <div class="modal-title">Leave Request Details</div>
-      <button class="modal-close" onclick="document.getElementById('leaveDetailOverlay').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:14px;margin-bottom:14px">
-      <div style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:2px">${name}</div>
-      <div style="font-size:12px;color:var(--text-light)">${subInfo}</div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;font-size:13px">
-      <div style="padding:10px;background:var(--soft-bg);border-radius:7px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Leave Type</div><div style="font-weight:700;color:var(--navy)">${type}</div></div>
-      <div style="padding:10px;background:var(--soft-bg);border-radius:7px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Duration</div><div style="font-weight:700;color:var(--navy)">${dur}</div></div>
-      <div style="padding:10px;background:var(--soft-bg);border-radius:7px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Dates</div><div style="font-weight:700;color:var(--navy)">${dates}</div></div>
-      <div style="padding:10px;background:var(--soft-bg);border-radius:7px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Status</div><span class="badge b-warn">Pending Manager</span></div>
-    </div>
-    <div style="font-size:13px;color:var(--text-dark);background:#fffbeb;border:1px solid #fde68a;padding:12px;border-radius:7px;margin-bottom:12px"><strong>Reason:</strong> ${reason}</div>
-    ${balNote ? '<div style="font-size:11px;color:var(--text-light);background:var(--soft-bg);padding:8px 10px;border-radius:6px;margin-bottom:14px">' + balNote + '</div>' : ''}
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('leaveDetailOverlay').remove()">Close</button>
-      <button class="btn-reject btn-sm" onclick="document.getElementById('leaveDetailOverlay').remove(); managerReject(btn,'new')" style="padding:7px 14px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-      <button class="btn-approve btn-sm" onclick="document.getElementById('leaveDetailOverlay').remove(); managerApprove(btn,'new')" style="padding:7px 14px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-    </div>
-  </div>`;
-  // Store ref to card so approve/reject work from modal
-  el._sourceCard = card;
-  el.querySelector('.btn-reject').onclick = () => { el.remove(); managerReject(card,'new'); };
-  el.querySelector('.btn-approve').onclick = () => { el.remove(); managerApprove(card,'new'); };
-  document.body.appendChild(el);
-}
-
 
 /* ══════════════════════════════════════════════════════════
    MANAGER NOTE
