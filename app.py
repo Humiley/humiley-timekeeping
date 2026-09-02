@@ -13,6 +13,10 @@ otherwise the app runs in DEMO mode (pick Manager / Staff, no Azure needed).
 """
 
 import gzip
+try:
+    import brotli          # optional: ~28% smaller than gzip on the 3.9 MB shell. Absent -> gzip.
+except Exception:          # ImportError, or a broken wheel on an unusual arch
+    brotli = None
 import html as _h
 import json
 import threading
@@ -4022,6 +4026,40 @@ class Handler(BaseHTTPRequestHandler):
     # Pre-gzipped file cache keyed by (path, mtime) — the index.html is served on every
     # navigation, so compress it once per deploy instead of per request.
     _GZ_CACHE = {}
+    # Brotli is built ONCE per (file, mtime) and then served from here. At quality 11 the shell
+    # takes ~5.4 s to compress, which is why it is never built on the request thread: the first
+    # visitor after a deploy would otherwise wait out the whole compression, and 5.4 s is long
+    # enough to look like an outage. They get gzip; everybody after them gets brotli.
+    _BR_CACHE = {}
+    _BR_BUILDING = set()
+    _BR_LOCK = threading.Lock()
+
+    def _accepts_br(self):
+        return brotli is not None and "br" in (self.headers.get("Accept-Encoding") or "")
+
+    @classmethod
+    def _br_start(cls, key, path):
+        """Compress one file into _BR_CACHE, on a background thread, at most once."""
+        with cls._BR_LOCK:
+            if key in cls._BR_CACHE or key in cls._BR_BUILDING:
+                return
+            cls._BR_BUILDING.add(key)
+
+        def work():
+            try:
+                with open(path, "rb") as f:
+                    blob = brotli.compress(f.read(), quality=11)
+                with cls._BR_LOCK:
+                    if len(cls._BR_CACHE) > 8:      # each entry can be ~1 MB; bound it harder than gzip
+                        cls._BR_CACHE.clear()
+                    cls._BR_CACHE[key] = blob
+            except Exception:
+                pass                                 # gzip keeps serving; a failed build is not an error
+            finally:
+                with cls._BR_LOCK:
+                    cls._BR_BUILDING.discard(key)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _serve_file(self, path):
         if not os.path.isfile(path):
@@ -4049,9 +4087,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
         gzippable = any(ctype.startswith(t) for t in self.GZIP_TYPES)
-        if gzippable and self._accepts_gzip():
+        if gzippable and (self._accepts_gzip() or self._accepts_br()):
             key = (path, mtime)
-            gz = self._GZ_CACHE.get(key)
+            enc, gz = "br", (self._BR_CACHE.get(key) if self._accepts_br() else None)
+            if gz is None:
+                # Ask for the brotli build (once), then serve gzip now rather than wait for it.
+                if self._accepts_br():
+                    self._br_start(key, path)
+                enc, gz = "gzip", self._GZ_CACHE.get(key)
             if gz is None:
                 with open(path, "rb") as f:
                     gz = gzip.compress(f.read(), 6)
@@ -4060,7 +4103,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._GZ_CACHE[key] = gz
             self.send_response(200)
             self.send_header("Content-Type", ctype)
-            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Encoding", enc)
             self.send_header("Vary", "Accept-Encoding")
             self.send_header("Cache-Control", cache)
             self.send_header("Last-Modified", last_mod)

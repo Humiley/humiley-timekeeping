@@ -29,8 +29,41 @@ tell you the module does nothing.
 | **Design Manager** and **Lead Engineer** | nobody can sign a gate, adopt an edition, or close a hold |
 | **Document numbering format** | the register check flags every drawing as off-format |
 
+**Take a baseline.** Overview → *Schedule baseline* → **Take baseline**. Without one, SPI is
+measured against the *current* planned dates — the same field somebody edits when a drawing slips —
+so moving a date puts the index back to 1.00 and nothing records that the plan moved. One is taken
+automatically at the next signed gate, but a commission already in Detailed Design will not reach a
+gate inside the fortnight.
+
 **Name one person who owns the registers.** Not a committee. Registers without an owner fill with
 blanks and "commission-wide", and every later question about the data becomes unanswerable.
+
+---
+
+## Read this if you saw the module before 2 September 2026
+
+The brief above was written against a version of this module that did not work the way it described,
+and anyone who tried it then formed a fair impression from a broken screen.
+
+**Eight of the twenty-one tabs painted nothing.** The dispatcher discarded what those renderers
+returned, so the panel kept the *previous* tab's content — which is worse than a blank one, because
+another register's table under a new heading reads as this register's data. Four of the eight are
+registers this pilot is about to measure: **Holds & Assumptions, Deviations, Design Risk and
+Register Check**. If somebody looked at Holds a fortnight ago and saw a list of drawings, that is
+why.
+
+**The competence register had no screen at all** — rules, tests and refusal-log integration, and
+nowhere to enter a row. There is now a **Competence** tab under Planning, and a panel showing
+checks already signed that the register does not cover.
+
+**The schedule had no baseline.** See above; it does now.
+
+**The tabs are grouped.** Twenty-two registers now sit under six process pills — Planning,
+Requirements, Production, Verification, Issue & response, Change & control — rather than one flat
+row of twenty-one.
+
+None of this changes what the pilot is for. It changes whether a quiet log means what it looks like:
+*"nobody used the Holds register"* would have read as disinterest and actually been a blank screen.
 
 ---
 
@@ -87,6 +120,13 @@ timing wrong, or was the message unclear?
 rare, or people have learned to avoid the path entirely. Those look identical in the data and only
 a person can tell them apart.
 
+**One prediction, written down before the fortnight so it can be wrong.** The gate's exit checks are
+scoped to the whole commission, not to the stage being passed — an open HOLD raised during
+Feasibility still blocks a clean pass at Detail. On a commission with any history that may make
+*Passed with actions* the only reachable outcome, every time. If the log shows that rule escaped on
+every gate, it is set at the wrong moment and the fix is earned. If it does not, this prediction was
+wrong and the rule stays as it is. Deciding now, without the fortnight, would be guessing either way.
+
 Rows with `source: advisory` are not refusals. Today that is the competence check — a drawing
 checked by somebody authorised for a different discipline. Those are gaps in the register rather
 than blocked work, and they tell you whether the competence records reflect reality yet.
@@ -98,6 +138,14 @@ than blocked work, and they tell you whether the competence records reflect real
 - The `eng_refusals` rows for the fortnight.
 - Which refusals people **argued about** — that is not in the data and it is the most useful part.
 - Whether the four setup fields stayed accurate, or drifted the moment somebody was busy.
+- **Which tabs nobody opened.** Twenty-two registers is more than any one commission needs, and
+  nothing in the data says which ones earned their place. An empty register is not automatically
+  waste — some exist for the job that goes wrong — but a list of the ones nobody looked at is the
+  only evidence that can say whether the twenty-third is worth building. It costs nothing to
+  collect and it is worth as much as the log.
+- **How many times the plan was re-cut**, and why. The Overview names the count; the reasons are on
+  each baseline. A programme re-baselined three times in a fortnight is telling you something about
+  the estimate, not about the engineers.
 
 That is enough to tune the rules on evidence. It is worth more than the next three features,
 because it is the only thing that can tell you whether the first eleven were right.
