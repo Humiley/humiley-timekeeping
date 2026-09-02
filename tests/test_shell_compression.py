@@ -120,6 +120,60 @@ def test_the_shell_is_still_served_when_brotli_is_missing(base_url, disk, monkey
         "a build was started with no brotli module: one doomed thread per request, for ever"
 
 
+@pytest.mark.skipif(app.brotli is None, reason="brotli not installed in this environment")
+def test_one_ordinary_session_does_not_evict_the_shell(base_url, disk):
+    """The bug this test exists for shipped, and it made the whole feature almost a no-op.
+
+    The first version bounded the cache with `if len(...) > 8: clear()`. There are 16 brotli-eligible
+    files under /static besides "/", so fetching one page's worth of assets emptied the dict and threw
+    away a 5.3-second build. Production then answered Content-Encoding: gzip — the compression worked
+    perfectly and almost nobody received it. Nothing about the response was wrong, so only a test that
+    fetches OTHER files and then comes back to the shell can see it.
+    """
+    _get(base_url, "br, gzip")
+    for _ in range(120):
+        enc, _b, _t = _get(base_url, "br, gzip")
+        if enc == "br":
+            break
+        time.sleep(1)
+    assert enc == "br", "the shell never reached brotli, so this test cannot prove anything"
+
+    others = ["/static/sw.js", "/static/manifest.webmanifest", "/static/vendor/chart.umd.min.js",
+              "/static/vendor/msal-browser.min.js", "/static/install.html", "/static/privacy.html",
+              "/static/vendor/jspdf.umd.min.js", "/static/vendor/html2canvas.min.js",
+              "/static/vendor/xlsx.full.min.js", "/static/i18n/vi.js"]
+    fetched = 0
+    for path in others:
+        try:
+            r = urllib.request.Request(base_url + path)
+            r.add_header("Accept-Encoding", "br, gzip")
+            with urllib.request.urlopen(r, timeout=60) as f:
+                f.read()
+            fetched += 1
+        except Exception:
+            pass
+    assert fetched >= 8, "only %d of the other static files were reachable; this test needs enough " \
+                         "of them to have pushed the shell out of a 9-entry cache" % fetched
+
+    # Those builds run on background threads. Without waiting for them to land, this test races them
+    # and passes on the broken version — which is exactly what happened the first time it was run
+    # against the bug. Settle = the entry count stops moving.
+    stable, last = 0, -1
+    for _ in range(60):
+        n = len(app.Handler._BR_CACHE)
+        stable = stable + 1 if n == last else 0
+        last = n
+        if stable >= 3:
+            break
+        time.sleep(1)
+
+    enc, body, _ = _get(base_url, "br, gzip")
+    assert enc == "br", \
+        "one page's worth of asset fetches evicted the shell — every visitor after that is served " \
+        "gzip while a 5.3-second rebuild runs, which is the feature not working"
+    assert app.brotli.decompress(body) == disk
+
+
 def test_no_image_the_shell_loads_is_a_full_resolution_master():
     """The sidebar mark renders at 30 px and the install/privacy hero at 52 px. The file behind it
     was a 2139x2188, 233 KB master.

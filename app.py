@@ -4030,7 +4030,12 @@ class Handler(BaseHTTPRequestHandler):
     # takes ~5.4 s to compress, which is why it is never built on the request thread: the first
     # visitor after a deploy would otherwise wait out the whole compression, and 5.4 s is long
     # enough to look like an outage. They get gzip; everybody after them gets brotli.
-    _BR_CACHE = {}
+    # An OrderedDict, and evicted one entry at a time, because clearing it wholesale was a bug:
+    # there are 16 brotli-eligible files under /static plus "/", so a cache that admitted 9 and then
+    # emptied itself threw away the shell's 5.3-second build every ordinary session. Production
+    # measured Content-Encoding: gzip on "/" immediately after one page's worth of asset fetches —
+    # the compression was working perfectly and almost nobody was receiving it.
+    _BR_CACHE = collections.OrderedDict()
     _BR_BUILDING = set()
     _BR_LOCK = threading.Lock()
 
@@ -4050,9 +4055,12 @@ class Handler(BaseHTTPRequestHandler):
                 with open(path, "rb") as f:
                     blob = brotli.compress(f.read(), quality=11)
                 with cls._BR_LOCK:
-                    if len(cls._BR_CACHE) > 8:      # each entry can be ~1 MB; bound it harder than gzip
-                        cls._BR_CACHE.clear()
+                    # Drop only what this build makes stale: the same file at an older mtime.
+                    for k in [k for k in cls._BR_CACHE if k[0] == key[0]]:
+                        del cls._BR_CACHE[k]
                     cls._BR_CACHE[key] = blob
+                    while len(cls._BR_CACHE) > 32:  # comfortably above the 17 files that qualify
+                        cls._BR_CACHE.popitem(last=False)
             except Exception:
                 pass                                 # gzip keeps serving; a failed build is not an error
             finally:
