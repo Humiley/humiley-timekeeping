@@ -42242,7 +42242,7 @@ function tkEmptyRow(cols, msg, opts) { return '<tr><td colspan="' + cols + '" st
 let _checkedIn = false, _simLat = 10.7769, _simLon = 106.7009;
 let _gpsTimestamp = 0; // ms epoch of last confirmed GPS fix
 
-// Demo geofence zones (mirrors SharePoint Approved_Locations list)
+// Demo geofence zones (the shape the zone editor and _applyGpsFix expect)
 // Must be `let` so test zones can be pushed/filtered at runtime
 let _DEMO_ZONES = [
   { name: 'HQ — District 10, HCMC',     lat: 10.7769, lon: 106.6985, radius: 200  },
@@ -42403,7 +42403,6 @@ async function doCheckin() {
   const btn = document.getElementById('btn-checkin');
   const _setBusy = (on) => { if (!btn) return; btn.disabled = on; btn.innerHTML = on ? '<span>Getting GPS…</span>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Check In'; };
 
-  /* always use standalone Python backend (SharePoint removed) */
   _setBusy(true);
   const _go = (lat, lon, acc) => {
     _setBusy(false);
@@ -42426,7 +42425,6 @@ async function doCheckout() {
   const btn = document.getElementById('btn-checkout');
   if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
 
-  /* always use standalone Python backend (SharePoint removed) */
   /* ── GPS-required check-out ── */
   const _runCheckout = (lat, lon) => {
     const geo = _checkGeofence(lat, lon, _DEMO_ZONES);
@@ -43884,7 +43882,6 @@ async function submitLeave() {
   const days = _calcWorkingDays(start, end, _tkMe());
   if (!(days > 0)) { toast(_t('The selected range is all weekend and public holidays — no leave would be used.'), 'warn'); return; }
 
-  /* always use standalone Python backend (SharePoint removed) */
   const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
   /* 21 CFR Part 11: submitting a leave request is a signed record — re-authenticate,
      create it, then stamp the submitter's signature onto the new record. */
