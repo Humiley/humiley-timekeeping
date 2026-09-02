@@ -18,13 +18,49 @@ law does not:
 Anybody whose contribution base sits between those two figures has had unemployment insurance
 withheld on the lower one. This module does NOT change what was withheld — a number already filed
 should not move underneath the person who filed it. It computes both, reports the difference per
-person, and leaves the decision where it belongs. The figures are parameters, not literals, because
-both are revised by decree and a hardcoded cap becomes wrong silently.
+person, and leaves the decision where it belongs.
+
+**Both caps are EFFECTIVE-DATED, and neither is a constant.** They were, and both were wrong.
+
+  · The base salary sat here as one literal used as a default argument, evaluated at import. A
+    return for June 2024 was therefore measured against the figure that took effect in July, and
+    would be measured against a future revision the day one is added.
+  · The regional minimum wage sat here as a SECOND COPY of a table `min_wage.py` already owns and
+    already effective-dates. The copy went stale exactly as a copy does: min_wage carried Decree
+    293/2025 from 1 January 2026 (Region I ₫5,310,000) while this file still said ₫4,960,000, so
+    every 2026 return capped unemployment insurance at ₫99,200,000 instead of ₫106,200,000 —
+    confidently, and with nothing to notice it. The table is gone; `min_wage.at()` is asked.
+
+A cap now needs the DAY the return is for, and says which decree it used. Where the day is not
+given, the cap is None and the contribution is reported as uncapped-and-unknown rather than
+computed against whichever decree happened to be newest when the file was written. A pure module
+has no clock, and inventing one here is how a 2025 payslip gets measured by a 2026 decree.
+
+**WHAT THIS MODULE DOES NOT DECIDE.** The Social Insurance Law 2024 (Luật BHXH 41/2024/QH15, in
+force 1 July 2025) moves the BHXH/BHYT ceiling off *mức lương cơ sở* and onto a reference level,
+*mức tham chiếu*. Until the operative figure and the transition are confirmed by the company's
+accountant, the schedule below continues on the base salary and SAYS SO on every answer. Encoding a
+reference level nobody here has verified would move real money on a filed return — the same reason
+min_wage.py declines to assert the 7% vocational uplift as law.
 """
-BASE_SALARY = 2_340_000                # mức lương cơ sở — Decree 73/2024, from 1 July 2024
-REGION_MIN_WAGE = {                    # mức lương tối thiểu vùng — Decree 74/2024, from 1 July 2024
-    "I": 4_960_000, "II": 4_410_000, "III": 3_860_000, "IV": 3_450_000,
-}
+import min_wage
+# mức lương cơ sở, by the decree that set it. (in force from, decree, amount) — `_at` sorts, so
+# the order here is for readers.
+BASE_SALARY_SCHEDULE = (
+    ("2024-07-01", "Decree 73/2024/NĐ-CP", 2_340_000),
+    ("2023-07-01", "Decree 24/2023/NĐ-CP", 1_800_000),
+    ("2019-07-01", "Decree 38/2019/NĐ-CP", 1_490_000),
+)
+
+# The reference-level change this module does not encode. Carried as text so it reaches the screen
+# and the return rather than living only in the docstring above.
+TAM_CHIEU_NOTE = (
+    "From 1 July 2025 the Social Insurance Law 2024 moves the BHXH/BHYT ceiling off the base "
+    "salary (mức lương cơ sở) and onto a reference level (mức tham chiếu). This return is still "
+    "computed on the base salary. Confirm the reference level with your accountant before filing "
+    "a period from July 2025 onwards.")
+TAM_CHIEU_FROM = "2025-07-01"
+
 CAP_MULTIPLE = 20
 
 EE_RATES = {"bhxh": 0.08, "bhyt": 0.015, "bhtn": 0.01}
@@ -35,13 +71,48 @@ FUND_NAMES = {"bhxh": "Social insurance (BHXH)", "bhyt": "Health insurance (BHYT
               "bhtn": "Unemployment insurance (BHTN)"}
 
 
-def si_hi_cap(base_salary=BASE_SALARY):
-    return CAP_MULTIPLE * int(base_salary or 0)
+def base_salary_at(on_date):
+    """The base salary in force on that day, with the decree that set it, or None.
+
+    None where the day is missing or falls before the earliest decree recorded here. Refusing is the
+    point: a return for a month this module cannot place must not be measured against whichever
+    figure happened to be newest when the file was written.
+    """
+    d = str(on_date or "")[:10]
+    if len(d) != 10 or d[4] != "-" or d[7] != "-":
+        return None
+    for frm, decree, amount in sorted(BASE_SALARY_SCHEDULE, reverse=True):
+        if d >= frm:
+            return {"amount": amount, "decree": decree, "inForceFrom": frm,
+                    "basis": "%s — base salary (mức lương cơ sở) ₫%s, in force from %s."
+                             % (decree, "{:,.0f}".format(amount), frm)}
+    return None
 
 
-def ui_cap(region="I", region_min=None):
-    mw = region_min if region_min else REGION_MIN_WAGE.get(str(region or "I").upper(), 0)
-    return CAP_MULTIPLE * int(mw or 0)
+def si_hi_cap(base_salary=None, on_date=None):
+    """The BHXH/BHYT ceiling: 20 × the base salary.
+
+    An explicit `base_salary` wins — a company that has been told a different figure by its social
+    insurance office uses it, and this module is not the authority on that. Otherwise the day
+    decides. Neither given, the answer is None and not a number: a cap computed from nothing is
+    indistinguishable on screen from a cap somebody chose.
+    """
+    if base_salary:
+        return CAP_MULTIPLE * int(base_salary)
+    b = base_salary_at(on_date)
+    return CAP_MULTIPLE * int(b["amount"]) if b else None
+
+
+def ui_cap(region="I", on_date=None, region_min=None):
+    """The BHTN ceiling: 20 × the REGIONAL minimum wage, read from the module that owns it.
+
+    `min_wage.at()` is asked rather than a copy kept here. The copy that used to live in this file
+    is the reason every 2026 return capped unemployment insurance ₫7,000,000 of base too low.
+    """
+    if region_min:
+        return CAP_MULTIPLE * int(region_min)
+    floor = min_wage.at(region, on_date)
+    return CAP_MULTIPLE * int(floor["monthly"]) if floor else None
 
 
 def _n(v, d=0):
@@ -56,15 +127,31 @@ def _line_calc(line):
     return (line or {}).get("calc") or {}
 
 
-def contributions(lines, region="I", base_salary=BASE_SALARY, region_min=None):
+def contributions(lines, region="I", on_date=None, base_salary=None, region_min=None):
     """The contribution schedule, and where it differs from what the caps require.
 
     `withheld` is what the signed run actually took. `required` is what the statutory caps imply.
     They are reported side by side rather than reconciled, because only one of them has already been
     paid to the authority and this module is not entitled to rewrite that.
     """
-    cap_si = si_hi_cap(base_salary)
-    cap_ui = ui_cap(region, region_min)
+    cap_si = si_hi_cap(base_salary, on_date)
+    cap_ui = ui_cap(region, on_date, region_min)
+    # Named rather than left to be inferred from a null. An uncapped contribution is not the same
+    # fact as a contribution capped at a figure somebody chose, and on a filed return the
+    # difference is money.
+    notes = []
+    if cap_si is None:
+        notes.append("The BHXH/BHYT ceiling could not be established for this period — no base "
+                     "salary is recorded for it and none was supplied — so those contributions are "
+                     "shown UNCAPPED. They are not a filing figure until a base salary is set.")
+    if cap_ui is None:
+        notes.append("The BHTN ceiling could not be established for this period: region '%s' has "
+                     "no minimum wage in force on that day. Unemployment insurance is shown "
+                     "uncapped." % (region or "(none)"))
+    if on_date and str(on_date)[:10] >= TAM_CHIEU_FROM:
+        notes.append(TAM_CHIEU_NOTE)
+    basis_si = base_salary_at(on_date)
+    basis_ui = min_wage.at(region, on_date)
     rows, tot = [], {"eeBhxh": 0, "eeBhyt": 0, "eeBhtn": 0, "erBhxh": 0, "erBhyt": 0,
                      "erBhtn": 0, "union": 0, "base": 0, "variance": 0}
 
@@ -116,11 +203,25 @@ def contributions(lines, region="I", base_salary=BASE_SALARY, region_min=None):
         "rows": sorted(rows, key=lambda r: (-abs(r["variance"]), r["name"])),
         "totals": tot,
         "capSiHi": cap_si, "capUi": cap_ui, "region": str(region or "I").upper(),
-        "baseSalary": int(base_salary or 0),
+        # The figure each cap was built from, and the DECREE that set it. A cap on a filed return
+        # with no decree beside it is a number nobody can check a year later.
+        "baseSalary": (int(base_salary) if base_salary
+                       else (basis_si["amount"] if basis_si else None)),
+        "baseSalaryBasis": ("supplied by the company" if base_salary
+                            else (basis_si["basis"] if basis_si else "")),
+        "regionMinWage": (int(region_min) if region_min
+                          else (basis_ui["monthly"] if basis_ui else None)),
+        "regionMinWageBasis": ("supplied by the company" if region_min
+                               else (basis_ui["basis"] if basis_ui else "")),
+        "onDate": str(on_date or "")[:10],
         "capBasis": ("BHXH and BHYT cap at 20 × the base salary (%s); BHTN caps at 20 × the Region "
-                     "%s minimum wage (%s)." % (f"{int(base_salary or 0):,}",
-                                                str(region or "I").upper(),
-                                                f"{ui_cap(region, region_min) // CAP_MULTIPLE:,}")),
+                     "%s minimum wage (%s)."
+                     % ("{:,}".format(cap_si // CAP_MULTIPLE) if cap_si else "not established",
+                        str(region or "I").upper(),
+                        "{:,}".format(cap_ui // CAP_MULTIPLE) if cap_ui else "not established")),
+        # Empty on a period this module could place. Never absent, so a caller that forgets to
+        # render it is a caller that renders an empty list rather than one that hides a refusal.
+        "notes": notes,
         "variance": tot["variance"],
         "affected": [{"empId": r["empId"], "name": r["name"], "variance": r["variance"],
                       "capNote": r["capNote"]} for r in affected],

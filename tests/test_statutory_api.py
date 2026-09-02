@@ -118,9 +118,10 @@ def test_the_region_is_a_setting_not_a_literal(api, tokens):
     _, reg1 = _get(api, tokens)
     db.set_setting("portal_siRegion", "IV")
     _, reg4 = _get(api, tokens)
-    assert reg1["contributions"]["capUi"] == 99_200_000
-    assert reg4["contributions"]["capUi"] == 69_000_000
+    assert reg1["contributions"]["capUi"] == 106_200_000     # 20 x 5,310,000, Decree 293/2025
+    assert reg4["contributions"]["capUi"] == 74_000_000      # 20 x 3,700,000
     assert reg4["contributions"]["region"] == "IV"
+    assert "Decree 293/2025" in reg1["contributions"]["regionMinWageBasis"]
 
 
 def test_a_decree_revision_to_the_base_salary_is_a_setting_too(api, tokens):
@@ -166,3 +167,36 @@ def test_an_editor_can(api, tokens):
 
 def test_a_manager_cannot_pull_the_labour_return(api, tokens):
     assert api("GET", "/api/hr/labour-report", tokens["mgr"])[0] == 403
+
+
+def test_the_same_signed_run_declared_for_two_periods_is_capped_by_two_decrees(api, tokens):
+    """The bug, end to end and through the real handler. This file already declared an AUGUST 2026
+    return and asserted the BHTN cap was ₫99,200,000 — the figure Decree 74/2024 set, superseded on
+    1 January 2026 by Decree 293/2025 at ₫106,200,000. The cap came from a module-level constant, so
+    it could not depend on the period, and a test written against it encoded the same assumption."""
+    _run(api, tokens, gross=80_000_000, period="August 2026")
+    _, y2026 = _get(api, tokens, period="2026-08")
+
+    _run(api, tokens, gross=80_000_000, period="January 2025")
+    _, y2025 = _get(api, tokens, period="2025-01")
+
+    a, b = y2026["contributions"], y2025["contributions"]
+    assert a["capUi"] == 106_200_000 and b["capUi"] == 99_200_000
+    assert a["capUi"] != b["capUi"], "the cap does not depend on the period being declared"
+    assert "Decree 293/2025" in a["regionMinWageBasis"]
+    assert "Decree 74/2024" in b["regionMinWageBasis"]
+    assert a["onDate"] == "2026-08-01" and b["onDate"] == "2025-01-01"
+
+
+def test_a_return_before_july_2024_is_capped_on_the_base_salary_of_its_own_day(api, tokens):
+    _run(api, tokens, gross=80_000_000, period="June 2024")
+    _, r = _get(api, tokens, period="2024-06")
+    c = r["contributions"]
+    assert c["capSiHi"] == 36_000_000, "a June 2024 return was capped on July 2024's base salary"
+    assert "Decree 24/2023" in c["baseSalaryBasis"]
+
+
+def test_a_period_from_july_2025_carries_the_reference_level_caveat(api, tokens):
+    _run(api, tokens, period="August 2026")
+    _, r = _get(api, tokens, period="2026-08")
+    assert any("mức tham chiếu" in n for n in r["contributions"]["notes"])
