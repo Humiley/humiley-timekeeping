@@ -364,6 +364,13 @@ jobs:
       - name: An issued decision or letter reaches the archive
         run: node tests/issued_documents_reach_the_archive.js
 
+      # Attendance history is no longer fetched on every sign-in; the screens that read it ask for
+      # it. The failure that matters is not an error — it is a NEW reader of _DEMO_ATTENDANCE that
+      # forgets to ask, renders perfectly from the two-month boot window, and silently shows less
+      # than it should. This attributes every read to its function and fails on an unguarded one.
+      - name: Attendance history is fetched by the screens that read it
+        run: node tests/attendance_history_is_on_demand.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the

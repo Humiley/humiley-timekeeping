@@ -3669,11 +3669,40 @@ function _tkMergeAttendance(fetched) {
   const localExtra = (_DEMO_ATTENDANCE || []).filter(r => !seen.has(key(r)));   // keep rows the server hasn't returned yet
   _DEMO_ATTENDANCE = localExtra.concat(map);
 }
-/* Whose attendance history has been fully hydrated. Keyed to the ACCOUNT, not a bare boolean:
-   attendance is scoped per user, and the Admin view switcher changes identity without reloading
-   the page — a plain flag would leave the staff workspace believing the admin's history had
-   already been fetched. Sign-out reloads, so that path clears itself. */
-let _attHydratedFor = null;
+/* ── ATTENDANCE HISTORY IS FETCHED WHEN A SCREEN NEEDS IT ─────────────────────────────────────
+   It used to be fetched on every sign-in, by every account, in the background. Measured against
+   the real server with 40 staff x 250 days: 85,827 bytes on the wire, 3,748,910 bytes of JSON to
+   parse and hold, and 77.1 ms of single-threaded server time — against 2,029 bytes and 4.6 ms for
+   employees, leave, zones and portal put together. Forty-two times the wire cost of the whole rest
+   of the boot, for a table that grows by headcount x every workday and that most sessions never
+   read at all.
+
+   So the screens that need it ask for it. Keyed to the ACCOUNT, not a bare boolean: attendance is
+   scoped per user and the Admin view switcher changes identity without reloading the page, so a
+   plain flag would leave the staff workspace believing the admin's history had already arrived.
+
+   Callers use it as a guard that re-invokes them:  if (_attEnsureHistory(() => me(args))) return;
+   A failed fetch must not leave a screen blank or spinning, so a recent failure reports "nothing
+   more is coming" and the caller draws what the boot window gave it. */
+let _attHistoryFor = null, _attHistoryFlight = null, _attHistoryFailedAt = 0;
+function _attHasHistory() { return _attHistoryFor === String((TK.user || {}).id || ''); }
+function _attEnsureHistory(again) {
+  const who = String((TK.user || {}).id || '');
+  if (_attHistoryFor === who) return false;
+  if (Date.now() - _attHistoryFailedAt < 60000) return false;   // just failed: draw the window
+  if (!_attHistoryFlight) {
+    _attHistoryFlight = tkApi('/api/attendance')
+      .then(a => { try { _tkMergeAttendance(a.attendance || []); } catch (e) {} _attHistoryFor = who; })
+      .catch(() => { _attHistoryFailedAt = Date.now(); })
+      .then(() => { _attHistoryFlight = null; });
+  }
+  if (typeof again === 'function') {
+    /* Re-invoke after the flight, worked or not. On failure the guard above now returns false, so
+       the screen renders with the window instead of asking again for ever. */
+    _attHistoryFlight.then(() => { try { again(); } catch (e) {} });
+  }
+  return true;
+}
 async function tkBootstrap() {
   // Attendance is the fastest-growing table (headcount × every workday). Loading ALL of it for a
   // management/admin session blocked login and got slower every month. Boot fetches a recent window
@@ -3687,23 +3716,10 @@ async function tkBootstrap() {
   _DEMO_EMPLOYEES  = emps.employees;
   try { _tkPaintUserAva(); } catch (e) {}
   _DEMO_ATTENDANCE = att.attendance.map(r => ({ ...r, in: r.clock_in, out: r.clock_out }));
-  /* Hydrate the full attendance history after first paint — ONCE PER SESSION.
-     This was unguarded, and _armManagerPoll calls tkBootstrap() every 30s: so the single
-     largest and fastest-growing table in the portal (headcount x every workday, unbounded —
-     the very thing the windowed fetch above exists to avoid) was re-downloaded and re-parsed
-     every thirty seconds, forever, on every manager's browser. It is history: it does not
-     change behind you, and the windowed fetch at the top of this function already re-pulls
-     this month and last on every tick, which is where anything new actually lands.
-     Measured at rest with no interaction: /api/attendance appeared 4x in 91s where every other
-     endpoint appeared twice — two ticks, each paying for the window AND the whole history. */
-  const _who = String((TK.user || {}).id || '');
-  if (_attHydratedFor !== _who) {
-    _attHydratedFor = _who;
-    const hydrate = () => tkApi('/api/attendance')
-      .then(a => { try { _tkMergeAttendance(a.attendance || []); } catch (e) {} })
-      .catch(() => { if (_attHydratedFor === _who) _attHydratedFor = null; });   // never arrived — let a later boot try again
-    if ('requestIdleCallback' in window) requestIdleCallback(hydrate, { timeout: 6000 }); else setTimeout(hydrate, 3500);
-  }
+  /* No history fetch here. Boot pulls this month and last — the dashboard, the check-in state and
+     the default In/Out view read nothing older — and the screens that DO look further back call
+     _attEnsureHistory() as they open. Sign in, check in, close the tab, and the table is never
+     touched. */
   _DEMO_LEAVE      = lv.leave;
   /* An explicit key list, so a field the server starts returning does NOT silently appear in the
      gate — but it must list every field the gate needs. `active` and `dept` were missing, which is
@@ -4462,6 +4478,7 @@ setInterval(function () {
 let _ciPeriod = 'week';
 function tkCiSetPeriod(v) { _ciPeriod = v; tkRenderCheckin(); }
 function tkRenderCheckin() {
+  if (_attEnsureHistory(() => tkRenderCheckin())) return;   // reads beyond the boot window
   try { tkPopulateZoneSelect(); } catch (e) {}
   // warm up GPS so the zone check resolves instantly when the user picks a location
   try { const _fresh = (typeof _gpsTimestamp !== 'undefined' && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000); if (!_fresh && navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { try { _lastGpsLat = p.coords.latitude; _lastGpsLon = p.coords.longitude; _gpsTimestamp = Date.now(); } catch (e) {} }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }); } catch (e) {}   // skip the warm-up when a recent fix exists (no repeated GPS prompts on every render)
@@ -6439,6 +6456,7 @@ function _onboardToggle(id) { const s = _onboardState(); s.done = s.done || {}; 
 function _onboardDismiss() { const s = _onboardState(); s.dismissed = true; _onboardSave(s); _onboardRender(); }
 
 function _initStaffDashboard() {
+  if (_attEnsureHistory(_initStaffDashboard)) return;   // reads beyond the boot window
   /* greeting */
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -6528,6 +6546,7 @@ function _initStaffDashboard() {
 }
 /* Personal dashboard analytics — mirrors the admin "HR at a Glance" charts for the signed-in employee. */
 async function _initStaffAnalytics() {
+  if (_attEnsureHistory(_initStaffAnalytics)) return;   // reads beyond the boot window
   const wrap = document.getElementById('staff-analytics'); if (!wrap) return;
   try { await tkLoadColl('enrollments'); } catch (e) {}
   const me = (_DEMO_EMPLOYEES || []).find(e => e.name === _staffName) || {};
@@ -13825,6 +13844,7 @@ async function tkRenderCrmOverview() {
 
 /* My Space hub — Overview tab: a personal self-service summary + guide (works for staff). */
 async function tkRenderMySpaceOverview() {
+  if (_attEnsureHistory(tkRenderMySpaceOverview)) return;   // reads beyond the boot window
   const root = document.getElementById('myspace-overview-root'); if (!root) return;
   root.innerHTML = '<div style="padding:14px;color:var(--text-light);font-size:13px">' + _t('Loading…') + '</div>';
   const me = _tkMe() || (TK.user || {});
@@ -16561,6 +16581,7 @@ function tkRenderHrModules() {
 
 /* Manager dashboard — all-HRM metrics across every module. */
 async function tkRenderHrMetrics() {
+  if (_attEnsureHistory(tkRenderHrMetrics)) return;   // reads beyond the boot window
   const wrap = document.getElementById('dash-hr-metrics'); if (!wrap) return;
   // HR is opt-in: a manager without the HR app must not see (or even load) HR data on the dashboard.
   if (typeof _appDeniedCurrent === 'function' && _appDeniedCurrent('hr')) { wrap.innerHTML = ''; const ch = document.getElementById('dash-hr-charts'); if (ch) ch.innerHTML = ''; return; }
@@ -43351,6 +43372,7 @@ function _attIsAnomaly(r) {
 }
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
+  if (_attEnsureHistory(_renderRptAttendance)) return;   // reads beyond the boot window
   // Was every attendance row ever recorded, under a heading naming a month.
   const att = (_DEMO_ATTENDANCE || []).filter(r => _rptInPeriod(r.date));
   const total = att.length;
@@ -43504,6 +43526,7 @@ function _ioDayCell(v) {
     ';color:' + (wknd ? 'var(--warning)' : 'var(--text-light)') + '">' + _crmEsc(_t(_IO_DOW[dow])) + '</div>';
 }
 function renderInOutReport() {
+  if (_attEnsureHistory(renderInOutReport)) return;   // reads beyond the boot window
   const tbody = document.getElementById('inout-report-tbody');
   if (!tbody) return;
   { const slot = document.getElementById('io-period-slot'); if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod('io-period-f', 'renderInOutReport'); }
@@ -46133,6 +46156,7 @@ async function loadAttendance() { try { await tkBootstrap(); } catch (e) {} filt
 async function tkRefreshInOut() { try { await tkBootstrap(); } catch (e) {} renderInOutReport(); }
 
 function filterTable() {
+  if (_attEnsureHistory(filterTable)) return;   // reads beyond the boot window
   { const slot = document.getElementById('att-period-slot'); if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod('att-period-f', 'filterTable'); }
   const isStaff = _userRole === 'staff';
   const search = isStaff ? '' : (document.getElementById('att-search')?.value || '').toLowerCase();
@@ -46229,6 +46253,7 @@ async function _attAbsentKpi(kp, dept, search, dateF) {
 }
 
 function exportAttendance() {
+  if (_attEnsureHistory(exportAttendance)) return;   // reads beyond the boot window
   const rows = [['Name','Department','Date','Check In','Check Out','Status','Hours'],..._DEMO_ATTENDANCE.map(r=>[r.name,r.dept,r.date,r.in||'',r.out||'',r.status,r.hrs])];
   const csv  = rows.map(r => r.map(c=>`"${c}"`).join(',')).join('\n');
   const a    = document.createElement('a');
@@ -46250,6 +46275,7 @@ async function refreshDashboard() {
 }
 
 function filterDashboard(period, el) {
+  if (_attEnsureHistory(() => filterDashboard(period, el))) return;   // reads beyond the boot window
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
 
@@ -46677,6 +46703,7 @@ function tkBuildDashCharts(d) {
 }
 
 function initDashChart(period = 'week') {
+  if (_attEnsureHistory(() => initDashChart(period))) return;   // reads beyond the boot window
   const ctx = document.getElementById('dashChart');
   if (!ctx) return;
   if (_dashChart) _dashChart.destroy();
@@ -46729,6 +46756,7 @@ function initReportCharts() {
 }
 
 function _initTrendChart() {
+  if (_attEnsureHistory(_initTrendChart)) return;   // reads beyond the boot window
   const ctx = document.getElementById('trendChart');
   if (!ctx) return;
   if (_trendChart) _trendChart.destroy();
@@ -46780,6 +46808,7 @@ function _initLeaveChart() {
 }
 
 function _initDeptChart() {
+  if (_attEnsureHistory(_initDeptChart)) return;   // reads beyond the boot window
   const ctx = document.getElementById('deptChart');
   if (!ctx) return;
   if (_deptChart) _deptChart.destroy();
@@ -46981,6 +47010,7 @@ function _updateMapMarker(lat, lon, inZone) {
    SETTINGS JS
 ────────────────────────────────────────────────────────── */
 function switchCfgTab(tab, el) {
+  if (_attEnsureHistory(() => switchCfgTab(tab, el))) return;   // reads beyond the boot window
   document.querySelectorAll('#cfg-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
   ['connection','gps','schedule','notifications','system'].forEach(id => {
@@ -47137,6 +47167,7 @@ function viewAttendanceRecord(btn) {
 let _attPage = 1, _attPageSize = 15;
 function attChangePage(dir) { attGotoPage(_attPage + dir); }
 function attGotoPage(pg) {
+  if (_attEnsureHistory(() => attGotoPage(pg))) return;   // reads beyond the boot window
   const maxPg = Math.ceil(_DEMO_ATTENDANCE.length / _attPageSize);
   _attPage = Math.max(1, Math.min(pg, maxPg));
   filterTable();
