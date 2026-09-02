@@ -42139,7 +42139,7 @@ function _commitCheckin(lat, lon, zoneName) {
   /* unlock check-out button */
   const btnOut = document.getElementById('btn-checkout');
   if (btnOut) { btnOut.disabled = false; btnOut.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; btnOut.style.color = '#fff'; btnOut.style.cursor = 'pointer'; }
-  toast('Checked in at ' + timeStr + ' · ' + locLabel);
+  toast(_t('Checked in at ') + timeStr + ' · ' + locLabel);
 }
 
 async function doCheckin() {
@@ -42188,11 +42188,11 @@ async function doCheckin() {
       _checkedIn = true;
       sessionStorage.setItem('attendance_item_id', res.id);
       _updateCheckinUI(now.toTimeString().slice(0,5), '' + geo.zone, true);
-      toast('Checked in — ' + geo.zone);
+      toast(_t('Checked in — ') + geo.zone);
     } else { toast('Check-in failed — try again', 'error'); }
     if(btn){btn.disabled=false;}
   }, err => {
-    toast('GPS error: ' + _errMsg(err), 'error');
+    toast(_t('GPS error: ') + _errMsg(err), 'error');
     if(btn){btn.disabled=false;btn.textContent='Check In';}
   }, { enableHighAccuracy: true, timeout: 10000 });
 }
@@ -47164,7 +47164,7 @@ async function tkDeleteZone(id, name) {
     _DEMO_ZONES = (_DEMO_ZONES || []).filter(z => z.id !== id);
     try { const r = await tkApi('/api/zones'); _DEMO_ZONES = r.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius })); } catch (e) {}
     tkAudit('GPS zone deleted', name, '');
-    toast('Zone deleted: ' + name); tkRenderZones();
+    toast(_t('Zone deleted: ') + name); tkRenderZones();
   } catch (e) { toast(_t('Could not delete') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Which zone the modal is editing, or '' for a new one. Without it "Edit" opened a PREFILLED ADD
