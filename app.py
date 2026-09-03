@@ -9067,8 +9067,11 @@ class Handler(BaseHTTPRequestHandler):
     # "deptDocs" is the OVERRIDE list for the document bar: a department whose documents do not
     # live in a folder of the main library gets a row here naming where they do. Empty is the
     # normal case — the bar finds the folder by name without any configuration at all.
+    # "deptTabs" names departments the document bar must show even when nobody is assigned to
+    # them yet (a department that exists before its first hire), and marks the one whose
+    # documents are for the Board. Both are facts about the company, not about a person.
     PORTAL_KEYS = ("announcements", "holidays", "learning", "resources", "library", "wiki",
-                   "deptDocs")
+                   "deptDocs", "deptTabs")
 
     def _procurement_sso_token(self, u):
         """Short-lived HMAC-signed token {email,name,exp}. Procurement (an app of this portal)

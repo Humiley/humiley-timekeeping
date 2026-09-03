@@ -6356,6 +6356,13 @@ window._VI = {
   'A pin is placed — click the map (or drag the pin) to move it to your location, then Save.': 'Đã đặt ghim — bấm vào bản đồ (hoặc kéo ghim) để chuyển tới vị trí của bạn, rồi bấm Lưu.',
   'Searching for “{0}”…': 'Đang tìm “{0}”…',
   /* ── Our Library / Company Wiki / Knowledge Hub ── */
+  'Board only': 'Chỉ Ban lãnh đạo',
+  'Microsoft sign-in could not be started.': 'Không thể bắt đầu đăng nhập Microsoft.',
+  'That department is not open to your account.': 'Tài khoản của bạn không được mở phòng ban này.',
+  'Your Microsoft session needs renewing': 'Phiên Microsoft của bạn cần được gia hạn',
+  'Microsoft could not renew this session quietly — Safari and Chrome both block the background renewal these days. Reconnecting takes you to Microsoft and brings you straight back.': 'Microsoft không thể tự gia hạn phiên này — Safari và Chrome hiện đều chặn việc gia hạn nền. Kết nối lại sẽ đưa bạn sang Microsoft rồi quay lại ngay.',
+  'Reconnect Microsoft 365': 'Kết nối lại Microsoft 365',
+  'Document bar — departments': 'Thanh tài liệu — phòng ban',
   'Which page': 'Trang nào',
   'Choose a department': 'Chọn phòng ban',
   'Folder created': 'Đã tạo thư mục',

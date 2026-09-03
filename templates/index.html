@@ -2640,6 +2640,11 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="form-group"><label class="form-label">Knowledge Hub — document library (URL)</label><input class="form-control" id="portal-knowsp" placeholder="https://…sharepoint.com/sites/LearningManagementSystem"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the knowledge-hub files live — same rules as the wiki library above.</div></div>
       </div>
       <div class="card">
+        <div class="card-hdr"><div class="card-title">Document bar &mdash; departments</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('deptTabs')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
+        <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">The Documents bar already shows every department somebody is assigned to. Add a row here only for a department that has <b>no employees yet</b> &mdash; the name must match its folder in the library. Tick <b>Board only</b> on the department whose documents are for the Board: its tab is then hidden from everyone below Approver.<br><br><b>Hiding a tab is tidiness, not a lock.</b> Those folders live in a library SharePoint already serves to everyone who can open it, so a hidden folder is still reachable by searching the library or opening SharePoint. To actually restrict the Board's documents, set permissions on that folder in SharePoint.</div>
+        <div id="portal-depttabs"></div>
+      </div>
+      <div class="card">
         <div class="card-hdr"><div class="card-title">Department documents &mdash; exceptions</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('deptDocs')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">The Documents bar shows <b>General</b> plus one tab per department, and each department tab opens the folder of that name in the library. Add a row here <b>only</b> for a department whose documents live somewhere else &mdash; its own SharePoint site &mdash; and that address wins for that tab.</div>
         <div id="portal-deptdocs"></div>
@@ -6687,6 +6692,10 @@ const _TK_PORTAL_DEFAULTS = {
      Empty by design: the bar finds "Engineering" by looking for a folder called Engineering, so
      a company whose SharePoint is organised the obvious way configures nothing. */
   deptDocs: [],
+  /* Departments the bar must show even with nobody assigned to them yet, and which one holds
+     the Board's documents. Empty by design: with nothing here the bar is exactly the company's
+     real departments, which is right for most installs. */
+  deptTabs: [],
   /* Pinned pages on the wiki. EMPTY by design — the wiki's own contents are read from
      SharePoint, and inventing a list of sections here would put names on screen that no
      folder answers to. An admin pins whatever is worth pinning. */
@@ -6706,7 +6715,7 @@ function _tkPortalData() {
   const o = window._TK_PORTAL || {};
   const pick = k => (Array.isArray(o[k]) && o[k].length) ? o[k] : _TK_PORTAL_DEFAULTS[k];
   return { announcements: pick('announcements'), holidays: pick('holidays'), learning: pick('learning'), resources: pick('resources'),
-           library: pick('library'), wiki: pick('wiki'), deptDocs: pick('deptDocs') };
+           library: pick('library'), wiki: pick('wiki'), deptDocs: pick('deptDocs'), deptTabs: pick('deptTabs') };
 }
 
 /* Load admin-managed portal content from the backend. */
@@ -6723,6 +6732,7 @@ async function tkLoadPortal() {
       library: Array.isArray(j.library) ? j.library : null,
       wiki: Array.isArray(j.wiki) ? j.wiki : null,
       deptDocs: Array.isArray(j.deptDocs) ? j.deptDocs : null,
+      deptTabs: Array.isArray(j.deptTabs) ? j.deptTabs : null,
       // Where the Library board, the wiki and the knowledge hub point. Strings, not lists —
       // read back to every account, admin-only to change (app.py _portal_update).
       wikiPageUrl: j.wikiPageUrl || '',
@@ -6765,7 +6775,7 @@ const _tkEscT = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/
 
 async function tkRenderPortalEditor() {
   const PD = _tkPortalData();
-  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki, deptDocs: PD.deptDocs }));
+  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki, deptDocs: PD.deptDocs, deptTabs: PD.deptTabs }));
   _tkPortalRenderRows();
   _tkLibLocFill();
 }
@@ -7023,6 +7033,11 @@ function _tkPortalRenderRows() {
   const deptSel = (i, sel) => '<select class="form-control" style="flex:1" title="' + _tkEscA(_t('Department')) + '" onchange="tkPortalSet(\'deptDocs\',' + i + ',\'dept\',this)">' +
     ['<option value="">' + _t('Choose a department') + '</option>'].concat(
       tkAllDepts().map(d => '<option value="' + _tkEscA(d) + '"' + (_libSameName(sel, d) ? ' selected' : '') + '>' + _crmEsc(d) + '</option>')).join('') + '</select>';
+  I('portal-depttabs', m.deptTabs.map((it, i) =>
+    '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
+    '<input class="form-control" style="flex:1" placeholder="Department name, exactly as its folder is named" value="' + _tkEscA(it.dept) + '" oninput="tkPortalSet(\'deptTabs\',' + i + ',\'dept\',this)">' +
+    '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-light);white-space:nowrap"><input type="checkbox"' + (it.board ? ' checked' : '') + ' onchange="tkPortalSetBool(\'deptTabs\',' + i + ',\'board\',this)"> ' + _t('Board only') + '</label>' +
+    rm('deptTabs', i) + '</div>').join(''));
   I('portal-deptdocs', m.deptDocs.map((it, i) =>
     '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
     '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' + hubSel(i, it.hub) + deptSel(i, it.dept) + rm('deptDocs', i) + '</div>' +
@@ -7060,10 +7075,13 @@ function _tkLibLocFill() {
 }
 
 function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = el.value; }
+/* A checkbox has no useful .value — it is the literal string "on" whether ticked or not, so
+   tkPortalSet would store "on" for both states and the flag would never turn off. */
+function tkPortalSetBool(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = !!el.checked; }
 function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
 function tkPortalAdd(type) {
   if (!_tkPortalModel) tkRenderPortalEditor();
-  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link', level: '' }, wiki: { label: '', url: '', desc: '' }, deptDocs: { hub: 'wiki', dept: '', url: '' } }[type];
+  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link', level: '' }, wiki: { label: '', url: '', desc: '' }, deptDocs: { hub: 'wiki', dept: '', url: '' }, deptTabs: { dept: '', board: false } }[type];
   _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
   _tkPortalRenderRows();
 }
@@ -7133,7 +7151,9 @@ async function tkSavePortal() {
     library: m.library.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '', icon: x.icon || 'link', level: _LEVELS.indexOf(x.level) >= 0 ? x.level : '' })),
     wiki: m.wiki.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '' })),
     deptDocs: m.deptDocs.filter(x => (x.dept || '').trim() && (x.url || '').trim())
-      .map(x => ({ hub: x.hub === 'knowledge' ? 'knowledge' : 'wiki', dept: x.dept, url: (x.url || '').trim() }))
+      .map(x => ({ hub: x.hub === 'knowledge' ? 'knowledge' : 'wiki', dept: x.dept, url: (x.url || '').trim() })),
+    deptTabs: m.deptTabs.filter(x => (x.dept || '').trim())
+      .map(x => ({ dept: String(x.dept).trim(), board: !!x.board }))
   };   // the OTHER integration URLs are saved on Access & Permissions (tkSaveIntegrations); the backend merges per-key
   if (_tkCanPublishDocs()) {
     _TK_LIBLOC.forEach(function (f) {
@@ -7144,7 +7164,7 @@ async function tkSavePortal() {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki, deptDocs: payload.deptDocs });   // preserve integration URLs / invtrackSpUrl already cached
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki, deptDocs: payload.deptDocs, deptTabs: payload.deptTabs });   // preserve integration URLs / invtrackSpUrl already cached
     _TK_LIBLOC.forEach(function (f) { if (typeof payload[f[1]] === 'string') window._TK_PORTAL[f[1]] = payload[f[1]]; });
     // A repointed library must not keep listing the old one: the browser holds a resolved
     // SharePoint drive per hub, and a level change can take a whole page away.
@@ -39286,6 +39306,47 @@ function _libArg(v) {
   return _libAttr(String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
 }
 
+/* ── the Microsoft token, the way THIS screen needs it ───────────────────────
+   _pmSpToken falls back to acquireTokenPopup, and that is right where it is used: those callers
+   run part-way through a form somebody has typed into, and a redirect would throw the form away.
+
+   It is wrong here, and production showed both halves of why:
+
+     empty_window_error: window.open returned null or undefined window object
+     AADSTS16002: Application requested a user session which does not exist
+
+   The first is the popup. It opens AFTER an await, so the browser no longer credits it to the
+   click that started it and blocks it outright — Safari always, Chrome increasingly. The second
+   is the silent path: renewal happens in a hidden iframe, and Safari blocks the third-party
+   cookies it needs. So on Safari BOTH routes fail as soon as the token from sign-in ages out,
+   which is exactly what happened — the wiki listed files right after signing in and stopped
+   later, with nothing having changed.
+
+   A document browser has nothing typed into it to lose, so it can do what the popup could not:
+   redirect. Not automatically, though — an unexplained navigation away reads as a crash. The
+   panel says the session needs renewing and the reader presses a button. */
+async function _libToken() {
+  const SCOPES = ['Sites.ReadWrite.All'];
+  const acct = _account || (_msalApp && _msalApp.getAllAccounts && _msalApp.getAllAccounts()[0]);
+  if (!_msalApp || !acct) throw new Error('nosession');
+  try {
+    return (await _msalApp.acquireTokenSilent({ scopes: SCOPES, account: acct })).accessToken;
+  } catch (e) {
+    try { console.warn('library token (silent):', (e && (e.errorCode || e.name)), e && e.message); } catch (_) {}
+    throw new Error('reauth');
+  }
+}
+/* The one interactive step, and it only ever runs from a real click. */
+function _libReconnect() {
+  if (!_msalApp) return;
+  try {
+    _msalApp.acquireTokenRedirect({
+      scopes: ['Sites.ReadWrite.All'],
+      account: _account || (_msalApp.getAllAccounts && _msalApp.getAllAccounts()[0]) || undefined
+    });
+  } catch (e) { toast(_t('Microsoft sign-in could not be started.'), 'error', 7000); }
+}
+
 /* ── reading the library ────────────────────────────────────────────────────── */
 /* One folder's children. `interactive` is passed to _pmSpToken: false on the automatic first
    render (a pop-up opened outside a click is blocked by the browser, and a blocked pop-up is
@@ -39302,7 +39363,7 @@ async function _libSpList(hub, interactive) {
     if (!_libIsSharePoint(base)) throw new Error('nothost');
     if (typeof DEMO_MODE === 'function' && DEMO_MODE()) throw new Error('demo');
     if (!_msalApp || !_account) throw new Error('nosession');
-    const token = await _pmSpToken(!!interactive);
+    const token = await _libToken();
     const children = async function (u) {
       const r = await fetch(u + '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime',
         { headers: { 'Authorization': 'Bearer ' + token } });
@@ -39339,7 +39400,8 @@ async function _libSpList(hub, interactive) {
     st.items = await children(url);
     // General is the root MINUS the folders that have a tab of their own.
     if (!dept && atTabRoot) {
-      const tabs = _libDeptTabs();
+      const tabs = _libDeptTabs();   // ALL of them — a folder hidden from the bar must not
+                                     // reappear in General, which would undo the whole rule
       st.items = st.items.filter(function (x) {
         return !(x.folder && tabs.some(function (d) { return _libSameName(d, x.name); }));
       });
@@ -39370,9 +39432,49 @@ const _LIB_GENERAL = '';        // the tab id for company-wide documents = the l
 function _libSameName(a, b) {
   return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase();
 }
+/* EVERY department the bar knows about: the ones people are actually assigned to, plus any HR
+   named explicitly. The second half exists because a department can be created before its first
+   hire — its folder and its documents are real long before anybody's record says so, and a bar
+   that could not show it would send HR back to SharePoint. */
 function _libDeptTabs() {
-  try { return (typeof tkAllDepts === 'function' ? tkAllDepts() : []).filter(Boolean); } catch (e) { return []; }
+  const out = [];
+  const add = function (d) {
+    d = String(d == null ? '' : d).trim();
+    if (d && !out.some(function (x) { return _libSameName(x, d); })) out.push(d);
+  };
+  try { (typeof tkAllDepts === 'function' ? tkAllDepts() : []).forEach(add); } catch (e) {}
+  try { (_tkPortalData().deptTabs || []).forEach(function (r) { add(r && r.dept); }); } catch (e) {}
+  return out.sort(function (a, b) { return a.localeCompare(b); });
 }
+/* Documents for the Board. Flagged by HR rather than matched on a name, because the department
+   can be renamed and a hardcoded "Board Management" would quietly stop applying. */
+function _libDeptBoard(dept) {
+  return (_tkPortalData().deptTabs || []).some(function (r) {
+    return r && r.board && _libSameName(r.dept, dept);
+  });
+}
+function _libMyDept() {
+  try { return String(((TK.user && (TK.user.dept || TK.user.department)) || '')).trim(); } catch (e) { return ''; }
+}
+/* ── who sees which tab ───────────────────────────────────────────────────────
+   General is everybody's. Beyond that: your own department, always; every other department once
+   you are a Contributor, except the Board's; and everything from Approver up — which is where
+   this portal already puts anyone whose title says Director, Managing, Chief or Head.
+
+   Read this as TIDINESS, not as a lock, and the difference matters. These tabs are folders in
+   one library that SharePoint serves to whoever it already trusts, so a hidden tab is a folder
+   somebody can still reach by searching the library or opening SharePoint directly. What makes
+   the Board's documents restricted is a SharePoint permission on that folder. Nothing here can
+   substitute for it, and nothing here should be described as if it could. */
+function _libDeptAllowed(dept) {
+  if (!dept) return true;                                   // General
+  if (_libSameName(dept, _libMyDept())) return true;        // your own department
+  const rank = _lvlRank(_userLevel);
+  if (rank >= _lvlRank('management')) return true;          // Approver and above: all of it
+  if (rank >= _lvlRank('manager')) return !_libDeptBoard(dept);   // Contributor: all but the Board
+  return false;
+}
+function _libVisibleDepts() { return _libDeptTabs().filter(_libDeptAllowed); }
 /* The address HR gave one department, if any. Keyed by hub as well as department: the same
    department can have one folder of policies in the wiki and another of training material in the
    knowledge hub, and they are not the same documents. */
@@ -39388,6 +39490,9 @@ function _libDeptUrl(hub, dept) {
    address can be on a different SharePoint site entirely, and reusing the old drive id would list
    the wrong library's files under the right heading — which is worse than an error. */
 function _libTab(hub, dept) {
+  // The bar does not offer it, so nothing should reach this with a department it may not open —
+  // but "nothing should" is not a check, and this one costs a line.
+  if (dept && !_libDeptAllowed(dept)) { toast(_t('That department is not open to your account.'), 'warn'); return; }
   const st = _libState(hub);
   st.tab = dept || _LIB_GENERAL;
   st.crumbs = []; st.drive = null; st.baseRef = null; st.rel = ''; st.found = null;
@@ -39401,7 +39506,7 @@ function _libTabBar(hub) {
       '" onclick="_libTab(\'' + hub + '\',\'' + _libArg(id) + '\')">' + _crmEsc(_t(label)) + '</button>';
   };
   return '<div class="tabs" style="margin:0 14px">' + tab(_LIB_GENERAL, 'General') +
-    _libDeptTabs().map(function (d) { return tab(d, d); }).join('') + '</div>';
+    _libVisibleDepts().map(function (d) { return tab(d, d); }).join('') + '</div>';
 }
 
 /* ── HR: updating the files ───────────────────────────────────────────────────
@@ -39472,7 +39577,7 @@ async function _libMakeDeptFolder(hub, dept) {
   const st = _libState(hub);
   if (!st.drive || !dept) return;
   try {
-    const token = await _pmSpToken(true);
+    const token = await _libToken();
     const rel = st.rel ? ':/' + st.rel.split('/').map(encodeURIComponent).join('/') + ':' : '';
     const r = await fetch(_GRAPH + '/drives/' + st.drive + '/' + (st.baseRef || 'root') + rel + '/children', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -39498,7 +39603,7 @@ function _libUploadPick(hub) {
     if (f.size > 250 * 1024 * 1024) { toast(_t('That file is too large (250 MB limit).'), 'warn', 7000); return; }
     toast(_t('Uploading to SharePoint…'));
     try {
-      const token = await _pmSpToken(true);
+      const token = await _libToken();
       // 'rename', not 'replace': adding a file must never quietly overwrite one somebody else put
       // there under the same name. Replacing is a separate, named action on the row itself.
       const it = await _libPutFile(_libUploadUrl(hub, f.name), f, 'rename', token);
@@ -39526,7 +39631,7 @@ function _libReplacePick(hub, itemId, name) {
     if (!yes) return;
     toast(_t('Uploading to SharePoint…'));
     try {
-      const token = await _pmSpToken(true);
+      const token = await _libToken();
       await _libPutFile(_GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(itemId), f, 'replace', token);
       toast(_t('File replaced') + ' ✓', 'success', 6000);
       try { tkAudit('File replaced in the company library', hub, name); } catch (e) {}
@@ -39548,7 +39653,7 @@ async function _libSpSearch(hub) {
   st.loading = true; st.error = '';
   _libPaintDocs(hub);
   try {
-    const token = await _pmSpToken(true);
+    const token = await _libToken();
     const res = await fetch(_GRAPH + '/drives/' + st.drive + "/root/search(q='" + encodeURIComponent(q.replace(/'/g, "''")) + "')" +
       '?$top=100&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime,parentReference',
       { headers: { 'Authorization': 'Bearer ' + token } });
@@ -39615,6 +39720,10 @@ function _libDocsMsg(hub) {
   if (e === 'demo')
     return box(_t('Demo mode'),
       _t('Documents are read live from SharePoint, which the demo has no session for. The links still work.'), '');
+  if (e === 'reauth')
+    return box(_t('Your Microsoft session needs renewing'),
+      _t('Microsoft could not renew this session quietly — Safari and Chrome both block the background renewal these days. Reconnecting takes you to Microsoft and brings you straight back.'),
+      '<button class="btn btn-primary btn-sm" onclick="_libReconnect()">' + _t('Reconnect Microsoft 365') + '</button>');
   if (e === 'nosession')
     return box(_t('Sign in to Microsoft 365 to read the documents here'),
       _t('Files stay in SharePoint and are shown with your own permissions, so this needs your Microsoft session. You can open the library in SharePoint instead.'),
