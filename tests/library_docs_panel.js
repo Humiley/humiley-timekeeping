@@ -38,10 +38,9 @@ const PRELUDE = `
   const document = { getElementById: function (id) { return DOM[id] || null; } };
   const window = { _TK_PORTAL: {} };
   let _crmLF = {};
-  let _msalApp = null, _account = null;
+  let _msalApp = {}, _account = {};   // signed in to Microsoft; whether they may WRITE is CAN_WRITE
   let _userLevel = 'manager';
   function DEMO_MODE(){ return false; }
-  function _lvlRank(l){ return ['user','staff','manager','management','editor','admin'].indexOf(l); }
   function _crmEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function _tkEscA(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
   function _crmHref(u){ const v = String(u || '').trim(); return /^https?:\\/\\//i.test(v) ? v : ''; }
@@ -61,11 +60,38 @@ const PRELUDE = `
   function _lvlRank(l){ const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
   let CAN_WRITE = false;
   function _tkCanPublishDocs(){ return CAN_WRITE; }
+  let DEPTS = [];
+  function tkAllDepts(){ return DEPTS; }
   function tkAudit(){}
   function toast(){}
   function _tkAppScopeApply(){}
-  function _pmSpToken(){ throw new Error('no token in this harness'); }
-  function _pmSpResolve(){ throw new Error('no graph in this harness'); }
+  /* A fake SharePoint drive, so the tab bar can actually be DRIVEN. Everything above this line
+     tests rendering from a state somebody set by hand; the department tabs are different — the
+     work is in the resolving (find the folder of that name, or fall back, or say there is none),
+     and none of that runs unless there is something to fetch from. */
+  let DRIVE = null, RESOLVE = null, POSTED = [];
+  function _pmSpToken(){ if (!DRIVE) throw new Error('no token in this harness'); return Promise.resolve('T'); }
+  function _pmSpResolve(base){
+    if (!DRIVE) throw new Error('no graph in this harness');
+    return Promise.resolve(RESOLVE(base));
+  }
+  async function fetch(url, opts) {
+    const u = String(url);
+    if (opts && opts.method === 'POST') {          // create folder
+      POSTED.push({ url: u, body: JSON.parse(opts.body) });
+      return { ok: true, status: 201, json: async () => ({ id: 'NEW' }), text: async () => '' };
+    }
+    /* Parsed by hand rather than by regex: this whole prelude lives inside a template literal,
+       and a regex literal carrying slashes does not survive that intact. */
+    const after = u.split('/drives/')[1] || '';
+    const seg = after.split('?')[0].split('/');
+    const drv = seg[0];
+    const key = seg[1] === 'items' ? decodeURIComponent(seg[2].split(':')[0]) : 'root';
+    if (!drv || seg.indexOf('children') < 0) return { ok: false, status: 404, json: async () => ({}), text: async () => 'no route: ' + u };
+    const rows = (DRIVE[drv] || {})[key];
+    if (!rows) return { ok: false, status: 404, json: async () => ({}), text: async () => 'no folder ' + key };
+    return { ok: true, status: 200, json: async () => ({ value: rows }), text: async () => '' };
+  }
   function _pmSpCtx(){ return { mode: 'path' }; }
   const _GRAPH = 'https://graph.microsoft.com/v1.0';
   function msalLogin(){}
@@ -90,8 +116,15 @@ new Function(PRELUDE + src.slice(i, j) + `
     setPeriod: function (v) { PERIOD_OK = v; },
     setFilter: function (k, v) { _crmLF[k] = v; },
     setLevel: function (l) { _userLevel = l; },
-    setCanWrite: function (v) { CAN_WRITE = v; _msalApp = v ? {} : null; _account = v ? {} : null; },
-    mount: function (id) { DOM[id] = { innerHTML: '' }; return DOM[id]; }
+    setCanWrite: function (v) { CAN_WRITE = v; },
+    mount: function (id) { DOM[id] = { innerHTML: '' }; return DOM[id]; },
+    _libTab: _libTab,
+    _libSpList: _libSpList,
+    _libTabBar: _libTabBar,
+    _libDeptUrl: _libDeptUrl,
+    setDrive: function (d, resolve) { DRIVE = d; RESOLVE = resolve; POSTED = []; },
+    posted: function () { return POSTED; },
+    setDepts: function (d) { DEPTS = d; }
   });
 `).call(api);
 
@@ -318,5 +351,78 @@ ok('only sharepoint.com is accepted as a library host',
   api._libIsSharePoint('https://notsharepoint.com/x') === false &&
   api._libIsSharePoint('') === false);
 
-console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
-process.exit(failed ? 1 : 0);
+/* ── the document bar: General + one tab per department ─────────────────────────
+   Driven, not inspected. The rendering is the easy half; the work is in resolving what a tab
+   MEANS — find the folder of that name, or use the address HR gave it, or say plainly that the
+   department has no folder yet. None of that runs without something to fetch from, which is why
+   this section has a fake drive behind it. */
+(async function () {
+  const el = api.mount('lib-docs-wiki');
+  api.setDepts(['Engineering', 'Factory', 'Sales & Tender']);
+  api.setCanWrite(false);
+  const ROOT = [
+    { id: 'FE', name: 'Engineering', folder: { childCount: 3 }, webUrl: 'https://a.sharepoint.com/E' },
+    { id: 'FP', name: 'Company Policies', folder: { childCount: 9 }, webUrl: 'https://a.sharepoint.com/P' },
+    { id: 'R1', name: 'Employee Handbook.pdf', file: {}, size: 100, webUrl: 'https://a.sharepoint.com/h.pdf' }
+  ];
+  api.setDrive({ DRV: { root: ROOT, FE: [{ id: 'E1', name: 'Design Standard.pdf', file: {}, size: 10, webUrl: 'https://a.sharepoint.com/e1' }] } },
+    () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+
+  /* Pull the text out of one class of element. Written as an exec loop rather than String.match,
+     because match(/…/g) drops the capture groups and hands back whole matches — which is how the
+     first version of this reported every row with a trailing "<" and counted the .tabs CONTAINER
+     as a tab. An instrument that lies about what it measured is worse than no instrument. */
+  const grab = (cls) => {
+    const out = [], re = new RegExp('class="' + cls + '"[^>]*>([^<]*)<', 'g');
+    let m;
+    while ((m = re.exec(el.innerHTML))) out.push(m[1].replace(/&amp;/g, '&'));
+    return out;
+  };
+  const names = () => grab('lib-row-name');
+  const tabs = () => grab('tab(?: active)?');
+
+  api._libTab('wiki', '');
+  await new Promise(r => setTimeout(r, 0));
+  ok('the bar is General plus every real department',
+    tabs().join('|') === 'General|Engineering|Factory|Sales & Tender', tabs().join('|'));
+  ok('General lists the company-wide documents', names().indexOf('Employee Handbook.pdf') >= 0);
+  ok('...and a folder that is NOT a department stays on General', names().indexOf('Company Policies') >= 0);
+  ok('...but a department folder is not listed twice — it has its own tab',
+    names().indexOf('Engineering') < 0, names().join('|'));
+
+  api._libTab('wiki', 'Engineering');
+  await new Promise(r => setTimeout(r, 0));
+  ok('a department tab opens the folder of that name', names().join('|') === 'Design Standard.pdf', names().join('|'));
+  ok('and the department is the root of the trail, named once',
+    /lib-crumb[^>]*>Engineering</.test(el.innerHTML) && !/Library root/.test(el.innerHTML),
+    (el.innerHTML.match(/<div class="lib-crumbs">.*?<\/div>/) || [''])[0]);
+
+  api._libTab('wiki', 'Factory');
+  await new Promise(r => setTimeout(r, 0));
+  ok('a department with no folder says exactly that', /No documents folder for Factory/.test(el.innerHTML));
+  ok('...and does not pretend the folder is empty', !/This folder is empty/.test(el.innerHTML));
+  ok('...and offers no Create button to somebody who cannot write', !/_libMakeDeptFolder/.test(el.innerHTML));
+
+  api.setCanWrite(true);
+  api._libTab('wiki', 'Factory');
+  await new Promise(r => setTimeout(r, 0));
+  ok('HR is offered the folder that is missing', /_libMakeDeptFolder\('wiki','Factory'\)/.test(el.innerHTML));
+
+  /* A department whose documents live on its own SharePoint site. The override has to WIN, and it
+     has to be looked up per hub — the same department's policies and its training material are
+     different documents in different libraries. */
+  api.setPortal({ deptDocs: [{ hub: 'wiki', dept: 'Factory', url: 'https://other.sharepoint.com/sites/Factory' }] });
+  let asked = null;
+  api.setDrive({ OTHER: { root: [{ id: 'X1', name: 'Line 2 SOP.pdf', file: {}, size: 10, webUrl: 'https://o/x1' }] } },
+    (base) => { asked = base; return { driveId: 'OTHER', baseRef: 'root', projRel: '' }; });
+  api._libTab('wiki', 'Factory');
+  await new Promise(r => setTimeout(r, 0));
+  ok('a department address overrides the folder', names().join('|') === 'Line 2 SOP.pdf', names().join('|'));
+  ok('...and it is the address that was resolved', asked === 'https://other.sharepoint.com/sites/Factory', String(asked));
+  ok('the override is per hub, not global',
+    api._libDeptUrl('wiki', 'Factory') !== '' && api._libDeptUrl('knowledge', 'Factory') === '');
+  ok('a department nobody overrode is unaffected', api._libDeptUrl('wiki', 'Engineering') === '');
+
+  console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
+  process.exit(failed ? 1 : 0);
+})();

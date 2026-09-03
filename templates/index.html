@@ -2640,6 +2640,11 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="form-group"><label class="form-label">Knowledge Hub — document library (URL)</label><input class="form-control" id="portal-knowsp" placeholder="https://…sharepoint.com/sites/LearningManagementSystem"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the knowledge-hub files live — same rules as the wiki library above.</div></div>
       </div>
       <div class="card">
+        <div class="card-hdr"><div class="card-title">Department documents &mdash; exceptions</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('deptDocs')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
+        <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">The Documents bar shows <b>General</b> plus one tab per department, and each department tab opens the folder of that name in the library. Add a row here <b>only</b> for a department whose documents live somewhere else &mdash; its own SharePoint site &mdash; and that address wins for that tab.</div>
+        <div id="portal-deptdocs"></div>
+      </div>
+      <div class="card">
         <div class="card-hdr"><div class="card-title">Wiki — pinned pages</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('wiki')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Optional shortcuts shown under the wiki's documents — a SharePoint page or folder worth putting in front of everybody. The wiki's own contents come from SharePoint and need nothing here.</div>
         <div id="portal-wiki"></div>
@@ -6678,6 +6683,10 @@ const _TK_PORTAL_DEFAULTS = {
     { label: 'Knowledge Hub', url: 'view:knowledge', icon: 'knowledge', desc: '' },
     { label: 'Wiki', url: 'view:wiki', icon: 'wiki', desc: '' }
   ],
+  /* Where one department's documents live, when they are NOT a folder of the main library.
+     Empty by design: the bar finds "Engineering" by looking for a folder called Engineering, so
+     a company whose SharePoint is organised the obvious way configures nothing. */
+  deptDocs: [],
   /* Pinned pages on the wiki. EMPTY by design — the wiki's own contents are read from
      SharePoint, and inventing a list of sections here would put names on screen that no
      folder answers to. An admin pins whatever is worth pinning. */
@@ -6697,7 +6706,7 @@ function _tkPortalData() {
   const o = window._TK_PORTAL || {};
   const pick = k => (Array.isArray(o[k]) && o[k].length) ? o[k] : _TK_PORTAL_DEFAULTS[k];
   return { announcements: pick('announcements'), holidays: pick('holidays'), learning: pick('learning'), resources: pick('resources'),
-           library: pick('library'), wiki: pick('wiki') };
+           library: pick('library'), wiki: pick('wiki'), deptDocs: pick('deptDocs') };
 }
 
 /* Load admin-managed portal content from the backend. */
@@ -6713,6 +6722,7 @@ async function tkLoadPortal() {
       resources: Array.isArray(j.resources) ? j.resources : null,
       library: Array.isArray(j.library) ? j.library : null,
       wiki: Array.isArray(j.wiki) ? j.wiki : null,
+      deptDocs: Array.isArray(j.deptDocs) ? j.deptDocs : null,
       // Where the Library board, the wiki and the knowledge hub point. Strings, not lists —
       // read back to every account, admin-only to change (app.py _portal_update).
       wikiPageUrl: j.wikiPageUrl || '',
@@ -6755,7 +6765,7 @@ const _tkEscT = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/
 
 async function tkRenderPortalEditor() {
   const PD = _tkPortalData();
-  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki }));
+  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki, deptDocs: PD.deptDocs }));
   _tkPortalRenderRows();
   _tkLibLocFill();
 }
@@ -7008,6 +7018,15 @@ function _tkPortalRenderRows() {
     icoSel(i, it.icon) + lvlSel(i, it.level) + rm('library', i) + '</div>' +
     '<input class="form-control" style="margin-bottom:6px" placeholder="https://…  or  view:wiki  ·  leave blank until you have the link" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'library\',' + i + ',\'url\',this)">' +
     '<input class="form-control" placeholder="One line about what is in there (optional)" value="' + _tkEscA(it.desc) + '" oninput="tkPortalSet(\'library\',' + i + ',\'desc\',this)"></div>').join(''));
+  const hubSel = (i, sel) => '<select class="form-control" style="flex:0 0 130px" title="' + _tkEscA(_t('Which page')) + '" onchange="tkPortalSet(\'deptDocs\',' + i + ',\'hub\',this)">' +
+    [['wiki', 'Company Wiki'], ['knowledge', 'Knowledge Hub']].map(h => '<option value="' + h[0] + '"' + (((sel || 'wiki') === h[0]) ? ' selected' : '') + '>' + _crmEsc(_t(h[1])) + '</option>').join('') + '</select>';
+  const deptSel = (i, sel) => '<select class="form-control" style="flex:1" title="' + _tkEscA(_t('Department')) + '" onchange="tkPortalSet(\'deptDocs\',' + i + ',\'dept\',this)">' +
+    ['<option value="">' + _t('Choose a department') + '</option>'].concat(
+      tkAllDepts().map(d => '<option value="' + _tkEscA(d) + '"' + (_libSameName(sel, d) ? ' selected' : '') + '>' + _crmEsc(d) + '</option>')).join('') + '</select>';
+  I('portal-deptdocs', m.deptDocs.map((it, i) =>
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' + hubSel(i, it.hub) + deptSel(i, it.dept) + rm('deptDocs', i) + '</div>' +
+    '<input class="form-control" placeholder="https://…sharepoint.com/sites/…  the department\'s own library" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'deptDocs\',' + i + ',\'url\',this)"></div>').join(''));
   I('portal-wiki', m.wiki.map((it, i) =>
     '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
     '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' +
@@ -7044,7 +7063,7 @@ function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[
 function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
 function tkPortalAdd(type) {
   if (!_tkPortalModel) tkRenderPortalEditor();
-  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link', level: '' }, wiki: { label: '', url: '', desc: '' } }[type];
+  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link', level: '' }, wiki: { label: '', url: '', desc: '' }, deptDocs: { hub: 'wiki', dept: '', url: '' } }[type];
   _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
   _tkPortalRenderRows();
 }
@@ -7112,7 +7131,9 @@ async function tkSavePortal() {
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
     library: m.library.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '', icon: x.icon || 'link', level: _LEVELS.indexOf(x.level) >= 0 ? x.level : '' })),
-    wiki: m.wiki.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '' }))
+    wiki: m.wiki.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '' })),
+    deptDocs: m.deptDocs.filter(x => (x.dept || '').trim() && (x.url || '').trim())
+      .map(x => ({ hub: x.hub === 'knowledge' ? 'knowledge' : 'wiki', dept: x.dept, url: (x.url || '').trim() }))
   };   // the OTHER integration URLs are saved on Access & Permissions (tkSaveIntegrations); the backend merges per-key
   if (_tkCanPublishDocs()) {
     _TK_LIBLOC.forEach(function (f) {
@@ -7123,7 +7144,7 @@ async function tkSavePortal() {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki });   // preserve integration URLs / invtrackSpUrl already cached
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki, deptDocs: payload.deptDocs });   // preserve integration URLs / invtrackSpUrl already cached
     _TK_LIBLOC.forEach(function (f) { if (typeof payload[f[1]] === 'string') window._TK_PORTAL[f[1]] = payload[f[1]]; });
     // A repointed library must not keep listing the old one: the browser holds a resolved
     // SharePoint drive per hub, and a level change can take a whole page away.
@@ -39272,7 +39293,8 @@ function _libArg(v) {
 async function _libSpList(hub, interactive) {
   const st = _libState(hub), meta = _LIB_HUBS[hub];
   if (!meta) return;
-  const base = _libCfg(meta.docsKey);
+  const dept = st.tab || '', own = _libDeptUrl(hub, dept);
+  const base = own || _libCfg(meta.docsKey);
   st.loading = true; st.error = ''; st.found = null;
   _libPaintDocs(hub);
   try {
@@ -39281,8 +39303,14 @@ async function _libSpList(hub, interactive) {
     if (typeof DEMO_MODE === 'function' && DEMO_MODE()) throw new Error('demo');
     if (!_msalApp || !_account) throw new Error('nosession');
     const token = await _pmSpToken(!!interactive);
+    const children = async function (u) {
+      const r = await fetch(u + '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime',
+        { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) throw new Error('graph ' + r.status);
+      return (((await r.json()) || {}).value) || [];
+    };
     const here = st.crumbs.length ? st.crumbs[st.crumbs.length - 1] : null;
-    let url;
+    let url, atTabRoot = false;
     if (here && here.id && st.drive) {
       url = _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(here.id) + '/children';
     } else {
@@ -39294,17 +39322,86 @@ async function _libSpList(hub, interactive) {
       st.baseRef = r.baseRef; st.rel = r.projRel || '';
       const rel = r.projRel ? ':/' + r.projRel.split('/').map(encodeURIComponent).join('/') + ':' : '';
       url = _GRAPH + '/drives/' + r.driveId + '/' + r.baseRef + rel + '/children';
+      atTabRoot = true;
+      // A department tab with no address of its own means "the folder of that name". Found by
+      // LISTING the root and matching, not by guessing a path: a library whose folder is called
+      // "Engineering Dept" would 404 on a guessed /Engineering, and a 404 here reads as "this
+      // department has no documents" — a claim about the company, not about a path.
+      if (dept && !own) {
+        const rows = await children(url);
+        const f = rows.filter(function (x) { return x.folder && _libSameName(x.name, dept); })[0];
+        if (!f) throw new Error('nodept');
+        st.crumbs = [{ id: f.id, name: f.name }];
+        url = _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(f.id) + '/children';
+        atTabRoot = false;
+      }
     }
-    const res = await fetch(url + '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime',
-      { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!res.ok) throw new Error('graph ' + res.status);
-    st.items = (((await res.json()) || {}).value) || [];
+    st.items = await children(url);
+    // General is the root MINUS the folders that have a tab of their own.
+    if (!dept && atTabRoot) {
+      const tabs = _libDeptTabs();
+      st.items = st.items.filter(function (x) {
+        return !(x.folder && tabs.some(function (d) { return _libSameName(d, x.name); }));
+      });
+    }
   } catch (e) {
     st.items = null;
     st.error = String((e && e.message) || e);
   }
   st.loading = false;
   _libPaintDocs(hub);
+}
+
+/* ── the document bar: General, then one tab per department ───────────────────
+   The company keeps its documents in one library with a folder per department, so this bar is
+   that structure made navigable rather than a new place to put things. The tabs come from the
+   departments the company ACTUALLY HAS — tkAllDepts(), read off employee records — so a new
+   department gets its tab the day somebody is assigned to it and nobody has to remember to add
+   one. There is deliberately no second list of departments to drift from the first.
+
+   A department whose documents live somewhere else entirely (its own SharePoint site) gets an
+   ADDRESS of its own, set by HR, and that wins over the folder. Both layouts are real, and a
+   design that allowed only one would be wrong for half the company.
+
+   General is the library root with the department folders taken OUT of it — they each have a
+   tab, and listing them twice is how a tidy structure starts looking untidy. */
+const _LIB_GENERAL = '';        // the tab id for company-wide documents = the library root
+
+function _libSameName(a, b) {
+  return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase();
+}
+function _libDeptTabs() {
+  try { return (typeof tkAllDepts === 'function' ? tkAllDepts() : []).filter(Boolean); } catch (e) { return []; }
+}
+/* The address HR gave one department, if any. Keyed by hub as well as department: the same
+   department can have one folder of policies in the wiki and another of training material in the
+   knowledge hub, and they are not the same documents. */
+function _libDeptUrl(hub, dept) {
+  if (!dept) return '';
+  const rows = (_tkPortalData().deptDocs || []);
+  const hit = rows.filter(function (r) {
+    return r && String(r.hub || 'wiki') === hub && _libSameName(r.dept, dept) && _crmHref(r.url);
+  })[0];
+  return hit ? _crmHref(hit.url) : '';
+}
+/* Switching tab throws away the resolved drive as well as the crumbs: a department with its own
+   address can be on a different SharePoint site entirely, and reusing the old drive id would list
+   the wrong library's files under the right heading — which is worse than an error. */
+function _libTab(hub, dept) {
+  const st = _libState(hub);
+  st.tab = dept || _LIB_GENERAL;
+  st.crumbs = []; st.drive = null; st.baseRef = null; st.rel = ''; st.found = null;
+  _crmLF['lib-' + hub + '-f'] = '';
+  _libSpList(hub, true);
+}
+function _libTabBar(hub) {
+  const st = _libState(hub), cur = st.tab || _LIB_GENERAL;
+  const tab = function (id, label) {
+    return '<button type="button" class="tab' + (_libSameName(id, cur) ? ' active' : '') +
+      '" onclick="_libTab(\'' + hub + '\',\'' + _libArg(id) + '\')">' + _crmEsc(_t(label)) + '</button>';
+  };
+  return '<div class="tabs" style="margin:0 14px">' + tab(_LIB_GENERAL, 'General') +
+    _libDeptTabs().map(function (d) { return tab(d, d); }).join('') + '</div>';
 }
 
 /* ── HR: updating the files ───────────────────────────────────────────────────
@@ -39368,6 +39465,28 @@ function _libWhyUploadFailed(msg) {
   if (/signed in|token|InteractionRequired|expired/i.test(msg)) return _t('Your Microsoft session expired — reload the page and sign in again.');
   return _t('Upload failed') + ': ' + msg;
 }
+/* Create the missing department folder, at the root of the library the tab belongs to. Offered
+   only where the listing already failed with 'nodept', so the root is resolved and the folder is
+   genuinely absent rather than merely unreadable. */
+async function _libMakeDeptFolder(hub, dept) {
+  const st = _libState(hub);
+  if (!st.drive || !dept) return;
+  try {
+    const token = await _pmSpToken(true);
+    const rel = st.rel ? ':/' + st.rel.split('/').map(encodeURIComponent).join('/') + ':' : '';
+    const r = await fetch(_GRAPH + '/drives/' + st.drive + '/' + (st.baseRef || 'root') + rel + '/children', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      // 'fail', not 'rename': if something of that name appeared while this screen was open, the
+      // right answer is to show it, not to create "Engineering 1" beside it.
+      body: JSON.stringify({ name: dept, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+    });
+    if (!r.ok && r.status !== 409) throw new Error(r.status + ' ' + (await r.text()).slice(0, 160));
+    toast(_t('Folder created') + ' ✓', 'success', 5000);
+    try { tkAudit('Department documents folder created', hub, dept); } catch (e) {}
+    _libSpList(hub, true);
+  } catch (e) { toast(_libWhyUploadFailed(String((e && e.message) || e)), 'error', 9000); }
+}
+
 /* Add a file to the folder currently on screen. */
 function _libUploadPick(hub) {
   const st = _libState(hub);
@@ -39484,6 +39603,15 @@ function _libDocsMsg(hub) {
   if (e === 'nothost')
     return box(_t('That link is not a SharePoint address'),
       _t('The library location must be a sharepoint.com address. An administrator can correct it in Access & Permissions.'), '');
+  if (e === 'nodept') {
+    /* Not an error — a fact about the library. The department exists (somebody is assigned to it)
+       and its folder does not, which is exactly the gap the button below closes. */
+    const d = _libState(hub).tab || '';
+    return box(_t('No documents folder for') + ' ' + d,
+      _t('Nobody has created a folder for this department in the library yet.'),
+      _libMayWrite() ? '<button class="btn btn-emerald btn-sm" onclick="_libMakeDeptFolder(\'' + hub + '\',\'' + _libArg(d) + '\')">' +
+        tkIcon('plus', 13) + ' ' + _t('Create the folder') + '</button>' : '');
+  }
   if (e === 'demo')
     return box(_t('Demo mode'),
       _t('Documents are read live from SharePoint, which the demo has no session for. The links still work.'), '');
@@ -39563,10 +39691,17 @@ function _libPaintDocs(hub) {
   const el = document.getElementById('lib-docs-' + hub); if (!el) return;
   const st = _libState(hub);
   const fn = '_libSpFilter_' + hub;
-  const crumbs = '<div class="lib-crumbs"><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',-1)">' +
-    _t('Library root') + '</button>' +
-    st.crumbs.map(function (c, i) {
-      return '<span class="lib-crumb-sep">/</span><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',' + i + ')">' + _crmEsc(c.name) + '</button>';
+  /* The first crumb is the TAB, not the drive. Inside a department tab crumbs[0] is already the
+     department's own folder, so listing it again after a "Library root" that cannot be reached
+     from here would be two lies in one row: a level that is not above this one, and a name shown
+     twice. Skip it, and let the department name be the root. */
+  const inDept = !!st.tab;
+  const shown = inDept ? st.crumbs.slice(1) : st.crumbs;
+  const crumbs = '<div class="lib-crumbs"><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',' + (inDept ? 0 : -1) + ')">' +
+    _crmEsc(inDept ? st.tab : _t('Library root')) + '</button>' +
+    shown.map(function (c, i) {
+      const at = inDept ? i + 1 : i;
+      return '<span class="lib-crumb-sep">/</span><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',' + at + ')">' + _crmEsc(c.name) + '</button>';
     }).join('') + '</div>';
   const bar = _crmFiltBar(
     _crmFiltSearch('lib-' + hub + '-f', _t('Filter this folder…'), fn) +
@@ -39593,7 +39728,7 @@ function _libPaintDocs(hub) {
       _tkEscA(_t('Add a file to the folder you are in')) + '">' + tkIcon('plus', 13) + ' ' + _t('Upload file') + '</button>' : '') +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpRetry(\'' + hub + '\')" title="' + _tkEscA(_t('Reload from SharePoint')) + '">' +
     tkIcon('refresh', 13) + ' ' + _t('Refresh') + '</button></div></div>' +
-    (st.error ? '' : crumbs + bar) + body;
+    _libTabBar(hub) + (st.error ? '' : crumbs + bar) + body;
 }
 /* One named callback per hub, because _crmSearchInput / _crmFiltSel take a function NAME and
    call window[name] — a closure cannot be reached that way. */
