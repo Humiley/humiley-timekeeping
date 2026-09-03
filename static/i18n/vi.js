@@ -6356,6 +6356,8 @@ window._VI = {
   'A pin is placed — click the map (or drag the pin) to move it to your location, then Save.': 'Đã đặt ghim — bấm vào bản đồ (hoặc kéo ghim) để chuyển tới vị trí của bạn, rồi bấm Lưu.',
   'Searching for “{0}”…': 'Đang tìm “{0}”…',
   /* ── Our Library / Company Wiki / Knowledge Hub ── */
+  'View or download in SharePoint': 'Xem hoặc tải xuống trong SharePoint',
+  'This file has no SharePoint address': 'Tệp này không có địa chỉ SharePoint',
   'Library': 'Thư viện',
   'Our Library': 'Thư viện công ty',
   'Company Wiki': 'Wiki công ty',

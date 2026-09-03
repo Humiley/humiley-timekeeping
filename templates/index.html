@@ -958,8 +958,18 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 .lib-crumb:hover{background:var(--soft-bg)}
 .lib-crumb-sep{color:var(--text-light)}
 .lib-rows{display:flex;flex-direction:column}
-.lib-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font-family:inherit;cursor:pointer;background:none;border:none;border-top:1px solid var(--line);padding:10px 14px}
+.lib-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font-family:inherit;cursor:pointer;background:none;border:none;border-top:1px solid var(--line);padding:10px 14px;color:inherit;text-decoration:none}
 .lib-row:hover{background:var(--soft-bg)}
+.lib-row:hover .lib-row-name{text-decoration:underline}
+/* One line, two destinations: the folder row (opens here) and the arrow (opens in SharePoint). */
+.lib-row-wrap{display:flex;align-items:stretch;border-top:1px solid var(--line)}
+.lib-row-wrap .lib-row{border-top:none;flex:1;min-width:0}
+.lib-row-ext{display:flex;align-items:center;padding:0 14px;color:var(--text-light);flex:none;text-decoration:none}
+.lib-row-ext:hover{background:var(--soft-bg);color:var(--navy)}
+.lib-row-ext:focus-visible{outline:none;background:var(--soft-bg);box-shadow:inset 0 0 0 2px rgba(32,80,144,.28)}
+.lib-row-dead{cursor:default;opacity:.65}
+.lib-row-dead:hover{background:none}
+.lib-row-dead:hover .lib-row-name{text-decoration:none}
 .lib-row:focus-visible{outline:none;background:var(--soft-bg);box-shadow:inset 0 0 0 2px rgba(32,80,144,.28)}
 .lib-row-ico{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
 .lib-row-txt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
@@ -39200,6 +39210,8 @@ const _LIB_EXT_TONE = {
   zip: '#A16207', rar: '#A16207', dwg: '#0EA5E9', mp4: '#DB4C8C', txt: '#5C6470'
 };
 function _libExt(name) { const m = String(name || '').match(/\.([A-Za-z0-9]{1,5})$/); return m ? m[1].toLowerCase() : ''; }
+const _LIB_CHEVRON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+const _LIB_EXTERNAL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 /* Two different escapes, because these strings land in two different places and the wrong one
    is silently fine until somebody names a file badly.
 
@@ -39358,17 +39370,31 @@ function _libRowsHtml(hub, rows, showPath) {
       : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>';
     const bits = [r.folder ? '' : _libFmtSize(r.size), _libFmtWhen(r.lastModifiedDateTime),
       showPath ? _libParentLabel(r) : ''].filter(Boolean);
-    const act = r.folder
-      ? 'onclick="_libSpEnter(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')"'
-      : 'onclick="window.open(\'' + _libArg(_crmHref(r.webUrl)) + '\',\'_blank\',\'noopener\')"';
-    return '<button type="button" class="lib-row" ' + act + ' title="' + _libAttr(r.name) + '">' +
+    const body =
       '<span class="lib-row-ico" style="background:' + tone + '14"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="' + tone + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ico + '</svg></span>' +
       '<span class="lib-row-txt"><span class="lib-row-name">' + _crmEsc(r.name) + '</span>' +
-      (bits.length ? '<span class="lib-row-meta">' + _crmEsc(bits.join('  ·  ')) + '</span>' : '') + '</span>' +
-      '<span class="lib-row-go">' + (r.folder
-        ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>'
-        : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>') +
-      '</span></button>';
+      (bits.length ? '<span class="lib-row-meta">' + _crmEsc(bits.join('  ·  ')) + '</span>' : '') + '</span>';
+    const url = _crmHref(r.webUrl);
+    if (r.folder) {
+      /* A folder can mean two different things, so it offers two controls instead of guessing:
+         the row itself opens it HERE (breadcrumbs, no tab lost), and the arrow beside it opens
+         the same folder in SharePoint. */
+      return '<div class="lib-row-wrap">' +
+        '<button type="button" class="lib-row" onclick="_libSpEnter(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' + _libAttr(r.name) + '">' +
+        body + '<span class="lib-row-go">' + _LIB_CHEVRON + '</span></button>' +
+        (url ? '<a class="lib-row-ext" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+          _libAttr(_t('Open in SharePoint')) + '" aria-label="' + _libAttr(_t('Open in SharePoint')) + '">' + _LIB_EXTERNAL + '</a>' : '') +
+        '</div>';
+    }
+    /* A FILE IS A LINK, not a button that happens to call window.open. The name is the thing
+       people click, and only a real anchor behaves like one: the browser shows the destination
+       on hover, middle-click and ctrl-click work, and the right-click menu offers "open in new
+       tab" and "copy link address". target=_blank keeps the portal open behind it; SharePoint's
+       own viewer is what then lets the reader preview or download. */
+    if (!url) return '<span class="lib-row lib-row-dead" title="' + _libAttr(_t('This file has no SharePoint address')) + '">' + body + '</span>';
+    return '<a class="lib-row" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+      _libAttr(r.name + ' — ' + _t('View or download in SharePoint')) + '">' +
+      body + '<span class="lib-row-go">' + _LIB_EXTERNAL + '</span></a>';
   }).join('') + '</div>';
 }
 /* Where a search hit lives, so a result list of eight files all called "Form.pdf" is usable. */

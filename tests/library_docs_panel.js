@@ -107,9 +107,19 @@ function paint(mutate) {
 let html = paint(st => { st.items = ROWS; });
 ok('the folder listing renders every row', /Policies/.test(html) && /Employee Handbook\.pdf/.test(html) && /Leave Form\.docx/.test(html));
 ok('folders sort before files', html.indexOf('Policies') < html.indexOf('Employee Handbook.pdf'));
-ok('a folder opens IN PLACE, a file opens its SharePoint URL',
-  /_libSpEnter\('wiki','F1'/.test(html) && /window\.open\('https:\/\/x\.sharepoint\.com\/handbook\.pdf'/.test(html),
-  html.slice(0, 400));
+/* A FILE IS AN ANCHOR, not a button calling window.open. Only a real link gives the reader the
+   destination on hover, middle-click and ctrl-click, and a right-click menu with "open in new
+   tab" and "copy link address" — and target=_blank is what leaves the portal open behind the
+   SharePoint viewer they view or download from. A button looks identical and does none of it. */
+ok('a file is a real link that opens SharePoint in a new tab',
+  /<a class="lib-row" href="https:\/\/x\.sharepoint\.com\/handbook\.pdf" target="_blank" rel="noopener"/.test(html),
+  html.slice(html.indexOf('handbook') - 200, html.indexOf('handbook') + 120));
+ok('no file row falls back to window.open', !/window\.open/.test(html));
+ok('a folder still opens IN PLACE', /_libSpEnter\('wiki','F1'/.test(html));
+ok('and a folder can also be opened in SharePoint, in its own tab',
+  /<a class="lib-row-ext" href="https:\/\/x\.sharepoint\.com\/Policies" target="_blank" rel="noopener"/.test(html));
+ok('a file with no SharePoint address is not a dead link',
+  /lib-row-dead/.test(paint(st => { st.items = [{ id: 'N', name: 'orphan.pdf', file: {}, size: 1 }]; })));
 ok('a file shows its size', /2\.3 MB/.test(html), api._libFmtSize(2411724));
 ok('the toolbar is the standard one, not a hand-rolled filter',
   /<search id="lib-wiki-f">/.test(html) && /<period id="lib-wiki-period">/.test(html));
