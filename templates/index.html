@@ -929,6 +929,66 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 .app-tile-badge{position:absolute;top:15px;right:15px;background:var(--danger);color:#fff;border-radius:var(--r-pill);font-size:10.5px;font-weight:700;line-height:1;padding:4px 8px;box-shadow:0 2px 6px rgba(192,0,0,.35)}
 .app-empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--r-lg);padding:34px 24px;text-align:center;color:var(--text-light);font-size:13px}
 
+/* ── Our Library / Company Wiki / Knowledge Hub ── */
+.lib-sec-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-light);margin:0 0 12px}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.lib-tile{display:flex;align-items:center;gap:13px;text-align:left;text-decoration:none;font-family:inherit;cursor:pointer;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--emerald);border-radius:var(--r-lg);padding:15px 16px;box-shadow:var(--shadow-sm);transition:transform .16s,box-shadow .16s;color:var(--navy)}
+.lib-tile:hover{transform:translateY(-2px);box-shadow:var(--shadow-card)}
+.lib-tile:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(0,176,96,.32)}
+.lib-tile-ico{width:40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex:none;background:rgba(0,176,96,.10);color:var(--emerald)}
+.lib-tile-txt{display:flex;flex-direction:column;gap:3px;min-width:0}
+.lib-tile-name{font-size:14px;font-weight:700;letter-spacing:-.2px;line-height:1.25;color:var(--navy)}
+.lib-tile-desc{font-size:11.5px;color:var(--text-light);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lib-tile-in{border-left-color:var(--navy)}
+.lib-tile-in .lib-tile-ico{background:rgba(32,80,144,.10);color:var(--navy)}
+/* A place the company has but has not linked yet. Dimmed and not clickable, never hidden. */
+.lib-tile-off{position:relative;cursor:default;border-left-color:var(--line);box-shadow:none;opacity:.72}
+.lib-tile-off:hover{transform:none;box-shadow:none}
+.lib-tile-off .lib-tile-ico{background:var(--soft-bg);color:var(--text-light)}
+.lib-tile-off-lbl{display:block;margin-top:3px;font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-light)}
+
+.lib-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 20px;box-shadow:var(--shadow-sm);margin-bottom:18px}
+.lib-hero-txt{flex:1;min-width:240px}
+.lib-hero-txt h2{font-size:18px;font-weight:700;color:var(--navy);letter-spacing:-.3px;margin:0 0 6px}
+.lib-hero-txt p{font-size:12.5px;color:var(--text-light);line-height:1.6;margin:0;max-width:70ch}
+.lib-hero-act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+.lib-crumbs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:10px 14px 2px;font-size:12px}
+.lib-crumb{background:none;border:none;font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);cursor:pointer;padding:3px 5px;border-radius:6px}
+.lib-crumb:hover{background:var(--soft-bg)}
+.lib-crumb-sep{color:var(--text-light)}
+.lib-rows{display:flex;flex-direction:column}
+.lib-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font-family:inherit;cursor:pointer;background:none;border:none;border-top:1px solid var(--line);padding:10px 14px;color:inherit;text-decoration:none}
+.lib-row:hover{background:var(--soft-bg)}
+.lib-row:hover .lib-row-name{text-decoration:underline}
+/* One line, two destinations: the folder row (opens here) and the arrow (opens in SharePoint). */
+.lib-row-wrap{display:flex;align-items:stretch;border-top:1px solid var(--line)}
+.lib-row-wrap .lib-row{border-top:none;flex:1;min-width:0}
+.lib-row-ext{display:flex;align-items:center;padding:0 14px;color:var(--text-light);flex:none;text-decoration:none}
+.lib-row-ext:hover{background:var(--soft-bg);color:var(--navy)}
+.lib-row-ext:focus-visible{outline:none;background:var(--soft-bg);box-shadow:inset 0 0 0 2px rgba(32,80,144,.28)}
+.lib-row-dead{cursor:default;opacity:.65}
+.lib-row-dead:hover{background:none}
+.lib-row-dead:hover .lib-row-name{text-decoration:none}
+.lib-row:focus-visible{outline:none;background:var(--soft-bg);box-shadow:inset 0 0 0 2px rgba(32,80,144,.28)}
+.lib-row-ico{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+.lib-row-txt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.lib-row-name{font-size:13px;font-weight:600;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-row-meta{font-size:11px;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-row-go{color:var(--text-light);flex:none;display:flex}
+.lib-found{padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);font-size:12px;color:var(--text-light)}
+.lib-empty{padding:28px 20px;text-align:center;color:var(--text-light);font-size:12.5px}
+.lib-note{padding:22px 20px;text-align:center}
+.lib-note-t{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:6px}
+.lib-note-b{font-size:12.5px;color:var(--text-light);line-height:1.6;max-width:62ch;margin:0 auto 14px}
+.lib-note-a{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+@media (max-width:820px){
+  .lib-grid{grid-template-columns:1fr;gap:10px}
+  .lib-tile{padding:13px 14px}
+  .lib-hero{padding:15px 16px}
+  .lib-row-name{white-space:normal}
+}
+
 @media (max-width:820px){
   /* The phone topbar is already tight, and the drawer carries "All Apps" at the top —
      a second button here only stole the page title's room. */
@@ -1218,6 +1278,22 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="nav-item" onclick="_msNav('myspace-overview','My Space')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></span>
     <span class="nav-label">My Space</span>
+  </div>
+
+  <!-- Library. No data-roles and no data-app: the company's own reference material is for
+       everybody, and a wiki nobody below manager can open is not a wiki. -->
+  <div class="sidebar-section-label" data-appgrp="library">Library</div>
+  <div class="nav-item" onclick="showView('library',this,'Our Library')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+    <span class="nav-label">Our Library</span>
+  </div>
+  <div class="nav-item" onclick="showView('wiki',this,'Company Wiki')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+    <span class="nav-label">Company Wiki</span>
+  </div>
+  <div class="nav-item" onclick="showView('knowledge',this,'Knowledge Hub')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><line x1="9" y1="21" x2="15" y2="21"/></svg></span>
+    <span class="nav-label">Knowledge Hub</span>
   </div>
 
   <div class="sidebar-section-label" data-appgrp="approvals" data-roles="manager">Approvals</div>
@@ -1655,6 +1731,27 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
   <div id="myspace-overview-root"></div>
 </div>
+<!-- ═══ VIEWS: LIBRARY / COMPANY WIKI / KNOWLEDGE HUB ═══
+     Three pages over content that lives in SharePoint. Nothing is stored here — see the
+     OUR LIBRARY block in the script for why, and for what happens without an M365 session. -->
+<div id="view-library" class="view">
+  <div class="page-header">
+    <div><h1>Our Library</h1><p>Every place the company keeps what it knows — one board, one click each</p></div>
+  </div>
+  <div id="library-root"></div>
+</div>
+<div id="view-wiki" class="view">
+  <div class="page-header">
+    <div><h1>Company Wiki</h1><p>Company information, policies and procedures — read live from SharePoint</p></div>
+  </div>
+  <div id="wiki-root"></div>
+</div>
+<div id="view-knowledge" class="view">
+  <div class="page-header">
+    <div><h1>Knowledge Hub</h1><p>Training, technical know-how and reference material from the Learning Management System</p></div>
+  </div>
+  <div id="knowledge-root"></div>
+</div>
 <!-- ═══ VIEW: CRM HUB OVERVIEW ═══ -->
 <div id="view-crm-overview" class="view">
   <div class="page-header">
@@ -1984,6 +2081,10 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div style="font-size:11px;color:var(--text-light);margin:4px 0 8px">Verify each go‑live switch‑on actually worked — Microsoft 365, invoice sync, approval email, SharePoint, push.</div>
       <div id="portal-health"></div>
     </div>
+    <div class="form-group"><label class="form-label">Company Wiki — SharePoint page (URL)</label><input class="form-control" id="portal-wikipage" placeholder="https://…sharepoint.com/sites/HRRP/SitePages/WIKI-PAGE.aspx"><div style="font-size:11px;color:var(--text-light);margin-top:4px">The wiki page the company publishes in SharePoint. The <b>Company Wiki</b> page links straight to it.</div></div>
+    <div class="form-group"><label class="form-label">Company Wiki — document library (URL)</label><input class="form-control" id="portal-wikisp" placeholder="https://…sharepoint.com/sites/HRRP"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the wiki's files live. Paste the site address to read its default document library, or a folder address to start inside that folder. Files are listed with each reader's <b>own</b> SharePoint permissions and are never copied into the portal, so this widens nobody's access.</div></div>
+    <div class="form-group"><label class="form-label">Knowledge Hub — SharePoint page (URL)</label><input class="form-control" id="portal-knowpage" placeholder="https://…sharepoint.com/sites/LearningManagementSystem/SitePages/Knowledge-Hub.aspx"><div style="font-size:11px;color:var(--text-light);margin-top:4px">The Knowledge Hub page on the Learning Management System site.</div></div>
+    <div class="form-group"><label class="form-label">Knowledge Hub — document library (URL)</label><input class="form-control" id="portal-knowsp" placeholder="https://…sharepoint.com/sites/LearningManagementSystem"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the knowledge-hub files live — same rules as the wiki library above.</div></div>
     <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
   </div>
   </div>
@@ -2522,6 +2623,16 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="card">
         <div class="card-hdr"><div class="card-title">Resources &amp; Quick Links</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('resources')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div id="portal-resources"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Our Library (board tiles)</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('library')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
+        <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">The tiles on the Library page. Paste the SharePoint or intranet address for each. Leave the address blank and the tile still shows, marked as needing a link — <b>view:wiki</b> and <b>view:knowledge</b> open this portal's own Wiki and Knowledge Hub pages.</div>
+        <div id="portal-library"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Wiki — pinned pages</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('wiki')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
+        <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Optional shortcuts shown under the wiki's documents — a SharePoint page or folder worth putting in front of everybody. The wiki's own contents come from SharePoint and need nothing here.</div>
+        <div id="portal-wiki"></div>
       </div>
     </div>
   </div>
@@ -6540,7 +6651,24 @@ const _TK_PORTAL_DEFAULTS = {
     { label: 'Employee Handbook', url: '' }, { label: 'Company Policies', url: '' },
     { label: 'Payroll & Payslips', url: '' }, { label: 'Benefits & Wellness', url: '' },
     { label: 'IT Help Desk', url: '' }, { label: 'Company Directory', url: '' }
-  ]
+  ],
+  /* The board, in the order the company already publishes it on the SharePoint home page.
+     Five of the seven ship with NO url, on purpose: the addresses were never given, and a
+     guessed link that lands on a 404 is worse than a tile that says it needs one — one of
+     them wastes everybody's time quietly. `view:` targets are pages of this portal. */
+  library: [
+    { label: 'IT Knowledge Page', url: '', icon: 'it', desc: 'IT guides, systems and how to get help' },
+    { label: 'PMO – Project Template', url: '', icon: 'template', desc: 'Standard project templates and PMO forms' },
+    { label: 'Project Management Hub', url: '', icon: 'project', desc: 'Project governance, tools and reporting' },
+    { label: 'Learning Management System', url: '', icon: 'learning', desc: 'Courses, training records and certificates' },
+    { label: 'Training Hub', url: '', icon: 'training', desc: 'Training plans, materials and schedules' },
+    { label: 'Knowledge Hub', url: 'view:knowledge', icon: 'knowledge', desc: '' },
+    { label: 'Wiki', url: 'view:wiki', icon: 'wiki', desc: '' }
+  ],
+  /* Pinned pages on the wiki. EMPTY by design — the wiki's own contents are read from
+     SharePoint, and inventing a list of sections here would put names on screen that no
+     folder answers to. An admin pins whatever is worth pinning. */
+  wiki: []
 };
 const _TK_RES_ICON = {
   'Employee Handbook': '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
@@ -6555,7 +6683,8 @@ const _TK_RES_ICON_DEFAULT = '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.
 function _tkPortalData() {
   const o = window._TK_PORTAL || {};
   const pick = k => (Array.isArray(o[k]) && o[k].length) ? o[k] : _TK_PORTAL_DEFAULTS[k];
-  return { announcements: pick('announcements'), holidays: pick('holidays'), learning: pick('learning'), resources: pick('resources') };
+  return { announcements: pick('announcements'), holidays: pick('holidays'), learning: pick('learning'), resources: pick('resources'),
+           library: pick('library'), wiki: pick('wiki') };
 }
 
 /* Load admin-managed portal content from the backend. */
@@ -6569,6 +6698,14 @@ async function tkLoadPortal() {
       holidays: Array.isArray(j.holidays) ? j.holidays : null,
       learning: Array.isArray(j.learning) ? j.learning : null,
       resources: Array.isArray(j.resources) ? j.resources : null,
+      library: Array.isArray(j.library) ? j.library : null,
+      wiki: Array.isArray(j.wiki) ? j.wiki : null,
+      // Where the Library board, the wiki and the knowledge hub point. Strings, not lists —
+      // read back to every account, admin-only to change (app.py _portal_update).
+      wikiPageUrl: j.wikiPageUrl || '',
+      wikiSpUrl: j.wikiSpUrl || '',
+      knowledgePageUrl: j.knowledgePageUrl || '',
+      knowledgeSpUrl: j.knowledgeSpUrl || '',
       teamsWebhook: j.teamsWebhook || '',
       financeSpUrl: j.financeSpUrl || '',
       // Whether THIS user may release money, computed by the server with the same helper the
@@ -6605,7 +6742,7 @@ const _tkEscT = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/
 
 async function tkRenderPortalEditor() {
   const PD = _tkPortalData();
-  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources }));
+  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki }));
   _tkPortalRenderRows();
 }
 
@@ -6797,15 +6934,26 @@ async function tkLoadIntegrations() {
   const _hh = document.getElementById('portal-apprHealth'); const _H = (live && live.apprEmailHealth) || null;
   if (_hh && _H) _hh.textContent = _H.lastError ? ('Last error: ' + _H.lastError) : (_H.ok ? (_H.ok + ' sent OK' + (_H.at ? (' · ' + _H.at) : '')) : '');
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = g('procurementUrl', (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '');
+  /* Library locations. The server always answers with the address IN FORCE (its own shipped
+     default when nothing is stored), so these boxes are never blank while a link is working —
+     a form that loaded blank and saved would clear a live link and say "Saved". */
+  const _wp = document.getElementById('portal-wikipage'); if (_wp) _wp.value = g('wikiPageUrl', '');
+  const _ws = document.getElementById('portal-wikisp'); if (_ws) _ws.value = g('wikiSpUrl', '');
+  const _kp = document.getElementById('portal-knowpage'); if (_kp) _kp.value = g('knowledgePageUrl', '');
+  const _ks = document.getElementById('portal-knowsp'); if (_ks) _ks.value = g('knowledgeSpUrl', '');
   if (live) {   // keep the caches consistent with what we just showed so the save echo matches the server
     window._TK_PORTAL = window._TK_PORTAL || {};
     if (typeof live.teamsWebhook === 'string') window._TK_PORTAL.teamsWebhook = live.teamsWebhook;
     if (typeof live.financeSpUrl === 'string') { window._TK_PORTAL.financeSpUrl = live.financeSpUrl; if (TK.cfg) TK.cfg.financeSpUrl = live.financeSpUrl; }
     if (typeof live.procurementUrl === 'string') { window._TK_PORTAL.procurementUrl = live.procurementUrl; if (TK.cfg) TK.cfg.procurementUrl = live.procurementUrl; }
+    ['wikiPageUrl', 'wikiSpUrl', 'knowledgePageUrl', 'knowledgeSpUrl'].forEach(function (k) {
+      if (typeof live[k] === 'string') window._TK_PORTAL[k] = live[k];
+    });
   }
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
   const _apprEls = ['portal-apprEmail', 'portal-apprHr', 'portal-apprFin', 'portal-apprProc', 'portal-apprRemind', 'portal-apprRemindDays', 'portal-apprEscalateDays', 'portal-apprEscalateTo', 'portal-apprTestBtn', 'portal-apprSweepBtn', 'portal-digestEnabled', 'portal-digestDay', 'portal-digestLeadTo', 'portal-digestTestBtn', 'portal-tkNudges', 'portal-tkCheckinHour', 'portal-tkCheckoutHour', 'portal-tkTestBtn', 'portal-monthlyReports', 'portal-monthlyDay', 'portal-monthlyTo', 'portal-monthlyTestBtn'].map(id => document.getElementById(id));
-  [tw, fs, pu, ..._apprEls].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change these settings.' : ''; } });
+  const _libEls = ['portal-wikipage', 'portal-wikisp', 'portal-knowpage', 'portal-knowsp'].map(id => document.getElementById(id));
+  [tw, fs, pu, ..._libEls, ..._apprEls].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change these settings.' : ''; } });
 }
 
 function _tkPortalRenderRows() {
@@ -6838,13 +6986,31 @@ function _tkPortalRenderRows() {
     '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
     '<input class="form-control" style="flex:0 0 180px" placeholder="Label" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'label\',this)">' +
     '<input class="form-control" style="flex:1" placeholder="https://…  (optional)" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'url\',this)">' + rm('resources', i) + '</div>').join(''));
+  const icoSel = (i, sel) => '<select class="form-control" style="flex:0 0 130px" title="Icon" onchange="tkPortalSet(\'library\',' + i + ',\'icon\',this)">' +
+    _LIB_ICON_KEYS.map(k => '<option value="' + k + '"' + (((sel || 'link') === k) ? ' selected' : '') + '>' + k + '</option>').join('') + '</select>';
+  I('portal-library', m.library.map((it, i) =>
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' +
+    '<input class="form-control" style="flex:1" placeholder="Tile name" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'library\',' + i + ',\'label\',this)">' +
+    icoSel(i, it.icon) + rm('library', i) + '</div>' +
+    '<input class="form-control" style="margin-bottom:6px" placeholder="https://…  or  view:wiki  ·  leave blank until you have the link" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'library\',' + i + ',\'url\',this)">' +
+    '<input class="form-control" placeholder="One line about what is in there (optional)" value="' + _tkEscA(it.desc) + '" oninput="tkPortalSet(\'library\',' + i + ',\'desc\',this)"></div>').join(''));
+  I('portal-wiki', m.wiki.map((it, i) =>
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' +
+    '<input class="form-control" style="flex:1" placeholder="Page name" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'wiki\',' + i + ',\'label\',this)">' + rm('wiki', i) + '</div>' +
+    '<input class="form-control" style="margin-bottom:6px" placeholder="https://…  SharePoint page or folder" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'wiki\',' + i + ',\'url\',this)">' +
+    '<input class="form-control" placeholder="One line about the page (optional)" value="' + _tkEscA(it.desc) + '" oninput="tkPortalSet(\'wiki\',' + i + ',\'desc\',this)"></div>').join(''));
 }
+/* The icon names _LIB_TILE_ICON draws, offered to the editor rather than typed from memory —
+   an unknown name silently falls back to the generic link mark, which reads as "broken". */
+const _LIB_ICON_KEYS = ['link', 'it', 'template', 'project', 'learning', 'training', 'knowledge', 'wiki'];
 
 function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = el.value; }
 function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
 function tkPortalAdd(type) {
   if (!_tkPortalModel) tkRenderPortalEditor();
-  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' } }[type];
+  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link' }, wiki: { label: '', url: '', desc: '' } }[type];
   _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
   _tkPortalRenderRows();
 }
@@ -6910,13 +7076,15 @@ async function tkSavePortal() {
     announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '', audience: x.audience || 'All' })),
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
-    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() }))
+    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
+    library: m.library.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '', icon: x.icon || 'link' })),
+    wiki: m.wiki.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '' }))
   };   // integration URLs are saved separately on Access & Permissions (tkSaveIntegrations); the backend merges per-key
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources });   // preserve integration URLs / invtrackSpUrl already cached
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki });   // preserve integration URLs / invtrackSpUrl already cached
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast(_t('Network error') + ': ' + _errMsg(e), 'error', 5000); }
 }
@@ -6932,6 +7100,10 @@ async function tkSaveIntegrations() {
     financeSpUrl: V('portal-finsp'),
     hrSpUrl: V('portal-hrsp'),
     procurementUrl: V('portal-procurl'),
+    wikiPageUrl: V('portal-wikipage'),
+    wikiSpUrl: V('portal-wikisp'),
+    knowledgePageUrl: V('portal-knowpage'),
+    knowledgeSpUrl: V('portal-knowsp'),
     apprEmail: C('portal-apprEmail') ? '1' : '0',
     apprSenderHr: V('portal-apprHr'),
     apprSenderFinance: V('portal-apprFin'),
@@ -6970,7 +7142,11 @@ async function tkSaveIntegrations() {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save integrations', 'error', 5000); return; }
-    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl });
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl,
+      wikiPageUrl: payload.wikiPageUrl, wikiSpUrl: payload.wikiSpUrl, knowledgePageUrl: payload.knowledgePageUrl, knowledgeSpUrl: payload.knowledgeSpUrl });
+    // The browser holds a resolved SharePoint drive per hub; a repointed library must not keep
+    // listing the old one.
+    try { delete _LIB_SP.wiki; delete _LIB_SP.knowledge; } catch (_e) {}
     if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks new values up without a reload
     // The snapshot the action buttons compare against must move with the save, or the very next
     // click would claim the value is unsaved.
@@ -38735,6 +38911,8 @@ const _TK_APP_ALWAYS = new Set(['home']);
 const _TK_APPS = [
   { key: 'home',        label: 'My Workspace',       tone: '#00B060', desc: 'Your dashboard, attendance and personal requests',
     icon: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 14 0v1"/>' },
+  { key: 'library',     label: 'Library',            tone: '#15803D', desc: 'The company wiki, the knowledge hub and every reference library',
+    icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
   { key: 'insight',     label: 'Company Insight',    tone: '#205090', desc: 'Company and executive dashboards',
     icon: '<path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.8L7 14.3"/>' },
   { key: 'approvals',   label: 'Approvals',          tone: '#F59E0B', desc: 'What is waiting for your decision, and how your team is doing',
@@ -38939,6 +39117,419 @@ function _appsFilter(q) {
     none.textContent = _t('No app matches that.'); none.style.display = '';
   } else if (none) { none.style.display = 'none'; }
 }
+
+/* ── LIBRARY / WIKI / KNOWLEDGE HUB ──────────────────────────────────────────
+   (marker line — tests/library_docs_panel.js slices the block between this and its
+   END marker and drives it against stubs. Renaming either breaks that test loudly,
+   which is the point: deleting them would make it pass on nothing.)
+
+   OUR LIBRARY — the board, the Company Wiki and the Knowledge Hub
+
+   The company already publishes all of this in SharePoint: a WIKI page on the HR site, a
+   Knowledge Hub on the Learning Management System site, and the document libraries behind
+   both. Copying any of it into the portal database would create a second copy, and the copy
+   starts disagreeing with SharePoint the first time somebody edits one and not the other —
+   so nothing here stores a document. The board carries LINKS, and the two hub pages BROWSE
+   the libraries live through Microsoft Graph using the reader's own delegated token, which
+   is what a project's Documents tab already does (_pmSpToken / _pmSpCtx / _pmSpResolve,
+   reused rather than re-implemented).
+
+   What that buys and what it costs. SharePoint stays the single source, and ITS permissions
+   still decide what each person sees: the request is made as the reader, so the portal can
+   never widen them — a folder somebody cannot open in SharePoint is a folder they cannot
+   open here. The cost is that browsing needs a live Microsoft 365 session. Without one the
+   pages still work as links and SAY so, because an empty file list reads as "there are no
+   documents", which is a different and much worse claim than "you are not signed in".
+────────────────────────────────────────────────────────────────────────────── */
+
+/* The shipped locations. app.py holds the same four strings (_APPR_SETTING_DEFAULTS) and is
+   what /api/portal answers with; these cover the moment before that reply lands and a
+   browser talking to a backend older than this feature. An admin repoints all four in
+   Access & Permissions → System Integrations. */
+const _LIB_FALLBACK = {
+  wikiPageUrl: 'https://humileyvietnam.sharepoint.com/sites/HRRP/SitePages/WIKI-PAGE.aspx',
+  wikiSpUrl: 'https://humileyvietnam.sharepoint.com/sites/HRRP',
+  knowledgePageUrl: 'https://humileyvietnam.sharepoint.com/sites/LearningManagementSystem/SitePages/Knowledge-Hub.aspx',
+  knowledgeSpUrl: 'https://humileyvietnam.sharepoint.com/sites/LearningManagementSystem'
+};
+/* Every URL on these pages goes through _crmHref, so a stored value that is not http(s) —
+   a `javascript:` link pasted into the settings form — renders as no link at all. */
+function _libCfg(k) {
+  const v = String(((window._TK_PORTAL || {})[k] || '')).trim();
+  return _crmHref(v || _LIB_FALLBACK[k] || '');
+}
+/* Graph is only ever asked about SharePoint. The bearer token goes to graph.microsoft.com
+   whatever this returns — the host is a path segment there, not a destination — but a link
+   the whole company is told is the company's own deserves the check on its own account. */
+function _libIsSharePoint(url) {
+  try { return /(^|\.)sharepoint\.com$/i.test(new URL(url).hostname); } catch (e) { return false; }
+}
+
+/* ── the two hubs ───────────────────────────────────────────────────────────── */
+const _LIB_HUBS = {
+  wiki: {
+    key: 'wiki', title: 'Company Wiki', tone: '#205090',
+    pageKey: 'wikiPageUrl', docsKey: 'wikiSpUrl',
+    open: 'Open the wiki in SharePoint',
+    lead: 'How this company works, written down — policies, procedures, forms and guides. Every document is read straight from SharePoint, so what you see here is what HR published there.'
+  },
+  knowledge: {
+    key: 'knowledge', title: 'Knowledge Hub', tone: '#00B060',
+    pageKey: 'knowledgePageUrl', docsKey: 'knowledgeSpUrl',
+    open: 'Open the Knowledge Hub in SharePoint',
+    lead: 'What the company has learned and teaches — training material, technical know-how and reference documents from the Learning Management System.'
+  }
+};
+
+/* Browser state per hub. `crumbs` is the folder path being viewed (empty = the configured
+   root); `drive` is the resolved SharePoint document library, kept so opening a sub-folder
+   costs one request instead of re-resolving the site every time. */
+const _LIB_SP = {};
+function _libState(hub) {
+  if (!_LIB_SP[hub]) _LIB_SP[hub] = { crumbs: [], items: null, drive: null, loading: false, error: '', found: null };
+  return _LIB_SP[hub];
+}
+
+function _libFmtSize(n) {
+  n = +n || 0;
+  if (n <= 0) return '';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(n < 10 ? 1 : 0)) + ' ' + u[i];
+}
+/* A date in the reader's own format — and nothing at all for a row that has no date, rather
+   than a formatted zero, which would read as a real modification at the epoch. */
+function _libFmtWhen(iso) {
+  if (!iso) return '';
+  try { return tkFmtDate(String(iso).slice(0, 10)); } catch (e) { return String(iso).slice(0, 10); }
+}
+const _LIB_EXT_TONE = {
+  pdf: '#DC2626', doc: '#205090', docx: '#205090', xls: '#15803D', xlsx: '#15803D', csv: '#15803D',
+  ppt: '#EA580C', pptx: '#EA580C', png: '#7C3AED', jpg: '#7C3AED', jpeg: '#7C3AED', gif: '#7C3AED',
+  zip: '#A16207', rar: '#A16207', dwg: '#0EA5E9', mp4: '#DB4C8C', txt: '#5C6470'
+};
+function _libExt(name) { const m = String(name || '').match(/\.([A-Za-z0-9]{1,5})$/); return m ? m[1].toLowerCase() : ''; }
+const _LIB_CHEVRON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+const _LIB_EXTERNAL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+/* Two different escapes, because these strings land in two different places and the wrong one
+   is silently fine until somebody names a file badly.
+
+   A row's name and id are SOMEBODY ELSE'S TEXT — SharePoint accepts an apostrophe in a file
+   name, so "Q3 forecast's.xlsx" is ordinary and "foo'+alert(1)+'.pdf" is available to anyone
+   who can upload to the library. _libAttr is for a plain attribute (title=). _libArg is for an
+   argument inside an inline onclick, which is a JS string INSIDE an attribute and has to
+   survive both parsers: escape the backslash and the quote for JavaScript first, then the HTML
+   specials, because the HTML parser decodes its entities before the JS ever runs. */
+function _libAttr(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function _libArg(v) {
+  return _libAttr(String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+}
+
+/* ── reading the library ────────────────────────────────────────────────────── */
+/* One folder's children. `interactive` is passed to _pmSpToken: false on the automatic first
+   render (a pop-up opened outside a click is blocked by the browser, and a blocked pop-up is
+   worse than a message), true when the reader pressed Refresh or opened a folder. */
+async function _libSpList(hub, interactive) {
+  const st = _libState(hub), meta = _LIB_HUBS[hub];
+  if (!meta) return;
+  const base = _libCfg(meta.docsKey);
+  st.loading = true; st.error = ''; st.found = null;
+  _libPaintDocs(hub);
+  try {
+    if (!base) throw new Error('nolink');
+    if (!_libIsSharePoint(base)) throw new Error('nothost');
+    if (typeof DEMO_MODE === 'function' && DEMO_MODE()) throw new Error('demo');
+    if (!_msalApp || !_account) throw new Error('nosession');
+    const token = await _pmSpToken(!!interactive);
+    const here = st.crumbs.length ? st.crumbs[st.crumbs.length - 1] : null;
+    let url;
+    if (here && here.id && st.drive) {
+      url = _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(here.id) + '/children';
+    } else {
+      st.crumbs = [];   // nothing resolved yet, so any crumb still held names a folder we cannot address
+      const r = await _pmSpResolve(base, _pmSpCtx(base), token);
+      st.drive = r.driveId;
+      const rel = r.projRel ? ':/' + r.projRel.split('/').map(encodeURIComponent).join('/') + ':' : '';
+      url = _GRAPH + '/drives/' + r.driveId + '/' + r.baseRef + rel + '/children';
+    }
+    const res = await fetch(url + '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime',
+      { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) throw new Error('graph ' + res.status);
+    st.items = (((await res.json()) || {}).value) || [];
+  } catch (e) {
+    st.items = null;
+    st.error = String((e && e.message) || e);
+  }
+  st.loading = false;
+  _libPaintDocs(hub);
+}
+
+/* Search the whole document library rather than the folder on screen. Deliberately a
+   separate action with its own wording: the box above the list filters what is in front of
+   you, and a filter that silently reached across folders would make an empty folder look
+   full. */
+async function _libSpSearch(hub) {
+  const st = _libState(hub);
+  const q = String(_crmLF['lib-' + hub + '-q'] || '').trim();
+  if (!q) { st.found = null; _libPaintDocs(hub); return; }
+  if (!st.drive) { await _libSpList(hub, true); if (!st.drive) return; }
+  st.loading = true; st.error = '';
+  _libPaintDocs(hub);
+  try {
+    const token = await _pmSpToken(true);
+    const res = await fetch(_GRAPH + '/drives/' + st.drive + "/root/search(q='" + encodeURIComponent(q.replace(/'/g, "''")) + "')" +
+      '?$top=100&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime,parentReference',
+      { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) throw new Error('graph ' + res.status);
+    st.found = { q: q, rows: (((await res.json()) || {}).value) || [] };
+  } catch (e) { st.found = null; st.error = String((e && e.message) || e); }
+  st.loading = false;
+  _libPaintDocs(hub);
+}
+
+function _libSpEnter(hub, id, name) {
+  const st = _libState(hub);
+  st.crumbs.push({ id: id, name: name });
+  _libSpList(hub, true);
+}
+/* -1 = back to the configured root. */
+function _libSpCrumb(hub, i) {
+  const st = _libState(hub);
+  st.crumbs = i < 0 ? [] : st.crumbs.slice(0, i + 1);
+  st.found = null;
+  _libSpList(hub, true);
+}
+function _libSpRetry(hub) { _libSpList(hub, true); }
+/* The reader signed into the portal with a password, so there is no Microsoft account for a
+   token to be renewed from. loginRedirect navigates away and comes back signed in with
+   M365 — say so first, because an unexplained page reload reads as a crash. */
+function _libSpConnect() {
+  if (typeof msalLogin !== 'function') return;
+  tkConfirm({
+    title: 'Sign in to Microsoft 365',
+    body: 'The portal will hand you to Microsoft to sign in, then bring you back here. Anything you have typed on another screen will be lost.',
+    confirmText: 'Continue'
+  }).then(function (yes) { if (yes) msalLogin(); });
+}
+
+/* ── the documents panel ────────────────────────────────────────────────────── */
+/* Why a whole panel says why there is nothing, instead of an empty table: "not signed in",
+   "not configured" and "this folder is empty" look identical as a blank list and mean
+   completely different things — only one of them is the reader's to fix. */
+function _libDocsMsg(hub) {
+  const st = _libState(hub), meta = _LIB_HUBS[hub], e = st.error;
+  const docs = _libCfg(meta.docsKey);
+  const openBtn = docs ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(docs) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _t('Open in SharePoint') + '</a>' : '';
+  const box = function (title, body, action) {
+    return '<div class="lib-note"><div class="lib-note-t">' + _crmEsc(title) + '</div>' +
+      '<div class="lib-note-b">' + _crmEsc(body) + '</div>' +
+      '<div class="lib-note-a">' + (action || '') + openBtn + '</div></div>';
+  };
+  if (e === 'nolink')
+    return box(_t('No document library is linked yet'),
+      _t('An administrator sets this in Access & Permissions → System Integrations.'), '');
+  if (e === 'nothost')
+    return box(_t('That link is not a SharePoint address'),
+      _t('The library location must be a sharepoint.com address. An administrator can correct it in Access & Permissions.'), '');
+  if (e === 'demo')
+    return box(_t('Demo mode'),
+      _t('Documents are read live from SharePoint, which the demo has no session for. The links still work.'), '');
+  if (e === 'nosession')
+    return box(_t('Sign in to Microsoft 365 to read the documents here'),
+      _t('Files stay in SharePoint and are shown with your own permissions, so this needs your Microsoft session. You can open the library in SharePoint instead.'),
+      '<button class="btn btn-primary btn-sm" onclick="_libSpConnect()">' + _t('Sign in to Microsoft 365') + '</button>');
+  if (e)
+    return box(_t('SharePoint could not be reached'),
+      _t('The library did not answer') + ' (' + e + '). ' + _t('Your Microsoft session may have expired.'),
+      '<button class="btn btn-outline btn-sm" onclick="_libSpRetry(\'' + hub + '\')">' + _t('Try again') + '</button>');
+  return '';
+}
+
+function _libRowsHtml(hub, rows, showPath) {
+  const q = String(_crmLF['lib-' + hub + '-f'] || '').trim().toLowerCase();
+  const kind = String(_crmLF['lib-' + hub + '-kind'] || '');
+  const list = (rows || []).filter(function (r) {
+    if (q && String(r.name || '').toLowerCase().indexOf(q) < 0) return false;
+    if (kind === 'Folders only' && !r.folder) return false;
+    if (kind === 'Files only' && r.folder) return false;
+    if (!_inPeriodLF(r.lastModifiedDateTime || '', 'lib-' + hub + '-period')) return false;
+    return true;
+  }).sort(function (a, b) {
+    if (!!a.folder !== !!b.folder) return a.folder ? -1 : 1;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+  if (!list.length)
+    return '<div class="lib-empty">' + _t((rows && rows.length) ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
+  return '<div class="lib-rows">' + list.map(function (r) {
+    const ext = _libExt(r.name), tone = r.folder ? '#D97706' : (_LIB_EXT_TONE[ext] || '#5C6470');
+    const ico = r.folder
+      ? '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
+      : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>';
+    const bits = [r.folder ? '' : _libFmtSize(r.size), _libFmtWhen(r.lastModifiedDateTime),
+      showPath ? _libParentLabel(r) : ''].filter(Boolean);
+    const body =
+      '<span class="lib-row-ico" style="background:' + tone + '14"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="' + tone + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ico + '</svg></span>' +
+      '<span class="lib-row-txt"><span class="lib-row-name">' + _crmEsc(r.name) + '</span>' +
+      (bits.length ? '<span class="lib-row-meta">' + _crmEsc(bits.join('  ·  ')) + '</span>' : '') + '</span>';
+    const url = _crmHref(r.webUrl);
+    if (r.folder) {
+      /* A folder can mean two different things, so it offers two controls instead of guessing:
+         the row itself opens it HERE (breadcrumbs, no tab lost), and the arrow beside it opens
+         the same folder in SharePoint. */
+      return '<div class="lib-row-wrap">' +
+        '<button type="button" class="lib-row" onclick="_libSpEnter(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' + _libAttr(r.name) + '">' +
+        body + '<span class="lib-row-go">' + _LIB_CHEVRON + '</span></button>' +
+        (url ? '<a class="lib-row-ext" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+          _libAttr(_t('Open in SharePoint')) + '" aria-label="' + _libAttr(_t('Open in SharePoint')) + '">' + _LIB_EXTERNAL + '</a>' : '') +
+        '</div>';
+    }
+    /* A FILE IS A LINK, not a button that happens to call window.open. The name is the thing
+       people click, and only a real anchor behaves like one: the browser shows the destination
+       on hover, middle-click and ctrl-click work, and the right-click menu offers "open in new
+       tab" and "copy link address". target=_blank keeps the portal open behind it; SharePoint's
+       own viewer is what then lets the reader preview or download. */
+    if (!url) return '<span class="lib-row lib-row-dead" title="' + _libAttr(_t('This file has no SharePoint address')) + '">' + body + '</span>';
+    return '<a class="lib-row" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+      _libAttr(r.name + ' — ' + _t('View or download in SharePoint')) + '">' +
+      body + '<span class="lib-row-go">' + _LIB_EXTERNAL + '</span></a>';
+  }).join('') + '</div>';
+}
+/* Where a search hit lives, so a result list of eight files all called "Form.pdf" is usable. */
+function _libParentLabel(r) {
+  const p = String((r.parentReference || {}).path || '');
+  const i = p.indexOf('root:');
+  const rel = i >= 0 ? p.slice(i + 5).replace(/^\/+/, '') : '';
+  try { return decodeURIComponent(rel); } catch (e) { return rel; }
+}
+
+function _libPaintDocs(hub) {
+  const el = document.getElementById('lib-docs-' + hub); if (!el) return;
+  const st = _libState(hub);
+  const fn = '_libSpFilter_' + hub;
+  const crumbs = '<div class="lib-crumbs"><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',-1)">' +
+    _t('Library root') + '</button>' +
+    st.crumbs.map(function (c, i) {
+      return '<span class="lib-crumb-sep">/</span><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',' + i + ')">' + _crmEsc(c.name) + '</button>';
+    }).join('') + '</div>';
+  const bar = _crmFiltBar(
+    _crmFiltSearch('lib-' + hub + '-f', _t('Filter this folder…'), fn) +
+    _crmFiltSel('lib-' + hub + '-kind', 'All items', ['Folders only', 'Files only'], fn) +
+    _crmFiltPeriod('lib-' + hub + '-period', fn) +
+    '<span style="flex:1 0 auto"></span>' +
+    '<input id="lib-' + hub + '-q" type="search" class="form-control" style="width:auto;min-width:160px;font-size:12px" placeholder="' +
+      _tkEscA(_t('Search the whole library')) + '" aria-label="' + _tkEscA(_t('Search the whole library')) + '" value="' + _tkEscA(_crmLF['lib-' + hub + '-q'] || '') +
+      '" oninput="_crmLF[\'lib-' + hub + '-q\']=this.value" onkeydown="if(event.key===\'Enter\')_libSpSearch(\'' + hub + '\')">' +
+    '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="_libSpSearch(\'' + hub + '\')">' + _t('Search') + '</button>');
+  let body;
+  if (st.loading) body = '<div class="lib-empty">' + _t('Loading…') + '</div>';
+  else if (st.error) body = _libDocsMsg(hub);
+  else if (st.found) body = '<div class="lib-found">' +
+    _crmEsc(_t('Results across the whole library') + ': “' + st.found.q + '” — ' + st.found.rows.length + ' ') + _t(st.found.rows.length === 1 ? 'item' : 'items') +
+    ' <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpCrumb(\'' + hub + '\',' + (st.crumbs.length - 1) + ')">' + _t('Back to the folder') + '</button></div>' +
+    _libRowsHtml(hub, st.found.rows, true);
+  else body = _libRowsHtml(hub, st.items || [], false);
+  el.innerHTML =
+    '<div class="card-hdr"><div class="card-title">' + _t('Documents') + '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpRetry(\'' + hub + '\')" title="' + _tkEscA(_t('Reload from SharePoint')) + '">' +
+    tkIcon('refresh', 13) + ' ' + _t('Refresh') + '</button></div>' +
+    (st.error ? '' : crumbs + bar) + body;
+}
+/* One named callback per hub, because _crmSearchInput / _crmFiltSel take a function NAME and
+   call window[name] — a closure cannot be reached that way. */
+function _libSpFilter_wiki() { _libPaintDocs('wiki'); }
+function _libSpFilter_knowledge() { _libPaintDocs('knowledge'); }
+
+/* ── the two hub pages ──────────────────────────────────────────────────────── */
+function _libHubHtml(hub) {
+  const meta = _LIB_HUBS[hub];
+  const page = _libCfg(meta.pageKey), docs = _libCfg(meta.docsKey);
+  return '<div class="lib-hero" style="border-left:4px solid ' + meta.tone + '">' +
+    '<div class="lib-hero-txt"><h2>' + _crmEsc(_t(meta.title)) + '</h2><p>' + _crmEsc(_t(meta.lead)) + '</p></div>' +
+    '<div class="lib-hero-act">' +
+      (page ? '<a class="btn btn-primary btn-sm" href="' + _tkEscA(page) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _crmEsc(_t(meta.open)) + '</a>' : '') +
+      (docs ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(docs) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _t('Open the document library') + '</a>' : '') +
+    '</div></div>' +
+    '<div class="card" id="lib-docs-' + hub + '"></div>';
+}
+
+function tkRenderWiki() {
+  const root = document.getElementById('wiki-root'); if (!root) return;
+  const pinned = (_tkPortalData().wiki || []).filter(function (s) { return (s.label || '').trim(); });
+  root.innerHTML = _libHubHtml('wiki') +
+    (pinned.length ? '<div class="lib-sec-lbl">' + _t('Pinned pages') + '</div>' + _libTilesHtml(pinned) : '');
+  _libSpList('wiki', false);
+}
+
+function tkRenderKnowledge() {
+  const root = document.getElementById('knowledge-root'); if (!root) return;
+  /* The L&D list an admin already maintains for the dashboard. Reused rather than given a
+     second home: two lists of company courses would disagree within a month. */
+  const courses = (_tkPortalData().learning || []).filter(function (c) { return (c.name || '').trim() && _crmHref(c.url); });
+  const learn = courses.length
+    ? '<div class="lib-sec-lbl">' + _t('Learning & Development') + '</div><div class="lib-grid">' + courses.map(function (c) {
+        return '<a class="lib-tile" href="' + _tkEscA(_crmHref(c.url)) + '" target="_blank" rel="noopener">' +
+          '<span class="lib-tile-ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _LIB_TILE_ICON.learning + '</svg></span>' +
+          '<span class="lib-tile-txt"><span class="lib-tile-name">' + _crmEsc(c.name) + '</span>' +
+          (c.meta ? '<span class="lib-tile-desc">' + _crmEsc(c.meta) + '</span>' : '') + '</span></a>';
+      }).join('') + '</div>'
+    : '';
+  root.innerHTML = _libHubHtml('knowledge') + learn;
+  _libSpList('knowledge', false);
+}
+
+/* ── the board ──────────────────────────────────────────────────────────────── */
+/* One mark per tile, matched to the SharePoint board this replaces. */
+const _LIB_TILE_ICON = {
+  it: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><polyline points="9 8 11 10 9 12"/>',
+  template: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
+  project: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',
+  learning: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
+  training: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-1.5-1.5"/>',
+  knowledge: '<path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><line x1="9" y1="21" x2="15" y2="21"/>',
+  wiki: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="16" y2="7"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'
+};
+/* `view:<id>` is an INTERNAL destination — the Wiki and the Knowledge Hub are pages of this
+   portal, not links out of it, and a tile that opened a new browser tab to reach them would
+   be telling the reader something untrue about where they live. */
+function _libTileHref(it) { return String((it && it.url) || '').indexOf('view:') === 0 ? '' : _crmHref(it && it.url); }
+function _libTileView(it) { const u = String((it && it.url) || ''); return u.indexOf('view:') === 0 ? u.slice(5) : ''; }
+
+function _libTilesHtml(items) {
+  const canEdit = (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('manager');
+  return '<div class="lib-grid">' + (items || []).map(function (it) {
+    const href = _libTileHref(it), view = _libTileView(it);
+    const meta = (view && _LIB_HUBS[view]) ? _LIB_HUBS[view] : null;
+    const ico = _LIB_TILE_ICON[it.icon] || _LIB_TILE_ICON[view] || _LIB_TILE_ICON.link;
+    const desc = it.desc || (meta ? meta.lead : '');
+    /* No link yet. Shown, not hidden: this board is the company's own list of the places it
+       keeps things, and a silently missing row reads as "we do not have one". Only somebody
+       who can fix it is told where to. */
+    const note = (view || href) ? '' :
+      '<span class="lib-tile-off-lbl">' + _t(canEdit ? 'Add the link in HR Admin → Company Portal' : 'Link coming soon') + '</span>';
+    const inner =
+      '<span class="lib-tile-ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ico + '</svg></span>' +
+      '<span class="lib-tile-txt"><span class="lib-tile-name">' + _crmEsc(_t(it.label || '')) + '</span>' +
+      (desc ? '<span class="lib-tile-desc">' + _crmEsc(_t(desc)) + '</span>' : '') + note + '</span>';
+    if (view) return '<button type="button" class="lib-tile lib-tile-in" onclick="showView(\'' + _libArg(view) + '\',null,\'' + _libArg(meta ? meta.title : view) + '\')">' + inner + '</button>';
+    if (href) return '<a class="lib-tile" href="' + _libAttr(href) + '" target="_blank" rel="noopener">' + inner + '</a>';
+    return '<span class="lib-tile lib-tile-off" title="' + _libAttr(_t('No link set for this yet')) + '">' + inner + '</span>';
+  }).join('') + '</div>';
+}
+
+function tkRenderLibrary() {
+  const root = document.getElementById('library-root'); if (!root) return;
+  const tiles = (_tkPortalData().library || []).filter(function (t) { return (t.label || '').trim(); });
+  const res = (_tkPortalData().resources || []).filter(function (r) { return (r.label || '').trim() && _crmHref(r.url); });
+  root.innerHTML =
+    (tiles.length ? _libTilesHtml(tiles)
+      : '<div class="lib-empty">' + _t('Nothing has been added to the library yet.') + '</div>') +
+    (res.length ? '<div class="lib-sec-lbl" style="margin-top:26px">' + _t('Resources & Quick Links') + '</div>' + _libTilesHtml(res) : '');
+}
+/* ── END LIBRARY / WIKI / KNOWLEDGE HUB ── */
 
 /* ═══════════════════════ AHU PRODUCTION ═══════════════════════
    Order to dispatch, against AHU-SOP-MASTER-001. The process itself is served by
@@ -41179,6 +41770,9 @@ function showView(id, navEl, title) {
   if (_MYSPACE_ALWAYS.has(id) || _MYSPACE_SHARED.has(id)) { try { _myspaceEnsureTabBar(id, _msWant); } catch (e) {} }
   if (_CRM_HUB_VIEWS.has(id)) { try { _crmEnsureTabBar(id); } catch (e) {} }
   if (id === 'apps') { try { tkRenderAppLauncher(); } catch (e) { console.warn('apps:', e.message); } }
+  if (id === 'library') { try { tkRenderLibrary(); } catch (e) { console.warn('library:', e.message); } }
+  if (id === 'wiki') { try { tkRenderWiki(); } catch (e) { console.warn('wiki:', e.message); } }
+  if (id === 'knowledge') { try { tkRenderKnowledge(); } catch (e) { console.warn('knowledge:', e.message); } }
   if (id === 'crm-overview') { try { tkRenderCrmOverview(); } catch (e) { console.warn('crm-overview:', e.message); } }
   if (id === 'myspace-overview') { try { tkRenderMySpaceOverview(); } catch (e) { console.warn('myspace-overview:', e.message); } }
   if (id === 'invtrack') { try { tkRenderInvTrack(); } catch (e) { console.warn('invtrack:', e.message); } }

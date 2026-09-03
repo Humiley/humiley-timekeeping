@@ -568,7 +568,23 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           # industries the article lists and only after notifying the labour
                           # authority. Blank = the ordinary 200-hour ceiling, which is the answer for
                           # every company that has not made and recorded that decision.
-                          "otAnnualCap": ""}
+                          "otAnnualCap": "",
+                          # ── Library / Wiki / Knowledge Hub ────────────────────────────────────
+                          # Four LOCATIONS, not credentials: the two SharePoint pages the company
+                          # already publishes, and the two sites whose document libraries the portal
+                          # reads files from. Unlike the payer and HR lists above, baking Humiley's
+                          # own addresses in grants nobody anything — a wrong or foreign address
+                          # only produces "could not be reached", never access — and shipping them
+                          # blank would mean the Library, Wiki and Knowledge Hub pages open empty on
+                          # the install they were written for. Admin-editable like every other
+                          # integration URL; they must ALSO be listed here (not only in _portal_get)
+                          # so a manager who saves the settings form echoes back the SAME effective
+                          # value the GET sent them, instead of tripping the admin-only check on a
+                          # change they never made.
+                          "wikiPageUrl": "https://humileyvietnam.sharepoint.com/sites/HRRP/SitePages/WIKI-PAGE.aspx",
+                          "wikiSpUrl": "https://humileyvietnam.sharepoint.com/sites/HRRP",
+                          "knowledgePageUrl": "https://humileyvietnam.sharepoint.com/sites/LearningManagementSystem/SitePages/Knowledge-Hub.aspx",
+                          "knowledgeSpUrl": "https://humileyvietnam.sharepoint.com/sites/LearningManagementSystem"}
 _APPR_REMIND_LOCK = threading.Lock()
 
 # Seeded ONCE into the DB on first boot (not used as a code default — see the note above). Clearing the
@@ -9022,7 +9038,10 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- company portal content (announcements / holidays / learning / resources) --
-    PORTAL_KEYS = ("announcements", "holidays", "learning", "resources")
+    # "library" and "wiki" are the Library board's tiles and the Company Wiki's sections.
+    # Both are LISTS of {label,url,…} like "resources", so they go through the same
+    # _crm_sanitize strip in _portal_update — company-wide content, manager-editable.
+    PORTAL_KEYS = ("announcements", "holidays", "learning", "resources", "library", "wiki")
 
     def _procurement_sso_token(self, u):
         """Short-lived HMAC-signed token {email,name,exp}. Procurement (an app of this portal)
@@ -9074,6 +9093,13 @@ class Handler(BaseHTTPRequestHandler):
         out["hrSpUrl"] = _ps("portal_hrSpUrl", "") or ""
         out["invtrackSpUrl"] = (_ps("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = _ps("portal_procurementUrl", "") or ""
+        # Library / Wiki / Knowledge Hub locations. Readable by everyone, like financeSpUrl: they
+        # are where the company's own documents live, and every employee is meant to open them.
+        # The shipped default is echoed back when nothing is stored, so the pages work on a fresh
+        # install and the settings form always shows the address actually in force — a form that
+        # loaded blank and saved would silently clear a working link (see wageRegion above).
+        for _lk in ("wikiPageUrl", "wikiSpUrl", "knowledgePageUrl", "knowledgeSpUrl"):
+            out[_lk] = _ps("portal_" + _lk, "") or _APPR_SETTING_DEFAULTS[_lk]
         # The bank's column layout. Sent only to Editor+ (it describes a salary payment file), with
         # the shipped default echoed back when nothing is configured so the form always has
         # something real to show rather than an empty table the owner has to invent from nothing.
@@ -9955,6 +9981,13 @@ class Handler(BaseHTTPRequestHandler):
                       ("hrSpUrl", "portal_hrSpUrl"),
                       ("invtrackSpUrl", "portal_invtrackSpUrl"),
                       ("procurementUrl", "portal_procurementUrl"),
+                      # Where the Library board, the Company Wiki and the Knowledge Hub point.
+                      # Admin-only for the same reason as every other integration URL: a link the
+                      # whole company is told is the company's own is a redirect worth stealing.
+                      ("wikiPageUrl", "portal_wikiPageUrl"),
+                      ("wikiSpUrl", "portal_wikiSpUrl"),
+                      ("knowledgePageUrl", "portal_knowledgePageUrl"),
+                      ("knowledgeSpUrl", "portal_knowledgeSpUrl"),
                       ("apprEmail", "portal_apprEmail"),
                       ("apprSenderHr", "portal_apprSenderHr"),
                       ("apprSenderFinance", "portal_apprSenderFinance"),

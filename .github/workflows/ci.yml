@@ -276,6 +276,17 @@ jobs:
       - name: The SharePoint write paths stay unreachable
         run: node tests/sharepoint_paths_stay_dead.js
 
+      # The Library board and the two hub document panels. These CANNOT be checked by opening the
+      # app: they read SharePoint through Graph with the reader's own delegated token, and no
+      # development machine has a Microsoft session — so every local look falls into the "Demo
+      # mode" branch and the listing code never runs at all. Which leaves the failure this
+      # codebase keeps meeting: a render that throws is an EMPTY PANEL, and an empty panel reads
+      # as "there are no documents". Also pins the four states apart ("not signed in" is not "this
+      # folder is empty"), and the escaping — a file name is chosen by anyone who can upload, and
+      # it lands in a JS string inside an onclick attribute.
+      - name: The library panels render, and say which kind of nothing they are showing
+        run: node tests/library_docs_panel.js
+
       # The other two design gates check LOGIC and would pass on markup carrying an unclosed <div>
       # — which, in a card layout, swallows everything below it into the card. Nothing throws; the
       # page is just wrong from that point down, and no source-level test can see it. This runs a
