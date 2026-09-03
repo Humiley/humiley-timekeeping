@@ -41830,7 +41830,7 @@ async function tkApplyEntitlements() {
                         _t('Records that already meet or exceed the minimum are left alone. Each change is written to the audit trail.')))) return;
   try {
     const r = await tkApi('/api/hr/leave-entitlement/apply', { method: 'POST', body: { year: _entYear } });
-    toast(_t('Raised') + ' ' + (r.count || 0) + ' ' + _t('entitlement(s)'), 'success', 5000);
+    toast(_tp('Raised {0} entitlement(s)', (r.count || 0)), 'success', 5000);
     try { await tkBootstrap(); } catch (e) {}
     tkRenderEntitlements();
   } catch (e) { toast(_errMsg(e), 'error', 6000); }

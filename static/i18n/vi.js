@@ -6320,4 +6320,6 @@ window._VI = {
   'Registers': 'Sổ nghiệp vụ',
   'Ledger': 'Sổ cái',
   'Difference': 'Chênh lệch',
+  'Raised {0} entitlement(s)': 'Đã nâng {0} hồ sơ ngày phép',
+
 };
