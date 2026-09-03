@@ -3059,133 +3059,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <!-- ═══════════════════════════════════════════════════════
      VIEW: INTEGRATION GUIDE
 ═══════════════════════════════════════════════════════ -->
-<div id="view-integration" class="view">
-  <div class="page-header">
-    <div><h1>SharePoint Integration Guide</h1><p>Step-by-step M365 setup · Azure AD · Power Automate</p></div>
-    <a href="#" class="btn btn-outline btn-sm" onclick="toast('Opening full Integration Guide PDF…','#163866')">Full Guide (DOCX)</a>
-  </div>
 
-  <div style="background:var(--light-tint);border:1px solid var(--navy);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
-    <span style="display:inline-flex;align-items:center;color:var(--navy)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-    <div>
-      <div style="font-size:13px;font-weight:700;color:var(--navy)">SP_CONFIG Status: <span id="sp-config-status" style="color:var(--warning)">Placeholders not filled in — Demo mode active</span></div>
-      <div style="font-size:12px;color:var(--text-light);margin-top:2px">Fill in the 4 values in SP_CONFIG at the top of the &lt;script&gt; section to go live with SharePoint data.</div>
-    </div>
-  </div>
-
-  <div class="phase-hdr"><div class="phase-num">1</div><h3>Prerequisites — What you need before starting</h3></div>
-  <div class="step-block">
-    <div class="step-num">1</div>
-    <div class="step-content">
-      <h4>Microsoft 365 Licences Required</h4>
-      <p>Ensure you have: <strong>M365 Business Standard</strong> (includes SharePoint Online, Power Automate, Power Apps, Teams). Each employee needs at least an M365 Business Basic licence for SharePoint access.</p>
-    </div>
-  </div>
-  <div class="step-block">
-    <div class="step-num">2</div>
-    <div class="step-content">
-      <h4>Admin Roles Required</h4>
-      <p>You need: <strong>SharePoint Admin</strong> (to create lists), <strong>Azure AD Admin</strong> (to register the app), <strong>Power Automate Maker</strong> (to build flows).</p>
-    </div>
-  </div>
-
-  <div class="phase-hdr"><div class="phase-num">2</div><h3>Step 1 — Create SharePoint Site &amp; Lists</h3></div>
-  <div class="step-block">
-    <div class="step-num">1</div>
-    <div class="step-content">
-      <h4>Create the Site</h4>
-      <p>Go to <strong>admin.microsoft.com → SharePoint → Sites → Active sites → + Create → Team site</strong></p>
-      <div class="code-block"><span class="c-green">Site name:</span>     HumileyHR
-<span class="c-green">Site address:</span>  humiley.sharepoint.com/sites/HumileyHR
-<span class="c-green">Privacy:</span>       Private
-<span class="c-green">Owners:</span>        HR Admin + IT Admin</div>
-    </div>
-  </div>
-  <div class="step-block">
-    <div class="step-num">2</div>
-    <div class="step-content">
-      <h4>Create 6 Lists (Site Contents → + New → List)</h4>
-      <div class="code-block"><span class="c-blue">Attendance_Records</span>  <span class="c-grey">— CheckInTime, CheckOutTime, GPS coords, Status</span>
-<span class="c-blue">Leave_Requests</span>     <span class="c-grey">— LeaveType, StartDate, EndDate, Status, Approvals</span>
-<span class="c-blue">Employee_Profiles</span>  <span class="c-grey">— EmployeeID, Department, Manager, Schedule</span>
-<span class="c-blue">Approved_Locations</span> <span class="c-grey">— Latitude, Longitude, RadiusMetres, IsActive</span>
-<span class="c-blue">Leave_Balances</span>     <span class="c-grey">— AnnualUsed, SickUsed, CompOffEarned per employee/year</span>
-<span class="c-blue">Notification_Log</span>   <span class="c-grey">— NotifType, RecipientEmail, Status, FlowRunID</span></div>
-    </div>
-  </div>
-
-  <div class="phase-hdr"><div class="phase-num">3</div><h3>Step 2 — Register Azure AD App (for Graph API)</h3></div>
-  <div class="step-block">
-    <div class="step-num">1</div>
-    <div class="step-content">
-      <h4>Create App Registration</h4>
-      <p>Go to <strong>portal.azure.com → Azure Active Directory → App registrations → + New registration</strong></p>
-      <div class="code-block"><span class="c-green">Name:</span>          Humiley-Timekeeping-App
-<span class="c-green">Account type:</span>  Single tenant
-<span class="c-green">Redirect URI:</span>  SPA → https://humiley.sharepoint.com/sites/HumileyHR</div>
-      <div class="tip-box">After registering, copy the <strong>Application (client) ID</strong> and <strong>Directory (tenant) ID</strong> — these go into SP_CONFIG in the HTML script.</div>
-    </div>
-  </div>
-  <div class="step-block">
-    <div class="step-num">2</div>
-    <div class="step-content">
-      <h4>Add API Permissions &amp; Grant Consent</h4>
-      <div class="code-block"><span class="c-blue">Sites.ReadWrite.All</span>    Delegated  <span class="c-grey">→ read/write SharePoint lists</span>
-<span class="c-blue">User.Read</span>             Delegated  <span class="c-grey">→ get current user profile</span>
-<span class="c-blue">User.ReadBasic.All</span>    Delegated  <span class="c-grey">→ look up employees</span></div>
-      <p style="margin-top:8px">Click <strong>"Grant admin consent for Humiley"</strong> — all permissions must show a green tick.</p>
-    </div>
-  </div>
-
-  <div class="phase-hdr"><div class="phase-num">4</div><h3>Step 3 — Fill in SP_CONFIG (4 values)</h3></div>
-  <div class="step-block">
-    <div class="step-num">1</div>
-    <div class="step-content">
-      <h4>Edit Humiley_Timekeeping_Platform.html</h4>
-      <p>Open the HTML file in VS Code. Find <code>SP_CONFIG</code> near the top of the &lt;script&gt; section and replace these 4 placeholder strings:</p>
-      <div class="code-block"><span class="c-yellow">const SP_CONFIG = {</span>
-  clientId:   <span class="c-green">'YOUR_CLIENT_ID'</span>,        <span class="c-grey">← Azure AD App → client ID</span>
-  tenantId:   <span class="c-green">'YOUR_TENANT_ID'</span>,        <span class="c-grey">← Azure AD → Directory ID</span>
-  siteId:     <span class="c-green">'YOUR_SHAREPOINT_SITE_ID'</span>, <span class="c-grey">← Graph Explorer lookup</span>
-  mapsKey:    <span class="c-green">'YOUR_GOOGLE_MAPS_API_KEY'</span>  <span class="c-grey">← Google Cloud Console</span>
-<span class="c-yellow">};</span></div>
-      <div class="tip-box">To find your Site ID: open <strong>Graph Explorer</strong> (developer.microsoft.com/graph/graph-explorer) → sign in → call GET https://graph.microsoft.com/v1.0/sites/humiley.sharepoint.com:/sites/HumileyHR → copy the "id" value.</div>
-    </div>
-  </div>
-
-  <div class="phase-hdr"><div class="phase-num">5</div><h3>Step 4 — Host on SharePoint</h3></div>
-  <div class="step-block">
-    <div class="step-num">1</div>
-    <div class="step-content">
-      <h4>Upload HTML to Site Assets</h4>
-      <p>Go to <strong>humiley.sharepoint.com/sites/HumileyHR → Site contents → Site Assets → Upload</strong>. Upload Humiley_Timekeeping_Platform.html. Copy the direct URL.</p>
-    </div>
-  </div>
-  <div class="step-block">
-    <div class="step-num">2</div>
-    <div class="step-content">
-      <h4>Create a SharePoint Page with Embed Web Part</h4>
-      <p>Site home → <strong>+ New → Page → Embed web part</strong> → paste this iFrame:</p>
-      <div class="code-block">&lt;iframe
-  src="https://humiley.sharepoint.com/sites/HumileyHR/SiteAssets/Humiley_Timekeeping_Platform.html"
-  width="100%" height="900" frameborder="0" allowfullscreen&gt;
-&lt;/iframe&gt;</div>
-    </div>
-  </div>
-
-  <div class="phase-hdr"><div class="phase-num">6</div><h3>Step 5 — Set Up Power Automate (8 Flows)</h3></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 1 · Late Alert</div><div style="color:var(--text-light)">Daily 09:30 · Query late records → Teams to manager</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 2 · Missed Check-In</div><div style="color:var(--text-light)">Daily 10:00 · Find no check-in → Teams absent alert</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 3 · Leave Approval</div><div style="color:var(--text-light)">On new leave item · Adaptive Card → Manager → HR</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 4 · Balance Reset</div><div style="color:var(--text-light)">Jan 1 · Reset all leave balances to entitlement</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 5 · GPS Anomaly</div><div style="color:var(--text-light)">On new attendance · If Out-of-Zone → Teams alert</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 6 · Monthly Report</div><div style="color:var(--text-light)">1st of month · Generate Excel → email HR admin</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 7 · Checkout Reminder</div><div style="color:var(--text-light)">Daily 17:30 · Find unchecked-out → Teams message</div></div>
-    <div style="background:var(--soft-bg);border-radius:8px;padding:12px;font-size:12px"><div style="font-weight:700;color:var(--navy);margin-bottom:4px">Flow 8 · Low Balance</div><div style="color:var(--text-light)">On balance update · If ≤2 days → warn employee</div></div>
-  </div>
-  <div class="tip-box">The full DOCX guide (<strong>Humiley_SharePoint_Integration_Guide.docx</strong>) contains complete column definitions, flow configurations, code samples, and a 20-item go-live checklist.</div>
-</div>
 
   </div><!-- /content -->
 </div><!-- /main -->
@@ -21621,7 +21495,7 @@ async function crmImportFile(coll, file) {
 }
 
 
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack','ledger','audit']);
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack','ledger','audit']);
 const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'editor', ledger: 'management', esigngov: 'management', permissions: 'admin', audit: 'admin', 'crm-targets': 'management' };
 const _HR_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 /* HR views that share the Human Resource hub tab bar (Overview + all modules). */
@@ -42242,7 +42116,7 @@ function tkEmptyRow(cols, msg, opts) { return '<tr><td colspan="' + cols + '" st
 let _checkedIn = false, _simLat = 10.7769, _simLon = 106.7009;
 let _gpsTimestamp = 0; // ms epoch of last confirmed GPS fix
 
-// Demo geofence zones (mirrors SharePoint Approved_Locations list)
+// Demo geofence zones (the shape the zone editor and _applyGpsFix expect)
 // Must be `let` so test zones can be pushed/filtered at runtime
 let _DEMO_ZONES = [
   { name: 'HQ — District 10, HCMC',     lat: 10.7769, lon: 106.6985, radius: 200  },
@@ -42403,7 +42277,6 @@ async function doCheckin() {
   const btn = document.getElementById('btn-checkin');
   const _setBusy = (on) => { if (!btn) return; btn.disabled = on; btn.innerHTML = on ? '<span>Getting GPS…</span>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Check In'; };
 
-  /* always use standalone Python backend (SharePoint removed) */
   _setBusy(true);
   const _go = (lat, lon, acc) => {
     _setBusy(false);
@@ -42426,7 +42299,6 @@ async function doCheckout() {
   const btn = document.getElementById('btn-checkout');
   if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
 
-  /* always use standalone Python backend (SharePoint removed) */
   /* ── GPS-required check-out ── */
   const _runCheckout = (lat, lon) => {
     const geo = _checkGeofence(lat, lon, _DEMO_ZONES);
@@ -43884,7 +43756,6 @@ async function submitLeave() {
   const days = _calcWorkingDays(start, end, _tkMe());
   if (!(days > 0)) { toast(_t('The selected range is all weekend and public holidays — no leave would be used.'), 'warn'); return; }
 
-  /* always use standalone Python backend (SharePoint removed) */
   const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
   /* 21 CFR Part 11: submitting a leave request is a signed record — re-authenticate,
      create it, then stamp the submitter's signature onto the new record. */
