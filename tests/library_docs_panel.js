@@ -38,8 +38,17 @@ const PRELUDE = `
   const document = { getElementById: function (id) { return DOM[id] || null; } };
   const window = { _TK_PORTAL: {} };
   let _crmLF = {};
-  let _msalApp = {}, _account = {};   // signed in to Microsoft; whether they may WRITE is CAN_WRITE
+  /* A Microsoft session that CAN still renew silently. _libToken asks msal for the token itself
+     now (the popup fallback was what broke on Safari), so the stub has to answer that call —
+     without it every listing fails as 'reauth' and every assertion below tests the error path. */
+  let SILENT_OK = true;
+  let _msalApp = { acquireTokenSilent: async function () {
+    if (!SILENT_OK) { const e = new Error('interaction_required'); e.errorCode = 'interaction_required'; throw e; }
+    return { accessToken: 'T' };
+  }, acquireTokenRedirect: function () { REDIRECTED = true; }, getAllAccounts: function () { return [{}]; } };
+  let _account = {}, REDIRECTED = false;
   let _userLevel = 'manager';
+  let TK = { user: { dept: '' } };
   function DEMO_MODE(){ return false; }
   function _crmEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function _tkEscA(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
@@ -124,7 +133,16 @@ new Function(PRELUDE + src.slice(i, j) + `
     _libDeptUrl: _libDeptUrl,
     setDrive: function (d, resolve) { DRIVE = d; RESOLVE = resolve; POSTED = []; },
     posted: function () { return POSTED; },
-    setDepts: function (d) { DEPTS = d; }
+    setDepts: function (d) { DEPTS = d; },
+    setMyDept: function (d) { TK.user.dept = d; },
+    _libDeptAllowed: _libDeptAllowed,
+    _libDeptTabs: _libDeptTabs,
+    _libVisibleDepts: _libVisibleDepts,
+    _libDeptBoard: _libDeptBoard,
+    _libToken: _libToken,
+    setSilentOk: function (v) { SILENT_OK = v; },
+    redirected: function () { return REDIRECTED; },
+    _libReconnect: _libReconnect
   });
 `).call(api);
 
@@ -360,6 +378,10 @@ ok('only sharepoint.com is accepted as a library host',
   const el = api.mount('lib-docs-wiki');
   api.setDepts(['Engineering', 'Factory', 'Sales & Tender']);
   api.setCanWrite(false);
+  /* Set explicitly, because an earlier section leaves _userLevel on 'staff' and the department
+     rule would then correctly hide every tab — a green suite testing the wrong thing. */
+  api.setLevel('management');
+  api.setMyDept('');
   const ROOT = [
     { id: 'FE', name: 'Engineering', folder: { childCount: 3 }, webUrl: 'https://a.sharepoint.com/E' },
     { id: 'FP', name: 'Company Policies', folder: { childCount: 9 }, webUrl: 'https://a.sharepoint.com/P' },
@@ -422,6 +444,80 @@ ok('only sharepoint.com is accepted as a library host',
   ok('the override is per hub, not global',
     api._libDeptUrl('wiki', 'Factory') !== '' && api._libDeptUrl('knowledge', 'Factory') === '');
   ok('a department nobody overrode is unaffected', api._libDeptUrl('wiki', 'Engineering') === '');
+
+  /* ── who sees which department ────────────────────────────────────────────────
+     General to everyone; your own department always; every other one from Contributor up except
+     the Board's; all of it from Approver up — where this portal already puts a Director. */
+  api.setPortal({ deptDocs: [], deptTabs: [{ dept: 'Board Management (BM)', board: true }, { dept: 'Quality Management System (QMS)', board: false }] });
+  api.setDepts(['Engineering', 'Factory']);
+
+  ok('a department with nobody assigned to it still gets a tab',
+    api._libDeptTabs().indexOf('Quality Management System (QMS)') >= 0, api._libDeptTabs().join('|'));
+
+  api.setLevel('staff'); api.setMyDept('Factory');
+  ok('an ordinary employee sees General and their OWN department only',
+    api._libVisibleDepts().join('|') === 'Factory', api._libVisibleDepts().join('|'));
+  ok('...and not another department', api._libDeptAllowed('Engineering') === false);
+  ok('...and not the Board', api._libDeptAllowed('Board Management (BM)') === false);
+
+  api.setLevel('manager'); api.setMyDept('Factory');
+  ok('a Contributor sees every department except the Board',
+    api._libVisibleDepts().join('|') === 'Engineering|Factory|Quality Management System (QMS)',
+    api._libVisibleDepts().join('|'));
+  ok('...the Board specifically', api._libDeptAllowed('Board Management (BM)') === false);
+
+  api.setLevel('management'); api.setMyDept('Factory');
+  ok('an Approver — where a Director title lands — sees all of it',
+    api._libDeptAllowed('Board Management (BM)') === true && api._libVisibleDepts().length === 4,
+    api._libVisibleDepts().join('|'));
+  api.setLevel('admin');
+  ok('and so does an Admin', api._libDeptAllowed('Board Management (BM)') === true);
+
+  /* Somebody ON the Board department keeps their own department whatever their level — the rule
+     is "your own, always", and a Board member on Contributor must not lose their own documents. */
+  api.setLevel('staff'); api.setMyDept('Board Management (BM)');
+  ok('a member of the Board department still sees it', api._libDeptAllowed('Board Management (BM)') === true);
+
+  /* A tab nobody was offered must not open by another route either. */
+  api.setLevel('staff'); api.setMyDept('Factory');
+  const before = api._libState('wiki').tab;
+  api._libTab('wiki', 'Engineering');
+  ok('and a department that is not offered cannot be opened anyway',
+    api._libState('wiki').tab === before, String(api._libState('wiki').tab));
+
+  /* General hides EVERY department's folder, not just the ones on this person's bar — otherwise
+     the Board folder reappears underneath the bar it was taken off. */
+  api.setDrive({ DRV: { root: [
+    { id: 'FB', name: 'Board Management (BM)', folder: { childCount: 2 }, webUrl: 'https://a/b' },
+    { id: 'FE', name: 'Engineering', folder: { childCount: 2 }, webUrl: 'https://a/e' },
+    { id: 'R1', name: 'Handbook.pdf', file: {}, size: 10, webUrl: 'https://a/h' }
+  ] } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+  api._libTab('wiki', '');
+  await new Promise(r => setTimeout(r, 0));
+  ok('General shows the company files', names().indexOf('Handbook.pdf') >= 0, names().join('|'));
+  ok('...and hides the Board folder from someone who has no Board tab',
+    names().indexOf('Board Management (BM)') < 0, names().join('|'));
+  ok('...and hides a department folder they cannot open either',
+    names().indexOf('Engineering') < 0, names().join('|'));
+
+  /* ── the token path that broke in production ──────────────────────────────────
+     Two real errors, both from the same cause: the silent renewal is blocked by Safari's
+     third-party-cookie rules, and the popup fallback opened after an await so the browser
+     refused it (empty_window_error: window.open returned null). The library must ask for a
+     RECONNECT instead — and never open a popup of its own accord. */
+  api.setSilentOk(false);
+  api._libTab('wiki', '');
+  await new Promise(r => setTimeout(r, 0));
+  ok('a token that cannot renew silently asks the reader to reconnect',
+    /Your Microsoft session needs renewing/.test(el.innerHTML), el.innerHTML.slice(0, 300));
+  ok('...and offers the redirect, which is the route Safari allows',
+    /_libReconnect\(\)/.test(el.innerHTML));
+  ok('...and never claims SharePoint was unreachable',
+    !/SharePoint could not be reached/.test(el.innerHTML));
+  ok('...and no popup is opened without a click', api.redirected() === false);
+  api._libReconnect();
+  ok('pressing Reconnect is what starts the redirect', api.redirected() === true);
+  api.setSilentOk(true);
 
   console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
