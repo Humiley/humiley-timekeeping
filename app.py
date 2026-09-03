@@ -10314,17 +10314,36 @@ class Handler(BaseHTTPRequestHandler):
         me = u.get("id") or ""
         read = (db.get_collection_item("pm_chat_read", me) or {}).get("read") or {}
         out, mentions = {}, {}
-        for m in db.list_collection("pm_chat"):
-            pid = m.get("projectId")
+        # Four scalars per message, not the whole message. This used to json.loads every record in
+        # the collection — bodies, attachments and all — to answer with a number: 1.8 ms at 200
+        # messages, 8.5 ms at 2,000, 35.7 ms at 10,000, 89.3 ms at 25,000, growing with every message
+        # the company ever sends and paid by every user with the Projects app on every sign-in.
+        #
+        # The FILTER below is deliberately unchanged, line for line. The four traps in doing this as
+        # SQL are all in the filter, not the parsing: a per-project watermark is not a GROUP BY, a
+        # watermark bound as NULL makes `ts > NULL` null so a project nobody has opened reports zero
+        # unread instead of all of them, a deleted row would have to be maintained out of any derived
+        # table, and a message with no projectId is skipped here but would not be by a plain query.
+        # Reading fewer fields costs none of that: same source of truth, same comparisons, same order.
+        for pid, _author, _ts, _mns in db.collection_fields(
+                "pm_chat", ("projectId", "authorId", "ts", "mentions")):
             if not pid or (vis is not None and pid not in vis):
                 continue
-            if (m.get("authorId") or "") == me:
+            if (_author or "") == me:
                 continue                                    # your own words are not unread
-            if str(m.get("ts") or "") <= str(read.get(pid) or ""):
+            if str(_ts or "") <= str(read.get(pid) or ""):
                 continue
             out[pid] = out.get(pid, 0) + 1
-            if any((x or {}).get("empId") == me for x in (m.get("mentions") or [])):
-                mentions[pid] = mentions.get(pid, 0) + 1
+            # `mentions` is a JSON array: SQLite hands it back as text, the fallback as a list. Only
+            # parsed for a message that already counts, which is a small slice of the collection.
+            if _mns:
+                if isinstance(_mns, str):
+                    try:
+                        _mns = json.loads(_mns)
+                    except Exception:
+                        _mns = []
+                if any((x or {}).get("empId") == me for x in (_mns or [])):
+                    mentions[pid] = mentions.get(pid, 0) + 1
         # A label per project that has something waiting, so the notification bell can name the job
         # without the dashboard having to load the whole portfolio. Only projects already counted
         # above appear here, so this adds no visibility the caller did not already have.

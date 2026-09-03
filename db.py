@@ -1988,6 +1988,30 @@ def list_collection(coll):
     return [json.loads(r["data"]) for r in rows]
 
 
+def collection_fields(coll, paths):
+    """A few top-level scalars from every row of a collection, without parsing the rows.
+
+    list_collection json.loads the WHOLE record, and a chat message carries its text — so counting
+    unread badges by loading every message spends nearly all of its time parsing bodies nobody looks
+    at. Measured on 10,000 pm_chat rows: 35.7 ms to parse them all against a few ms to pull three
+    scalars out in SQLite.
+
+    `paths` are top-level field names. Returns one tuple per row, in `id` order, values in the order
+    asked for, None where the field is absent.
+
+    FALLS BACK to the full parse if SQLite has no JSON1. This host has it (3.54), but production runs
+    a different Python in a container and nothing here can see which, and a badge count is not worth
+    a 500 — so a host without it is slower and never wrong.
+    """
+    sel = ", ".join("json_extract(data, ?) AS f%d" % i for i in range(len(paths)))
+    try:
+        rows = _rows("SELECT " + sel + " FROM collections WHERE coll = ? ORDER BY id",
+                     tuple("$." + p for p in paths) + (coll,))
+        return [tuple(r["f%d" % i] for i in range(len(paths))) for r in rows]
+    except Exception:
+        return [tuple(it.get(p) for p in paths) for it in list_collection(coll)]
+
+
 def get_collection_item(coll, item_id):
     """Fetch ONE item by id via the (coll,id) primary key — an indexed lookup, instead of loading and
     json.loads-ing the WHOLE collection just to find one row (the hot single-record path on every
