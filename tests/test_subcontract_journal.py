@@ -11,6 +11,8 @@ the back-to-back position reported billions payable that appeared nowhere in the
 The rule this file mostly guards is that the SAME MONEY MUST NOT POST TWICE. An incomplete ledger is
 silent; a double-counted one is confidently wrong.
 """
+import re
+
 import pytest
 
 import gl
@@ -276,8 +278,15 @@ def test_the_unposted_list_sees_the_same_document_the_posting_will():
     somebody acts on it. Found by running it, not by a test."""
     src = _app()
     i = src.index("pending.append({\"source\": src, \"sourceId\": sid")
-    body = src[i - 400:i + 700]
-    assert "_d = self._gl_subcert_doc(d) if src == gl.SUBCERT else d" in body
+    body = src[i - 500:i + 700]
+    # Matched as a SHAPE, not as one exact spelling. The invariant is that the row is resolved
+    # through _gl_subcert_doc and that the RESOLVED document is what the warnings and detail are
+    # built from — not that the call takes exactly one argument. Pinning the literal line made this
+    # fail on a change that preserved the behaviour completely (the summary now hands the helper a
+    # prebuilt package index instead of making it re-read pm_procurement per certificate), and a
+    # test that fails on a correct refactor teaches people to edit tests rather than read them.
+    assert re.search(r"_d = self\._gl_subcert_doc\(d(?:,\s*\w+)?\)\s+if src == gl\.SUBCERT else d",
+                     body), body[-500:]
     assert 'spec["warnings"](_d)' in body and 'spec["detail"](_d)' in body
 
 
