@@ -17894,16 +17894,48 @@ class Handler(BaseHTTPRequestHandler):
         have = str(doc.get("status") or "").strip().lower()
         return have in ((want,) if isinstance(want, str) else tuple(want))
 
-    def _gl_subcert_doc(self, cert):
+    @staticmethod
+    def _gl_package_index():
+        """(package number, project) -> package, from ONE read of pm_procurement.
+
+        Keyed on both because a package number is only unique within its project; keying on the
+        number alone would attach one project's trade to another project's certificate, which is a
+        wrong account on a ledger posting rather than a slow one.
+
+        FIRST match wins, matching the linear scan this replaces — so a duplicate package number
+        inside one project resolves exactly as it did before rather than the last one silently
+        taking over.
+        """
+        out = {}
+        for p in db.list_collection("pm_procurement"):
+            k = (str(p.get("pkgNo") or "").strip().lower(), p.get("projectId"))
+            if k[0] and k not in out:
+                out[k] = p
+        return out
+
+    def _gl_subcert_doc(self, cert, packages=None):
         """The certificate with its package's trade attached.
 
         Resolved HERE and not inside the journal: the journal is pure and takes one document, and
         the trade lives on pm_procurement. A certificate whose package is missing simply carries no
         trade, and the journal posts to the default account and says so.
+
+        `packages` is an optional `_gl_package_index()` for callers resolving MANY certificates.
+        Without one this reads the WHOLE pm_procurement collection to answer a single lookup, and
+        the ledger summary called it once per unposted subcontract certificate — the shape
+        tools/scan_read_cost.py exists to find, and the one it found here.
+
+        The single-document caller passes nothing and behaves exactly as before.
         """
         pkg_no = str(cert.get("pkgNo") or "").strip().lower()
         if not pkg_no:
             return cert
+        if packages is not None:
+            p = packages.get((pkg_no, cert.get("projectId")))
+            if not p:
+                return cert
+            return dict(cert, discipline=p.get("discipline") or "",
+                        vendor=cert.get("vendor") or p.get("vendor") or "")
         for p in db.list_collection("pm_procurement"):
             if (str(p.get("pkgNo") or "").strip().lower() == pkg_no
                     and p.get("projectId") == cert.get("projectId")):
@@ -18088,6 +18120,9 @@ class Handler(BaseHTTPRequestHandler):
         # The sell side, document by document. A claim, a receipt and a credit note each belong to
         # the month of their OWN date, so this filters on that rather than on anything the document
         # says about a period — a claim certified on 2 August for July work is August revenue.
+        # ONE read of pm_procurement for the whole summary, not one per certificate. Built here
+        # rather than inside the helper so the single-document posting path is untouched.
+        packages = self._gl_package_index()
         for src, spec in self.GL_SALES_SOURCES.items():
             for d in db.list_collection(spec["coll"]):
                 if not self._gl_status_ok(spec, d):
@@ -18098,7 +18133,7 @@ class Handler(BaseHTTPRequestHandler):
                 sid = "%s:%s" % (src, d.get("id"))
                 if (src, sid) in posted:
                     continue
-                _d = self._gl_subcert_doc(d) if src == gl.SUBCERT else d
+                _d = self._gl_subcert_doc(d, packages) if src == gl.SUBCERT else d
                 pending.append({"source": src, "sourceId": sid, "id": d.get("id"),
                                 "label": spec["label"](_d), "detail": spec["detail"](_d),
                                 "warnings": spec["warnings"](_d),
