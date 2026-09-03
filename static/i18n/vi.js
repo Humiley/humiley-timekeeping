@@ -6356,6 +6356,13 @@ window._VI = {
   'A pin is placed — click the map (or drag the pin) to move it to your location, then Save.': 'Đã đặt ghim — bấm vào bản đồ (hoặc kéo ghim) để chuyển tới vị trí của bạn, rồi bấm Lưu.',
   'Searching for “{0}”…': 'Đang tìm “{0}”…',
   /* ── Our Library / Company Wiki / Knowledge Hub ── */
+  'Which page': 'Trang nào',
+  'Choose a department': 'Chọn phòng ban',
+  'Folder created': 'Đã tạo thư mục',
+  'No documents folder for': 'Chưa có thư mục tài liệu cho',
+  'Nobody has created a folder for this department in the library yet.': 'Chưa có ai tạo thư mục cho phòng ban này trong thư viện.',
+  'Create the folder': 'Tạo thư mục',
+  'Department documents — exceptions': 'Tài liệu phòng ban — trường hợp ngoại lệ',
   'Visible to': 'Hiển thị cho',
   'Only HR (or an Editor/Admin) can change where the company library points.': 'Chỉ Nhân sự (hoặc Editor/Quản trị) mới được đổi vị trí thư viện công ty.',
   'Access restricted — this page is limited to a higher access level.': 'Hạn chế truy cập — trang này chỉ dành cho cấp truy cập cao hơn.',
