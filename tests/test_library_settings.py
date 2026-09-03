@@ -55,13 +55,26 @@ def test_an_unset_address_answers_with_the_shipped_default():
             "compares the echoed value against \"\" and treats it as a change." % k)
 
 
-def test_only_an_admin_can_repoint_a_library(api, tokens):
+def test_a_contributor_cannot_repoint_a_library(api, tokens):
+    """Running a department does not make you the person who decides where the company handbook
+    lives. HR does (_is_hr_admin — Editor and Admin pass it too), which is the same test that
+    decides who may publish a company document; replacing the handbook IS publishing one."""
     st, b = api("PATCH", "/api/portal", tokens["mgr"],
                 {"wikiSpUrl": "https://evil.example.com/sites/HRRP"})
     assert st == 403, b
-    assert "admin" in str(b).lower()
+    assert "hr" in str(b).lower()
     st2, b2 = api("GET", "/api/portal", tokens["staff"])
     assert b2["wikiSpUrl"] == app._APPR_SETTING_DEFAULTS["wikiSpUrl"], "the refused change took effect"
+
+
+def test_hr_can_repoint_a_library_without_being_an_admin(api, tokens):
+    """The point of moving this under HR. The Editor fixture is HR by level; a Contributor named
+    on the HR list would pass the same way, and neither has to be promoted to Admin first."""
+    new = "https://humileyvietnam.sharepoint.com/sites/HRRP/Shared Documents/Wiki"
+    st, b = api("PATCH", "/api/portal", tokens["editor"], {"wikiSpUrl": new})
+    assert st == 200, b
+    _, live = api("GET", "/api/portal", tokens["staff"])
+    assert live["wikiSpUrl"] == new
 
 
 def test_a_manager_saving_the_form_unchanged_is_not_refused(api, tokens):
@@ -81,6 +94,71 @@ def test_an_admin_can_repoint_and_it_reads_back(api, tokens):
     assert st == 200, b
     _, live = api("GET", "/api/portal", tokens["staff"])
     assert live["wikiSpUrl"] == new, "saved but not read back — the form would load blank and clear it"
+
+
+# ── the level HR puts on a tile ──────────────────────────────────────────────────────────────
+def _set_level(api, tokens, view, level):
+    tiles = [{"label": "Wiki", "url": "view:wiki", "desc": "", "icon": "wiki", "level": ""},
+             {"label": "Knowledge Hub", "url": "view:knowledge", "desc": "", "icon": "knowledge", "level": ""}]
+    for t in tiles:
+        if t["url"] == "view:" + view:
+            t["level"] = level
+    st, b = api("PATCH", "/api/portal", tokens["admin"], {"library": tiles})
+    assert st == 200, b
+
+
+def test_a_hub_above_your_level_is_not_served_its_address(api, tokens):
+    """The one part of the level rule the SERVER can enforce, and therefore must: the two hubs are
+    PAGES of this portal, and without the SharePoint address there is no page. Hiding the tile in
+    the browser alone would be a curtain, not a rule."""
+    _set_level(api, tokens, "wiki", "management")
+    _, staff = api("GET", "/api/portal", tokens["staff"])
+    assert staff["wikiSpUrl"] == "" and staff["wikiPageUrl"] == "", staff.get("wikiSpUrl")
+    # ...and the OTHER hub is untouched: one tile's level must not gate the whole feature.
+    assert staff["knowledgeSpUrl"], "raising the wiki took the knowledge hub down with it"
+    _, mgmt = api("GET", "/api/portal", tokens["management"])
+    assert mgmt["wikiSpUrl"], "the level was set to management and management was refused"
+
+
+def test_a_reader_below_the_level_cannot_clear_the_address_by_saving(api, tokens):
+    """The trap this codebase keeps meeting, in its sharpest form yet. A caller below the level is
+    sent "" for that hub; a settings form echoes back what it was sent; so an unrelated save by
+    somebody who cannot even SEE the address would delete it — silently, under a toast that says
+    Saved. The key is ignored for anybody who was not shown it.
+
+    A CONTRIBUTOR is the actor, not a staff account: /api/portal refuses staff outright, so they
+    were never the risk. The risk is somebody who legitimately edits announcements on this same
+    form and happens to sit below the level the wiki was raised to."""
+    _set_level(api, tokens, "wiki", "editor")
+    before = db.get_setting("portal_wikiSpUrl", "") or app._APPR_SETTING_DEFAULTS["wikiSpUrl"]
+    _, theirs = api("GET", "/api/portal", tokens["mgr"])
+    assert theirs["wikiSpUrl"] == "", "the fixture is not below the level — this proves nothing"
+    st, b = api("PATCH", "/api/portal", tokens["mgr"],
+                {"wikiSpUrl": theirs["wikiSpUrl"], "wikiPageUrl": theirs["wikiPageUrl"],
+                 "holidays": [{"date": "2027-01-01", "name": "New Year"}]})
+    assert st == 200, b        # their real edit must succeed — it just must not touch this
+    _, adm = api("GET", "/api/portal", tokens["admin"])
+    assert adm["wikiSpUrl"] == before, "a blank echo from a reader below the level wiped the address"
+
+
+def test_an_empty_board_locks_nobody_out(api, tokens):
+    """No tile means no rule. A board HR has emptied is a board with nothing configured on it —
+    reading that as "everyone is locked out of the wiki" would turn a blank form into an outage."""
+    st, _ = api("PATCH", "/api/portal", tokens["admin"], {"library": []})
+    assert st == 200
+    _, staff = api("GET", "/api/portal", tokens["staff"])
+    assert staff["wikiSpUrl"] and staff["knowledgeSpUrl"]
+
+
+def test_a_level_nobody_recognises_is_not_a_lock(api, tokens):
+    """`level` arrives from a form. A value that is not one of the five real levels must fall back
+    to "everyone" rather than to _level_rank's default of 1, which would read as a rule nobody
+    chose and could not be cleared from the UI."""
+    st, _ = api("PATCH", "/api/portal", tokens["admin"], {"library": [
+        {"label": "Wiki", "url": "view:wiki", "desc": "", "icon": "wiki", "level": "sUpErUsEr"}]})
+    assert st == 200
+    _, staff = api("GET", "/api/portal", tokens["staff"])
+    assert staff["wikiSpUrl"], "an unrecognised level locked staff out of the wiki"
 
 
 def test_the_board_and_the_pinned_pages_survive_a_save(api, tokens):

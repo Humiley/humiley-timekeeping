@@ -56,6 +56,14 @@ const PRELUDE = `
   function _inPeriodLF(){ return PERIOD_OK; }
   function _tkPortalData(){ return PORTAL; }
   let PORTAL = { library: [], wiki: [], learning: [], resources: [] };
+  const _LEVELS = ['staff', 'manager', 'management', 'editor', 'admin'];
+  const _LEVEL_LABEL = { staff: 'User', manager: 'Contributor', management: 'Approver', editor: 'Editor', admin: 'Admin' };
+  function _lvlRank(l){ const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
+  let CAN_WRITE = false;
+  function _tkCanPublishDocs(){ return CAN_WRITE; }
+  function tkAudit(){}
+  function toast(){}
+  function _tkAppScopeApply(){}
   function _pmSpToken(){ throw new Error('no token in this harness'); }
   function _pmSpResolve(){ throw new Error('no graph in this harness'); }
   function _pmSpCtx(){ return { mode: 'path' }; }
@@ -74,9 +82,15 @@ new Function(PRELUDE + src.slice(i, j) + `
     _libPaintDocs: _libPaintDocs,
     _libTilesHtml: _libTilesHtml,
     tkRenderLibrary: tkRenderLibrary,
+    _libMaySee: _libMaySee,
+    _libMayOpen: _libMayOpen,
+    _libViewLevel: _libViewLevel,
+    _libUploadUrl: _libUploadUrl,
     setPortal: function (p) { PORTAL = Object.assign(PORTAL, p); },
     setPeriod: function (v) { PERIOD_OK = v; },
     setFilter: function (k, v) { _crmLF[k] = v; },
+    setLevel: function (l) { _userLevel = l; },
+    setCanWrite: function (v) { CAN_WRITE = v; _msalApp = v ? {} : null; _account = v ? {} : null; },
     mount: function (id) { DOM[id] = { innerHTML: '' }; return DOM[id]; }
   });
 `).call(api);
@@ -226,6 +240,76 @@ api.setPortal({ library: [{ label: 'Bad', url: 'javascript:alert(1)', desc: '', 
 api.tkRenderLibrary();
 ok('a non-http tile URL is refused, not rendered as a link',
   !/javascript:/.test(board.innerHTML) && /lib-tile-off/.test(board.innerHTML), board.innerHTML.slice(0, 300));
+
+/* ── the level HR puts on a tile ────────────────────────────────────────────── */
+api.setPortal({
+  library: [
+    { label: 'Everyone thing', url: 'https://a.sharepoint.com/1', desc: '', icon: 'link', level: '' },
+    { label: 'Approvers only', url: 'https://a.sharepoint.com/2', desc: '', icon: 'link', level: 'management' },
+    { label: 'Wiki', url: 'view:wiki', desc: '', icon: 'wiki', level: 'management' },
+    { label: 'Knowledge Hub', url: 'view:knowledge', desc: '', icon: 'knowledge', level: '' }
+  ], resources: []
+});
+api.setLevel('manager');
+api.tkRenderLibrary();
+let lo = board.innerHTML;
+ok('a tile above your level is not on your board', /Everyone thing/.test(lo) && !/Approvers only/.test(lo));
+ok('and neither is the hub tile it gates', !/>Wiki</.test(lo) && /Knowledge Hub/.test(lo));
+ok('the hub page refuses at the same level the tile does',
+  api._libMayOpen('wiki') === false && api._libMayOpen('knowledge') === true);
+
+api.setLevel('management');
+api.tkRenderLibrary();
+lo = board.innerHTML;
+ok('at the level itself, both come back', /Approvers only/.test(lo) && />Wiki</.test(lo));
+ok('and the page opens', api._libMayOpen('wiki') === true);
+
+/* Blank is the default and must stay the LOOSEST answer. `_lvlRank` returns 1 for anything it does
+   not recognise, so a level of "" or "sUpErUsEr" read naively becomes "staff and above" — which is
+   nearly harmless — but the same fallback on a MISSING tile would be a rule nobody chose. */
+api.setLevel('staff');
+ok('an unrecognised level is not a lock',
+  api._libMaySee({ level: 'sUpErUsEr' }) === true && api._libMaySee({ level: '' }) === true && api._libMaySee({}) === true);
+api.setPortal({ library: [] });
+ok('an empty board locks nobody out of a hub',
+  api._libMayOpen('wiki') === true && api._libViewLevel('wiki') === '');
+
+/* ── HR updating the files ──────────────────────────────────────────────────── */
+api.setCanWrite(false);
+html = paint(st => { st.items = ROWS; });
+ok('an ordinary reader is offered no Upload button', !/_libUploadPick/.test(html));
+ok('and no Replace on a file row', !/_libReplacePick/.test(html));
+
+api.setCanWrite(true);
+html = paint(st => { st.items = ROWS; });
+ok('HR is offered Upload', /_libUploadPick\('wiki'\)/.test(html));
+ok('HR is offered Replace on a FILE', /_libReplacePick\('wiki','D1'/.test(html));
+ok('but not on a folder — a folder has no bytes to replace',
+  (html.match(/_libReplacePick/g) || []).length === 2, String((html.match(/_libReplacePick/g) || []).length));
+ok('Upload is not offered over a panel that failed to load',
+  !/_libUploadPick/.test(paint(st => { st.error = 'nosession'; })));
+
+/* Where a new file lands. "The folder you are in" is the whole promise of the button, and getting
+   it wrong drops HR's handbook silently into the root of the library instead. */
+(function () {
+  const st = api._libState('wiki');
+  st.drive = 'DRV'; st.baseRef = 'root'; st.rel = 'General/Policies'; st.crumbs = [];
+  ok('at the root, an upload addresses the CONFIGURED folder, not the drive root',
+    api._libUploadUrl('wiki', 'Handbook.pdf') ===
+    'https://graph.microsoft.com/v1.0/drives/DRV/root:/General/Policies/Handbook.pdf',
+    api._libUploadUrl('wiki', 'Handbook.pdf'));
+  st.crumbs = [{ id: 'SUB1', name: 'HR' }];
+  ok('inside a folder, it addresses THAT folder',
+    api._libUploadUrl('wiki', 'Handbook.pdf') ===
+    'https://graph.microsoft.com/v1.0/drives/DRV/items/SUB1:/Handbook.pdf',
+    api._libUploadUrl('wiki', 'Handbook.pdf'));
+  ok('a file name with a space or a quote is encoded, not concatenated',
+    api._libUploadUrl('wiki', "Q3 forecast's.xlsx").indexOf("Q3%20forecast's.xlsx") > 0 ||
+    api._libUploadUrl('wiki', "Q3 forecast's.xlsx").indexOf('Q3%20forecast%27s.xlsx') > 0,
+    api._libUploadUrl('wiki', "Q3 forecast's.xlsx"));
+  st.crumbs = [];
+})();
+api.setCanWrite(false);
 
 /* The Graph host check, on its own. */
 ok('only sharepoint.com is accepted as a library host',
