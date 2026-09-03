@@ -611,6 +611,29 @@ def _payer_emails():
     return {e.strip().lower() for e in re.split(r"[,;\s]+", str(raw)) if e.strip()}
 
 
+_LIB_HUB_VIEWS = ("wiki", "knowledge")
+
+
+def _lib_min_level(view):
+    """The access level a Library tile demands, or "" for everyone.
+
+    The level lives ON THE TILE (`portal_library`, the row whose url is `view:wiki`) rather than
+    in a setting of its own, so HR sets it in one place and the board and the page can never
+    disagree about who may see it — which is what two settings would eventually do.
+
+    No tile means no rule: a board HR has emptied must not lock everybody out of a page.
+    """
+    rows = db.get_setting("portal_library")
+    if not isinstance(rows, list):
+        return ""
+    want = "view:" + str(view or "")
+    for r in rows:
+        if isinstance(r, dict) and str(r.get("url") or "").strip() == want:
+            lvl = str(r.get("level") or "").strip()
+            return lvl if lvl in Handler.LEVEL_ORDER else ""
+    return ""
+
+
 def _hr_admin_emails():
     """The people named as HR, lower-cased. Empty set = nobody named, so the fallback level rule
        applies. Same separators as the payer list."""
@@ -9093,13 +9116,21 @@ class Handler(BaseHTTPRequestHandler):
         out["hrSpUrl"] = _ps("portal_hrSpUrl", "") or ""
         out["invtrackSpUrl"] = (_ps("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = _ps("portal_procurementUrl", "") or ""
-        # Library / Wiki / Knowledge Hub locations. Readable by everyone, like financeSpUrl: they
-        # are where the company's own documents live, and every employee is meant to open them.
-        # The shipped default is echoed back when nothing is stored, so the pages work on a fresh
-        # install and the settings form always shows the address actually in force — a form that
-        # loaded blank and saved would silently clear a working link (see wageRegion above).
-        for _lk in ("wikiPageUrl", "wikiSpUrl", "knowledgePageUrl", "knowledgeSpUrl"):
-            out[_lk] = _ps("portal_" + _lk, "") or _APPR_SETTING_DEFAULTS[_lk]
+        # Library / Wiki / Knowledge Hub locations. The shipped default is echoed back when nothing
+        # is stored, so the pages work on a fresh install and the settings form always shows the
+        # address actually in force — a form that loaded blank and saved would silently clear a
+        # working link (see wageRegion above).
+        #
+        # Gated by the level HR put on the page's own tile. This is the one part of the Library's
+        # level rule the SERVER can enforce and therefore should: the two hub pages are pages of
+        # this portal, and without their addresses there is no page. A tile pointing OUT of the
+        # portal is a different matter — its level hides the tile, and SharePoint alone decides
+        # who may open what is behind it. Said plainly here so nobody reads more into it.
+        for _hub in _LIB_HUB_VIEWS:          # the view id doubles as the settings-key prefix
+            _min = _lib_min_level(_hub)
+            _may = (not _min) or rank >= self._level_rank(_min)
+            for _lk in (_hub + "PageUrl", _hub + "SpUrl"):
+                out[_lk] = (_ps("portal_" + _lk, "") or _APPR_SETTING_DEFAULTS[_lk]) if _may else ""
         # The bank's column layout. Sent only to Editor+ (it describes a salary payment file), with
         # the shipped default echoed back when nothing is configured so the form always has
         # something real to show rather than an empty table the owner has to invent from nothing.
@@ -9981,13 +10012,6 @@ class Handler(BaseHTTPRequestHandler):
                       ("hrSpUrl", "portal_hrSpUrl"),
                       ("invtrackSpUrl", "portal_invtrackSpUrl"),
                       ("procurementUrl", "portal_procurementUrl"),
-                      # Where the Library board, the Company Wiki and the Knowledge Hub point.
-                      # Admin-only for the same reason as every other integration URL: a link the
-                      # whole company is told is the company's own is a redirect worth stealing.
-                      ("wikiPageUrl", "portal_wikiPageUrl"),
-                      ("wikiSpUrl", "portal_wikiSpUrl"),
-                      ("knowledgePageUrl", "portal_knowledgePageUrl"),
-                      ("knowledgeSpUrl", "portal_knowledgeSpUrl"),
                       ("apprEmail", "portal_apprEmail"),
                       ("apprSenderHr", "portal_apprSenderHr"),
                       ("apprSenderFinance", "portal_apprSenderFinance"),
@@ -10038,6 +10062,34 @@ class Handler(BaseHTTPRequestHandler):
             db.set_setting(sk, v)
             if k == "invtrackSpUrl":
                 _invtrack_sp_reset()   # a corrected link must take effect now, not after the 5-min negative cache
+
+        # ── the Library's four addresses ──────────────────────────────────────────────────────
+        # HR, not Admin. Where the company wiki lives is a fact about the company's documents, and
+        # the people who publish those documents are the ones who know it — the same test that
+        # decides who may publish a policy (_is_hr_admin, which Editor and Admin also pass).
+        #
+        # The read gate above is the reason for the `_may_read` skip rather than a 403. A caller
+        # below a hub's level was sent "" for that hub, and a settings form echoes back what it was
+        # sent — so treating their blank as an instruction would let somebody who cannot even see
+        # the address DELETE it, silently, by saving an unrelated field on the same form. Ignore
+        # the key for anybody who was not shown it, exactly as apprPayers is ignored above.
+        _lib_hr = self._is_hr_admin(u)
+        _rank = self._level_rank(self._caller_level(u))
+        for _hub in _LIB_HUB_VIEWS:
+            _min = _lib_min_level(_hub)
+            _may_read = (not _min) or _rank >= self._level_rank(_min)
+            for _k in (_hub + "PageUrl", _hub + "SpUrl"):
+                _v = body.get(_k)
+                if not isinstance(_v, str) or not _may_read:
+                    continue
+                _v = _v.strip()
+                _cur = db.get_setting("portal_" + _k, "") or _APPR_SETTING_DEFAULTS[_k]
+                if _v == _cur:
+                    continue
+                if not _lib_hr:
+                    return self._err("Only HR (or an Editor/Admin) can change where the company "
+                                     "library points.", 403)
+                db.set_setting("portal_" + _k, _v)
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --

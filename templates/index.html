@@ -964,7 +964,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 /* One line, two destinations: the folder row (opens here) and the arrow (opens in SharePoint). */
 .lib-row-wrap{display:flex;align-items:stretch;border-top:1px solid var(--line)}
 .lib-row-wrap .lib-row{border-top:none;flex:1;min-width:0}
-.lib-row-ext{display:flex;align-items:center;padding:0 14px;color:var(--text-light);flex:none;text-decoration:none}
+/* Used by BOTH an <a> (open in SharePoint) and a <button> (replace this file), so it has to
+   neutralise the user-agent button chrome — without background:none a <button> paints its own
+   grey box and the row grows a lump nobody drew. */
+.lib-row-ext{display:flex;align-items:center;padding:0 14px;color:var(--text-light);flex:none;text-decoration:none;background:none;border:none;font-family:inherit;cursor:pointer}
 .lib-row-ext:hover{background:var(--soft-bg);color:var(--navy)}
 .lib-row-ext:focus-visible{outline:none;background:var(--soft-bg);box-shadow:inset 0 0 0 2px rgba(32,80,144,.28)}
 .lib-row-dead{cursor:default;opacity:.65}
@@ -2081,10 +2084,6 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div style="font-size:11px;color:var(--text-light);margin:4px 0 8px">Verify each go‑live switch‑on actually worked — Microsoft 365, invoice sync, approval email, SharePoint, push.</div>
       <div id="portal-health"></div>
     </div>
-    <div class="form-group"><label class="form-label">Company Wiki — SharePoint page (URL)</label><input class="form-control" id="portal-wikipage" placeholder="https://…sharepoint.com/sites/HRRP/SitePages/WIKI-PAGE.aspx"><div style="font-size:11px;color:var(--text-light);margin-top:4px">The wiki page the company publishes in SharePoint. The <b>Company Wiki</b> page links straight to it.</div></div>
-    <div class="form-group"><label class="form-label">Company Wiki — document library (URL)</label><input class="form-control" id="portal-wikisp" placeholder="https://…sharepoint.com/sites/HRRP"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the wiki's files live. Paste the site address to read its default document library, or a folder address to start inside that folder. Files are listed with each reader's <b>own</b> SharePoint permissions and are never copied into the portal, so this widens nobody's access.</div></div>
-    <div class="form-group"><label class="form-label">Knowledge Hub — SharePoint page (URL)</label><input class="form-control" id="portal-knowpage" placeholder="https://…sharepoint.com/sites/LearningManagementSystem/SitePages/Knowledge-Hub.aspx"><div style="font-size:11px;color:var(--text-light);margin-top:4px">The Knowledge Hub page on the Learning Management System site.</div></div>
-    <div class="form-group"><label class="form-label">Knowledge Hub — document library (URL)</label><input class="form-control" id="portal-knowsp" placeholder="https://…sharepoint.com/sites/LearningManagementSystem"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the knowledge-hub files live — same rules as the wiki library above.</div></div>
     <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
   </div>
   </div>
@@ -2628,6 +2627,17 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="card-hdr"><div class="card-title">Our Library (board tiles)</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('library')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">The tiles on the Library page. Paste the SharePoint or intranet address for each. Leave the address blank and the tile still shows, marked as needing a link — <b>view:wiki</b> and <b>view:knowledge</b> open this portal's own Wiki and Knowledge Hub pages.</div>
         <div id="portal-library"></div>
+      </div>
+      <!-- HR owns where the library points. Not Access & Permissions: which SharePoint site
+           holds the company handbook is a fact about the company's documents, and the people who
+           publish those documents are the ones who know it. The server agrees (_is_hr_admin). -->
+      <div class="card" id="portal-libloc-card">
+        <div class="card-hdr"><div class="card-title">Library locations (SharePoint)</div></div>
+        <div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Where the <b>Company Wiki</b> and <b>Knowledge Hub</b> pages read from. Files are listed with each reader's <b>own</b> SharePoint permissions and are never copied into the portal, so changing these widens nobody's access.</div>
+        <div class="form-group"><label class="form-label">Company Wiki — SharePoint page (URL)</label><input class="form-control" id="portal-wikipage" placeholder="https://…sharepoint.com/sites/HRRP/SitePages/WIKI-PAGE.aspx"><div style="font-size:11px;color:var(--text-light);margin-top:4px">The wiki page the company publishes in SharePoint. The <b>Company Wiki</b> page links straight to it.</div></div>
+        <div class="form-group"><label class="form-label">Company Wiki — document library (URL)</label><input class="form-control" id="portal-wikisp" placeholder="https://…sharepoint.com/sites/HRRP"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the wiki's files live. Paste the site address to read its default document library, or a folder address to start inside that folder. Files are listed with each reader's <b>own</b> SharePoint permissions and are never copied into the portal, so this widens nobody's access.</div></div>
+        <div class="form-group"><label class="form-label">Knowledge Hub — SharePoint page (URL)</label><input class="form-control" id="portal-knowpage" placeholder="https://…sharepoint.com/sites/LearningManagementSystem/SitePages/Knowledge-Hub.aspx"><div style="font-size:11px;color:var(--text-light);margin-top:4px">The Knowledge Hub page on the Learning Management System site.</div></div>
+        <div class="form-group"><label class="form-label">Knowledge Hub — document library (URL)</label><input class="form-control" id="portal-knowsp" placeholder="https://…sharepoint.com/sites/LearningManagementSystem"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the knowledge-hub files live — same rules as the wiki library above.</div></div>
       </div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Wiki — pinned pages</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('wiki')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
@@ -5989,6 +5999,9 @@ async function doLogin(role, opts = {}) {
     console.warn('Backend unavailable — using local demo data:', e.message);
   }
   _applyRole(role);
+  // AFTER _applyRole, never before: the level gates hide nav rows with style.display and this
+  // reads that same property back. Running first would be overwritten a line later.
+  try { _libApplyLevels(); } catch (e) {}
   /* dismiss overlay */
   const ov = document.getElementById('login-overlay');
   if (ov) { ov.classList.add('fade-out'); setTimeout(() => { ov.style.display = 'none'; }, 460); }
@@ -6744,6 +6757,7 @@ async function tkRenderPortalEditor() {
   const PD = _tkPortalData();
   _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki }));
   _tkPortalRenderRows();
+  _tkLibLocFill();
 }
 
 // System Integrations now live on the Access & Permissions view (admin), NOT the Company Portal tab.
@@ -6934,13 +6948,6 @@ async function tkLoadIntegrations() {
   const _hh = document.getElementById('portal-apprHealth'); const _H = (live && live.apprEmailHealth) || null;
   if (_hh && _H) _hh.textContent = _H.lastError ? ('Last error: ' + _H.lastError) : (_H.ok ? (_H.ok + ' sent OK' + (_H.at ? (' · ' + _H.at) : '')) : '');
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = g('procurementUrl', (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '');
-  /* Library locations. The server always answers with the address IN FORCE (its own shipped
-     default when nothing is stored), so these boxes are never blank while a link is working —
-     a form that loaded blank and saved would clear a live link and say "Saved". */
-  const _wp = document.getElementById('portal-wikipage'); if (_wp) _wp.value = g('wikiPageUrl', '');
-  const _ws = document.getElementById('portal-wikisp'); if (_ws) _ws.value = g('wikiSpUrl', '');
-  const _kp = document.getElementById('portal-knowpage'); if (_kp) _kp.value = g('knowledgePageUrl', '');
-  const _ks = document.getElementById('portal-knowsp'); if (_ks) _ks.value = g('knowledgeSpUrl', '');
   if (live) {   // keep the caches consistent with what we just showed so the save echo matches the server
     window._TK_PORTAL = window._TK_PORTAL || {};
     if (typeof live.teamsWebhook === 'string') window._TK_PORTAL.teamsWebhook = live.teamsWebhook;
@@ -6952,8 +6959,7 @@ async function tkLoadIntegrations() {
   }
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
   const _apprEls = ['portal-apprEmail', 'portal-apprHr', 'portal-apprFin', 'portal-apprProc', 'portal-apprRemind', 'portal-apprRemindDays', 'portal-apprEscalateDays', 'portal-apprEscalateTo', 'portal-apprTestBtn', 'portal-apprSweepBtn', 'portal-digestEnabled', 'portal-digestDay', 'portal-digestLeadTo', 'portal-digestTestBtn', 'portal-tkNudges', 'portal-tkCheckinHour', 'portal-tkCheckoutHour', 'portal-tkTestBtn', 'portal-monthlyReports', 'portal-monthlyDay', 'portal-monthlyTo', 'portal-monthlyTestBtn'].map(id => document.getElementById(id));
-  const _libEls = ['portal-wikipage', 'portal-wikisp', 'portal-knowpage', 'portal-knowsp'].map(id => document.getElementById(id));
-  [tw, fs, pu, ..._libEls, ..._apprEls].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change these settings.' : ''; } });
+  [tw, fs, pu, ..._apprEls].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change these settings.' : ''; } });
 }
 
 function _tkPortalRenderRows() {
@@ -6986,13 +6992,20 @@ function _tkPortalRenderRows() {
     '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
     '<input class="form-control" style="flex:0 0 180px" placeholder="Label" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'label\',this)">' +
     '<input class="form-control" style="flex:1" placeholder="https://…  (optional)" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'url\',this)">' + rm('resources', i) + '</div>').join(''));
-  const icoSel = (i, sel) => '<select class="form-control" style="flex:0 0 130px" title="Icon" onchange="tkPortalSet(\'library\',' + i + ',\'icon\',this)">' +
+  const icoSel = (i, sel) => '<select class="form-control" style="flex:0 0 120px" title="Icon" onchange="tkPortalSet(\'library\',' + i + ',\'icon\',this)">' +
     _LIB_ICON_KEYS.map(k => '<option value="' + k + '"' + (((sel || 'link') === k) ? ' selected' : '') + '>' + k + '</option>').join('') + '</select>';
+  /* Who sees this tile. Blank = everyone, and blank is the default on purpose: a board that
+     starts by hiding things from people is a board nobody trusts. On the Wiki and Knowledge Hub
+     tiles this ALSO gates the page itself — the server reads the level off this same row — so
+     there is one answer to "who may see the wiki" rather than two that drift apart. */
+  const lvlSel = (i, sel) => '<select class="form-control" style="flex:0 0 140px" title="' + _tkEscA(_t('Visible to')) + '" onchange="tkPortalSet(\'library\',' + i + ',\'level\',this)">' +
+    '<option value=""' + (!sel ? ' selected' : '') + '>' + _t('Everyone') + '</option>' +
+    _LEVELS.map(l => '<option value="' + l + '"' + ((sel === l) ? ' selected' : '') + '>' + _crmEsc(_t(_LEVEL_LABEL[l] || l)) + ' +</option>').join('') + '</select>';
   I('portal-library', m.library.map((it, i) =>
     '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
     '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' +
     '<input class="form-control" style="flex:1" placeholder="Tile name" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'library\',' + i + ',\'label\',this)">' +
-    icoSel(i, it.icon) + rm('library', i) + '</div>' +
+    icoSel(i, it.icon) + lvlSel(i, it.level) + rm('library', i) + '</div>' +
     '<input class="form-control" style="margin-bottom:6px" placeholder="https://…  or  view:wiki  ·  leave blank until you have the link" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'library\',' + i + ',\'url\',this)">' +
     '<input class="form-control" placeholder="One line about what is in there (optional)" value="' + _tkEscA(it.desc) + '" oninput="tkPortalSet(\'library\',' + i + ',\'desc\',this)"></div>').join(''));
   I('portal-wiki', m.wiki.map((it, i) =>
@@ -7006,11 +7019,32 @@ function _tkPortalRenderRows() {
    an unknown name silently falls back to the generic link mark, which reads as "broken". */
 const _LIB_ICON_KEYS = ['link', 'it', 'template', 'project', 'learning', 'training', 'knowledge', 'wiki'];
 
+/* The four SharePoint addresses. Read from the SAME /api/portal reply the pages themselves use,
+   so the box can never show one address while the Wiki reads another.
+
+   The server sends "" for a hub this account is below the level of, and a form echoes back what
+   it was sent — so the boxes are DISABLED rather than blank-and-savable for anyone who is not HR,
+   and _portal_update ignores the key from anybody who was not shown it. Two guards for one
+   mistake, because the mistake silently deletes the company's wiki address. */
+const _TK_LIBLOC = [['portal-wikipage', 'wikiPageUrl'], ['portal-wikisp', 'wikiSpUrl'],
+                    ['portal-knowpage', 'knowledgePageUrl'], ['portal-knowsp', 'knowledgeSpUrl']];
+function _tkLibLocFill() {
+  const P = window._TK_PORTAL || {}, mine = _tkCanPublishDocs();
+  _TK_LIBLOC.forEach(function (f) {
+    const el = document.getElementById(f[0]); if (!el) return;
+    el.value = P[f[1]] || '';
+    el.disabled = !mine;
+    el.title = mine ? '' : _t('Only HR (or an Editor/Admin) can change where the company library points.');
+  });
+  const note = document.getElementById('portal-libloc-note');
+  if (note) note.style.display = mine ? 'none' : '';
+}
+
 function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = el.value; }
 function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
 function tkPortalAdd(type) {
   if (!_tkPortalModel) tkRenderPortalEditor();
-  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link' }, wiki: { label: '', url: '', desc: '' } }[type];
+  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link', level: '' }, wiki: { label: '', url: '', desc: '' } }[type];
   _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
   _tkPortalRenderRows();
 }
@@ -7077,14 +7111,24 @@ async function tkSavePortal() {
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
-    library: m.library.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '', icon: x.icon || 'link' })),
+    library: m.library.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '', icon: x.icon || 'link', level: _LEVELS.indexOf(x.level) >= 0 ? x.level : '' })),
     wiki: m.wiki.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim(), desc: x.desc || '' }))
-  };   // integration URLs are saved separately on Access & Permissions (tkSaveIntegrations); the backend merges per-key
+  };   // the OTHER integration URLs are saved on Access & Permissions (tkSaveIntegrations); the backend merges per-key
+  if (_tkCanPublishDocs()) {
+    _TK_LIBLOC.forEach(function (f) {
+      const el = document.getElementById(f[0]); if (el) payload[f[1]] = (el.value || '').trim();
+    });
+  }
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
     window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki });   // preserve integration URLs / invtrackSpUrl already cached
+    _TK_LIBLOC.forEach(function (f) { if (typeof payload[f[1]] === 'string') window._TK_PORTAL[f[1]] = payload[f[1]]; });
+    // A repointed library must not keep listing the old one: the browser holds a resolved
+    // SharePoint drive per hub, and a level change can take a whole page away.
+    try { delete _LIB_SP.wiki; delete _LIB_SP.knowledge; } catch (_e) {}
+    try { _libApplyLevels(); } catch (_e) {}
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast(_t('Network error') + ': ' + _errMsg(e), 'error', 5000); }
 }
@@ -7100,10 +7144,6 @@ async function tkSaveIntegrations() {
     financeSpUrl: V('portal-finsp'),
     hrSpUrl: V('portal-hrsp'),
     procurementUrl: V('portal-procurl'),
-    wikiPageUrl: V('portal-wikipage'),
-    wikiSpUrl: V('portal-wikisp'),
-    knowledgePageUrl: V('portal-knowpage'),
-    knowledgeSpUrl: V('portal-knowsp'),
     apprEmail: C('portal-apprEmail') ? '1' : '0',
     apprSenderHr: V('portal-apprHr'),
     apprSenderFinance: V('portal-apprFin'),
@@ -7142,11 +7182,7 @@ async function tkSaveIntegrations() {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save integrations', 'error', 5000); return; }
-    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl,
-      wikiPageUrl: payload.wikiPageUrl, wikiSpUrl: payload.wikiSpUrl, knowledgePageUrl: payload.knowledgePageUrl, knowledgeSpUrl: payload.knowledgeSpUrl });
-    // The browser holds a resolved SharePoint drive per hub; a repointed library must not keep
-    // listing the old one.
-    try { delete _LIB_SP.wiki; delete _LIB_SP.knowledge; } catch (_e) {}
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl });
     if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks new values up without a reload
     // The snapshot the action buttons compare against must move with the save, or the very next
     // click would claim the value is unsaved.
@@ -39211,6 +39247,7 @@ const _LIB_EXT_TONE = {
 };
 function _libExt(name) { const m = String(name || '').match(/\.([A-Za-z0-9]{1,5})$/); return m ? m[1].toLowerCase() : ''; }
 const _LIB_CHEVRON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+const _LIB_REPLACE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
 const _LIB_EXTERNAL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 /* Two different escapes, because these strings land in two different places and the wrong one
    is silently fine until somebody names a file badly.
@@ -39252,6 +39289,9 @@ async function _libSpList(hub, interactive) {
       st.crumbs = [];   // nothing resolved yet, so any crumb still held names a folder we cannot address
       const r = await _pmSpResolve(base, _pmSpCtx(base), token);
       st.drive = r.driveId;
+      // Kept for the upload path: Graph addresses a new file by its PARENT, and at the root of a
+      // configured library that parent is baseRef + the folder the link pointed into.
+      st.baseRef = r.baseRef; st.rel = r.projRel || '';
       const rel = r.projRel ? ':/' + r.projRel.split('/').map(encodeURIComponent).join('/') + ':' : '';
       url = _GRAPH + '/drives/' + r.driveId + '/' + r.baseRef + rel + '/children';
     }
@@ -39265,6 +39305,116 @@ async function _libSpList(hub, interactive) {
   }
   st.loading = false;
   _libPaintDocs(hub);
+}
+
+/* ── HR: updating the files ───────────────────────────────────────────────────
+   The portal reads this library as the reader; writing to it is the same token with the same
+   scope (Sites.ReadWrite.All, already granted at sign-in), so SharePoint applies the SAME
+   permissions to the write. Somebody with read-only access to the folder gets a 403 from
+   SharePoint, not from us — which is the right place for that answer to come from.
+
+   Offered only to HR (_tkCanPublishDocs — the test that decides who may publish a company
+   document, since replacing the handbook in the wiki IS publishing one). The button is hidden
+   for everybody else, and hiding it is a courtesy, not the boundary: SharePoint is. */
+function _libMayWrite() {
+  return typeof _tkCanPublishDocs === 'function' && _tkCanPublishDocs() && !!_msalApp && !!_account
+    && !(typeof DEMO_MODE === 'function' && DEMO_MODE());
+}
+/* Where a new file goes: the folder on screen, so what you see is where it lands. */
+function _libUploadUrl(hub, name) {
+  const st = _libState(hub);
+  const enc = encodeURIComponent(name);
+  const here = st.crumbs.length ? st.crumbs[st.crumbs.length - 1] : null;
+  if (here && here.id) return _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(here.id) + ':/' + enc;
+  const rel = st.rel ? st.rel.split('/').map(encodeURIComponent).join('/') + '/' : '';
+  return _GRAPH + '/drives/' + st.drive + '/' + (st.baseRef || 'root') + ':/' + rel + enc;
+}
+/* PUT the bytes. Under 4 MB in one request; above it through a resumable session, because a
+   single PUT of a 30 MB manual fails on a site connection and the failure looks like nothing
+   happening. `conflict` is what separates adding a file from replacing one — 'rename' keeps both
+   copies, 'replace' writes a new VERSION of the same file (SharePoint keeps the old one in its
+   version history, which is why replacing is safe to offer at all). */
+async function _libPutFile(itemUrl, file, conflict, token) {
+  if (file.size <= 4 * 1024 * 1024) {
+    const r = await fetch(itemUrl + ':/content?@microsoft.graph.conflictBehavior=' + conflict, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': file.type || 'application/octet-stream' },
+      body: file
+    });
+    if (!r.ok) throw new Error(r.status + ' ' + (await r.text()).slice(0, 160));
+    return await r.json();
+  }
+  const sres = await fetch(itemUrl + ':/createUploadSession', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': conflict, name: file.name } })
+  });
+  if (!sres.ok) throw new Error('session ' + sres.status);
+  const uploadUrl = (await sres.json()).uploadUrl, CH = 5 * 1024 * 1024;
+  let start = 0, last = null;
+  while (start < file.size) {
+    const end = Math.min(start + CH, file.size);
+    const cr = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Range': 'bytes ' + start + '-' + (end - 1) + '/' + file.size },
+      body: file.slice(start, end)
+    });
+    if (!cr.ok && cr.status !== 202) throw new Error('chunk ' + cr.status);
+    last = cr; start = end;
+  }
+  return await last.json();
+}
+function _libWhyUploadFailed(msg) {
+  if (/\b40[13]\b/.test(msg)) return _t('SharePoint refused the upload — your account may not have permission to add files to this folder.');
+  if (/signed in|token|InteractionRequired|expired/i.test(msg)) return _t('Your Microsoft session expired — reload the page and sign in again.');
+  return _t('Upload failed') + ': ' + msg;
+}
+/* Add a file to the folder currently on screen. */
+function _libUploadPick(hub) {
+  const st = _libState(hub);
+  if (!st.drive) { toast(_t('Open the library first, then upload.'), 'warn'); return; }
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.onchange = async function () {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 250 * 1024 * 1024) { toast(_t('That file is too large (250 MB limit).'), 'warn', 7000); return; }
+    toast(_t('Uploading to SharePoint…'));
+    try {
+      const token = await _pmSpToken(true);
+      // 'rename', not 'replace': adding a file must never quietly overwrite one somebody else put
+      // there under the same name. Replacing is a separate, named action on the row itself.
+      const it = await _libPutFile(_libUploadUrl(hub, f.name), f, 'rename', token);
+      toast(_t('Uploaded to SharePoint') + ' ✓', 'success', 6000);
+      try { tkAudit('File uploaded to the company library', hub, (it && it.name) || f.name); } catch (e) {}
+      _libSpList(hub, true);
+    } catch (e) { toast(_libWhyUploadFailed(String((e && e.message) || e)), 'error', 9000); }
+  };
+  inp.click();
+}
+/* Replace ONE file, keeping its name and its address — so every link already sent to staff, and
+   every reference from a wiki page, still resolves. SharePoint keeps the previous version. */
+function _libReplacePick(hub, itemId, name) {
+  const st = _libState(hub);
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.onchange = async function () {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 250 * 1024 * 1024) { toast(_t('That file is too large (250 MB limit).'), 'warn', 7000); return; }
+    const yes = await tkConfirm({
+      title: 'Replace this file?',
+      body: 'The new file takes over the name and the link of “' + name + '”, so anyone who already has that link gets the new version. SharePoint keeps the old one in its version history.',
+      confirmText: 'Replace'
+    });
+    if (!yes) return;
+    toast(_t('Uploading to SharePoint…'));
+    try {
+      const token = await _pmSpToken(true);
+      await _libPutFile(_GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(itemId), f, 'replace', token);
+      toast(_t('File replaced') + ' ✓', 'success', 6000);
+      try { tkAudit('File replaced in the company library', hub, name); } catch (e) {}
+      _libSpList(hub, true);
+    } catch (e) { toast(_libWhyUploadFailed(String((e && e.message) || e)), 'error', 9000); }
+  };
+  inp.click();
 }
 
 /* Search the whole document library rather than the folder on screen. Deliberately a
@@ -39392,9 +39542,13 @@ function _libRowsHtml(hub, rows, showPath) {
        tab" and "copy link address". target=_blank keeps the portal open behind it; SharePoint's
        own viewer is what then lets the reader preview or download. */
     if (!url) return '<span class="lib-row lib-row-dead" title="' + _libAttr(_t('This file has no SharePoint address')) + '">' + body + '</span>';
-    return '<a class="lib-row" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+    const link = '<a class="lib-row" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
       _libAttr(r.name + ' — ' + _t('View or download in SharePoint')) + '">' +
       body + '<span class="lib-row-go">' + _LIB_EXTERNAL + '</span></a>';
+    if (!_libMayWrite()) return link;
+    return '<div class="lib-row-wrap">' + link +
+      '<button type="button" class="lib-row-ext" onclick="_libReplacePick(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' +
+      _libAttr(_t('Replace this file')) + '" aria-label="' + _libAttr(_t('Replace this file') + ' — ' + r.name) + '">' + _LIB_REPLACE + '</button></div>';
   }).join('') + '</div>';
 }
 /* Where a search hit lives, so a result list of eight files all called "Form.pdf" is usable. */
@@ -39431,10 +39585,14 @@ function _libPaintDocs(hub) {
     ' <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpCrumb(\'' + hub + '\',' + (st.crumbs.length - 1) + ')">' + _t('Back to the folder') + '</button></div>' +
     _libRowsHtml(hub, st.found.rows, true);
   else body = _libRowsHtml(hub, st.items || [], false);
+  const canWrite = _libMayWrite() && !st.error && !!st.drive;
   el.innerHTML =
     '<div class="card-hdr"><div class="card-title">' + _t('Documents') + '</div>' +
+    '<div style="display:flex;gap:6px;align-items:center">' +
+    (canWrite ? '<button class="btn btn-emerald btn-sm" style="font-size:11px" onclick="_libUploadPick(\'' + hub + '\')" title="' +
+      _tkEscA(_t('Add a file to the folder you are in')) + '">' + tkIcon('plus', 13) + ' ' + _t('Upload file') + '</button>' : '') +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpRetry(\'' + hub + '\')" title="' + _tkEscA(_t('Reload from SharePoint')) + '">' +
-    tkIcon('refresh', 13) + ' ' + _t('Refresh') + '</button></div>' +
+    tkIcon('refresh', 13) + ' ' + _t('Refresh') + '</button></div></div>' +
     (st.error ? '' : crumbs + bar) + body;
 }
 /* One named callback per hub, because _crmSearchInput / _crmFiltSel take a function NAME and
@@ -39498,6 +39656,45 @@ const _LIB_TILE_ICON = {
 function _libTileHref(it) { return String((it && it.url) || '').indexOf('view:') === 0 ? '' : _crmHref(it && it.url); }
 function _libTileView(it) { const u = String((it && it.url) || ''); return u.indexOf('view:') === 0 ? u.slice(5) : ''; }
 
+/* ── who may see what ────────────────────────────────────────────────────────
+   The level lives on the TILE, not in a setting of its own, so the board and the page it opens
+   can never disagree about who may see it. Blank = everyone, and blank is the shipped default.
+
+   Two honest limits, stated here because a comment is the only place they can be:
+
+   * For the two IN-PORTAL hubs this is a real gate — showView refuses, the sidebar row goes, and
+     the server withholds the SharePoint addresses without which the page has nothing to show.
+   * For a tile pointing OUT of the portal it hides the tile and nothing more. The documents
+     behind it are governed by SharePoint's own permissions, which this cannot widen and does not
+     replace. A tile is a signpost; hiding a signpost is not a lock. */
+function _libTileLevel(it) {
+  const l = String((it && it.level) || '').trim();
+  return _LEVELS.indexOf(l) >= 0 ? l : '';
+}
+function _libMaySee(it) {
+  const l = _libTileLevel(it);
+  return !l || _lvlRank(_userLevel) >= _lvlRank(l);
+}
+/* The minimum level for one of the two hub PAGES, read off its tile on the board. */
+function _libViewLevel(view) {
+  const t = (_tkPortalData().library || []).filter(function (x) { return String((x && x.url) || '') === 'view:' + view; })[0];
+  return t ? _libTileLevel(t) : '';
+}
+function _libMayOpen(view) {
+  const l = _libViewLevel(view);
+  return !l || _lvlRank(_userLevel) >= _lvlRank(l);
+}
+/* Hide the sidebar rows of a hub this account may not open. style.display is what the permission
+   gates already use on nav rows, and _tkAppItems reads exactly that — so an account locked out of
+   both hubs stops being offered them on the app board too, with no second rule to keep in step. */
+function _libApplyLevels() {
+  ['wiki', 'knowledge'].forEach(function (v) {
+    const row = document.querySelector('.nav-item[onclick*="\'' + v + '\'"]');
+    if (row) row.style.display = _libMayOpen(v) ? '' : 'none';
+  });
+  try { if (typeof _tkAppScopeApply === 'function') _tkAppScopeApply(); } catch (e) {}
+}
+
 function _libTilesHtml(items) {
   const canEdit = (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('manager');
   return '<div class="lib-grid">' + (items || []).map(function (it) {
@@ -39522,7 +39719,7 @@ function _libTilesHtml(items) {
 
 function tkRenderLibrary() {
   const root = document.getElementById('library-root'); if (!root) return;
-  const tiles = (_tkPortalData().library || []).filter(function (t) { return (t.label || '').trim(); });
+  const tiles = (_tkPortalData().library || []).filter(function (t) { return (t.label || '').trim() && _libMaySee(t); });
   const res = (_tkPortalData().resources || []).filter(function (r) { return (r.label || '').trim() && _crmHref(r.url); });
   root.innerHTML =
     (tiles.length ? _libTilesHtml(tiles)
@@ -41729,6 +41926,12 @@ function showView(id, navEl, title) {
     return;
   }
 
+  /* Library hubs — the level HR put on the tile. Not in _LEVEL_VIEWS because that map is a
+     constant and this one is a setting somebody changes at 4pm on a Tuesday. */
+  if ((id === 'wiki' || id === 'knowledge') && typeof _libMayOpen === 'function' && !_libMayOpen(id)) {
+    toast(_t('Access restricted — this page is limited to a higher access level.'), 'warn');
+    return;
+  }
   /* per-user app access — an admin can disable e.g. CRM for a specific user */
   if (id.indexOf('crm-') === 0 && _appDeniedCurrent('crm')) { toast('Access restricted — CRM is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('pm-') === 0 && _appDeniedCurrent('pm')) { toast('Access restricted — Projects is not enabled for your account. Ask an admin.', 'warn'); return; }
