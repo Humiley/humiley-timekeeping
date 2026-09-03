@@ -423,6 +423,19 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_push_email ON push_subs (email);
         """
     )
+    # The unread badge, off an index instead of a scan of every message ever posted: 1.08 ms against
+    # 29.8 ms at 25,000 messages, and it grows with the number of projects rather than the history.
+    # PARTIAL (WHERE coll='pm_chat') so it stays small on a table that holds every collection, and on
+    # EXPRESSIONS so no data has to be copied anywhere — SQLite maintains it through inserts, updates
+    # and deletes, which is the whole reason this is an index and not a table somebody has to keep in
+    # step. Wrapped because a SQLite without JSON1 cannot create it; the callers fall back to the scan.
+    try:
+        conn.executescript(
+            "CREATE INDEX IF NOT EXISTS idx_pm_chat_unread ON collections("
+            + _PM_CHAT_PID + ", " + _PM_CHAT_TS + ", " + _PM_CHAT_AUTHOR + ", "
+            + _PM_CHAT_MLEN + ") WHERE coll = 'pm_chat';")
+    except Exception:
+        pass
     # migration: drop the ON DELETE CASCADE from emp_events on databases created with it.
     # SQLite cannot ALTER a foreign key, so the table is rebuilt. Guarded on foreign_key_list, so this
     # runs at most once and is a no-op afterwards; the table is small (one row per recorded change).
@@ -1986,6 +1999,85 @@ def push_subs_clear(email):
 def list_collection(coll):
     rows = _rows("SELECT data FROM collections WHERE coll = ? ORDER BY id", (coll,))
     return [json.loads(r["data"]) for r in rows]
+
+
+# The unread badge asks "how many messages in this project are newer than my watermark", and the
+# watermark comparison in _pm_chat_summary is `str(ts) <= str(watermark)` — TEXT, not numeric. So the
+# index has to be on the TEXT of the timestamp, or SQLite would compare by type affinity and the two
+# would disagree about a number versus a numeric string.
+#
+# The CASE reproduces Python's `str(ts or "")` exactly for the values that occur: falsy (absent, null,
+# 0, "", false) becomes NULL, which is never greater than anything and so is always skipped — the same
+# thing `"" <= anything` does on the Python side. A JSON true becomes 'True', because that is what
+# str() would produce. Anything else is its own text.
+#
+# A ts that is a JSON OBJECT or ARRAY is outside this equivalence — str({...}) is Python repr, not JSON
+# text — and is left there deliberately: _coll_add stamps ts = _utc_now_ms() on every message, which
+# tests/test_pm_chat_unread_index.py asserts, and the Python filter still runs over whatever this
+# returns. The index narrows; it does not decide.
+_PM_CHAT_TS = (
+    "CASE json_type(data,'$.ts') "
+    "WHEN 'null' THEN NULL WHEN 'false' THEN NULL WHEN 'true' THEN 'True' "
+    "ELSE CASE WHEN json_extract(data,'$.ts') = 0 OR json_extract(data,'$.ts') = '' THEN NULL "
+    "ELSE CAST(json_extract(data,'$.ts') AS TEXT) END END"
+)
+_PM_CHAT_PID = "json_extract(data,'$.projectId')"
+# In the index too, both of them, so the common query never has to open the row. authorId excludes
+# your own messages; the mentions LENGTH lets the mention count skip every message that mentions
+# nobody, which is nearly all of them — without it SQLite reads and re-parses each candidate to run
+# json_each over an empty array.
+_PM_CHAT_AUTHOR = "IFNULL(json_extract(data,'$.authorId'),'')"
+_PM_CHAT_MLEN = "IFNULL(json_array_length(data,'$.mentions'),0)"
+
+
+def pm_chat_project_ids():
+    """Every project id that has a chat message, off the index.
+
+    INDEXED BY, not left to the planner: without ANALYZE it picks the primary key and scans every row
+    (14.6 ms at 25,000 messages against 0.99 ms), and nothing in this deployment runs ANALYZE.
+    """
+    try:
+        rows = _rows("SELECT DISTINCT %s AS pid FROM collections INDEXED BY idx_pm_chat_unread "
+                     "WHERE coll = 'pm_chat'" % _PM_CHAT_PID)
+        return [r["pid"] for r in rows]
+    except Exception:
+        return None                      # no index (or no JSON1): the caller falls back to a scan
+
+
+def pm_chat_unread(pid, watermark, exclude_author, me):
+    """(unread, mentioning-me) for ONE project, both counted inside SQLite.
+
+    Counted, not listed. Returning the rows was the first version and it was barely faster than the
+    scan it replaced: a project nobody has opened has EVERY message unread, so "the tail" was most of
+    the collection — 18,750 rows of 25,000 in the benchmark. The badge only ever needed two numbers.
+
+    This IS the filter, not a shortlist for one — re-checking the same expression in Python would
+    only re-run the thing being trusted, so the equivalence is proved by differential test against
+    the old loop instead (tests/test_pm_chat_unread_index.py) over ISO, absent, null, 0, "", false,
+    integer, float and text timestamps.
+
+    `watermark` must be the TEXT the Python side used — str(read.get(pid) or "") — and never None:
+    `ts > NULL` is NULL, so a project with no watermark would report zero unread instead of all of
+    it, which is the exact way this endpoint was never allowed to fail.
+
+    The mentions test is guarded on json_type being an array, because json_each raises on anything
+    else and a malformed row must not take the whole badge down with it.
+    """
+    wm = str(watermark or "")
+    n = _row("SELECT COUNT(*) AS n FROM collections INDEXED BY idx_pm_chat_unread "
+             "WHERE coll = 'pm_chat' AND %s = ? AND %s > ? AND %s <> ?"
+             % (_PM_CHAT_PID, _PM_CHAT_TS, _PM_CHAT_AUTHOR),
+             (pid, wm, exclude_author))["n"] or 0
+    if not n:
+        return 0, 0
+    # Only the messages that mention SOMEBODY are opened, and only then to ask whether it was you.
+    m = _row("SELECT COUNT(*) AS m FROM collections INDEXED BY idx_pm_chat_unread "
+             "WHERE coll = 'pm_chat' AND %s = ? AND %s > ? AND %s <> ? AND %s > 0 "
+             "AND EXISTS (SELECT 1 FROM json_each(data,'$.mentions') AS je "
+             "            WHERE json_extract(je.value,'$.empId') = ?)"
+             % (_PM_CHAT_PID, _PM_CHAT_TS, _PM_CHAT_AUTHOR, _PM_CHAT_MLEN),
+             (pid, wm, exclude_author, me))["m"] or 0
+    return n, m
 
 
 def collection_fields(coll, paths):
