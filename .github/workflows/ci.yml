@@ -215,6 +215,17 @@ jobs:
       - name: Every string the code asks to translate has a translation
         run: node tools/i18n/missing.js
 
+      # ...and the strings that never ask. `st.textContent = 'Checked out. See you tomorrow!'`
+      # carries no _t(), so the step above has nothing to look at: the key is not absent from the
+      # dictionary, it was never requested. 28 of these were rendering English to Vietnamese users
+      # while every other gate was green.
+      #
+      # Most need no code change -- assigning textContent/innerHTML is a childList mutation, so the
+      # DOM walker translates the new text node by exact match AS LONG AS a key exists. Only a
+      # string built with a runtime value needs _tp(), because no key can ever match it.
+      - name: English written straight into the DOM has a translation
+        run: node tools/i18n/domwrites.js --gate
+
       # The drawing register's own self-check, run against the shipped code rather than a copy.
       - name: Drawing register check
         run: node tests/eng_register_check.js

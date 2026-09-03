@@ -6322,4 +6322,38 @@ window._VI = {
   'Difference': 'Chênh lệch',
   'Raised {0} entitlement(s)': 'Đã nâng {0} hồ sơ ngày phép',
 
+  /* ── written straight into the DOM: no _t() asked, so no gate could see them ── */
+  'Getting your current location… (allow the location prompt if it appears)': 'Đang lấy vị trí hiện tại của bạn… (hãy cho phép khi trình duyệt hỏi)',
+  'Still locating (network-based)…': 'Vẫn đang định vị (dựa trên mạng)…',
+  'Type an address first, then press “Find on map”.': 'Hãy nhập địa chỉ trước, rồi bấm “Tìm trên bản đồ”.',
+  'Sent — check your inbox.': 'Đã gửi — hãy kiểm tra hộp thư của bạn.',
+  'Send failed.': 'Gửi không thành công.',
+  'Pushed — check your device.': 'Đã đẩy thông báo — hãy kiểm tra thiết bị của bạn.',
+  'Not sent.': 'Chưa gửi.',
+  'No celebrations this month': 'Tháng này không có dịp chúc mừng',
+  'Start your own goal cycle now, or wait for your manager to assign goals.': 'Bạn có thể tự bắt đầu chu kỳ mục tiêu, hoặc chờ quản lý giao mục tiêu.',
+  'Nothing on the floor': 'Không có gì trên chuyền',
+  'No AHU registered yet': 'Chưa đăng ký AHU nào',
+  'No customer orders yet': 'Chưa có đơn hàng khách nào',
+  'System &amp; Access (Admin)': 'Hệ thống & Phân quyền (Quản trị)',
+  'System & Access (Admin)': 'Hệ thống & Phân quyền (Quản trị)',
+  'Workforce &amp; Finance (Management)': 'Nhân sự & Tài chính (Quản lý)',
+  'Workforce & Finance (Management)': 'Nhân sự & Tài chính (Quản lý)',
+  'Uploading to SharePoint…': 'Đang tải lên SharePoint…',
+  'Testing Azure AD connection…': 'Đang kiểm tra kết nối Azure AD…',
+  'Testing SharePoint connection…': 'Đang kiểm tra kết nối SharePoint…',
+  'Azure AD app credentials accepted. Redirect URI registered. User.Read and Sites.ReadWrite.All permissions will be requested on first login.': 'Đã chấp nhận thông tin ứng dụng Azure AD. Đã đăng ký Redirect URI. Quyền User.Read và Sites.ReadWrite.All sẽ được yêu cầu trong lần đăng nhập đầu tiên.',
+  'GPS Active · Outside Zones': 'GPS đang bật · Ngoài vùng',
+  'You are checked in. Have a great day!': 'Bạn đã chấm công vào. Chúc một ngày tốt lành!',
+  'Checked out. See you tomorrow!': 'Đã chấm công ra. Hẹn gặp lại ngày mai!',
+  'GPS: Real device': 'GPS: Thiết bị thật',
+  'GPS: Simulated': 'GPS: Mô phỏng',
+  'Custom salary — no grade band selected.': 'Lương tự nhập — chưa chọn bậc lương.',
+
+  'Pinned your current location (±{0}m). Adjust the pin or radius as needed.': 'Đã ghim vị trí hiện tại của bạn (±{0}m). Hãy chỉnh lại ghim hoặc bán kính nếu cần.',
+  'Edit Employee — {0}': 'Sửa nhân viên — {0}',
+
+  'A pin is placed — click the map (or drag the pin) to move it to your location, then Save.': 'Đã đặt ghim — bấm vào bản đồ (hoặc kéo ghim) để chuyển tới vị trí của bạn, rồi bấm Lưu.',
+  'Searching for “{0}”…': 'Đang tìm “{0}”…',
+
 };

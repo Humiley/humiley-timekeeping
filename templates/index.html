@@ -5231,7 +5231,7 @@ function tkUseMyLocation() {
 
   const onOk = (pos) => {
     tkSetLocPin(pos.coords.latitude, pos.coords.longitude, true);
-    if (hint) hint.textContent = 'Pinned your current location (±' + Math.round(pos.coords.accuracy) + 'm). Adjust the pin or radius as needed.';
+    if (hint) hint.textContent = _tp('Pinned your current location (±{0}m). Adjust the pin or radius as needed.', Math.round(pos.coords.accuracy));
     if (typeof toast === 'function') toast('Current location pinned');
   };
 
@@ -5265,7 +5265,7 @@ async function tkGeocodeAddress() {
   const q = (document.getElementById('loc-address')?.value || '').trim();
   const hint = document.getElementById('loc-map-hint');
   if (!q) { if (hint) hint.textContent = 'Type an address first, then press “Find on map”.'; return; }
-  if (hint) hint.textContent = 'Searching for “' + q + '”…';
+  if (hint) hint.textContent = _tp('Searching for “{0}”…', q);
   try {
     const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } });
     const data = await res.json();
@@ -46124,7 +46124,7 @@ function _editEmpProfile(id) {
   _tkEditEmpId = e.id;
   const _idEd = document.getElementById('emp-id'); if (_idEd) _idEd.readOnly = true;
   const title = m.querySelector('.modal-title');
-  if (title) title.textContent = 'Edit Employee — ' + e.name;
+  if (title) title.textContent = _tp('Edit Employee — {0}', e.name);
   const _slE = document.getElementById('emp-save-label'); if (_slE) _slE.textContent = 'Save Changes';
   const set = (k,v) => {
     const el = document.getElementById(k); if (!el) return;
