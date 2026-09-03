@@ -6356,6 +6356,9 @@ window._VI = {
   'A pin is placed — click the map (or drag the pin) to move it to your location, then Save.': 'Đã đặt ghim — bấm vào bản đồ (hoặc kéo ghim) để chuyển tới vị trí của bạn, rồi bấm Lưu.',
   'Searching for “{0}”…': 'Đang tìm “{0}”…',
   /* ── Our Library / Company Wiki / Knowledge Hub ── */
+  'List view': 'Dạng danh sách',
+  'Grid view': 'Dạng lưới',
+  'complete': 'hoàn thành',
   'Board only': 'Chỉ Ban lãnh đạo',
   'Microsoft sign-in could not be started.': 'Không thể bắt đầu đăng nhập Microsoft.',
   'That department is not open to your account.': 'Tài khoản của bạn không được mở phòng ban này.',
