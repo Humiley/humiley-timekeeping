@@ -947,11 +947,46 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 .lib-tile-off .lib-tile-ico{background:var(--soft-bg);color:var(--text-light)}
 .lib-tile-off-lbl{display:block;margin-top:3px;font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-light)}
 
-.lib-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 20px;box-shadow:var(--shadow-sm);margin-bottom:18px}
-.lib-hero-txt{flex:1;min-width:240px}
-.lib-hero-txt h2{font-size:18px;font-weight:700;color:var(--navy);letter-spacing:-.3px;margin:0 0 6px}
-.lib-hero-txt p{font-size:12.5px;color:var(--text-light);line-height:1.6;margin:0;max-width:70ch}
+/* The masthead. It used to repeat the page title the header above it had already said, which
+   is the commonest way an internal tool looks unconsidered — two headings, one thought. It
+   carries the explanation and the ways out to SharePoint instead, over a tint of the hub's own
+   colour so the wiki and the knowledge hub are told apart at a glance rather than by reading. */
+.lib-hero{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--shadow-sm);margin-bottom:16px;position:relative;overflow:hidden}
+.lib-hero::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--lib-tone,var(--navy))}
+.lib-hero-ico{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;flex:none;background:color-mix(in srgb,var(--lib-tone,var(--navy)) 12%,transparent);color:var(--lib-tone,var(--navy))}
+.lib-hero-txt{flex:1;min-width:220px}
+.lib-hero-txt p{font-size:12.5px;color:var(--text-light);line-height:1.6;margin:0;max-width:78ch}
 .lib-hero-act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* A count beside the heading, so "Documents" stops being a word with nothing behind it. */
+.lib-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--text-light);background:var(--soft-bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px 9px;white-space:nowrap}
+/* List or grid. A segmented control rather than two buttons: it is one choice with two states. */
+.lib-view{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-btn);overflow:hidden;background:var(--card)}
+.lib-view button{border:none;background:none;font-family:inherit;cursor:pointer;padding:5px 9px;color:var(--text-light);display:flex;align-items:center}
+.lib-view button.on{background:var(--emerald);color:#fff}
+.lib-view button:not(.on):hover{background:var(--soft-bg);color:var(--navy)}
+
+.lib-docgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:12px;padding:14px}
+.lib-doc{display:flex;flex-direction:column;gap:9px;text-align:left;text-decoration:none;font-family:inherit;cursor:pointer;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;color:inherit;transition:transform .16s,box-shadow .16s,border-color .16s;position:relative}
+.lib-doc:hover{transform:translateY(-2px);box-shadow:var(--shadow-card);border-color:transparent}
+.lib-doc:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(32,80,144,.28)}
+.lib-doc-badge{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase}
+.lib-doc-name{font-size:12.5px;font-weight:600;color:var(--text-dark);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.lib-doc-meta{font-size:10.5px;color:var(--text-light);margin-top:auto}
+.lib-doc-act{position:absolute;top:10px;right:10px;opacity:0;transition:opacity .16s;color:var(--text-light);background:none;border:none;cursor:pointer;font-family:inherit;padding:3px;border-radius:6px}
+.lib-doc:hover .lib-doc-act,.lib-doc-act:focus-visible{opacity:1}
+.lib-doc-act:hover{background:var(--soft-bg);color:var(--navy)}
+
+/* The file type, said in words. A coloured icon alone asks people to learn a colour key. */
+.lib-ext{font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 6px;border-radius:5px;white-space:nowrap}
+
+/* An empty or failed panel gets a mark, not just a sentence in the middle of nowhere. */
+.lib-note-ico{width:46px;height:46px;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;background:var(--soft-bg);color:var(--text-light)}
+
+/* Knowledge Hub course cards: an LMS link with no progress on it is just a bookmark. */
+.lib-prog{height:5px;border-radius:99px;background:var(--soft-bg);overflow:hidden;margin-top:8px}
+.lib-prog>span{display:block;height:100%;border-radius:99px;background:var(--emerald)}
+.lib-prog-lbl{font-size:10px;font-weight:700;color:var(--emerald);margin-top:5px;display:block}
 
 .lib-crumbs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:10px 14px 2px;font-size:12px}
 .lib-crumb{background:none;border:none;font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);cursor:pointer;padding:3px 5px;border-radius:6px}
@@ -988,8 +1023,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 @media (max-width:820px){
   .lib-grid{grid-template-columns:1fr;gap:10px}
   .lib-tile{padding:13px 14px}
-  .lib-hero{padding:15px 16px}
+  .lib-hero{padding:14px;gap:12px}
+  .lib-hero-ico{width:38px;height:38px;border-radius:12px}
+  .lib-hero-act{width:100%}
+  .lib-hero-act .btn{flex:1}
   .lib-row-name{white-space:normal}
+  .lib-docgrid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:12px}
 }
 
 @media (max-width:820px){
@@ -39698,7 +39737,8 @@ function _libDocsMsg(hub) {
   const docs = _libCfg(meta.docsKey);
   const openBtn = docs ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(docs) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _t('Open in SharePoint') + '</a>' : '';
   const box = function (title, body, action) {
-    return '<div class="lib-note"><div class="lib-note-t">' + _crmEsc(title) + '</div>' +
+    return '<div class="lib-note"><div class="lib-note-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>' +
+      '<div class="lib-note-t">' + _crmEsc(title) + '</div>' +
       '<div class="lib-note-b">' + _crmEsc(body) + '</div>' +
       '<div class="lib-note-a">' + (action || '') + openBtn + '</div></div>';
   };
@@ -39735,10 +39775,29 @@ function _libDocsMsg(hub) {
   return '';
 }
 
-function _libRowsHtml(hub, rows, showPath) {
+/* List or grid. A register of forms reads best as a list; a folder of drawings and photographs
+   reads best as cards — the same library is both, depending on the folder, so the reader picks
+   and the choice is remembered per hub rather than reset on every visit. */
+function _libView(hub) {
+  const st = _libState(hub);
+  if (!st.view) {
+    let saved = '';
+    try { saved = localStorage.getItem('tkLibView-' + hub) || ''; } catch (e) {}
+    st.view = saved === 'grid' ? 'grid' : 'list';
+  }
+  return st.view;
+}
+function _libSetView(hub, v) {
+  _libState(hub).view = (v === 'grid') ? 'grid' : 'list';
+  try { localStorage.setItem('tkLibView-' + hub, _libState(hub).view); } catch (e) {}
+  _libPaintDocs(hub);
+}
+/* The filtering and ordering, once, so the list and the grid can never disagree about what is
+   in the folder — which they would the first time somebody fixed a filter in one of them. */
+function _libVisibleRows(hub, rows) {
   const q = String(_crmLF['lib-' + hub + '-f'] || '').trim().toLowerCase();
   const kind = String(_crmLF['lib-' + hub + '-kind'] || '');
-  const list = (rows || []).filter(function (r) {
+  return (rows || []).filter(function (r) {
     if (q && String(r.name || '').toLowerCase().indexOf(q) < 0) return false;
     if (kind === 'Folders only' && !r.folder) return false;
     if (kind === 'Files only' && r.folder) return false;
@@ -39748,6 +39807,37 @@ function _libRowsHtml(hub, rows, showPath) {
     if (!!a.folder !== !!b.folder) return a.folder ? -1 : 1;
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
+}
+/* The document cards. Folders keep both destinations here too — the card opens the folder, the
+   corner button opens it in SharePoint — so switching view never changes what a click does. */
+function _libCardsHtml(hub, rows, showPath) {
+  const list = _libVisibleRows(hub, rows);
+  if (!list.length)
+    return '<div class="lib-empty">' + _t((rows && rows.length) ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
+  return '<div class="lib-docgrid">' + list.map(function (r) {
+    const ext = _libExt(r.name), tone = r.folder ? '#D97706' : (_LIB_EXT_TONE[ext] || '#5C6470');
+    const url = _crmHref(r.webUrl);
+    const badge = '<span class="lib-doc-badge" style="background:' + tone + '14;color:' + tone + '">' +
+      (r.folder ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+        : (ext ? _crmEsc(ext) : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>')) + '</span>';
+    const bits = [r.folder ? ((r.folder.childCount || 0) + ' ' + _t(r.folder.childCount === 1 ? 'item' : 'items')) : _libFmtSize(r.size),
+      _libFmtWhen(r.lastModifiedDateTime), showPath ? _libParentLabel(r) : ''].filter(Boolean);
+    const body = badge + '<span class="lib-doc-name">' + _crmEsc(r.name) + '</span>' +
+      (bits.length ? '<span class="lib-doc-meta">' + _crmEsc(bits.join(' · ')) + '</span>' : '');
+    const corner = url ? '<a class="lib-doc-act" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+      _libAttr(_t('Open in SharePoint')) + '" aria-label="' + _libAttr(_t('Open in SharePoint')) + '" onclick="event.stopPropagation()">' + _LIB_EXTERNAL + '</a>' : '';
+    if (r.folder)
+      return '<div class="lib-doc" role="button" tabindex="0" onclick="_libSpEnter(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' + _libAttr(r.name) + '">' + body + corner + '</div>';
+    if (!url) return '<span class="lib-doc lib-row-dead" title="' + _libAttr(_t('This file has no SharePoint address')) + '">' + body + '</span>';
+    return '<a class="lib-doc" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
+      _libAttr(r.name + ' — ' + _t('View or download in SharePoint')) + '">' + body +
+      (_libMayWrite() ? '<button type="button" class="lib-doc-act" onclick="event.preventDefault();event.stopPropagation();_libReplacePick(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' + _libAttr(_t('Replace this file')) + '">' + _LIB_REPLACE + '</button>' : '') +
+      '</a>';
+  }).join('') + '</div>';
+}
+
+function _libRowsHtml(hub, rows, showPath) {
+  const list = _libVisibleRows(hub, rows);
   if (!list.length)
     return '<div class="lib-empty">' + _t((rows && rows.length) ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
   return '<div class="lib-rows">' + list.map(function (r) {
@@ -39755,12 +39845,14 @@ function _libRowsHtml(hub, rows, showPath) {
     const ico = r.folder
       ? '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
       : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>';
-    const bits = [r.folder ? '' : _libFmtSize(r.size), _libFmtWhen(r.lastModifiedDateTime),
-      showPath ? _libParentLabel(r) : ''].filter(Boolean);
+    const bits = [r.folder ? ((r.folder.childCount || 0) + ' ' + _t(r.folder.childCount === 1 ? 'item' : 'items')) : _libFmtSize(r.size),
+      _libFmtWhen(r.lastModifiedDateTime), showPath ? _libParentLabel(r) : ''].filter(Boolean);
+    // The extension, written out. A colour alone asks everybody to learn a colour key.
+    const chip = (!r.folder && ext) ? '<span class="lib-ext" style="background:' + tone + '14;color:' + tone + '">' + _crmEsc(ext) + '</span> ' : '';
     const body =
       '<span class="lib-row-ico" style="background:' + tone + '14"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="' + tone + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ico + '</svg></span>' +
       '<span class="lib-row-txt"><span class="lib-row-name">' + _crmEsc(r.name) + '</span>' +
-      (bits.length ? '<span class="lib-row-meta">' + _crmEsc(bits.join('  ·  ')) + '</span>' : '') + '</span>';
+      (bits.length ? '<span class="lib-row-meta">' + chip + _crmEsc(bits.join('  ·  ')) + '</span>' : '') + '</span>';
     const url = _crmHref(r.webUrl);
     if (r.folder) {
       /* A folder can mean two different things, so it offers two controls instead of guessing:
@@ -39796,6 +39888,10 @@ function _libParentLabel(r) {
   try { return decodeURIComponent(rel); } catch (e) { return rel; }
 }
 
+/* One entry point, so every caller gets whichever view the reader chose. */
+function _libDocsHtml(hub, rows, showPath) {
+  return _libView(hub) === 'grid' ? _libCardsHtml(hub, rows, showPath) : _libRowsHtml(hub, rows, showPath);
+}
 function _libPaintDocs(hub) {
   const el = document.getElementById('lib-docs-' + hub); if (!el) return;
   const st = _libState(hub);
@@ -39827,12 +39923,28 @@ function _libPaintDocs(hub) {
   else if (st.found) body = '<div class="lib-found">' +
     _crmEsc(_t('Results across the whole library') + ': “' + st.found.q + '” — ' + st.found.rows.length + ' ') + _t(st.found.rows.length === 1 ? 'item' : 'items') +
     ' <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpCrumb(\'' + hub + '\',' + (st.crumbs.length - 1) + ')">' + _t('Back to the folder') + '</button></div>' +
-    _libRowsHtml(hub, st.found.rows, true);
-  else body = _libRowsHtml(hub, st.items || [], false);
+    _libDocsHtml(hub, st.found.rows, true);
+  else body = _libDocsHtml(hub, st.items || [], false);
   const canWrite = _libMayWrite() && !st.error && !!st.drive;
+  /* The count is of what is ON SCREEN, after the filters — a total that ignores the filter above
+     it is a number nobody can check against the rows underneath. */
+  const onScreen = st.error ? null : _libVisibleRows(hub, (st.found ? st.found.rows : st.items) || []);
+  const view = _libView(hub);
+  const vbtn = function (v, label, ico) {
+    return '<button type="button" class="' + (view === v ? 'on' : '') + '" onclick="_libSetView(\'' + hub + '\',\'' + v + '\')" title="' +
+      _libAttr(_t(label)) + '" aria-label="' + _libAttr(_t(label)) + '" aria-pressed="' + (view === v) + '">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ico + '</svg></button>';
+  };
   el.innerHTML =
-    '<div class="card-hdr"><div class="card-title">' + _t('Documents') + '</div>' +
+    '<div class="card-hdr"><div style="display:flex;align-items:center;gap:9px;min-width:0">' +
+      '<div class="card-title">' + _t('Documents') + '</div>' +
+      (onScreen ? '<span class="lib-chip">' + onScreen.length + ' ' + _t(onScreen.length === 1 ? 'item' : 'items') + '</span>' : '') +
+    '</div>' +
     '<div style="display:flex;gap:6px;align-items:center">' +
+    (st.error ? '' : '<span class="lib-view">' +
+      vbtn('list', 'List view', '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>') +
+      vbtn('grid', 'Grid view', '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>') +
+      '</span>') +
     (canWrite ? '<button class="btn btn-emerald btn-sm" style="font-size:11px" onclick="_libUploadPick(\'' + hub + '\')" title="' +
       _tkEscA(_t('Add a file to the folder you are in')) + '">' + tkIcon('plus', 13) + ' ' + _t('Upload file') + '</button>' : '') +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpRetry(\'' + hub + '\')" title="' + _tkEscA(_t('Reload from SharePoint')) + '">' +
@@ -39845,14 +39957,23 @@ function _libSpFilter_wiki() { _libPaintDocs('wiki'); }
 function _libSpFilter_knowledge() { _libPaintDocs('knowledge'); }
 
 /* ── the two hub pages ──────────────────────────────────────────────────────── */
+/* No <h2> here. The page header directly above already says "Company Wiki", and repeating it is
+   the commonest way an internal tool looks unconsidered — two headings, one thought. What this
+   band is for is the explanation and the two ways out to SharePoint. */
+const _LIB_HERO_ICO = {
+  wiki: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="16" y2="7"/>',
+  knowledge: '<path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><line x1="9" y1="21" x2="15" y2="21"/>'
+};
 function _libHubHtml(hub) {
   const meta = _LIB_HUBS[hub];
   const page = _libCfg(meta.pageKey), docs = _libCfg(meta.docsKey);
-  return '<div class="lib-hero" style="border-left:4px solid ' + meta.tone + '">' +
-    '<div class="lib-hero-txt"><h2>' + _crmEsc(_t(meta.title)) + '</h2><p>' + _crmEsc(_t(meta.lead)) + '</p></div>' +
+  return '<div class="lib-hero" style="--lib-tone:' + meta.tone + '">' +
+    '<span class="lib-hero-ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      (_LIB_HERO_ICO[hub] || '') + '</svg></span>' +
+    '<div class="lib-hero-txt"><p>' + _crmEsc(_t(meta.lead)) + '</p></div>' +
     '<div class="lib-hero-act">' +
-      (page ? '<a class="btn btn-primary btn-sm" href="' + _tkEscA(page) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _crmEsc(_t(meta.open)) + '</a>' : '') +
-      (docs ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(docs) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _t('Open the document library') + '</a>' : '') +
+      (page ? '<a class="btn btn-primary btn-sm" href="' + _libAttr(page) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _crmEsc(_t(meta.open)) + '</a>' : '') +
+      (docs ? '<a class="btn btn-outline btn-sm" href="' + _libAttr(docs) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _t('Open the document library') + '</a>' : '') +
     '</div></div>' +
     '<div class="card" id="lib-docs-' + hub + '"></div>';
 }
@@ -39870,12 +39991,23 @@ function tkRenderKnowledge() {
   /* The L&D list an admin already maintains for the dashboard. Reused rather than given a
      second home: two lists of company courses would disagree within a month. */
   const courses = (_tkPortalData().learning || []).filter(function (c) { return (c.name || '').trim() && _crmHref(c.url); });
+  /* null, not 0, for a course with no progress recorded: a 0% bar states that somebody has not
+     started it, which is a different claim from "nobody is tracking this one". */
+  const pct = function (c) {
+    const n = parseInt(c && c.pct, 10);
+    return isNaN(n) ? null : Math.max(0, Math.min(100, n));
+  };
   const learn = courses.length
     ? '<div class="lib-sec-lbl">' + _t('Learning & Development') + '</div><div class="lib-grid">' + courses.map(function (c) {
         return '<a class="lib-tile" href="' + _tkEscA(_crmHref(c.url)) + '" target="_blank" rel="noopener">' +
           '<span class="lib-tile-ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _LIB_TILE_ICON.learning + '</svg></span>' +
           '<span class="lib-tile-txt"><span class="lib-tile-name">' + _crmEsc(c.name) + '</span>' +
-          (c.meta ? '<span class="lib-tile-desc">' + _crmEsc(c.meta) + '</span>' : '') + '</span></a>';
+          (c.meta ? '<span class="lib-tile-desc">' + _crmEsc(c.meta) + '</span>' : '') +
+          /* pct has been on these records all along and no screen ever drew it, so a course
+             half finished looked exactly like one never started. */
+          (pct(c) !== null ? '<span class="lib-prog"><span style="width:' + pct(c) + '%"></span></span>' +
+            '<span class="lib-prog-lbl">' + pct(c) + '% ' + _t('complete') + '</span>' : '') +
+          '</span></a>';
       }).join('') + '</div>'
     : '';
   root.innerHTML = _libHubHtml('knowledge') + learn;

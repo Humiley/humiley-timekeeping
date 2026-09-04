@@ -74,6 +74,7 @@ const PRELUDE = `
   function tkAudit(){}
   function toast(){}
   function _tkAppScopeApply(){}
+  const localStorage = { _d: {}, getItem(k){ return this._d[k] || null; }, setItem(k,v){ this._d[k] = String(v); } };
   /* A fake SharePoint drive, so the tab bar can actually be DRIVEN. Everything above this line
      tests rendering from a state somebody set by hand; the department tabs are different — the
      work is in the resolving (find the folder of that name, or fall back, or say there is none),
@@ -142,7 +143,11 @@ new Function(PRELUDE + src.slice(i, j) + `
     _libToken: _libToken,
     setSilentOk: function (v) { SILENT_OK = v; },
     redirected: function () { return REDIRECTED; },
-    _libReconnect: _libReconnect
+    _libReconnect: _libReconnect,
+    _libSetView: _libSetView,
+    _libView: _libView,
+    _libHubHtml: _libHubHtml,
+    tkRenderKnowledge: tkRenderKnowledge
   });
 `).call(api);
 
@@ -518,6 +523,68 @@ ok('only sharepoint.com is accepted as a library host',
   api._libReconnect();
   ok('pressing Reconnect is what starts the redirect', api.redirected() === true);
   api.setSilentOk(true);
+
+  /* ── the two views ────────────────────────────────────────────────────────────
+     A register of forms reads best as a list and a folder of drawings as cards, and the same
+     library is both depending on the folder. The risk in offering two views is that they drift:
+     one gains a filter the other lacks, and the count above them agrees with neither. */
+  api.setSilentOk(true);
+  api.setLevel('management'); api.setMyDept('');
+  api.setDepts([]); api.setPortal({ deptTabs: [], deptDocs: [] });
+  api.setDrive({ DRV: { root: [
+    { id: 'F1', name: 'Policies', folder: { childCount: 4 }, webUrl: 'https://a/p', lastModifiedDateTime: '2026-08-01T09:00:00Z' },
+    { id: 'D1', name: 'Employee Handbook.pdf', file: {}, size: 2411724, webUrl: 'https://a/h.pdf', lastModifiedDateTime: '2026-07-15T09:00:00Z' },
+    { id: 'D2', name: 'Leave Form.docx', file: {}, size: 51200, webUrl: 'https://a/l.docx', lastModifiedDateTime: '2026-07-20T09:00:00Z' }
+  ] } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+
+  api._libSetView('wiki', 'list');
+  api._libTab('wiki', '');
+  await new Promise(r => setTimeout(r, 0));
+  const listNames = names();
+  ok('the list view still lists everything', listNames.length === 3, listNames.join('|'));
+  ok('the count beside the heading matches what is on screen',
+    /class="lib-chip">3 items</.test(el.innerHTML), (el.innerHTML.match(/lib-chip">[^<]*/) || [''])[0]);
+
+  api._libSetView('wiki', 'grid');
+  const gridNames = grab('lib-doc-name');   // grab(), not a hand-rolled match: see its comment
+  ok('the grid shows exactly the same items as the list',
+    gridNames.sort().join('|') === listNames.slice().sort().join('|'), gridNames.join('|') + '  vs  ' + listNames.join('|'));
+  ok('a file is still a real link in grid view',
+    /<a class="lib-doc" href="https:\/\/a\/h\.pdf" target="_blank" rel="noopener"/.test(el.innerHTML));
+  ok('a folder still opens in place in grid view', /_libSpEnter\('wiki','F1'/.test(el.innerHTML));
+  ok('the view choice is remembered', api._libView('wiki') === 'grid');
+
+  /* The filter is shared, so it cannot apply to one view and not the other. */
+  api.setFilter('lib-wiki-f', 'leave');
+  api._libPaintDocs('wiki');
+  const gridFiltered = grab('lib-doc-name');
+  ok('the filter applies in grid view too', gridFiltered.join('|') === 'Leave Form.docx', gridFiltered.join('|'));
+  ok('and the count follows the filter', /class="lib-chip">1 item</.test(el.innerHTML),
+    (el.innerHTML.match(/lib-chip">[^<]*/) || [''])[0]);
+  api.setFilter('lib-wiki-f', '');
+  api._libSetView('wiki', 'list');
+
+  /* ── the masthead ─────────────────────────────────────────────────────────── */
+  const hero = api._libHubHtml('wiki');
+  ok('the masthead does not repeat the page title above it',
+    hero.indexOf('<h2') < 0, hero.slice(0, 200));
+  ok('...and still carries both ways out to SharePoint',
+    (hero.match(/target="_blank"/g) || []).length === 2, hero);
+
+  /* ── a course shows the progress it always carried ────────────────────────── */
+  const kroot = api.mount('knowledge-root');
+  api.setPortal({ learning: [
+    { name: 'HSE Essentials', meta: 'Required', pct: 100, url: 'https://a/1' },
+    { name: 'Project Management', meta: 'In progress', pct: 40, url: 'https://a/2' },
+    { name: 'Business English', meta: 'Recommended', url: 'https://a/3' }
+  ] });
+  api.tkRenderKnowledge();
+  ok('a course in progress shows how far it got', /width:40%/.test(kroot.innerHTML));
+  ok('a finished course shows as finished', /width:100%/.test(kroot.innerHTML));
+  /* 0% and "not tracked" are different claims, and a bar cannot make the second one. */
+  ok('a course with no progress recorded gets no bar, not a 0% bar',
+    (kroot.innerHTML.match(/lib-prog"/g) || []).length === 2,
+    String((kroot.innerHTML.match(/lib-prog"/g) || []).length));
 
   console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
