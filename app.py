@@ -10137,39 +10137,62 @@ class Handler(BaseHTTPRequestHandler):
     # report the client already receives, and prints it. daily_report.py owns every number on it and
     # dr_sharepoint.py owns reading the lists — these methods are the door and nothing else.
     def _dr_gate(self, u):
-        """Read access to the Daily Report app, honouring the per-account app switches."""
-        return None if "dr" not in self._apps_denied(u) else \
-            self._err("The Daily Report app is not enabled for your account.", 403)
+        """Read access, honouring the per-account app switches.
+
+        The daily report is part of the PROJECT app, so it is governed by that one switch. Giving it
+        a switch of its own would mean an admin who turned Projects off for somebody had still left
+        them the site's daily report of every project — an app gate that gates half an app.
+        """
+        return None if "pm" not in self._apps_denied(u) else \
+            self._err("The Projects app is not enabled for your account.", 403)
 
     @staticmethod
     def _dr_q(qs, key):
         return (qs.get(key) or [""])[0].strip()
 
-    def _dr_ctx(self):
-        """The four collections, read ONCE per request.
+    def _dr_ctx(self, project_id=""):
+        """Everything one render needs, read ONCE per request.
 
         Deliberately not a per-row lookup. The AHU board took four seconds at 87 units because its
         context loader re-read six collections inside a loop, and this screen has the same shape —
         one report, its contractor, its project, and a fortnight of history for the two bar charts.
+
+        The project comes from `pm_projects` — the daily report is part of the Project app and does
+        not keep a second project register — with `dr_settings` supplying only what the report adds
+        on top of it. Both are filtered to ONE project when one is named, which is the normal case:
+        the screen is a tab inside a project workspace, so pulling every project's reports to render
+        one of them is work nobody asked for.
         """
+        pid = str(project_id or "")
+        reports = db.list_collection("dr_reports")
+        photos = db.list_collection("dr_photos")
+        cons = db.list_collection("dr_contractors")
+        if pid:
+            reports = [r for r in reports if str(r.get("projectId") or "") == pid]
+            photos = [p for p in photos if str(p.get("projectId") or "") == pid]
+            cons = [c for c in cons if str(c.get("projectId") or "") == pid]
         return {
-            "projects": {str(p.get("id")): p for p in db.list_collection("dr_projects")},
-            "contractors": {str(c.get("id")): c for c in db.list_collection("dr_contractors")},
-            "reports": db.list_collection("dr_reports"),
-            "photos": db.list_collection("dr_photos"),
+            "pm": {str(p.get("id")): p for p in db.list_collection("pm_projects")},
+            "settings": {str(x.get("id")): x for x in db.list_collection("dr_settings")},
+            "contractors": {str(c.get("id")): c for c in cons},
+            "reports": reports,
+            "photos": photos,
         }
 
-    def _dr_pick(self, ctx, project_id, contractor_id, on_date):
-        """Resolve the three-part key the screen asks with, filling in sensible defaults.
+    def _dr_project(self, ctx, pid):
+        """The merged masthead for one project: the PM record plus the report's own settings."""
+        return daily_report.merge_project(ctx["pm"].get(str(pid)), ctx["settings"].get(str(pid)))
 
-        A first-time visitor arrives with none of them set, and the useful answer is the newest
-        report there is — not an empty page telling them to choose something they have not been
-        shown yet.
+    def _dr_pick(self, ctx, contractor_id, on_date):
+        """Which contractor and which day this render is about.
+
+        The PROJECT is no longer guessed — the screen is a tab inside a project workspace, so the
+        caller always knows it. Contractor and date still default, because a first-time visitor
+        arrives with neither set and the useful answer is the newest report on the job, not an empty
+        page telling them to choose something they have not been shown yet.
         """
         con = ctx["contractors"].get(str(contractor_id or "")) if contractor_id else None
         rows = [r for r in ctx["reports"] if daily_report.iso(r.get("date"))]
-        if project_id:
-            rows = [r for r in rows if str(r.get("projectId") or "") == str(project_id)]
         if con:
             rows = [r for r in rows if str(r.get("contractorId") or "") == str(con.get("id"))]
         if on_date:
@@ -10182,24 +10205,30 @@ class Handler(BaseHTTPRequestHandler):
             con = ctx["contractors"].get(cid) or (
                 sorted(ctx["contractors"].values(), key=lambda c: str(c.get("name") or ""))[0]
                 if ctx["contractors"] else None)
-        pid = str(project_id or (rep or {}).get("projectId") or (con or {}).get("projectId") or "")
-        prj = ctx["projects"].get(pid) or (
-            sorted(ctx["projects"].values(), key=lambda p: str(p.get("name") or ""))[0]
-            if ctx["projects"] else None)
-        return prj, con, rep
+        return con, rep
 
     def _dr_report_ep(self, u, qs):
         """One day's report, assembled — the same model the screen draws and the PDF prints."""
         blocked = self._dr_gate(u)
         if blocked:
             return blocked
-        ctx = self._dr_ctx()
-        prj, con, rep = self._dr_pick(ctx, self._dr_q(qs, "projectId"), self._dr_q(qs, "contractorId"),
-                                      self._dr_q(qs, "date"))
+        pid = self._dr_q(qs, "projectId")
+        if not pid:
+            return self._err("Open the daily report from a project.", 400)
+        # The same project scope the rest of the module reads with. Without it the report would be
+        # the one PM screen that served a job you are not on. `_pm_visible_projects` answers None
+        # from manager level up, so no `if not admin` is needed beside it — one there would decide
+        # nothing and would read as the line keeping admin working.
+        _vis = self._pm_visible_projects(u)
+        if _vis is not None and pid not in _vis:
+            return self._err("That project is not one of yours. Ask its project manager, or have "
+                             "yourself added to the Team.", 403)
+        ctx = self._dr_ctx(pid)
+        prj = self._dr_project(ctx, pid)
+        con, rep = self._dr_pick(ctx, self._dr_q(qs, "contractorId"), self._dr_q(qs, "date"))
         if con is None:
             return self._json({"ok": True, "empty": "contractors", "report": None,
-                               "projects": self._dr_index(ctx["projects"]),
-                               "contractors": [], "dates": []})
+                               "project": prj, "contractors": [], "dates": []})
         cid = str(con.get("id") or "")
         date = daily_report.iso((rep or {}).get("date")) or daily_report.iso(self._dr_q(qs, "date"))
         photos = [p for p in ctx["photos"]
@@ -10214,7 +10243,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({
             "ok": True, "report": model,
             "reportId": (rep or {}).get("id") or "",
-            "projects": self._dr_index(ctx["projects"]),
+            "project": prj,
             "contractors": self._dr_index(ctx["contractors"], extra=("projectId", "logo")),
             "dates": self._dr_dates(ctx["reports"], cid),
             "sections": [dict(s) for s in daily_report.SECTIONS],
@@ -10398,6 +10427,33 @@ class Handler(BaseHTTPRequestHandler):
                 raise
         return get
 
+    def _dr_contractor_for(self, u, body):
+        """(contractor, error-response). Resolves the contractor AND proves the caller may act on
+        its project — the app switch, the project scope, and that the contractor is on that project.
+
+        The last check is the one worth spelling out: without it a caller on project A could pass
+        project B's contractorId and drive B's SharePoint lists, folders and report rows from inside
+        a workspace they are entitled to. The contractor row carries its own projectId, so the two
+        have to agree rather than being taken on the request's word.
+        """
+        blocked = self._dr_gate(u)
+        if blocked:
+            return None, blocked
+        con = db.get_collection_item("dr_contractors", str(body.get("contractorId") or ""))
+        if not con:
+            return None, self._err("Choose a contractor first.", 400)
+        pid = str(con.get("projectId") or "")
+        if not pid:
+            return None, self._err("That contractor is not attached to a project yet. Set its "
+                                   "project in Report Setup.", 400)
+        want = str(body.get("projectId") or "")
+        if want and want != pid:
+            return None, self._err("That contractor belongs to a different project.", 400)
+        refusal = self._pm_write_refusal(u, pid)
+        if refusal:
+            return None, self._err(refusal, 403)
+        return con, None
+
     def _dr_detect_ep(self, u, body):
         """Report Setup's "Check the lists" — resolve every configured list and say, per list,
         which report fields were matched to which column and which could not be found.
@@ -10405,15 +10461,9 @@ class Handler(BaseHTTPRequestHandler):
         Read-only on purpose: it changes nothing, so an admin can run it as often as they like while
         they fix a column name at the SharePoint end.
         """
-        blocked = self._dr_gate(u)
-        if blocked:
-            return blocked
-        if self._caller_level(u) not in ("manager", "management", "editor", "admin") \
-                and u.get("role") != "manager":
-            return self._err("Manager access required to change the Daily Report setup.", 403)
-        con = db.get_collection_item("dr_contractors", str(body.get("contractorId") or ""))
-        if not con:
-            return self._err("Choose a contractor first.", 400)
+        con, err = self._dr_contractor_for(u, body)
+        if err:
+            return err
         if not (M365.get("clientSecret") or "").strip():
             return self._err("Microsoft 365 is not configured on this server, so SharePoint lists "
                              "cannot be read. Set TK_M365_CLIENT_SECRET and try again.", 400)
@@ -10445,6 +10495,85 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "lists": out, "ready": ok,
                            "attachmentNote": dr_sharepoint.attachment_help()})
 
+    def _dr_folder(self, con):
+        """Resolve the project's SharePoint folder -> {"drive", "rel", "url"}, or None.
+
+        The folder is a PROJECT setting, not a contractor one: everything this project produces —
+        every contractor's photos, and anything else the site files — belongs under one place
+        somebody can open in SharePoint and browse. Failure is None rather than an exception: a
+        folder that is not configured, or a link that no longer resolves, must not take the whole
+        sync down with it. The caller reports it instead.
+        """
+        pid = str(con.get("projectId") or "")
+        st = db.get_collection_item("dr_settings", pid) or {}
+        url = str(st.get("spFolderUrl") or "").strip()
+        if not url:
+            return None
+        try:
+            token = _graph_app_token()
+            host, site_path, rel = _sp_parse_folder(url)
+            site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
+            drive = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site["id"] + "/drive", token)
+            return {"drive": drive.get("id") or "", "rel": rel, "url": url}
+        except Exception:
+            return None
+
+    def _dr_folder_photos(self, folder, con, day):
+        """(photo rows, note). The images filed under this project's folder for one day.
+
+        An EMPTY folder and an UNREADABLE one are different answers and are reported differently:
+        the first is a day nobody uploaded anything for, the second is a setup that was never
+        finished or a link that has moved. Collapsing them is how a photo section comes to be
+        permanently empty with nobody able to say why.
+        """
+        if not folder or not folder.get("drive"):
+            return [], None
+        rel = dr_sharepoint.folder_for(con.get("name"), day)
+        if not rel:
+            return [], None
+        path = "/".join(p for p in [folder.get("rel") or "", rel] if p)
+        try:
+            files = dr_sharepoint.folder_photos(self._dr_graph_get(), folder["drive"], path)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return [], None          # no folder for this day yet — an ordinary quiet day
+            return [], {"level": "warn", "kind": "photos",
+                        "msg": "Could not read the project photo folder (HTTP %s): %s"
+                               % (e.code, path)}
+        except Exception as e:
+            return [], {"level": "warn", "kind": "photos",
+                        "msg": "Could not read the project photo folder: %s" % str(e)[:160]}
+        out = []
+        for i, f in enumerate(sorted(files, key=lambda x: (str(x.get("takenAt") or ""),
+                                                           str(x.get("name") or ""))), start=1):
+            out.append({"contractorId": str(con.get("id") or ""),
+                        "projectId": str(con.get("projectId") or ""),
+                        "date": day, "kind": "daily",
+                        "category": self._dr_category_from_name(f.get("name"), con),
+                        "caption": "", "takenAt": f.get("takenAt") or "", "seq": i,
+                        "src": "sharepoint", "spKind": "drive",
+                        "spDriveId": f.get("driveId") or "", "spItemId": f.get("itemId") or "",
+                        "spUrl": "", "fileName": f.get("name") or ""})
+        return out, None
+
+    @staticmethod
+    def _dr_category_from_name(filename, con):
+        """Read the work category out of a photo's file name, against the contractor's own list.
+
+        A folder cannot carry a column, so the file name is the only place a category can come from
+        — "HVAC Works - 03.jpg". A name that matches nothing is grouped under the contractor's first
+        category rather than dropped: a photo the site uploaded has to appear on the report somewhere,
+        and a wrong heading is recoverable where a missing photo is not.
+        """
+        stem = str(filename or "").rsplit(".", 1)[0]
+        norm = dr_sharepoint.norm(stem)
+        for cat in (con.get("categories") or []):
+            c = dr_sharepoint.norm(cat)
+            if c and c in norm:
+                return str(cat)
+        cats = [c for c in (con.get("categories") or []) if str(c).strip()]
+        return str(cats[0]) if cats else ""
+
     def _dr_sync_ep(self, u, body):
         """Pull one day (or a short range) out of SharePoint into dr_reports / dr_photos.
 
@@ -10452,12 +10581,9 @@ class Handler(BaseHTTPRequestHandler):
         only "ok" is a sync nobody can debug when a section comes out empty, and an empty section on
         this report looks exactly like a quiet day on site.
         """
-        blocked = self._dr_gate(u)
-        if blocked:
-            return blocked
-        con = db.get_collection_item("dr_contractors", str(body.get("contractorId") or ""))
-        if not con:
-            return self._err("Choose a contractor first.", 400)
+        con, err = self._dr_contractor_for(u, body)
+        if err:
+            return err
         if not (M365.get("clientSecret") or "").strip():
             return self._err("Microsoft 365 is not configured on this server, so the SharePoint "
                              "forms cannot be read.", 400)
@@ -10495,10 +10621,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "days": [], "refused": refused, "notes": [],
                                "error": "Nothing could be read from SharePoint — see the list "
                                         "problems below."})
+        # The project's own SharePoint folder, and the photos filed under it for each day. This is
+        # the route that works for a contractor with NO Microsoft account: they cannot answer a
+        # file-upload question on a form (Forms offers those only to signed-in people in the tenant),
+        # but they can drop photos into a folder through an upload link that needs no account at
+        # all. So the folder is read whether or not a photos LIST is configured.
+        folder = self._dr_folder(con)
         done = []
         for day in dates:
             rep, photos, day_notes = dr_sharepoint.assemble(pulled, con, day)
             rep = dr_sharepoint.split_counts(rep, con.get("mgmtRoles"), con.get("workerTrades"))
+            fphotos, fnote = self._dr_folder_photos(folder, con, day)
+            photos = photos + fphotos
+            if fnote:
+                notes.append(dict(fnote, date=day))
             if not self._dr_has_content(rep, photos):
                 notes.append({"level": "info", "msg": "Nothing was submitted for %s." % day})
                 continue
@@ -10581,7 +10717,7 @@ class Handler(BaseHTTPRequestHandler):
                 "replacedPhotos": len(stale)}
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_projects", "dr_contractors", "dr_reports", "dr_photos", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -10743,7 +10879,7 @@ class Handler(BaseHTTPRequestHandler):
                 # form has to be able to read back what they submitted, and the foreman has to be
                 # able to read yesterday's. Stated at "staff" rather than omitted — an omission here
                 # reads as default-allow, which is the same answer arrived at by nobody deciding it.
-                "dr_projects": "staff", "dr_contractors": "staff",
+                "dr_settings": "staff", "dr_contractors": "staff",
                 "dr_reports": "staff", "dr_photos": "staff",
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
@@ -11929,7 +12065,7 @@ class Handler(BaseHTTPRequestHandler):
             # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
-        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
+        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("pm" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if app and self._app_blocked(u, app):
             # Not being granted the HR APP still leaves your OWN records reachable — the same
             # carve-out READ_MIN makes below, for the same reason: Art. 13(1) entitles you to a copy
@@ -12862,7 +12998,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid record.", 400)
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("pm" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
@@ -12981,6 +13117,13 @@ class Handler(BaseHTTPRequestHandler):
         # schedule, their roll-up and their earned value, authored by you.
         if name.startswith("pm_") and name not in ("pm_projects", "pm_chat"):
             _refuse = self._pm_write_refusal(u, str(item.get("projectId") or ""))
+            if _refuse:
+                return self._err(_refuse, 403)
+        # A daily report is project data on the same footing. dr_settings is keyed BY the project id,
+        # so it is scoped on that rather than on a projectId field it does not carry.
+        if name.startswith("dr_"):
+            _refuse = self._pm_write_refusal(u, str(
+                item.get("id") if name == "dr_settings" else item.get("projectId") or ""))
             if _refuse:
                 return self._err(_refuse, 403)
         if name == "ahu_units":
@@ -19532,7 +19675,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("pm" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
@@ -19976,6 +20119,27 @@ class Handler(BaseHTTPRequestHandler):
             # kind of event rather than folded into "updated".
             _reissue = str(_prev.get("version") or "") != str(item.get("version") or "")
             self._audit_hrdoc(u, "Re-issued document at a new version" if _reissue else "Updated document", item)
+        # A daily-report row is edited by whoever is on the job — same scope as the read, same as
+        # every other project register. And it may not be MOVED between projects for exactly the
+        # reason pm_ may not: projectId is what the scope is decided on, so rewriting it rewrites
+        # who may touch the row. dr_settings is keyed BY the project, so its id is the scope.
+        if name.startswith("dr_"):
+            _ex = db.get_collection_item(name, iid)
+            if _ex:
+                for _k in ("createdBy", "createdById", "owner"):
+                    if _ex.get(_k) is not None:
+                        item[_k] = _ex.get(_k)
+            _key = "id" if name == "dr_settings" else "projectId"
+            _was = str((_ex or {}).get(_key) or (iid if name == "dr_settings" else ""))
+            _refuse = self._pm_write_refusal(u, _was)
+            if _refuse:
+                return self._err(_refuse, 403)
+            _now = str(item.get(_key) or _was)
+            if _now != _was:
+                _refuse = self._pm_write_refusal(u, _now)
+                if _refuse:
+                    return self._err("You cannot move this record into a project you are not "
+                                     "on. " + _refuse, 403)
         if name.startswith("pm_"):
             existing = db.get_collection_item(name, iid)
             if existing:
@@ -20495,7 +20659,7 @@ class Handler(BaseHTTPRequestHandler):
                         "keep the record and both say it no longer applies."
                         % (_years, _why), 409)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("pm" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
@@ -20631,6 +20795,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not _pid or _pid not in _vis:
                     return self._err("That record belongs to a project you are not on. Ask its "
                                      "project manager, or have yourself added to the Team.", 403)
+        # Daily-report rows are project data, so the question is "are you on this job?", not "did you
+        # type this row?". A day's report is filed by whoever happened to run the sync; scoping it to
+        # them would leave the site engineers who produced it unable to remove a duplicate, which is
+        # the mistake tests/test_pm_delete_scope.py exists to describe.
+        if name.startswith("dr_") and not is_admin:
+            _vis = self._pm_visible_projects(u)
+            if _vis is not None:
+                _pid = str(existing.get("id") if name == "dr_settings"
+                           else existing.get("projectId") or "")
+                if not _pid or _pid not in _vis:
+                    return self._err("That daily report belongs to a project you are not on. Ask "
+                                     "its project manager, or have yourself added to the Team.", 403)
         # Ownership: non-admins may only delete their OWN self-owned / crm / eng / ahu / sales / est
         # records. pm_* is handled above, by project rather than by author.
         if not is_admin:
@@ -20639,8 +20815,7 @@ class Handler(BaseHTTPRequestHandler):
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
             if (name in self.SELF_OWNED or name.startswith("crm_") or name == "pm_projects"
                     or name.startswith("eng_") or name.startswith("ahu_")
-                    or name.startswith("sales_") or name.startswith("est_")
-                    or name.startswith("dr_")) and not mine:
+                    or name.startswith("sales_") or name.startswith("est_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
         # A completed exit is the file you produce if a former employee disputes their settlement:

@@ -120,6 +120,39 @@ def body_box():
             PAGE["h"] - y - PAGE["footer"] - PAGE["margin"])
 
 
+# Where each masthead field comes from on the PM project record. The daily report is part of the
+# Project app, so the project is the PM project — there is no second project register to drift from
+# the first. `merge_project` below reads these and lets the report's own settings supply the rest.
+PM_FIELDS = (("name", "name"), ("clientName", "client"),
+             ("startDate", "startPlanned"), ("endDate", "endPlanned"))
+
+
+def merge_project(pm_project, settings):
+    """The report's masthead, from the PM project plus the daily-report settings for that project.
+
+    Split deliberately. `pm_projects` already knows the project's name, its client and its planned
+    dates, and those must not be typed a second time here — two registers holding the same start
+    date is two registers that will one day disagree about it, on a document the client reads. What
+    `dr_settings` adds is what only this report needs: the investor, the two consultant lines, the
+    client's logo and the SharePoint folder the site's submissions land in.
+
+    A setting may still OVERRIDE a PM field, because the report's own wording sometimes differs from
+    the register's ("Mega Lifesciences" on the report against a project code in the portfolio) — but
+    only when it is actually filled in, so a blank never blanks the project.
+    """
+    pm = pm_project if isinstance(pm_project, dict) else {}
+    st = settings if isinstance(settings, dict) else {}
+    out = {}
+    for want, pm_key in PM_FIELDS:
+        out[want] = st.get(want) or pm.get(pm_key) or ""
+    for k in ("location", "investor", "consultant", "pmConsultant", "clientLogo",
+              "spFolderUrl", "docCode"):
+        out[k] = st.get(k) or ""
+    out["projectId"] = str(pm.get("id") or st.get("id") or "")
+    out["code"] = pm.get("code") or ""
+    return out
+
+
 # ── dates ────────────────────────────────────────────────────────────────────────────────────────
 def to_date(value):
     """'2026-09-01' or a date → date. None for anything that is not one. Accepts the US-order

@@ -77,6 +77,12 @@ EXEMPT_FROM_DELETE_OWNERSHIP = {
     "review_": ("review_cycles is manager-level configuration, not a per-person record", None),
     "pm_": ("scoped by PROJECT instead — _pm_visible_projects, the same test the read path uses",
             "_pm_visible_projects(u)"),
+    # dr_ is the daily report, and it lives inside the Project app. A day's report is filed by
+    # whoever happened to run the SharePoint sync, so creator-ownership would leave the site
+    # engineers who actually produced it unable to remove a duplicate while the person who pressed
+    # Sync could delete any of them — the pm_ mistake, one module later. Same replacement, same test.
+    "dr_": ("project data, scoped by _pm_visible_projects like every other project register",
+            "That daily report belongs to a project you are not on"),
 }
 
 

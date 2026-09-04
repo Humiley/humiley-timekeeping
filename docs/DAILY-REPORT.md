@@ -1,15 +1,17 @@
 # Daily Report
 
-The site's daily report to the client, as a portal screen that prints itself.
+The site's daily report to the client — a tab of the **Project workspace**, fed from the SharePoint
+forms the site fills in, printed on the Humiley letterhead.
 
-It reproduces the report the client already receives — the two files it was built against are
-`DailyReport_Mega_Taikisha_09.01.2026.pdf` and `DailyReport_Mega_Newtecons_09.02.2026.pdf` — with
-the same masthead, the same ten sections, the same column sets and the same footer. What changes is
-where the data comes from: instead of somebody refreshing a Power BI file and exporting it by hand,
-the site fills in SharePoint forms and the portal assembles the report from them.
+It reproduces the report the client already receives (the two files it was built against are
+`DailyReport_Mega_Taikisha_09.01.2026.pdf` and `DailyReport_Mega_Newtecons_09.02.2026.pdf`) with the
+same ten sections, the same column sets and the same figures. What changes is where the data comes
+from: instead of somebody refreshing a Power BI file and exporting it by hand, the site fills forms
+and the portal assembles the report.
 
-- **Daily Report** (`dr-report`) — the report itself, tabbed as ten sections, with **Export PDF**.
-- **Report Setup** (`dr-setup`) — set each contractor up once. Manager level and above.
+**Where it is:** Projects → open a project → **Daily Report**. It is part of the Project app, so the
+Projects switch governs it and the project's own team scope decides who can see it. Report Setup is
+a panel of the same tab (manager level and above); there is no separate screen for it.
 
 ## What is on it
 
@@ -26,32 +28,55 @@ the site fills in SharePoint forms and the portal assembles the report from them
 | 9 | Inspection | 9.1 Daily inspection; 9.2 Next day inspection plan |
 | 10 | Safety & Recomm. | 10. Safety control activities; 11. Requests & recommendations |
 
-Sorting, filtering and editing all work on screen: click a column heading to sort, use the
-Contractor / Month / Week / Date / Category strip to filter, and edit a row through the register
-like any other portal record. The filter strip and the tab strip print on every page, because they
-say which contractor and which day the sheet is about — the source report does the same.
+On screen this is the portal's own furniture — cards, tabs, the standard tables with sortable
+headings and the filter bar — so it reads like every other PMC register. The **PDF** is the document:
+Humiley letterhead, the client's logo top-left, the contractor's bottom-right.
+
+## The project comes from the project
+
+The name, the client and the planned dates are read from `pm_projects`. They are not typed again
+here, because two registers holding the same start date is two registers that will one day disagree
+about it on a document the client reads every morning. Rename the project in PMC and the report's
+masthead changes with it.
+
+Report Setup → **This project's report header** holds only what the report adds: the location, the
+investor, the two consultant lines, the client's logo, and the project's SharePoint folder.
 
 ## Setting a contractor up (once)
 
-Report Setup → **Contractors**:
-
-1. **Identity** — the contractor's name, its project, and **its logo**. The logo prints in the
-   footer of every page of that contractor's report. The Humiley mark in the header is fixed and is
-   not editable. The client's logo (the left of the masthead) lives on the project, not here.
+1. **Identity** — its name and **its logo**, which prints bottom-right on every page of that
+   contractor's report. The Humiley mark is fixed.
 2. **The columns its tables count** — each contractor counts different roles and trades, so tables
    2.1 and 2.2 are built from these lists. Taikisha counts Cad Staff and Supervisors; Newtecons
-   counts Quantity Surveyors and a Secretary. A headcount that arrives under a name not on the list
-   is still shown — listed under the table and left out of the total, never silently added to it.
+   counts Quantity Surveyors and a Secretary. A headcount arriving under a name not on the list is
+   still shown — listed under the table and left out of the total, never silently added to it.
 3. **Work categories** — the order 5.1, 5.2, 5.3 and the photo grid group in.
 4. **Safety checklist** — leave empty for the eleven standard checks.
-5. **The SharePoint lists** — see below. Then press **Check the lists**.
+5. **The SharePoint lists**, then press **Check the lists**.
 
-## The SharePoint side
+## The SharePoint side, for contractors with no Microsoft account
 
-A SharePoint form writes **one list item per submission**, and this report has eleven repeating
-tables on it. There is no form that submits a variable-length table into one item, so the
-arrangement the portal is built for is **a list per table**, each row carrying the date and the
-contractor it belongs to:
+This is the constraint that shapes the whole setup: **the contractors do not have accounts in the
+tenant.** Two consequences, and the second one is the awkward part.
+
+### 1. The form must accept anonymous responses, so a flow moves the answers
+
+Build a **Microsoft Form** per table and set it to *Anyone can respond*. An anonymous form writes its
+responses to a workbook, not to a list, so a **Power Automate** flow does the last step:
+
+```
+Microsoft Forms  "When a new response is submitted"
+   → Forms       "Get response details"
+   → SharePoint  "Create item"   (the list the portal reads)
+```
+
+The flow runs as whoever owns it — a Humiley account — so the contractor needs no permission on the
+list and no account anywhere. Give every list a **date** column and, unless the list serves one
+contractor only, a **contractor** column: those are what attach a row to a day and a company. A row
+that cannot say which day it belongs to is not imported at all, and the sync reports how many it
+skipped.
+
+One list per table, because no form submits a variable-length table into a single item:
 
 | List | Contributes |
 |---|---|
@@ -68,38 +93,44 @@ contractor it belongs to:
 | Requests & Recommendations | many rows: recommendation, location |
 | Daily Progress Photos | many rows: a photo, a category, a caption |
 
-Every list needs a **date** column and — unless the list serves only one contractor — a
-**contractor** column. Those are what attach a row to a day and a company; a row that cannot say
-which day it belongs to is not imported at all, and the sync says how many it skipped.
+**Column names are matched, not assumed.** SharePoint freezes whatever the list builder typed, so
+`Daily Progress (%)` is internally something like `Daily_x0020_Progress`. **Check the lists** matches
+your real columns against the report's fields and says, per list, what it found, what it could not
+find, and which of your columns nothing claimed. A list whose essential columns cannot be matched is
+**refused** by the sync rather than imported blank — an empty section on this report looks the same
+as a quiet day on site.
 
-**Column names are matched, not assumed.** SharePoint internal column names are whatever the person
-who built the list typed, then frozen, so `Daily Progress (%)` is internally something like
-`Daily_x0020_Progress`. Report Setup's **Check the lists** matches your real columns against the
-report's fields and tells you, per list, what it found, what it could not find, and which of your
-columns nothing claimed. A list whose essential columns cannot be found is **refused** by the sync
-rather than imported blank — an empty section on this report looks the same as a quiet day on site.
+### 2. Photos cannot come through the form at all
 
-### Photos
+**Microsoft Forms offers a file-upload question only when responses are restricted to your
+organisation.** An anonymous form cannot accept one, and no permission changes that. Neither can the
+paperclip on a classic SharePoint form be read back — Microsoft Graph has no attachments
+relationship on a list item at any consent level.
 
-Two arrangements work with the Graph permission the portal already holds:
+So photos take a different route, and it is the one that needs no account:
 
-1. **A document library folder** — put the day's photos in a folder and give Report Setup its link.
-   This is the arrangement to prefer.
-2. **A form question that uploads the file** — the list item then holds a sharing link the portal
-   follows.
+1. In Report Setup, give the project its **SharePoint folder**.
+2. In SharePoint, use **Request files** on that folder to create an upload-only link, and give the
+   link to the site. Anyone can upload through it; nobody can see what else is in there.
+3. The portal reads the folder on every sync. Files are expected under
+   `Daily Report / <contractor> / <YYYY-MM> / <YYYY-MM-DD>`, and a photo's **work category is read
+   from its file name** (`HVAC Works - 03.jpg`) because a folder cannot carry a column. A name that
+   matches no category still appears, under the contractor's first one — a wrong heading is
+   recoverable, a missing photo is not.
 
-**The paperclip on a classic SharePoint form does not work**, and no extra permission changes that:
-Microsoft Graph has no way to reach list-item attachments. Report Setup says so on the page rather
-than leaving the photo section quietly empty.
+If you would rather have one form do everything, the alternative is to add each contractor as a
+**guest (B2B) user** in the tenant; file-upload questions then work, at the cost of every contractor
+accepting an invitation and signing in. The portal supports both — it reads photos from the folder
+*and* from a link column a form question stores.
 
-Photo bytes are never copied into the database. A photo row holds its SharePoint reference and the
-image is streamed through `/api/dr/photo/<id>`, which is also what lets the photos appear in the
-exported PDF — a cross-origin SharePoint URL taints the canvas and the export comes out with blank
-frames.
+Everything the site submits — every photo, every file — is stored under **that project's SharePoint
+folder**, not in the portal. A photo row holds only its reference; the image streams through
+`/api/dr/photo/<id>`, which is also what lets photos appear in the exported PDF (a cross-origin
+SharePoint URL taints the canvas and the export comes out with blank frames).
 
 ### Ops
 
-The sync uses the app-only Graph token the portal already has (`TK_M365_CLIENT_SECRET`,
+The sync uses the app-only Graph token the portal already holds (`TK_M365_CLIENT_SECRET`,
 `Sites.Read.All` / `Sites.ReadWrite.All`). With no secret configured the screen says so instead of
 failing obscurely. **Sync from SharePoint** pulls one day, or a range of at most 31 days; re-syncing
 a corrected form replaces that day's rows rather than stacking a second copy underneath, and a photo
@@ -107,29 +138,34 @@ somebody uploaded by hand in the portal survives a re-sync.
 
 ## The PDF
 
-**Export PDF** builds an A4 portrait file: client logo left, `DAILY REPORT` centre, Humiley mark
-right; `Page n/N` and the contractor's logo in the footer. The masthead and footer are drawn
-natively so the type is crisp and the page numbers are real; the body of each section is captured
-and placed.
+**Export PDF** builds A4 portrait on the Humiley letterhead: the two-tone brand bar, the navy
+company block, the emerald document title, the hairline footer with its page count and document
+code — plus **the client's logo top-left** and **the contractor's logo bottom-right**. The letterhead
+puts its company block top-left and its page count bottom-right, which is exactly where those two
+logos go, so the block moves right of the client's mark and the page count left of the contractor's.
 
 - **Auto-fit.** A section a little taller than the page is scaled down to fit — down to 74%, below
-  which it is split across sheets instead, because a legible second page beats an illegible first
-  one. A 30-row work-progress table and the full Gantt each fit one page this way.
-- **Every section is measured before the first page is drawn**, so `Page 1/12` is right on a report
-  that turns out to need twelve sheets.
-- **The export does not depend on the device.** The off-screen render is pinned to the printed
-  layout, so exporting from a phone produces the same document as exporting from a laptop.
+  which it is split across sheets, because a legible second page beats an illegible first one. The
+  letterhead takes more of the sheet than a bare masthead did, so a 30-row work-progress table now
+  prints across two pages rather than being crushed onto one.
+- **Every section is measured before the first page is drawn**, so `Page 1/11` is right.
+- **The export does not depend on the device or the theme.** The print renderer carries its own
+  styles rather than the screen's, so it cannot inherit a reader's dark mode or a global rule meant
+  for on-screen registers.
+- **It cannot hang.** The build has a deadline; if it stalls it says so rather than leaving
+  "Building…" on screen forever.
 
-## Two things the report says out loud
+## Three things the report says out loud
 
-Both are deliberate, and both exist because the failure they prevent is a report that looks complete
-and is not:
+Each because the alternative is a document that looks complete and is not:
 
 - **An unanswered safety check is not a passed check.** The source report shows eleven green ticks;
   defaulting the tick on would produce that page for a day nobody walked the site. An absent answer
   renders as "Not answered" and is listed above the report.
 - **A headcount under a column that is not on the table is not in the total.** It is shown under the
   table and named in the warnings, so the number can be found rather than quietly disappearing.
+- **The manpower delta compares against the last day this contractor reported**, not against
+  yesterday — so a site that does not work Sundays does not show every Monday as a rise from nothing.
 
 ## The two durations are counted differently, on purpose
 
@@ -138,22 +174,24 @@ Measured off both source files:
     Start 2025-11-14, End 2027-04-28   -> "Total Construction Duration (Days): 530"   (exclusive)
     Start 2025-11-14, as-of 2026-09-01 -> "Construction Duration to Date (Days): 292" (inclusive)
 
-That inconsistency is the behaviour of the report the client has been reading every morning, so it
-is reproduced rather than tidied — a headline duration that silently moved by a day the week we took
-the report over is a report nobody trusts again. `daily_report.INCLUSIVE_ELAPSED` names the choice,
-and `tests/test_daily_report.py` fails if either count changes.
+That inconsistency is the behaviour of the report the client has been reading every morning, so it is
+reproduced rather than tidied — a headline duration that silently moved by a day the week we took the
+report over is a report nobody trusts again. `daily_report.INCLUSIVE_ELAPSED` names the choice, and
+`tests/test_daily_report.py` fails if either count changes.
 
 ## Where the code is
 
 | File | Holds |
 |---|---|
-| `daily_report.py` | every number on the report and the ten-page structure — pure, no I/O |
-| `dr_sharepoint.py` | reading the lists: URL parsing, column matching, row mapping, assembly — pure, the HTTP getter is injected |
-| `app.py` | `/api/dr/report`, `/api/dr/photo/<id>`, `/api/dr/detect`, `/api/dr/sync`, and the `dr_*` collection guards |
-| `templates/index.html` | the screen, Report Setup and the PDF exporter (`tkDrExportPDF`) |
-| `tools/seed_daily_report.py` | seeds the two source reports into a dev database, for comparing against the originals |
+| `daily_report.py` | every number on the report, the ten-page structure, and the PM-project merge — pure, no I/O |
+| `dr_sharepoint.py` | reading the lists and the folder: URL parsing, column matching, row mapping, assembly — pure, the HTTP getter is injected |
+| `app.py` | `/api/dr/report`, `/api/dr/photo/<id>`, `/api/dr/detect`, `/api/dr/sync`, and the `dr_*` project scoping |
+| `templates/index.html` | the `pmRenderDailyReport` tab, Report Setup, and the letterhead exporter |
+| `tools/seed_daily_report.py` | seeds both source reports into a dev database, for comparing against the originals |
 
-Collections: `dr_projects`, `dr_contractors`, `dr_reports`, `dr_photos`. Reports and photos are
-readable at staff level — the engineer who submits the form has to be able to read back what they
-submitted — and deletable only by whoever raised them, or from management up. Setup rows are
-manager-level: the site fills reports in, it does not repoint where reports are read from.
+Collections: `dr_settings` (one per project, keyed by its id), `dr_contractors`, `dr_reports`,
+`dr_photos`. All four are **project data**: readable at staff level for anyone on the project's team
+— the engineer who submits the form has to be able to read back what they submitted — writable and
+deletable by anyone on that team, and out of reach of everyone else. Scoped by project rather than by
+author on purpose: a day's report is filed by whoever ran the sync, so creator-ownership would leave
+the engineers who produced it unable to remove a duplicate.

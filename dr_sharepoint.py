@@ -498,6 +498,32 @@ def folder_photos(get, drive_id, rel_path):
     return out
 
 
+# Where a day's submissions live under the project's own SharePoint folder. One folder per
+# contractor per month per day, because that is the shape somebody looking for "Taikisha, 1
+# September" actually browses — and because a single flat folder with a year of site photos in it
+# is a folder nobody opens twice.
+FOLDER_ROOT = "Daily Report"
+
+
+def folder_for(contractor_name, on_date, root=FOLDER_ROOT):
+    """'Daily Report/Taikisha/2026-09/2026-09-01' — the path a day's photos and files are filed at,
+    relative to the project's SharePoint folder. Returns '' for a date that cannot be read, so a
+    caller never creates a folder called 'None'."""
+    d = dr.iso(on_date)
+    if not d:
+        return ""
+    who = _safe_segment(contractor_name) or "Unassigned"
+    return "/".join([str(root or FOLDER_ROOT).strip("/"), who, d[:7], d])
+
+
+def _safe_segment(name):
+    """A folder name SharePoint will accept. It rejects " * : < > ? / \\ | and leading/trailing dots,
+    and a contractor called 'Newtecons JSC / Taikisha' would otherwise create two nested folders."""
+    s = re.sub(r'[\\/:*?"<>|#%{}~&]+', " ", str(name or ""))
+    s = re.sub(r"\s+", " ", s).strip(" .")
+    return s[:120]
+
+
 def attachment_help():
     """Why the paperclip does not work, in words an admin can act on.
 

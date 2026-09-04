@@ -256,6 +256,31 @@ def test_only_images_come_back_from_a_photo_folder():
     assert [p["name"] for p in got] == ["a.jpg", "b.HEIC"]
 
 
+# ── the project's own folder ─────────────────────────────────────────────────────────────────────
+def test_a_days_files_are_filed_under_contractor_month_and_day():
+    """The shape somebody looking for "Taikisha, 1 September" actually browses. A single flat
+    folder with a year of site photos in it is a folder nobody opens twice."""
+    assert sp.folder_for("Taikisha", "2026-09-01") == "Daily Report/Taikisha/2026-09/2026-09-01"
+
+
+def test_a_contractor_name_with_a_slash_in_it_does_not_create_two_folders():
+    """"Newtecons JSC / Taikisha" would otherwise nest, and SharePoint rejects the rest outright."""
+    got = sp.folder_for("Newtecons JSC / Taikisha", "2026-09-02")
+    assert got == "Daily Report/Newtecons JSC Taikisha/2026-09/2026-09-02"
+    assert got.count("/") == 3
+
+
+def test_a_date_that_cannot_be_read_yields_no_path_at_all():
+    """Rather than a folder called None, which is how a year of photos ends up somewhere nobody
+    thinks to look."""
+    assert sp.folder_for("Taikisha", "") == ""
+    assert sp.folder_for("Taikisha", "not a date") == ""
+
+
+def test_a_contractor_with_no_name_still_files_somewhere_findable():
+    assert sp.folder_for("", "2026-09-01").startswith("Daily Report/Unassigned/")
+
+
 def test_the_paperclip_route_is_explained_rather_than_silently_empty():
     """Graph cannot read list attachments at any consent level. Saying so, with the two
     arrangements that do work, beats a photo section that is permanently and inexplicably blank."""

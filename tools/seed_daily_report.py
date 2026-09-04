@@ -20,14 +20,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db  # noqa: E402
 
-PROJECT = {
-    "id": "P-MEGA", "name": "Mega Lifesciences",
+# The project itself is a PM project: the daily report is a tab of the Project workspace and keeps
+# no second project register. `startPlanned` / `endPlanned` are the names pm_projects uses, and
+# daily_report.merge_project maps them onto the report's masthead.
+PM_PROJECT = {
+    "id": "P-MEGA", "name": "Mega Lifesciences", "code": "MEGA-01", "client": "MEGA",
+    "manager": "Admin User", "status": "Active", "phase": "Execution",
+    "startPlanned": "2025-11-14", "endPlanned": "2027-04-28", "percentComplete": 55,
+    "owner": "Admin User", "createdById": "HML-ADM",
+}
+# And this is only what the daily report adds on top of it.
+SETTINGS = {
+    "id": "P-MEGA",
     "location": "Nhon Trach Industrial Park - Dong Nai",
     "investor": "Mega Lifesciences PCL",
     "consultant": "Newtecons JSC / Taikisha Vietnam Inc",
     "pmConsultant": "Humiley Vietnam Co., Ltd",
-    "clientName": "MEGA", "clientLogo": "",
-    "startDate": "2025-11-14", "endDate": "2027-04-28",
+    "clientLogo": "", "spFolderUrl": "",
     "owner": "Admin User", "createdById": "HML-ADM",
 }
 
@@ -173,7 +182,8 @@ NEW_HISTORY = [("2026-08-27", 13, 139), ("2026-08-28", 13, 160), ("2026-08-29", 
 
 def main():
     db.init_db()
-    db.put_collection_item("dr_projects", PROJECT)
+    db.put_collection_item("pm_projects", PM_PROJECT)
+    db.put_collection_item("dr_settings", SETTINGS)
     db.put_collection_item("dr_contractors", TAIKISHA)
     db.put_collection_item("dr_contractors", NEWTECONS)
 

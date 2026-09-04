@@ -69,6 +69,40 @@ def _history():
     return out
 
 
+# ── the project comes from PMC, not from a second register ───────────────────────────────────────
+def test_the_masthead_reads_the_project_from_pmc_and_adds_only_what_it_needs():
+    """The daily report is part of the Project app. `pm_projects` already knows the name, the client
+    and the planned dates; typing them again here is how two registers come to disagree about a
+    start date on a document the client reads every morning."""
+    pm = {"id": "P-1", "name": "Mega Lifesciences", "code": "MEGA-01", "client": "MEGA",
+          "startPlanned": "2025-11-14", "endPlanned": "2027-04-28"}
+    st = {"id": "P-1", "location": "Nhon Trach Industrial Park - Dong Nai",
+          "investor": "Mega Lifesciences PCL", "pmConsultant": "Humiley Vietnam Co., Ltd"}
+    got = dr.merge_project(pm, st)
+    assert got["name"] == "Mega Lifesciences"
+    assert got["clientName"] == "MEGA"
+    assert (got["startDate"], got["endDate"]) == ("2025-11-14", "2027-04-28")
+    assert got["investor"] == "Mega Lifesciences PCL"
+    assert got["projectId"] == "P-1" and got["code"] == "MEGA-01"
+
+
+def test_a_setting_may_override_a_pm_field_but_a_blank_one_never_blanks_it():
+    """The report's wording sometimes differs from the portfolio's — but an empty settings row must
+    not erase the project's own name."""
+    pm = {"id": "P-1", "name": "MEGA-01 Nhon Trach", "client": "MEGA"}
+    assert dr.merge_project(pm, {"name": "Mega Lifesciences"})["name"] == "Mega Lifesciences"
+    assert dr.merge_project(pm, {"name": ""})["name"] == "MEGA-01 Nhon Trach"
+    assert dr.merge_project(pm, None)["name"] == "MEGA-01 Nhon Trach"
+
+
+def test_a_project_with_no_settings_still_produces_a_masthead():
+    """A project somebody has not set up for daily reporting yet renders with what PMC knows and
+    blanks for the rest — never a crash, and never an invented investor."""
+    got = dr.merge_project({"id": "P-9", "name": "New Job"}, None)
+    assert got["name"] == "New Job"
+    assert got["investor"] == "" and got["clientLogo"] == ""
+
+
 # ── the masthead ─────────────────────────────────────────────────────────────────────────────────
 def test_total_construction_duration_matches_the_printed_report():
     """"Total Construction Duration (Days): 530" — page 1 of both files."""
