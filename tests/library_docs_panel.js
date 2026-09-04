@@ -85,6 +85,7 @@ const PRELUDE = `
      work is in the resolving (find the folder of that name, or fall back, or say there is none),
      and none of that runs unless there is something to fetch from. */
   let DRIVE = null, RESOLVE = null, POSTED = [], DELAY = {}, FETCH_OVERRIDE = null;
+  let SEARCHED = [], SEARCH_ROWS = [];
   function _pmSpToken(){ if (!DRIVE) throw new Error('no token in this harness'); return Promise.resolve('T'); }
   function _pmSpResolve(base){
     if (!DRIVE) throw new Error('no graph in this harness');
@@ -96,6 +97,12 @@ const PRELUDE = `
     if (opts && opts.method === 'POST') {          // create folder
       POSTED.push({ url: u, body: JSON.parse(opts.body) });
       return { ok: true, status: 201, json: async () => ({ id: 'NEW' }), text: async () => '' };
+    }
+    /* A search, so the test can assert WHICH ADDRESS was asked. This is the whole claim of the
+       scoped search — the heading is downstream of it. */
+    if (u.indexOf("/search(q='") >= 0) {
+      SEARCHED.push(u);
+      return { ok: true, status: 200, json: async () => ({ value: SEARCH_ROWS }), text: async () => '' };
     }
     /* Parsed by hand rather than by regex: this whole prelude lives inside a template literal,
        and a regex literal carrying slashes does not survive that intact. */
@@ -142,6 +149,7 @@ new Function(PRELUDE + src.slice(i, j) + `
     setPortal: function (p) { PORTAL = Object.assign(PORTAL, p); },
     setPeriod: function (v) { PERIOD_OK = v; },
     setFilter: function (k, v) { _crmLF[k] = v; },
+    getFilter: function (k) { return _crmLF[k]; },
     setLevel: function (l) { _userLevel = l; },
     setCanWrite: function (v) { CAN_WRITE = v; },
     mount: function (id) { DOM[id] = { innerHTML: '' }; return DOM[id]; },
@@ -153,6 +161,12 @@ new Function(PRELUDE + src.slice(i, j) + `
     setDrive: function (d, resolve) { DRIVE = d; RESOLVE = resolve; POSTED = []; DELAY = {}; },
     setDelay: function (k, ms) { DELAY[k] = ms; },
     setFetch: function (f) { FETCH_OVERRIDE = f; },
+    searched: function () { return SEARCHED; },
+    resetSearched: function () { SEARCHED = []; },
+    setSearchRows: function (r) { SEARCH_ROWS = r; },
+    _libSpSearch: _libSpSearch,
+    _libSearchScope: _libSearchScope,
+    _libSpEnter: _libSpEnter,
     setDepts: function (d) { DEPTS = d; },
     _libGraphPage: _libGraphPage,
     _libSortCmp: _libSortCmp,
@@ -860,6 +874,86 @@ ok('only sharepoint.com is accepted as a library host',
       !/ENGINEERING-0\.pdf/.test(painted),
       'one thousand Engineering files under a highlighted Sales tab is what this prevents');
     ok('...and does not leave a false error banner either', !stw.error, 'error=' + stw.error);
+  }
+
+
+  /* ══ WHICH FOLDER A SEARCH LOOKS IN ═════════════════════════════════════════════════════
+     The library is one folder per department and the search ignored that: every query went to
+     the drive root, so somebody hunting "checklist" inside Engineering got Sales, HR and Board
+     hits mixed in. These tests are about the ADDRESS ASKED, not the wording — the heading is
+     downstream of it, and a heading that says "in this folder" over root results is the failure
+     mode worth preventing. */
+  {
+    api.setDrive({ DRV: {
+      root: [{ id: 'ENG', name: 'Engineering', folder: { childCount: 2 } }],
+      ENG: [{ id: 'e1', name: 'Checklist.pdf', file: {}, size: 1, webUrl: 'https://x/e1' }],
+      /* Four levels below Engineering. The point of the fixture: a search hit's folder is NOT a
+         child of where the reader is standing, so a pushed crumb would name a path that does not
+         exist. The crumbs are only drawn when the listing succeeds, so this folder has to be
+         real. */
+      DEEP: [{ id: 'd9', name: 'GA-Drawing.dwg', file: {}, size: 1, webUrl: 'https://x/d9' }]
+    } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+    api.setDepts(['Engineering']);
+    api.setLevel('admin');
+    api.setSearchRows([{ id: 'h1', name: 'Checklist.pdf', file: {}, size: 1,
+                         webUrl: 'https://x/h1',
+                         parentReference: { path: '/drive/root:/Engineering/2026/Project-14/Drawings' } }]);
+    api.mount('lib-docs-wiki');
+    await api._libTab('wiki', 'Engineering');
+
+    // default — the folder the reader is standing in
+    api.resetSearched();
+    api.setFilter('lib-wiki-scope', '');
+    api.setFilter('lib-wiki-q', 'checklist');
+    await api._libSpSearch('wiki');
+    ok('by default a search asks the folder the reader is in',
+      /\/items\/ENG\/search/.test(api.searched()[0] || ''), api.searched()[0] || '(nothing asked)');
+    ok('...and the heading says so', /Results in Engineering/.test(api.el('lib-docs-wiki').innerHTML));
+
+    // the whole library, when asked for
+    api.resetSearched();
+    api.setFilter('lib-wiki-scope', 'The whole library');
+    await api._libSpSearch('wiki');
+    ok('choosing the whole library asks the drive root',
+      /\/root\/search/.test(api.searched()[0] || ''), api.searched()[0] || '(nothing asked)');
+    ok('...and the heading changes with it',
+      /Results across the whole library/.test(api.el('lib-docs-wiki').innerHTML));
+
+    /* The two must never disagree. A heading naming a folder over results fetched from root is
+       worse than no heading: it is a false statement about where three hits came from. */
+    ok('the heading and the address asked always agree',
+      /root\/search/.test(api.searched()[0]) &&
+      !/Results in /.test(api.el('lib-docs-wiki').innerHTML));
+
+    // a leftover folder filter must not silently narrow a set of results from elsewhere
+    api.setFilter('lib-wiki-scope', '');
+    api.setFilter('lib-wiki-f', 'zzz-nothing-matches-this');
+    await api._libSpSearch('wiki');
+    ok('running a search clears the folder filter it would otherwise be narrowed by',
+      api.getFilter('lib-wiki-f') === '', 'filter still ' + JSON.stringify(api.getFilter('lib-wiki-f')));
+    ok('...so the hit is actually shown', /Checklist\.pdf/.test(api.el('lib-docs-wiki').innerHTML));
+
+    /* Opening a hit's folder cannot push a crumb: the hit lives four levels down, and a trail
+       reading "Engineering / Drawings" names a path that does not exist. */
+    await api._libSpEnter('wiki', 'DEEP', 'Drawings');
+    const crumbs = api._libState('wiki').crumbs;
+    ok('a folder opened from a search keeps the real root and elides the rest',
+      crumbs.length === 2 && crumbs[0].id === 'ENG' && crumbs[1].jumped === true,
+      JSON.stringify(crumbs));
+    /* Scoped to the TRAIL, not the panel. The first version of this tested the whole innerHTML
+       for an ellipsis — which the "Search files…" placeholder and "Loading…" also contain, so
+       deleting the gap entirely still passed. Two mutants lived on that. The crumbs div holds no
+       nested div, so slicing to the first </div> is the whole trail and nothing else. */
+    const html = api.el('lib-docs-wiki').innerHTML;
+    const ci = html.indexOf('class="lib-crumbs"');
+    const trail = ci < 0 ? '' : html.slice(ci, html.indexOf('</div>', ci));
+    ok('the trail shows a gap rather than inventing the levels between',
+      /…/.test(trail), trail.slice(0, 200));
+    /* The gap must stay a <span>. As a <button> it is a control that cannot go anywhere — nothing
+       here knows what those folders are called. */
+    ok('and that gap is not a button that goes nowhere',
+      /<span[^>]*>…<\/span>/.test(trail) && (trail.match(/<button/g) || []).length === 2,
+      trail.slice(0, 200));
   }
 
   console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
