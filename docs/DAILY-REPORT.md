@@ -59,6 +59,30 @@ investor, the two consultant lines, the client's logo, and the project's SharePo
 This is the constraint that shapes the whole setup: **the contractors do not have accounts in the
 tenant.** Two consequences, and the second one is the awkward part.
 
+### Report Setup builds the sheet for you
+
+**Report Setup → Build the forms** generates the whole package from this contractor's own roles,
+trades, categories and safety checks:
+
+- **the build sheet for each of the twelve forms** — every question in order, its exact title, its
+  answer type and its choices verbatim. Microsoft Forms has no creation API at any licence level, so
+  a form is still built by a person in the Forms UI; this makes it a few minutes of typing rather
+  than a guessing game.
+- **the SharePoint lists** — one button, or a **PnP PowerShell script** if the tenant has not granted
+  `Sites.Manage.All` (which is broader than the `Sites.ReadWrite.All` the portal holds). The panel
+  says which of the two applies, read from the token's own roles claim, so it never offers a button
+  that will 403. Created lists have their URLs written straight back into Report Setup.
+- **the three-step Power Automate flow** per form.
+
+The point of generating all three from one table (`dr_forms.py`) is that the form question title,
+the SharePoint column and the name the sync looks for **cannot disagree**. `tests/test_dr_forms.py`
+proves it: build the columns this spec describes, run them through the sync's own mapper, and every
+field is found. A list built to the sheet cannot then fail "Check the lists".
+
+Do it in the order the panel gives, because it matters: the forms are generated *from* the
+contractor's configuration, so building forms before finishing that configuration means building
+them twice.
+
 ### 1. The form must accept anonymous responses, so a flow moves the answers
 
 Build a **Microsoft Form** per table and set it to *Anyone can respond*. An anonymous form writes its
@@ -185,6 +209,7 @@ report over is a report nobody trusts again. `daily_report.INCLUSIVE_ELAPSED` na
 |---|---|
 | `daily_report.py` | every number on the report, the ten-page structure, and the PM-project merge — pure, no I/O |
 | `dr_sharepoint.py` | reading the lists and the folder: URL parsing, column matching, row mapping, assembly — pure, the HTTP getter is injected |
+| `dr_forms.py` | the lists and forms the report is filled in WITH — one table generating the form questions, the SharePoint columns and the flow mapping, so the three cannot drift |
 | `app.py` | `/api/dr/report`, `/api/dr/photo/<id>`, `/api/dr/detect`, `/api/dr/sync`, and the `dr_*` project scoping |
 | `templates/index.html` | the `pmRenderDailyReport` tab, Report Setup, and the letterhead exporter |
 | `tools/seed_daily_report.py` | seeds both source reports into a dev database, for comparing against the originals |

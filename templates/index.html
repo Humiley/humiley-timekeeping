@@ -51535,8 +51535,10 @@ function _drSetupContractor(cons, c) {
       '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
         '<button class="btn btn-primary btn-sm" onclick="tkDrSaveContractor()">' + _t('Save setup') + '</button>' +
         '<button class="btn btn-outline btn-sm" onclick="tkDrDetect()">' + _t('Check the lists') + '</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="tkDrForms()">' + _t('Build the forms') + '</button>' +
       '</div>' +
-      '<div id="dr-detect-out" style="margin-top:14px">' + _drDetectOut() + '</div></div>';
+      '<div id="dr-detect-out" style="margin-top:14px">' + _drDetectOut() + '</div>' +
+      '<div id="dr-forms-out" style="margin-top:14px">' + _drFormsOut() + '</div></div>';
 }
 
 const _DR_LIST_KINDS = [
@@ -51687,6 +51689,187 @@ function _drDetectOut() {
   return _drTable('drdetect', [{ t: 'List' }, { t: 'Status' }, { t: 'Detail' }], rows, { noSort: true }) +
     (d.attachmentNote ? '<div style="margin-top:10px;font-size:11px;color:var(--text-light);line-height:1.6">' +
       _crmEsc(d.attachmentNote) + '</div>' : '');
+}
+
+
+/* ── "Build the forms": the build sheet for the twelve Microsoft Forms ───────────────────────────
+   Microsoft Forms has NO creation API — not at any licence level — so a form is built by a person
+   in the Forms UI. What this panel does is make that a few minutes of typing per form instead of a
+   guessing game, and remove the part that actually goes wrong: the three names that have to match.
+
+   The question title, the SharePoint column it is written into, and the name the sync looks for are
+   all generated from one table in dr_forms.py, and tests/test_dr_forms.py proves a list built to
+   this sheet is readable by the mapper that reads it during a sync. So an admin who follows the
+   sheet cannot produce a list that "Check the lists" then rejects.
+
+   The lists themselves CAN be automated, and the button tries — but creating a list needs
+   Sites.Manage.All and this portal is consented for Sites.ReadWrite.All, so on most tenants the
+   honest answer is the PowerShell script. The panel says which, read from the token's own roles
+   claim rather than guessed, so it never offers a button that 403s. */
+let _DRF = null;        // the last /api/dr/formspec payload
+let _DRF_OPEN = '';     // which form's sheet is expanded
+
+async function tkDrForms() {
+  const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId);
+  if (!cur) { toast(_t('Choose a contractor first.'), 'warn'); return; }
+  const host = document.getElementById('dr-forms-out');
+  if (host) host.innerHTML = '<div style="font-size:12px;color:var(--text-light)">' +
+    _t('Building the form sheets…') + '</div>';
+  try {
+    await tkDrSaveContractor();          // generate from what is on screen, not from a stale row
+    _DRF = await tkApi('/api/dr/formspec', { method: 'POST', body: {
+      contractorId: cur.id, projectId: _DR.pid } });
+  } catch (e) { _DRF = { error: _errMsg(e) }; }
+  const h2 = document.getElementById('dr-forms-out');
+  if (h2) h2.innerHTML = _drFormsOut();
+}
+
+function _drFormsOut() {
+  const d = _DRF; if (!d) return '';
+  if (d.error) return '<div style="font-size:12px;color:var(--danger,#B42318)">' + _crmEsc(d.error) + '</div>';
+  const pkg = d.package || {};
+  const notes = (pkg.notes || []).map(n =>
+    '<li style="margin:2px 0;color:' + (n.level === 'warn' ? 'var(--warning,#7A4B00)' : 'var(--text-light)') +
+    '">' + _crmEsc(_t(n.msg)) + '</li>').join('');
+  const steps = (d.checklist || []).map((sx, i) =>
+    '<li style="margin:3px 0">' + _crmEsc(_t(sx)) + '</li>').join('');
+  return '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
+      '<div style="font-weight:700;font-size:12.5px;color:var(--navy);margin-bottom:6px">' +
+      _t('Do it in this order') + '</div>' +
+      '<ol style="margin:0 0 0 18px;padding:0;font-size:12.5px;line-height:1.65">' + steps + '</ol>' +
+      (notes ? '<ul style="margin:10px 0 0 18px;padding:0;font-size:12px;line-height:1.6">' +
+        notes + '</ul>' : '') +
+    '</div>' +
+    _drFormsLists(d) +
+    '<div style="font-weight:700;font-size:12.5px;color:var(--navy);margin:14px 0 8px">' +
+      _tp('The {0} forms to build', (pkg.forms || []).length) + '</div>' +
+    (pkg.forms || []).map(f => _drFormCard(f, d)).join('');
+}
+
+/* Step 2 — the lists. One button, and the truth about whether it can work here. */
+function _drFormsLists(d) {
+  const can = !!d.canCreateLists;
+  const roles = (d.graphRoles || []).join(', ') || _t('none');
+  return '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
+    '<div style="font-weight:700;font-size:12.5px;color:var(--navy);margin-bottom:4px">' +
+      _t('The SharePoint lists') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:10px">' +
+      (can
+        ? _t('This tenant has granted the permission a list needs, so the portal can create all twelve for you.')
+        : _tp('Creating a list needs Sites.Manage.All, and this app holds: {0}. So run the script below instead — it does the same thing and is safe to re-run.', roles)) +
+    '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      (can ? '<button class="btn btn-primary btn-sm" onclick="tkDrProvision()">' +
+        _t('Create the lists') + '</button>' : '') +
+      '<button class="btn btn-outline btn-sm" onclick="tkDrCopyScript()">' +
+        _t('Copy the PowerShell script') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="tkDrDownloadSpec()">' +
+        _t('Download the full spec (JSON)') + '</button>' +
+    '</div>' +
+    '<div id="dr-prov-out" style="margin-top:10px"></div></div>';
+}
+
+function _drFormCard(f, d) {
+  const open = _DRF_OPEN === f.kind;
+  const flow = (d.flows || {})[f.kind] || [];
+  const rows = (f.questions || []).map((q, i) =>
+    '<tr' + (q.signedInOnly ? ' style="background:var(--soft-bg)"' : '') + '>' +
+    '<td style="text-align:center;color:var(--text-light)">' + (i + 1) + '</td>' +
+    '<td><b>' + _crmEsc(q.title) + '</b>' +
+      (q.required ? ' <span style="color:var(--danger,#D93025)">*</span>' : '') +
+      (q.help ? '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(q.help) + '</div>' : '') +
+      (q.signedInOnly ? '<div style="font-size:11px;color:var(--warning,#7A4B00)">' +
+        _t('A file-upload question cannot exist on a form that anyone can respond to. Leave this question out and collect the photos through the SharePoint upload link.') +
+        '</div>' : '') +
+      (q.needsConfig ? '<div style="font-size:11px;color:var(--warning,#7A4B00)">' +
+        _t('Nothing to choose from yet — set this up above first.') + '</div>' : '') +
+    '</td>' +
+    '<td>' + _crmEsc(q.type) + '</td>' +
+    '<td style="font-size:11px">' + (q.choices || []).map(_crmEsc).join('<br>') + '</td></tr>').join('');
+  return '<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">' +
+    '<div style="padding:11px 14px;display:flex;align-items:center;gap:10px;cursor:pointer" ' +
+      'onclick="tkDrFormToggle(\'' + f.kind + '\')">' +
+      '<div style="flex:1"><div style="font-weight:700;font-size:12.5px;color:var(--navy)">' +
+        _crmEsc(f.formTitle) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' +
+        _tp('{0} questions', (f.questions || []).length) + ' · ' + _t('writes to') + ' ' +
+        _crmEsc(f.listName) + '</div></div>' +
+      (f.anonymousBlocked ? '<span class="badge b-warn" style="font-size:9.5px">' +
+        _t('photos need the upload link') + '</span>' : '') +
+      '<span style="color:var(--text-light);font-size:11px">' + (open ? '▾' : '▸') + '</span>' +
+    '</div>' +
+    (open ? '<div style="border-top:1px solid var(--line);padding:12px 14px">' +
+      '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:10px">' +
+        _crmEsc(_t(f.intro)) + '</div>' +
+      _drTable('drform-' + f.kind, [{ t: '#', num: true }, { t: 'Question' }, { t: 'Answer type' },
+                                    { t: 'Choices' }], [rows], { noSort: true }) +
+      '<div style="font-weight:700;font-size:12px;color:var(--navy);margin:14px 0 6px">' +
+        _t('Then one Power Automate flow') + '</div>' +
+      '<ol style="margin:0 0 0 18px;padding:0;font-size:12px;line-height:1.7">' +
+      flow.map(sx => '<li><b>' + _crmEsc(sx.action) + '</b>' +
+        (sx.detail ? ' — ' + _crmEsc(sx.detail) : '') +
+        (sx.fields ? '<div style="font-size:11px;color:var(--text-light)">' +
+          _t('Map each question to the column of the same name.') + '</div>' : '') +
+        '</li>').join('') + '</ol>' +
+      '</div>' : '') + '</div>';
+}
+
+function tkDrFormToggle(kind) {
+  _DRF_OPEN = (_DRF_OPEN === kind) ? '' : kind;
+  const h = document.getElementById('dr-forms-out'); if (h) h.innerHTML = _drFormsOut();
+}
+
+async function tkDrProvision() {
+  const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId); if (!cur) return;
+  const out = document.getElementById('dr-prov-out');
+  if (out) out.innerHTML = '<div style="font-size:12px;color:var(--text-light)">' +
+    _t('Creating the lists…') + '</div>';
+  try {
+    const r = await tkApi('/api/dr/provision', { method: 'POST', body: {
+      contractorId: cur.id, projectId: _DR.pid } });
+    const tone = { created: 'var(--success,#0E9F5B)', exists: 'var(--text-light)',
+                   denied: 'var(--warning,#7A4B00)', failed: 'var(--danger,#D93025)' };
+    const label = { created: _t('created'), exists: _t('already there'),
+                    denied: _t('not permitted'), failed: _t('failed') };
+    const rows = (r.lists || []).map(x => '<tr>' + _drCell(x.list) +
+      '<td style="color:' + (tone[x.status] || '') + ';font-weight:600">' +
+      _crmEsc(label[x.status] || x.status) + '</td>' +
+      '<td style="font-size:11px">' + _crmEsc(x.error || '') + '</td></tr>');
+    if (out) out.innerHTML = _drTable('drprov', [{ t: 'List' }, { t: 'Status' }, { t: 'Detail' }],
+                                      rows, { noSort: true });
+    await tkLoadColl('dr_contractors', { force: true });
+    toast(_tp('{0} list(s) created.', (r.lists || []).filter(x => x.status === 'created').length));
+  } catch (e) {
+    if (out) out.innerHTML = '<div style="font-size:12px;color:var(--danger,#B42318)">' +
+      _crmEsc(_errMsg(e)) + '</div>';
+  }
+}
+
+/* The script and the spec go through the clipboard and a blob download rather than a link the
+   viewer might block, and both say plainly when the clipboard is refused (an insecure origin, or a
+   browser that wants a user gesture) instead of appearing to have worked. */
+async function tkDrCopyScript() {
+  const txt = (_DRF || {}).powershell || '';
+  if (!txt) return;
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast(_t('PowerShell script copied — paste it into PowerShell 7 and run it.'));
+  } catch (e) {
+    _drDownload(txt, 'Create-DailyReportLists.ps1', 'text/plain');
+    toast(_t('Could not reach the clipboard, so the script was downloaded instead.'), 'warn', 5000);
+  }
+}
+function tkDrDownloadSpec() {
+  const d = _DRF; if (!d) return;
+  _drDownload(JSON.stringify({ package: d.package, flows: d.flows, checklist: d.checklist }, null, 2),
+              'DailyReport-forms-spec.json', 'application/json');
+}
+function _drDownload(text, name, type) {
+  const url = URL.createObjectURL(new Blob([text], { type: type }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 </script>

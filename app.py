@@ -102,6 +102,7 @@ import statutory         # SI/PIT/labour-usage returns, and the contribution-cap
 import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
 import daily_report      # the construction Daily Report: its ten pages and every number on them (pure)
 import dr_sharepoint     # reading that report out of the SharePoint forms the site fills in (pure)
+import dr_forms          # the SharePoint lists and Microsoft Forms that report is filled in WITH (pure)
 import hashlib
 import bi
 import zipfile
@@ -4643,6 +4644,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._dr_detect_ep(u, body), manager=True)
         if path == "/api/dr/sync":
             return self._guard(lambda u: self._dr_sync_ep(u, body), manager=True)
+        if path == "/api/dr/formspec":
+            return self._guard(lambda u: self._dr_formspec_ep(u, body), manager=True)
+        if path == "/api/dr/provision":
+            return self._guard(lambda u: self._dr_provision_ep(u, body), manager=True)
         if path.startswith("/api/ahu/unit/") and path.endswith("/route"):
             _uid = path[len("/api/ahu/unit/"):-len("/route")]
             return self._guard(lambda u: self._ahu_route_build_ep(u, urllib.parse.unquote(_uid)))
@@ -10573,6 +10578,146 @@ class Handler(BaseHTTPRequestHandler):
                 return str(cat)
         cats = [c for c in (con.get("categories") or []) if str(c).strip()]
         return str(cats[0]) if cats else ""
+
+    def _dr_formspec_ep(self, u, body):
+        """The build package for one contractor: its twelve forms, their questions, the SharePoint
+        columns each writes into, and the Power Automate mapping between them.
+
+        Generated from the contractor's OWN roles, trades, categories and safety checks, because the
+        header form asks one question per role and the Category questions offer that contractor's
+        categories. Which is also why the setup order matters and the package says so: build the
+        forms before the configuration and you build them twice.
+        """
+        con, err = self._dr_contractor_for(u, body)
+        if err:
+            return err
+        pkg = dr_forms.build(con)
+        st = db.get_collection_item("dr_settings", str(con.get("projectId") or "")) or {}
+        site = self._dr_site_url(st.get("spFolderUrl") or "")
+        return self._json({
+            "ok": True, "package": pkg,
+            "checklist": dr_forms.checklist(pkg),
+            "siteUrl": site,
+            "powershell": dr_forms.powershell(pkg, site or "https://<tenant>.sharepoint.com/sites/<Site>"),
+            "flows": {f["kind"]: dr_forms.flow_steps(f) for f in pkg["forms"]},
+            # What the token can actually DO, read from its own roles claim rather than assumed —
+            # so the screen can say "press the button" or "run the script" truthfully instead of
+            # offering a button that 403s.
+            "canCreateLists": self._dr_can_create_lists(),
+            "graphRoles": _graph_granted_roles(),
+        })
+
+    @staticmethod
+    def _dr_site_url(folder_url):
+        """The site the lists belong on, from the project's folder link. PnP connects to a SITE, not
+        to a folder, so the script needs this rather than the folder itself."""
+        try:
+            host, site_path, _rel = _sp_parse_folder(folder_url)
+            return "https://" + host + site_path
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _dr_can_create_lists():
+        """Whether the app-only token may create a SharePoint list.
+
+        Graph's POST /sites/{id}/lists needs Sites.Manage.All or Sites.FullControl.All. This portal
+        is consented for Sites.ReadWrite.All, which is enough to READ lists and WRITE files and is
+        NOT enough to create a list — a distinction that would otherwise surface as a 403 the moment
+        somebody pressed the button. Read from the roles claim so the answer is this tenant's, not a
+        guess about it.
+        """
+        have = set(_graph_granted_roles())
+        return bool(have & {"Sites.Manage.All", "Sites.FullControl.All"})
+
+    def _dr_provision_ep(self, u, body):
+        """Create this contractor's SharePoint lists. Reports per list what happened.
+
+        Idempotent by intent: a list that already exists is left alone and said so, because an admin
+        will press this twice and the second press must not produce twelve duplicates named
+        "Daily Work Progress 1".
+        """
+        con, err = self._dr_contractor_for(u, body)
+        if err:
+            return err
+        if not (M365.get("clientSecret") or "").strip():
+            return self._err("Microsoft 365 is not configured on this server, so the lists cannot "
+                             "be created from here. Use the PowerShell script instead.", 400)
+        st = db.get_collection_item("dr_settings", str(con.get("projectId") or "")) or {}
+        folder = str(st.get("spFolderUrl") or "").strip()
+        if not folder:
+            return self._err("Set this project's SharePoint folder first — it names the site the "
+                             "lists are created on.", 400)
+        try:
+            token = _graph_app_token()
+            host, site_path, _rel = _sp_parse_folder(folder)
+            site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
+            site_id = site.get("id")
+            if not site_id:
+                raise ValueError("could not resolve that site")
+        except Exception as e:
+            return self._err("Could not open that SharePoint site: %s" % str(e)[:200], 400)
+        pkg = dr_forms.build(con)
+        existing = {}
+        try:
+            page = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site_id
+                              + "/lists?$select=id,name,displayName&$top=200", token)
+            for l in (page or {}).get("value") or []:
+                existing[dr_sharepoint.norm(l.get("displayName"))] = l
+        except Exception:
+            pass
+        out = []
+        for form in pkg["forms"]:
+            key = dr_sharepoint.norm(form["listName"])
+            if key in existing:
+                out.append({"list": form["listName"], "status": "exists",
+                            "url": (existing[key].get("webUrl") or "")})
+                continue
+            try:
+                req = urllib.request.Request(
+                    "https://graph.microsoft.com/v1.0/sites/" + site_id + "/lists",
+                    data=json.dumps(dr_forms.graph_list_body(form)).encode("utf-8"),
+                    method="POST",
+                    headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=40) as resp:
+                    made = json.loads(resp.read().decode("utf-8"))
+                out.append({"list": form["listName"], "status": "created",
+                            "url": made.get("webUrl") or ""})
+            except urllib.error.HTTPError as e:
+                # 403 here is the expected answer on a tenant consented only for Sites.ReadWrite.All.
+                # Named as the permission rather than as a status code, and the script offered.
+                msg = _graph_err_text(e)
+                out.append({"list": form["listName"],
+                            "status": "denied" if e.code == 403 else "failed",
+                            "error": ("Creating a list needs Sites.Manage.All (this app has "
+                                      + ", ".join(_graph_granted_roles() or ["nothing"]) +
+                                      "). Run the PowerShell script instead.")
+                                     if e.code == 403 else ("HTTP %s: %s" % (e.code, msg[:160]))})
+            except Exception as e:
+                out.append({"list": form["listName"], "status": "failed",
+                            "error": str(e)[:200]})
+        made = [r for r in out if r["status"] == "created"]
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Daily Report SharePoint lists provisioned",
+            "target": "dr_contractors/" + str(con.get("id") or ""),
+            "detail": "%s · %d created · %d already there · %d refused"
+                      % (con.get("name") or "?", len(made),
+                         len([r for r in out if r["status"] == "exists"]),
+                         len([r for r in out if r["status"] in ("denied", "failed")])),
+            "ts": self._utc_now()})
+        # Write the URLs of what we made straight into the contractor's setup, so "Check the lists"
+        # has something to check without anybody copying twelve links by hand.
+        if made:
+            lists = dict(con.get("lists") or {})
+            by_name = {r["list"]: r.get("url") or "" for r in out if r.get("url")}
+            for form in pkg["forms"]:
+                if not lists.get(form["kind"]) and by_name.get(form["listName"]):
+                    lists[form["kind"]] = by_name[form["listName"]]
+            con = dict(con, lists=lists)
+            db.put_collection_item("dr_contractors", con)
+        return self._json({"ok": True, "lists": out,
+                           "canCreateLists": self._dr_can_create_lists()})
 
     def _dr_sync_ep(self, u, body):
         """Pull one day (or a short range) out of SharePoint into dr_reports / dr_photos.

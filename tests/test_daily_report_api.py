@@ -412,6 +412,81 @@ def test_a_resync_by_someone_else_does_not_transfer_ownership_of_the_record():
     assert db.get_collection_item("dr_reports", "DR-C-TAI-2026-09-01")["createdById"] == "HML-MGR"
 
 
+# ── the form build package ──────────────────────────────────────────────────────────────────────
+def test_the_form_spec_is_generated_from_this_contractors_own_configuration(api, tokens):
+    """The header form asks one question per role, and the Category questions offer this
+    contractor's categories — so the package has to be built from the contractor, not from a
+    template. That is also why the setup order matters: build the forms first and you build them
+    twice."""
+    st, b = api("POST", "/api/dr/formspec", tokens["mgr"],
+                {"contractorId": "C-TAI", "projectId": PID})
+    assert st == 200, b
+    forms = {f["kind"]: f for f in b["package"]["forms"]}
+    assert len(forms) == 12
+    titles = {q["title"] for q in forms["header"]["questions"]}
+    for role in CONTRACTOR["mgmtRoles"] + CONTRACTOR["workerTrades"]:
+        assert role in titles, role
+    cat = [q for q in forms["progress"]["questions"] if q["field"] == "category"][0]
+    assert cat["choices"] == CONTRACTOR["categories"]
+
+
+def test_the_spec_says_plainly_whether_this_tenant_can_create_lists(api, tokens):
+    """Creating a list needs Sites.Manage.All; the portal is consented for Sites.ReadWrite.All. The
+    screen offers a button or a script based on this, so it must be the tenant's real answer — read
+    from the token's own roles claim — and never an assumption that produces a button which 403s."""
+    st, b = api("POST", "/api/dr/formspec", tokens["mgr"],
+                {"contractorId": "C-TAI", "projectId": PID})
+    assert st == 200, b
+    assert isinstance(b["canCreateLists"], bool)
+    assert isinstance(b["graphRoles"], list)
+    # With no M365 secret on a test server there are no roles, so the honest answer is "no".
+    if not (app.M365.get("clientSecret") or "").strip():
+        assert b["canCreateLists"] is False
+
+
+def test_the_powershell_fallback_covers_every_list(api, tokens):
+    st, b = api("POST", "/api/dr/formspec", tokens["mgr"],
+                {"contractorId": "C-TAI", "projectId": PID})
+    ps = b["powershell"]
+    for f in b["package"]["forms"]:
+        assert f["listName"] in ps, f["listName"]
+    assert "Get-PnPList" in ps, "it must be safe to re-run"
+
+
+def test_each_form_gets_its_three_step_flow(api, tokens):
+    st, b = api("POST", "/api/dr/formspec", tokens["mgr"],
+                {"contractorId": "C-TAI", "projectId": PID})
+    assert st == 200, b
+    assert (b["flows"] or {}), "no flows were returned at all"
+    for kind, steps in (b["flows"] or {}).items():
+        assert [x["step"] for x in steps] == [1, 2, 3], kind
+
+
+def test_the_build_package_is_scoped_to_the_project_like_everything_else(api, tokens):
+    for path in ("/api/dr/formspec", "/api/dr/provision"):
+        st, _ = api("POST", path, tokens["other"], {"contractorId": "C-TAI", "projectId": PID})
+        assert st == 403, path
+
+
+def test_provisioning_without_microsoft_365_points_at_the_script_instead(api, tokens):
+    if (app.M365.get("clientSecret") or "").strip():
+        pytest.skip("this server has a real M365 secret configured")
+    st, b = api("POST", "/api/dr/provision", tokens["mgr"],
+                {"contractorId": "C-TAI", "projectId": PID})
+    assert st == 400
+    assert "Microsoft 365" in str(b.get("error"))
+    assert "PowerShell" in str(b.get("error"))
+
+
+def test_the_site_url_is_derived_from_the_folder_link():
+    """PnP connects to a SITE, not to a folder, so the script needs this rather than the folder."""
+    h = app.Handler
+    got = h._dr_site_url("https://humiley.sharepoint.com/sites/Mega/Shared Documents/Daily")
+    assert got == "https://humiley.sharepoint.com/sites/Mega"
+    assert h._dr_site_url("") == ""
+    assert h._dr_site_url("not a link") == ""
+
+
 # ── the project's SharePoint folder ─────────────────────────────────────────────────────────────
 def test_a_project_with_no_folder_configured_contributes_no_photos_and_no_noise():
     """Not an error. Plenty of projects run the first week on the lists alone."""
