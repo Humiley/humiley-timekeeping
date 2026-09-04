@@ -100,6 +100,8 @@ import workforce         # headcount and turnover over time, from dated facts (p
 import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
 import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
+import daily_report      # the construction Daily Report: its ten pages and every number on them (pure)
+import dr_sharepoint     # reading that report out of the SharePoint forms the site fills in (pure)
 import hashlib
 import bi
 import zipfile
@@ -4568,6 +4570,11 @@ class Handler(BaseHTTPRequestHandler):
             seg = path[len("/api/invtrack/file/"):]
             fid, _dot, ext = seg.partition(".")
             return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
+        if path == "/api/dr/report":
+            return self._guard(lambda u: self._dr_report_ep(u, qs))
+        if path.startswith("/api/dr/photo/"):
+            _pid = urllib.parse.unquote(path[len("/api/dr/photo/"):])
+            return self._guard(lambda u: self._dr_photo_ep(u, _pid))
         if path == "/api/ahu/process":
             return self._guard(lambda u: self._ahu_process_ep(u, qs))
         if path == "/api/ahu/capacity":
@@ -4632,6 +4639,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_m365(body)
         if path == "/api/auth/logout":
             return self._auth_logout()
+        if path == "/api/dr/detect":
+            return self._guard(lambda u: self._dr_detect_ep(u, body), manager=True)
+        if path == "/api/dr/sync":
+            return self._guard(lambda u: self._dr_sync_ep(u, body), manager=True)
         if path.startswith("/api/ahu/unit/") and path.endswith("/route"):
             _uid = path[len("/api/ahu/unit/"):-len("/route")]
             return self._guard(lambda u: self._ahu_route_build_ep(u, urllib.parse.unquote(_uid)))
@@ -10121,10 +10132,458 @@ class Handler(BaseHTTPRequestHandler):
                 db.set_setting("portal_" + _k, _v)
         return self._json({"ok": True})
 
+    # ── Daily Report endpoints ───────────────────────────────────────────────────────────────────
+    # The site fills a SharePoint form; this app assembles those submissions into the ten-page daily
+    # report the client already receives, and prints it. daily_report.py owns every number on it and
+    # dr_sharepoint.py owns reading the lists — these methods are the door and nothing else.
+    def _dr_gate(self, u):
+        """Read access to the Daily Report app, honouring the per-account app switches."""
+        return None if "dr" not in self._apps_denied(u) else \
+            self._err("The Daily Report app is not enabled for your account.", 403)
+
+    @staticmethod
+    def _dr_q(qs, key):
+        return (qs.get(key) or [""])[0].strip()
+
+    def _dr_ctx(self):
+        """The four collections, read ONCE per request.
+
+        Deliberately not a per-row lookup. The AHU board took four seconds at 87 units because its
+        context loader re-read six collections inside a loop, and this screen has the same shape —
+        one report, its contractor, its project, and a fortnight of history for the two bar charts.
+        """
+        return {
+            "projects": {str(p.get("id")): p for p in db.list_collection("dr_projects")},
+            "contractors": {str(c.get("id")): c for c in db.list_collection("dr_contractors")},
+            "reports": db.list_collection("dr_reports"),
+            "photos": db.list_collection("dr_photos"),
+        }
+
+    def _dr_pick(self, ctx, project_id, contractor_id, on_date):
+        """Resolve the three-part key the screen asks with, filling in sensible defaults.
+
+        A first-time visitor arrives with none of them set, and the useful answer is the newest
+        report there is — not an empty page telling them to choose something they have not been
+        shown yet.
+        """
+        con = ctx["contractors"].get(str(contractor_id or "")) if contractor_id else None
+        rows = [r for r in ctx["reports"] if daily_report.iso(r.get("date"))]
+        if project_id:
+            rows = [r for r in rows if str(r.get("projectId") or "") == str(project_id)]
+        if con:
+            rows = [r for r in rows if str(r.get("contractorId") or "") == str(con.get("id"))]
+        if on_date:
+            want = daily_report.iso(on_date)
+            rows = [r for r in rows if daily_report.iso(r.get("date")) == want]
+        rows.sort(key=lambda r: daily_report.iso(r.get("date")), reverse=True)
+        rep = rows[0] if rows else None
+        if con is None:
+            cid = str((rep or {}).get("contractorId") or "")
+            con = ctx["contractors"].get(cid) or (
+                sorted(ctx["contractors"].values(), key=lambda c: str(c.get("name") or ""))[0]
+                if ctx["contractors"] else None)
+        pid = str(project_id or (rep or {}).get("projectId") or (con or {}).get("projectId") or "")
+        prj = ctx["projects"].get(pid) or (
+            sorted(ctx["projects"].values(), key=lambda p: str(p.get("name") or ""))[0]
+            if ctx["projects"] else None)
+        return prj, con, rep
+
+    def _dr_report_ep(self, u, qs):
+        """One day's report, assembled — the same model the screen draws and the PDF prints."""
+        blocked = self._dr_gate(u)
+        if blocked:
+            return blocked
+        ctx = self._dr_ctx()
+        prj, con, rep = self._dr_pick(ctx, self._dr_q(qs, "projectId"), self._dr_q(qs, "contractorId"),
+                                      self._dr_q(qs, "date"))
+        if con is None:
+            return self._json({"ok": True, "empty": "contractors", "report": None,
+                               "projects": self._dr_index(ctx["projects"]),
+                               "contractors": [], "dates": []})
+        cid = str(con.get("id") or "")
+        date = daily_report.iso((rep or {}).get("date")) or daily_report.iso(self._dr_q(qs, "date"))
+        photos = [p for p in ctx["photos"]
+                  if str(p.get("contractorId") or "") == cid
+                  and daily_report.iso(p.get("date")) == date]
+        model = daily_report.build(prj, con, rep, photos, ctx["reports"], date)
+        # Sorting is applied to the ASSEMBLED model, not to the stored rows: the table the person
+        # clicked is the one that reorders, and a sort saved in a link cannot reorder anything else.
+        table, col = self._dr_q(qs, "table"), self._dr_q(qs, "sortBy")
+        if table and col:
+            self._dr_apply_sort(model, table, col, self._dr_q(qs, "dir") or "asc")
+        return self._json({
+            "ok": True, "report": model,
+            "reportId": (rep or {}).get("id") or "",
+            "projects": self._dr_index(ctx["projects"]),
+            "contractors": self._dr_index(ctx["contractors"], extra=("projectId", "logo")),
+            "dates": self._dr_dates(ctx["reports"], cid),
+            "sections": [dict(s) for s in daily_report.SECTIONS],
+            "pages": daily_report.paginate(model),
+        })
+
+    @staticmethod
+    def _dr_index(rows, extra=()):
+        out = []
+        for r in sorted(rows.values(), key=lambda x: str(x.get("name") or "")):
+            d = {"id": str(r.get("id") or ""), "name": r.get("name") or ""}
+            for k in extra:
+                d[k] = r.get(k) or ""
+            out.append(d)
+        return out
+
+    @staticmethod
+    def _dr_dates(reports, contractor_id):
+        """Every date this contractor has a report for, newest first, with its month and ISO week
+        so the Month and Week dropdowns are built from days that EXIST rather than from a calendar.
+        A week offered in the filter that yields nothing is a filter people stop trusting."""
+        out = []
+        for r in reports:
+            if str(r.get("contractorId") or "") != str(contractor_id):
+                continue
+            d = daily_report.iso(r.get("date"))
+            if d:
+                out.append({"date": d, "month": daily_report.month_of(d),
+                            "week": daily_report.week_of(d),
+                            "status": r.get("status") or "draft",
+                            "source": r.get("source") or "manual"})
+        return sorted(out, key=lambda x: x["date"], reverse=True)
+
+    @staticmethod
+    def _dr_apply_sort(model, table, column, direction):
+        """Reorder ONE table of the assembled model in place."""
+        sec = model.get("sections") or {}
+        where = {"equipment": ("equipment", "equipment"), "materials": ("equipment", "materials"),
+                 "defects": ("documents", "defects"),
+                 "inspections": ("inspection", "today"), "inspectionPlan": ("inspection", "next"),
+                 "safety": ("safety", "checks"), "recommendations": ("safety", "recommendations")}
+        if table in where:
+            skey, field = where[table]
+            box = sec.get(skey) or {}
+            box[field] = daily_report.sort_rows(table, box.get(field), column, direction)
+            return
+        if table in ("progress", "plan"):
+            for g in (sec.get(table) or {}).get("groups") or []:
+                g["rows"] = daily_report.sort_rows(table, g.get("rows"), column, direction)
+
+    # ── photos ───────────────────────────────────────────────────────────────────────────────────
+    # Bytes are NOT copied into the database. A photo row holds its SharePoint reference and the
+    # image is streamed through here, which keeps a year of daily reports out of the blob store and
+    # — because this endpoint is same-origin — is also the only reason html2canvas can draw the
+    # photos into the exported PDF at all. A cross-origin SharePoint URL taints the canvas and the
+    # export comes out with blank frames where the site photos should be.
+    _DR_PHOTO_CACHE = {}          # id -> (bytes, content-type, fetched-at)
+    _DR_PHOTO_CACHE_MAX = 40      # a day's report is ~10 photos; this covers an export plus a re-read
+    _DR_PHOTO_TTL = 900.0
+    _DR_PHOTO_MAX_BYTES = 12 * 1024 * 1024
+
+    def _dr_photo_ep(self, u, pid):
+        blocked = self._dr_gate(u)
+        if blocked:
+            return blocked
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", pid or ""):
+            return self._err("Not found.", 404)
+        row = db.get_collection_item("dr_photos", pid)
+        if not row:
+            return self._err("Not found.", 404)
+        data, ctype, err = self._dr_photo_bytes(row)
+        if err:
+            # 404 with the reason in a header rather than a broken image with none. The photo pane
+            # reads it and prints why that frame is empty, which is the difference between "the site
+            # sent no photo" and "the link the form stored has expired".
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("X-DR-Photo-Error", err[:180].replace("\n", " "))
+            body = json.dumps({"error": err}).encode("utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except Exception:
+                pass
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=900")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        # These bytes come from a site engineer's phone by way of SharePoint — not from us. Sandbox
+        # them like every other uploaded file the portal serves, so nothing can script against the
+        # portal origin if an "image" turns out not to be one.
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
+        self._emit_sec_headers(ctype)
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
+
+    def _dr_photo_bytes(self, row):
+        """(bytes, content-type, error). Exactly one of bytes/error is meaningful."""
+        pid = str(row.get("id") or "")
+        hit = self._DR_PHOTO_CACHE.get(pid)
+        if hit and (time.time() - hit[2]) < self._DR_PHOTO_TTL:
+            return hit[0], hit[1], ""
+        src = str(row.get("src") or "").lower()
+        if src != "sharepoint":
+            raw = str(row.get("dataUrl") or "")
+            m = re.match(r"^data:(image/[a-z.+-]{1,40});base64,(.+)$", raw, re.S)
+            if not m:
+                return b"", "", "This photo has no image on it."
+            try:
+                data = base64.b64decode(m.group(2), validate=True)
+            except Exception:
+                return b"", "", "This photo could not be decoded."
+            return self._dr_photo_cache(pid, data, m.group(1))
+        if not (M365.get("clientSecret") or "").strip():
+            return b"", "", ("SharePoint photos need the portal's Microsoft 365 app secret, which "
+                             "is not configured on this server.")
+        try:
+            token = _graph_app_token()
+            url = self._dr_photo_url(row)
+            if not url:
+                return b"", "", "This photo row has no SharePoint reference on it."
+            req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                ctype = resp.headers.get("Content-Type") or "image/jpeg"
+                data = resp.read(self._DR_PHOTO_MAX_BYTES + 1)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                # A token minted before consent was granted 403s forever otherwise. One retry with a
+                # fresh token, exactly as the invoice archive does.
+                try:
+                    req = urllib.request.Request(self._dr_photo_url(row), headers={
+                        "Authorization": "Bearer " + _graph_app_token(force=True)})
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        ctype = resp.headers.get("Content-Type") or "image/jpeg"
+                        data = resp.read(self._DR_PHOTO_MAX_BYTES + 1)
+                except Exception as e2:
+                    return b"", "", "SharePoint refused this photo: %s" % _graph_err_text(e2)[:160]
+            else:
+                return b"", "", "SharePoint returned %s for this photo." % e.code
+        except Exception as e:
+            return b"", "", "Could not reach SharePoint for this photo: %s" % str(e)[:160]
+        if len(data) > self._DR_PHOTO_MAX_BYTES:
+            return b"", "", "This photo is larger than the 12 MB the report will carry."
+        if not str(ctype).startswith("image/"):
+            return b"", "", "That SharePoint file is not an image (%s)." % str(ctype)[:60]
+        return self._dr_photo_cache(pid, data, ctype)
+
+    def _dr_photo_cache(self, pid, data, ctype):
+        if len(self._DR_PHOTO_CACHE) >= self._DR_PHOTO_CACHE_MAX:
+            for k in sorted(self._DR_PHOTO_CACHE, key=lambda k: self._DR_PHOTO_CACHE[k][2])[:8]:
+                self._DR_PHOTO_CACHE.pop(k, None)
+        self._DR_PHOTO_CACHE[pid] = (data, ctype, time.time())
+        return data, ctype, ""
+
+    @staticmethod
+    def _dr_photo_url(row):
+        kind = str(row.get("spKind") or "").lower()
+        if kind == "drive" and row.get("spDriveId") and row.get("spItemId"):
+            return ("%s/drives/%s/items/%s/content"
+                    % (dr_sharepoint.GRAPH, row["spDriveId"], row["spItemId"]))
+        if row.get("spUrl"):
+            return ("%s/shares/%s/driveItem/content"
+                    % (dr_sharepoint.GRAPH, dr_sharepoint.share_id(row["spUrl"])))
+        return ""
+
+    # ── SharePoint setup and sync ────────────────────────────────────────────────────────────────
+    def _dr_graph_get(self):
+        """A Graph GET bound to the app-only token, in the shape dr_sharepoint expects."""
+        def get(url):
+            try:
+                return _graph_get(url, _graph_app_token())
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403):
+                    return _graph_get(url, _graph_app_token(force=True))
+                raise
+        return get
+
+    def _dr_detect_ep(self, u, body):
+        """Report Setup's "Check the lists" — resolve every configured list and say, per list,
+        which report fields were matched to which column and which could not be found.
+
+        Read-only on purpose: it changes nothing, so an admin can run it as often as they like while
+        they fix a column name at the SharePoint end.
+        """
+        blocked = self._dr_gate(u)
+        if blocked:
+            return blocked
+        if self._caller_level(u) not in ("manager", "management", "editor", "admin") \
+                and u.get("role") != "manager":
+            return self._err("Manager access required to change the Daily Report setup.", 403)
+        con = db.get_collection_item("dr_contractors", str(body.get("contractorId") or ""))
+        if not con:
+            return self._err("Choose a contractor first.", 400)
+        if not (M365.get("clientSecret") or "").strip():
+            return self._err("Microsoft 365 is not configured on this server, so SharePoint lists "
+                             "cannot be read. Set TK_M365_CLIENT_SECRET and try again.", 400)
+        get = self._dr_graph_get()
+        lists = con.get("lists") or {}
+        manual = con.get("fieldMap") or {}
+        out, ok = {}, 0
+        for kind in dr_sharepoint.LIST_KINDS:
+            url = str(lists.get(kind) or "").strip()
+            if not url:
+                out[kind] = {"configured": False, "label": dr_sharepoint.LIST_KINDS[kind][0]}
+                continue
+            try:
+                ref = dr_sharepoint.resolve_list(get, url)
+                cols = dr_sharepoint.list_columns(get, ref["site"], ref["list"])
+                auto = dr_sharepoint.automap(kind, cols, con.get("mgmtRoles"), con.get("workerTrades"))
+                merged = dr_sharepoint.merge_map(auto, manual.get(kind))
+                out[kind] = {"configured": True, "ok": not merged["missing"],
+                             "label": dr_sharepoint.LIST_KINDS[kind][0],
+                             "listName": ref["listName"], "site": ref["site"], "list": ref["list"],
+                             "map": merged["map"], "roles": merged.get("roles") or {},
+                             "missing": merged["missing"], "unused": merged["unused"],
+                             "columns": [c["title"] for c in cols]}
+                ok += 1 if not merged["missing"] else 0
+            except Exception as e:
+                out[kind] = {"configured": True, "ok": False,
+                             "label": dr_sharepoint.LIST_KINDS[kind][0],
+                             "error": str(e)[:300]}
+        return self._json({"ok": True, "lists": out, "ready": ok,
+                           "attachmentNote": dr_sharepoint.attachment_help()})
+
+    def _dr_sync_ep(self, u, body):
+        """Pull one day (or a short range) out of SharePoint into dr_reports / dr_photos.
+
+        What it returns is what it DID, per list — imported, skipped, and why. A sync that answers
+        only "ok" is a sync nobody can debug when a section comes out empty, and an empty section on
+        this report looks exactly like a quiet day on site.
+        """
+        blocked = self._dr_gate(u)
+        if blocked:
+            return blocked
+        con = db.get_collection_item("dr_contractors", str(body.get("contractorId") or ""))
+        if not con:
+            return self._err("Choose a contractor first.", 400)
+        if not (M365.get("clientSecret") or "").strip():
+            return self._err("Microsoft 365 is not configured on this server, so the SharePoint "
+                             "forms cannot be read.", 400)
+        dates = self._dr_sync_dates(body)
+        if not dates:
+            return self._err("Give a date to sync (or a from/to range of at most 31 days).", 400)
+        get = self._dr_graph_get()
+        lists = con.get("lists") or {}
+        manual = con.get("fieldMap") or {}
+        pulled, notes, refused = {}, [], []
+        for kind in dr_sharepoint.LIST_KINDS:
+            url = str(lists.get(kind) or "").strip()
+            if not url:
+                continue
+            try:
+                ref = dr_sharepoint.resolve_list(get, url)
+                cols = dr_sharepoint.list_columns(get, ref["site"], ref["list"])
+                auto = dr_sharepoint.automap(kind, cols, con.get("mgmtRoles"), con.get("workerTrades"))
+                merged = dr_sharepoint.merge_map(auto, manual.get(kind))
+                if merged["missing"]:
+                    # REFUSED, not imported blank. A progress list whose "Report Items" column we
+                    # could not find would otherwise import forty rows of empty descriptions and the
+                    # report would print forty empty lines as though that were the site's answer.
+                    refused.append({"kind": kind, "label": dr_sharepoint.LIST_KINDS[kind][0],
+                                    "missing": merged["missing"]})
+                    continue
+                items = dr_sharepoint.fetch_items(
+                    get, ref["site"], ref["list"], date_field=merged["map"].get("date"),
+                    since=dates[0], until=dates[-1])
+                pulled[kind] = [dr_sharepoint.map_row(kind, f, merged) for f in items]
+            except Exception as e:
+                refused.append({"kind": kind, "label": dr_sharepoint.LIST_KINDS[kind][0],
+                                "error": str(e)[:300]})
+        if not pulled and refused:
+            return self._json({"ok": False, "days": [], "refused": refused, "notes": [],
+                               "error": "Nothing could be read from SharePoint — see the list "
+                                        "problems below."})
+        done = []
+        for day in dates:
+            rep, photos, day_notes = dr_sharepoint.assemble(pulled, con, day)
+            rep = dr_sharepoint.split_counts(rep, con.get("mgmtRoles"), con.get("workerTrades"))
+            if not self._dr_has_content(rep, photos):
+                notes.append({"level": "info", "msg": "Nothing was submitted for %s." % day})
+                continue
+            done.append(self._dr_store(u, con, rep, photos, day))
+            notes.extend(dict(n, date=day) for n in day_notes)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Daily Report synced from SharePoint",
+            "target": "dr_contractors/" + str(con.get("id") or ""),
+            "detail": "%s · %d day(s) imported · %d list(s) refused"
+                      % (con.get("name") or "?", len(done), len(refused)),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "days": done, "refused": refused, "notes": notes,
+                           "lists": sorted(pulled)})
+
+    @staticmethod
+    def _dr_sync_dates(body):
+        one = daily_report.iso(body.get("date"))
+        if one:
+            return [one]
+        a, b = daily_report.to_date(body.get("from")), daily_report.to_date(body.get("to"))
+        if not (a and b) or b < a or (b - a).days > 30:
+            return []
+        return [(a + timedelta(days=i)).isoformat() for i in range((b - a).days + 1)]
+
+    @staticmethod
+    def _dr_has_content(rep, photos):
+        """Did SharePoint actually have anything for this day?
+
+        Without this a range sync writes a row for every date in the window, and the report screen
+        then offers thirty-one dates of which four have content — a date picker full of blank days
+        that look like days the site failed to report.
+        """
+        if photos:
+            return True
+        if any(str(v or "").strip() for v in (rep.get("weather") or {}).values()):
+            return True
+        if any((rep.get(k) or {}) for k in ("mgmt", "workers")):
+            return True
+        return any(rep.get(k) for k in ("progress", "plan", "equipment", "materials", "documents",
+                                        "defects", "inspections", "inspectionPlan", "safety",
+                                        "recommendations"))
+
+    def _dr_store(self, u, con, rep, photos, day):
+        """Write one day, replacing what a previous sync of the same day left behind.
+
+        REPLACE rather than append: re-syncing a corrected form must not leave yesterday's forty
+        progress rows sitting underneath today's thirty-eight. Only rows this sync owns are removed
+        — a photo somebody uploaded by hand in the portal has src "upload" and survives, because
+        deleting a person's own upload because a robot re-ran is not a sync, it is data loss.
+        """
+        cid = str(con.get("id") or "")
+        rid = "DR-%s-%s" % (cid, day)
+        prev = db.get_collection_item("dr_reports", rid) or {}
+        rep = dict(rep)
+        rep["id"] = rid
+        rep["projectId"] = con.get("projectId") or prev.get("projectId") or ""
+        rep["contractor"] = con.get("name") or ""
+        rep["syncedAt"] = self._utc_now()
+        rep["syncedBy"] = u.get("name") or ""
+        # Whoever created the row keeps it: the delete-ownership guard reads createdById, and a
+        # re-sync by a different person must not silently transfer the record to them.
+        rep["createdById"] = prev.get("createdById") or u.get("id") or ""
+        rep["owner"] = prev.get("owner") or u.get("name") or ""
+        db.put_collection_item("dr_reports", rep)
+        stale = [p for p in db.list_collection("dr_photos")
+                 if str(p.get("contractorId") or "") == cid
+                 and daily_report.iso(p.get("date")) == day
+                 and str(p.get("src") or "") == "sharepoint"]
+        for p in stale:
+            db.delete_collection_item("dr_photos", p.get("id"))
+        for i, p in enumerate(photos, start=1):
+            p = dict(p)
+            p["id"] = "DRP-%s-%s-%03d" % (cid, day, i)
+            p["reportId"] = rid
+            p["createdById"] = u.get("id") or ""
+            p["owner"] = u.get("name") or ""
+            db.put_collection_item("dr_photos", p)
+        return {"date": day, "reportId": rid, "photos": len(photos),
+                "replacedPhotos": len(stale)}
+
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_projects", "dr_contractors", "dr_reports", "dr_photos", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -10280,6 +10739,12 @@ class Handler(BaseHTTPRequestHandler):
                 "est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
                 "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_wbs": EST_MIN, "est_quote": EST_MIN, "est_revs": EST_MIN,
                 "est_risks": EST_MIN,
+                # The Daily Report is the site's own document: the engineer who fills the SharePoint
+                # form has to be able to read back what they submitted, and the foreman has to be
+                # able to read yesterday's. Stated at "staff" rather than omitted — an omission here
+                # reads as default-allow, which is the same answer arrived at by nobody deciding it.
+                "dr_projects": "staff", "dr_contractors": "staff",
+                "dr_reports": "staff", "dr_photos": "staff",
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
@@ -11464,7 +11929,7 @@ class Handler(BaseHTTPRequestHandler):
             # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
-        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
+        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if app and self._app_blocked(u, app):
             # Not being granted the HR APP still leaves your OWN records reachable — the same
             # carve-out READ_MIN makes below, for the same reason: Art. 13(1) entitles you to a copy
@@ -12397,7 +12862,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid record.", 400)
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
@@ -19067,7 +19532,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
@@ -20030,7 +20495,7 @@ class Handler(BaseHTTPRequestHandler):
                         "keep the record and both say it no longer applies."
                         % (_years, _why), 409)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("dr" if name.startswith("dr_") else ("hr" if name in self.HR_APP_COLLS else None))))))
         if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
@@ -20174,7 +20639,8 @@ class Handler(BaseHTTPRequestHandler):
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
             if (name in self.SELF_OWNED or name.startswith("crm_") or name == "pm_projects"
                     or name.startswith("eng_") or name.startswith("ahu_")
-                    or name.startswith("sales_") or name.startswith("est_")) and not mine:
+                    or name.startswith("sales_") or name.startswith("est_")
+                    or name.startswith("dr_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
         # A completed exit is the file you produce if a former employee disputes their settlement:
