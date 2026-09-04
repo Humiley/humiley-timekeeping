@@ -17450,6 +17450,12 @@ const _QA_SPECS = {
     { k: 'name', label: 'Report item' },
     { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
     { k: 'start', label: 'Start date', type: 'date' }, { k: 'finish', label: 'Finish date', type: 'date' },
+    // The date the work ACTUALLY finished. Blank is the normal state of a line still running: the
+    // Timeline then reads today against the two planned dates (On plan / On progress / Delay). A
+    // filled one IS the verdict — green when it landed on or before the target finish, red after.
+    // Editable rather than derived, because the site knows the date before the progress log does;
+    // a line the log already carried to 100% supplies it without anyone typing it (see _pdNorm).
+    { k: 'actualFinish', label: 'Actual finish', type: 'date' },
     // Quantity + unit is what turns a judgement into a measurement. Optional, because some lines
     // (mobilisation, testing, a permit) genuinely have no quantity and are judged.
     { k: 'qtyPlan', label: 'Scheduled quantity (optional)', type: 'number' },
@@ -26951,6 +26957,45 @@ function _schFlag(r, day) {
   if (v >= -10) return { k: 'slip', label: v.toFixed(0) + '%', hex: '#F59E0B' };
   return { k: 'behind', label: v.toFixed(0) + '%', hex: '#EF4444' };
 }
+/* ACTUAL FINISH — what the Timeline is asked when the question is DELIVERY rather than variance.
+   _schFlag above answers "how is it tracking against its planned curve"; this answers "is it done,
+   and was it on time". Two states:
+     * nothing recorded  -> where TODAY sits in the planned window: before the start is On plan,
+       inside it is On progress, past the finish is Delay;
+     * a date recorded   -> the verdict itself: green on or before the target finish, red after.
+   Two cases the rule as stated does not cover, and why they read the way they do:
+   a row carrying NEITHER planned date has nothing to be early or late against, so it prints a dash
+   rather than inventing "On progress" for work nobody scheduled; and a recorded date with no target
+   finish prints in plain text, because the date is a fact but "on time" is a claim with nothing to
+   support it. Dates are compared as YYYY-MM-DD strings — same basis as the rest of the kit, so a
+   finish and an actual finish on the SAME day is on time, not late. */
+function _schActual(r, day) {
+  /* Compared ZERO-PADDED, never raw. The register holds legacy shapes -- '2026-7-5' alongside
+     '2026-07-05' -- and a raw string compare puts '2026-7-5' AFTER '2026-07-10' (the '7' beats the
+     '0' at index five), so a line that finished five days early would print red. Same defect the
+     calendar shipped with. A shape this cannot read is not forced into a verdict: the date is still
+     shown, in plain text, because it is a fact even when it cannot be measured. */
+  const D = v => { const m = String(v || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+                   return m ? m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0') : ''; };
+  const raw = String(r.actual || '').trim(), a = D(raw), fin = D(r.finish), st = D(r.start), td = D(day);
+  if (raw) {
+    const hex = (a && fin) ? (a > fin ? '#EF4444' : '#00B060') : 'var(--text)';
+    return { txt: tkFmtDate(raw).slice(0, 6), hex: hex,
+             title: _t2('Actual finish', 'Ho\u00e0n th\u00e0nh th\u1ef1c t\u1ebf') + ': ' + tkFmtDate(raw) +
+                    (r.finish ? '  \u00b7  ' + _t2('Planned finish', 'K\u1ebf ho\u1ea1ch') + ': ' + tkFmtDate(r.finish) : '') };
+  }
+  if (!st && !fin)
+    return { txt: '\u2014', hex: 'var(--text-light)', title: _t2('No dates', 'Ch\u01b0a c\u00f3 ng\u00e0y') };
+  if (st && td && td < st)
+    return { txt: _t2('On plan', '\u0110\u00fang k\u1ebf ho\u1ea1ch'), hex: 'var(--text)',
+             title: _t2('Not started yet', 'Ch\u01b0a b\u1eaft \u0111\u1ea7u') };
+  if (fin && td && td > fin)
+    return { txt: _t2('Delay', 'Ch\u1eadm ti\u1ebfn \u0111\u1ed9'), hex: '#EF4444',
+             title: _t2('Past the planned finish, no actual finish recorded',
+                        'Qu\u00e1 ng\u00e0y k\u1ebft th\u00fac k\u1ebf ho\u1ea1ch, ch\u01b0a ghi ng\u00e0y ho\u00e0n th\u00e0nh') };
+  return { txt: _t2('On progress', '\u0110ang th\u1ef1c hi\u1ec7n'), hex: '#3168A8',
+           title: _t2('Inside the planned window', 'Trong th\u1eddi gian k\u1ebf ho\u1ea1ch') };
+}
 const _SCH_FILTERS = [['all', 'All'], ['behind', 'Behind'], ['slip', 'Slipping'], ['onplan', 'On plan'],
                       ['ahead', 'Ahead'], ['overdue', 'Overdue'], ['done', 'Done']];
 let _schFilt = { m: { q: '', k: 'all', from: '', to: '' }, d: { q: '', k: 'all', from: '', to: '' } };
@@ -27008,6 +27053,13 @@ function _schWho(who) {
 
 function _schTimeline(rows, o) {
   const LABW = _pdLabW(), NARROW = _pdSlim || LABW < 340;   // one decision; every offset below reads it
+  /* The delivery column's width, in three places that must agree: the header, the row cell and the
+     group-row spacer that stands in for it. Sized for the LONGEST label, which is Vietnamese, not
+     English: "\u0110ang th\u1ef1c hi\u1ec7n" measures 82px where "On progress" measures 62, and the cell is
+     right-aligned with no overflow rule, so an over-long label spilled LEFT across the Dur column.
+     A phone has already given up the who/start/finish/dur columns, and every pixel here is one the
+     name does not get, so it keeps the tighter width and leans on the ellipsis below. */
+  const AFW = NARROW ? 74 : 86;
   // Emitted, not measured: --labw is set on the card below and re-set by _schFitPlot from the pane.
   const LABV = 'var(--labw,' + LABW + 'px)';
   o = o || {};
@@ -27086,7 +27138,7 @@ function _schTimeline(rows, o) {
           '<span class="sch-c" style="width:52px;text-align:right">' + _t('Start') + '</span>' +
           '<span class="sch-c" style="width:52px;text-align:right">' + _t('Finish') + '</span>' +
           '<span class="sch-c" style="width:38px;text-align:right">' + _t('Dur') + '</span>') +
-        '<span style="width:62px;text-align:right">' + _t('Status') + '</span></div>' +
+        '<span style="width:' + AFW + 'px;text-align:right;white-space:normal;line-height:1.25">' + _t('Actual finish') + '</span></div>' +
       '<div style="flex:1;position:relative;height:46px">' +
         band(quarters, 22, 11, 700) +
         '<div style="position:absolute;top:22px;left:0;right:0;height:24px">' +
@@ -27124,7 +27176,7 @@ function _schTimeline(rows, o) {
   const cell = (v, w, extra, cls) => '<span class="' + (cls || '') + '" style="width:' + w + 'px;text-align:right;flex:none;font-size:10.5px;' +
     'font-variant-numeric:tabular-nums;color:var(--text-light);' + (extra || '') + '">' + v + '</span>';
   const lab = (html, indent, r) => {
-    const f = r ? _schFlag(r, day) : null;
+    const af = r ? _schActual(r, day) : null;
     return '<div style="width:' + LABV + ';flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
       'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:6px;' +
       'overflow:hidden;white-space:nowrap">' +
@@ -27134,9 +27186,10 @@ function _schTimeline(rows, o) {
              cell(r.start ? tkFmtDate(r.start).slice(0, 6) : '—', 52, '', 'sch-c') +
              cell(r.finish ? tkFmtDate(r.finish).slice(0, 6) : '—', 52, '', 'sch-c') +
              cell(dur(r), 38, '', 'sch-c')) +
-           cell(f.label, 62, 'color:' + f.hex + ';font-weight:700')
+           cell('<span title="' + _tkEscA(af.title) + '">' + af.txt + '</span>', AFW,
+                'color:' + af.hex + ';font-weight:700;overflow:hidden;text-overflow:ellipsis')
          : (NARROW ? '' : '<span class="sch-c" style="width:162px;flex:none"></span>') +
-           '<span style="width:62px;flex:none"></span>') + '</div>';
+           '<span style="width:' + AFW + 'px;flex:none"></span>') + '</div>';
   };
 
   const groups = []; rows.forEach(r => { if (groups.indexOf(r.group) < 0) groups.push(r.group); });
@@ -27394,7 +27447,7 @@ function _pmTaskNorm(pid, day) {
              name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || '') +
                    (d ? '  ·  ' + d.n + ' ' + _t('detail line(s)') : ''),
              start: t.start, finish: t.finish, w: dur, who: t.assignee || '', note: t.note || '',
-             doneOn: t.actualFinish || '',
+             doneOn: t.actualFinish || '', actual: t.actualFinish || '',
              // Name it plainly: this activity's percentage is not typed, it is what the site reported.
              _fed: d ? d.n : 0,
              // A parent's percentage is its children's, weighted. See _pmTaskRollup.
@@ -27507,6 +27560,11 @@ function _pdNorm(pid, rows, day) {
       name: (r.name || '') + (r.category ? '  ·  ' + r.category : ''),
       start: r.start, finish: r.finish, w: _pdWeight(r),
       who: (last && last.by) || '', note: r.note || '', doneOn: doneRow ? String(doneRow.d) : '',
+      // What the Actual finish column prints. A typed date wins; failing that, the day the progress
+      // log first reached 100% IS the actual finish, and printing "Delay" in red over a line the
+      // site reported complete would be a false statement, not a missing one. doneOn above is left
+      // alone: it feeds _schFlag's early/late verdict, which is only ever asked of a finished line.
+      actual: r.actualFinish || (doneRow ? String(doneRow.d) : ''),
       acc: _pdAcc(r, day), planned: _pdPlanned(r, day), click: "pdProgress('" + r.id + "')" };
   });
 }
