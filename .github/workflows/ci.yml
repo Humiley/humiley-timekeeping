@@ -287,6 +287,14 @@ jobs:
       - name: The library panels render, and say which kind of nothing they are showing
         run: node tests/library_docs_panel.js
 
+      # A blank department stopped being harmless the day the document bar was organised by one:
+      # that person now sees no documents at all. This panel's job is to tell HR who that reaches,
+      # and its danger is filling something in on its own — which department somebody works in is
+      # a fact no code can infer, and a wrong guess silently decides what they may read. The
+      # sharpest assertion here is the negative one: nothing is saved for a row nobody chose.
+      - name: The department-gap panel finds the gap and invents nothing
+        run: node tests/dept_gap_panel.js
+
       # The other two design gates check LOGIC and would pass on markup carrying an unclosed <div>
       # — which, in a card layout, swallows everything below it into the card. Nothing throws; the
       # page is just wrong from that point down, and no source-level test can see it. This runs a
