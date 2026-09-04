@@ -228,6 +228,28 @@ def session_user(token):
         _persist_sessions()
     emp = db.get_employee(s["emp_id"]) if s["emp_id"] else None
     if emp:
+        # Restore a protected super-admin HERE, on every request — not only when they sign in.
+        #
+        # The same three lines live in _auth_m365, and they run exactly once: at the moment a
+        # Microsoft sign-in happens. Sessions here are 30-day sliding and renew silently, so
+        # somebody demoted mid-session stayed demoted for as long as their session lived — up to a
+        # month — and the guarantee this list exists for ("a mistaken demotion can never lock them
+        # out") was only true for people who happened to sign in again afterwards. It cost the
+        # owner of this portal his own Payment Register: the account sat at `manager` with no
+        # department, so every scoped register answered with nothing.
+        #
+        # The row is re-read from the database on every request a few lines below, which is what
+        # makes a demotion take effect immediately; this makes the exemption take effect just as
+        # immediately. The write happens once — the next request finds level already admin and the
+        # condition is false.
+        if (emp.get("email") or "").lower() in Handler.ADMIN_EMAILS and (
+                emp.get("level") != "admin" or emp.get("role") != "manager"):
+            try:
+                db.update_employee(emp["id"], {"level": "admin", "role": "manager"})
+            except Exception:
+                pass                      # a failed write must not cost them the request
+            emp["level"] = "admin"
+            emp["role"] = "manager"
         # Deactivated (left/terminated) employees lose access IMMEDIATELY — a live session must not
         # survive being set Inactive. Protected super-admins are exempt so a mistaken deactivation
         # can never lock the whole company out.
