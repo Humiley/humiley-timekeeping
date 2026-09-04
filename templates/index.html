@@ -12885,9 +12885,30 @@ async function tkClaimSave() {
 /* Unified Approval Inbox — every pending action in one place. */
 async function tkRenderInbox() {
   const root = document.getElementById('inbox-root'); if (!root) return;
-  root.innerHTML = tkSkeleton();
+  /* Only skeleton an EMPTY panel. _armManagerPoll re-runs this every 30 seconds while the inbox is
+     open (60 on a phone), and this line used to blank the queue at the start of every one of those
+     runs. Any render slower than the poll interval could therefore never finish being displayed:
+     the next tick wiped it back to a skeleton and started again. The audit load below had a 30,000
+     ms timeout — the SAME number as the poll — so on a database where that read was slow the two
+     raced for ever and the screen showed shimmer bars permanently, with the pending approvals
+     behind them. A background refresh now leaves what is on screen alone until it has something to
+     replace it with. */
+  if (!root.innerHTML.trim()) root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
-  if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
+  /* The audit log is NOT awaited here, and that is the whole point of this function's shape.
+     It used to be: `if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }` — the
+     entire append-only, tamper-evident chain, every approval and signature and sign-in the company
+     has ever recorded, downloaded and parsed before a single pending request was drawn. Sixty rows
+     of it are then shown, on a tab that starts hidden.
+
+     Nothing about that failed loudly. tkLoadColl swallows its own errors and gives up after 30
+     seconds, so on a big enough log the inbox simply sat on its skeleton — the queue of things
+     waiting to be approved, invisible, behind a table nobody had asked to see. Measured: 11 KB at
+     500 rows, 111 KB at 5,000, 444 KB at 20,000, 1.33 MB and 459 ms of server time at 60,000, and
+     it only ever grows.
+
+     The queue paints as soon as the five registers it actually needs are in — 65 bytes between
+     them here — and the log loads when somebody opens its tab. */
   const me = TK.user && TK.user.id;
   // Direct-manager routing: a department manager only sees requests from their own reports;
   // HR / management / admin (exec oversight) see every team's requests.
@@ -12921,13 +12942,36 @@ async function tkRenderInbox() {
     sec('Payment Requests', payments.length, payRows) +
     sec('Recruitment Requisitions', reqs.length, reqRows) +
     sec('PADR Self-Assessments', padr.length, padrRows) + '</div>';
-  const audit = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
-  const auditHtml = '<div id="inbox-audit" style="display:none"><div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Activity Log</div><span style="font-size:11px;color:var(--text-light)">Who did what, when</span></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>' +
-    (audit.length ? audit.map(a => '<tr><td style="font-size:11px;white-space:nowrap;color:var(--text-light)">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</td><td style="font-weight:600">' + _crmEsc(a.actor || '') + '</td><td>' + _crmEsc(a.action || '') + '</td><td>' + _crmEsc(a.target || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + _crmEsc(a.detail || '') + '</td></tr>').join('') : tkEmptyRow(5, 'No activity yet', { icon: 'inbox' })) + '</tbody></table></div></div></div>';
+  const auditHtml = '<div id="inbox-audit" style="display:none"><div id="inbox-audit-body">' +
+    (_inboxAuditLoaded() ? _inboxAuditTable() : tkSkeleton()) + '</div></div>';
   root.innerHTML = kpis + '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkInboxTab(\'pending\',this)">Pending</button><button class="tab" onclick="tkInboxTab(\'audit\',this)">Activity Log</button></div>' + pendingHtml + auditHtml;
   const _pend = _inboxPendingIds(); _inboxMarkSeen(_pend); tkUpdateInboxBadge(_pend);   // viewing the inbox = seen → badge clears
 }
-function tkInboxTab(tab, el) { ['pending', 'audit'].forEach(t => { const p = document.getElementById('inbox-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#inbox-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+/* Loaded, as opposed to merely empty. `_HR.audit && _HR.audit.length` treats a company with no
+   activity yet as "not loaded" and re-fetches the whole chain on every single open — which is what
+   the old blocking line did, for ever, on the one database where the answer would come back fast. */
+function _inboxAuditLoaded() { return Array.isArray(_HR.audit); }
+function _inboxAuditTable() {
+  const audit = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
+  return '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + _t('Activity Log') + '</div><span style="font-size:11px;color:var(--text-light)">' + _t('Who did what, when') + '</span></div><div class="table-wrap"><table><thead><tr><th>' + _t('When') + '</th><th>' + _t('Who') + '</th><th>' + _t('Action') + '</th><th>' + _t('Target') + '</th><th>' + _t('Detail') + '</th></tr></thead><tbody>' +
+    (audit.length ? audit.map(a => '<tr><td style="font-size:11px;white-space:nowrap;color:var(--text-light)">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</td><td style="font-weight:600">' + _crmEsc(a.actor || '') + '</td><td>' + _crmEsc(a.action || '') + '</td><td>' + _crmEsc(a.target || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + _crmEsc(a.detail || '') + '</td></tr>').join('') : tkEmptyRow(5, 'No activity yet', { icon: 'inbox' })) + '</tbody></table></div></div>';
+}
+/* Fetched when the tab is opened, once. A failure must not leave the shimmer up for ever, so the
+   panel is filled whatever happened — tkLoadColl records the reason in _COLL_ERR and returns. */
+async function _inboxLoadAudit() {
+  const body = document.getElementById('inbox-audit-body'); if (!body) return;
+  if (!_inboxAuditLoaded()) {
+    try { await tkLoadColl('audit'); } catch (e) {}
+  }
+  const b2 = document.getElementById('inbox-audit-body'); if (!b2) return;   // tab left mid-load
+  b2.innerHTML = _inboxAuditLoaded()
+    ? _inboxAuditTable()
+    : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light)">' +
+      _crmEsc(((_COLL_ERR || {}).audit || {}).message ||
+              _t2('The activity log could not be loaded.', 'Không tải được nhật ký hoạt động.')) +
+      ' <button class="btn btn-ghost btn-sm" onclick="_inboxLoadAudit()">' + _t('Retry') + '</button></div>';
+}
+function tkInboxTab(tab, el) { ['pending', 'audit'].forEach(t => { const p = document.getElementById('inbox-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#inbox-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); if (tab === 'audit') { try { _inboxLoadAudit(); } catch (e) {} } }
 function tkInboxLeave(id, status) {
   const l = (_DEMO_LEAVE || []).find(x => x.id == id) || {};
   const emp = _hrEmp(l.emp_id) || {};
