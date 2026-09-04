@@ -428,6 +428,13 @@ jobs:
       - name: The login screen costs nothing and still looks like Humiley
         run: node tests/login_screen_costs_nothing.js
 
+      # Daily progress on the Master Schedule. _pmDailyLock decides whether the entry table offers an
+      # input; _pmTaskPctRollWalk decides whether the figure is used. They are separate functions and
+      # must agree — if the lock said "editable" where the roll-up reads children, the number a person
+      # filed would be accepted, stored, and silently never shown. This runs both over one tree.
+      - name: Master daily progress locks match the roll-up
+        run: node tests/master_daily_progress.js
+
       # The Approval Inbox showed shimmer bars and never the approvals behind them. Two faults met:
       # it awaited the WHOLE audit chain before drawing anything (30s timeout), and _armManagerPoll
       # re-ran it every 30s while blanking the panel to a skeleton first — the same number, so the

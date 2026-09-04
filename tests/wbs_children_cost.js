@@ -66,6 +66,10 @@ const API = new Function(
   'const _PD_COLL = "pm_detail";\n' +
   'const _HR = { pm_tasks: [], pm_detail: [], pm_deliverables: [], pm_costs: [] };\n' +
   'function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }\n' +
+  // leaves of the log helpers above: a master activity carries no quantity plan, and the day is
+  // fixed so a reading dated 'today' means the same thing on every run.
+  'function _pdQtyPlan() { return 0; }\n' +
+  'function _pmToday() { return "2026-09-04"; }\n' +
   'function _pmDateDiff(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }\n' +
   'function _pdTaskPct() { return null; }\n' +
   // Lifted with the state they read: an index in a module-level WeakMap, and a pass-scoped memo.
@@ -79,6 +83,12 @@ const API = new Function(
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pdWeight(', '_pdWeight') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  /* _pmTaskPctRollWalk asks _pmLeafPct what a leaf is worth — daily readings first, the typed
+     figure otherwise — so the harness has to lift it and the log helpers it leans on. */
+  take('function _pdReadPct(', '_pdReadPct') +
+  take('function _pdLog(', '_pdLog') +
+  take('function _pdAcc(', '_pdAcc') +
+  take('function _pmLeafPct(', '_pmLeafPct') +
   take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   '\nreturn { _pmWbsChildren, _pmTaskPctRoll, _pmMemoDrop };')();
 
