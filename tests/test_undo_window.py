@@ -20,8 +20,13 @@ The things that must remain impossible are the point of this file, not a footnot
 """
 import time
 
+import pytest
 import app
 import db
+
+# Every pm_ row below writes to project "P1" on a staff token, and pm_ writes are now scoped by
+# project membership — so the fixture states the membership these scenarios always assumed.
+pytestmark = pytest.mark.usefixtures("staff_on_p1")
 
 PDF = "data:application/pdf;base64,QQ=="
 SLIP = "data:application/pdf;base64,YmFuay1zbGlw"

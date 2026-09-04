@@ -10419,6 +10419,41 @@ class Handler(BaseHTTPRequestHandler):
                 ids.add(r.get("projectId"))
         return ids
 
+    def _pm_write_refusal(self, u, pid):
+        """Why this caller may not WRITE a row belonging to project `pid` — or None if they may.
+
+        Returns the SENTENCE, not a response: `_err` sends the reply and returns None, so a helper
+        that answered with `self._err(...)` would hand every caller a falsy value. `if refusal:
+        return ...` would then never fire, the 403 would go out, and the request would carry on and
+        write the row anyway — one request, two responses, and the guard reporting success while the
+        thing it forbids happens. That is not hypothetical: it is what the first version of this did,
+        and only an assertion about the STORED ROW caught it. A status code alone was green.
+
+        _coll_delete has said since the "a project record is not a personal record" fix that its
+        rule "is the same test _pm_visible_projects already applies to reading them", and that the
+        write path was the incoherent half: "_coll_update has NO ownership guard for pm_*, so any of
+        those same people could already blank the row's name, dates and progress." That sentence was
+        true, it was written down, and nothing acted on it. It is not a theoretical gap — a staff
+        account on ZERO projects can PATCH another project's schedule activity to 100% complete, and
+        because the endpoint is a blind full-document replace the same request drops whatever fields
+        it omits. Read scope stays as it was; this closes the WRITE half only.
+
+        Manager level and above act across the portfolio exactly as they read across it, and admin
+        with them — `_pm_visible_projects` answers None for every rank at or above manager, so they
+        need no special case here. An `if not admin` beside this would never decide anything, which
+        is worse than absent: it reads as the thing keeping admin working.
+
+        A row with NO projectId is allowed rather than refused. On delete an orphan is refused
+        because deleting it is irreversible and unattributable; on write an orphan belongs to no
+        project, appears in no project's scope and decides nothing, so refusing it would only break
+        whatever legitimately keeps cross-project rows.
+        """
+        vis = self._pm_visible_projects(u)
+        if vis is None or not pid or pid in vis:
+            return None
+        return ("That record belongs to a project you are not on. Ask its project manager, "
+                "or have yourself added to the Team.")
+
     def _pm_chat_summary(self, u):
         """Unread counts per project, and how many of them name you.
 
@@ -12476,6 +12511,13 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        # Same rule on the way in. Guarding only the update would leave the door open beside the
+        # one just shut: POST a new activity onto somebody else's programme and it is in their
+        # schedule, their roll-up and their earned value, authored by you.
+        if name.startswith("pm_") and name not in ("pm_projects", "pm_chat"):
+            _refuse = self._pm_write_refusal(u, str(item.get("projectId") or ""))
+            if _refuse:
+                return self._err(_refuse, 403)
         if name == "ahu_units":
             _err_fam = self._ahu_check_family(item)
             if _err_fam:
@@ -19470,6 +19512,25 @@ class Handler(BaseHTTPRequestHandler):
                     item["createdBy"] = existing.get("createdBy")
                 if existing.get("createdById") is not None:
                     item["createdById"] = existing.get("createdById")
+            # pm_projects keeps its own ownership rule, and pm_chat's guard below is the same
+            # test plus authorship — going through this one first would answer with the wrong
+            # sentence for a message.
+            if name not in ("pm_projects", "pm_chat"):
+                _was = str((existing or {}).get("projectId") or "")
+                _refuse = self._pm_write_refusal(u, _was) if existing else None
+                if _refuse:
+                    return self._err(_refuse, 403)
+                # And it may not be MOVED. projectId is what every scope in this module is decided
+                # on, so a PATCH that rewrites it is a PATCH that changes who may see and touch the
+                # row — including carrying it out of the asker's own reach, or dragging a foreign
+                # row into it. A PATCH against an id that does not exist yet lands here too, with
+                # _was empty: that is a create wearing an update's clothes and gets the same test.
+                _now = str(item.get("projectId") or _was)
+                if _now != _was:
+                    _refuse = self._pm_write_refusal(u, _now)
+                    if _refuse:
+                        return self._err("You cannot move this record into a project you are not "
+                                         "on. " + _refuse, 403)
             # A chat message is a statement somebody made. The ONLY thing an edit may change is the
             # words, and only the person who said them may change those.
             #

@@ -116,6 +116,14 @@ const ENV =
   take('function _pmWbsChildIndex(', '_pmWbsChildIndex') +
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  // _pmTaskPctRollWalk asks _pmLeafPct what a leaf is worth, and _pmLeafPct reads the activity's
+  // dated readings through _pdLog/_pdAcc/_pdReadPct. Lifted, not stubbed: the point of this file
+  // is that all three writers read ONE set of rows, and a stub would let them agree on a figure
+  // the export does not actually produce.
+  take('function _pmLeafPct(', '_pmLeafPct') +
+  take('function _pdLog(', '_pdLog') +
+  take('function _pdAcc(', '_pdAcc') +
+  take('function _pdReadPct(', '_pdReadPct') +
   take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   take('function _pmStatusFromPct(', '_pmStatusFromPct') +
   take('function _pmTaskStatus(', '_pmTaskStatus') +

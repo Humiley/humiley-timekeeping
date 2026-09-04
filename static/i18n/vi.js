@@ -4211,6 +4211,7 @@ window._VI = {
   "from sub-tasks": "từ công việc con",
   "No activities yet.": "Chưa có công việc nào.",
   "from Detail Schedule": "từ Tiến độ chi tiết",
+  "daily progress": "tiến độ hằng ngày",
   "Calculated — not entered here": "Được tính tự động — không nhập ở đây",
   "Enter the accumulated total for each activity. Leave a row unchanged and nothing is filed against it.": "Nhập tổng lũy kế cho từng công việc. Dòng nào giữ nguyên thì không ghi nhận gì.",
   "can be entered here; the rest are calculated.": "có thể nhập ở đây; phần còn lại được tính tự động.",

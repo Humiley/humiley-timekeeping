@@ -179,22 +179,36 @@ console.log('\nThe table only offers an input where a figure is the reporter\'s\
      'a parent absent from the list reads as a gap in the schedule');
 
   const save = take('pmDailyEntrySave');
+  /* The WRITING lives in _pdFileReadings now — one paced, 429-retrying writer shared with the
+     Detail Schedule's entry table, so the two cannot drift. Assertions about how a row is written
+     therefore belong to it, and assertions about what this function decides belong here. */
+  const writer = take('_pdFileReadings');
   ok('save reads only the editable inputs', /querySelectorAll\('\.pm-e'\)/.test(save));
-  ok('it files against pm_tasks', /\/api\/coll\/pm_tasks\//.test(save));
+  ok('it files against pm_tasks', /_pdFileReadings\('pm_tasks', jobs\)/.test(save));
+  ok('through an endpoint built from that collection', /'\/api\/coll\/' \+ coll \+ '\/' \+ j\.r\.id/.test(writer));
   ok('it keeps one reading per day', /filter\(e => String\(e\.d\) !== day\)/.test(save),
      'filing twice in a day must correct the day, not append a second reading to it');
   ok('an unchanged row files nothing',
      /String\(i\.value\)\.trim\(\) !== String\(i\.dataset\.was\)\.trim\(\)/.test(save));
-  ok('a failed row is named', /failed\.push\(\(r\.name \|\| r\.id\)/.test(save),
+  ok('a failed row is named', /failed\.push\(\(j\.r\.name \|\| j\.r\.id\)/.test(writer),
      '"3 of 5 saved" says something is wrong and nothing about which activity to go back to');
   ok('a partial save is a dialog, not a toast', /tkAlert\(\{ title: _t\('Some progress was not filed'\)/.test(save),
      'a green "Filed" over a partial save sends somebody home believing the report was complete');
   ok('and the filing is audited', /tkAudit\('Master progress filed'/.test(save));
-  /* The rows are updated in place and _pmLeafPct reads r.log on every call, so the screen only
-     needs re-rendering. Re-downloading pm_tasks after every daily report would be a full collection
-     fetch for figures the page can already recompute. */
-  ok('the screen re-renders without re-downloading the collection',
-     /_pmReload\(\);/.test(save) && !/tkLoadColl\('pm_tasks'/.test(save));
+  /* THIS ASSERTION USED TO CERTIFY SOMETHING FALSE. It read `!/tkLoadColl\('pm_tasks'/.test(save)`
+     and called that "re-renders without re-downloading the collection" — but the refetch was never
+     going to appear in this function's text. tkApi invalidates the cache of any collection it
+     writes to, _pmReload() runs pmTab('schedule'), and pmTab's need list includes pm_tasks, so
+     tkLoadColl refetches from a cold slot. The test was looking for the call in the wrong file and
+     reporting its absence as proof.
+
+     What is actually worth holding is that the reload happens ONCE per save click rather than once
+     per row — which is a property of where _pmReload sits, not of whether a string appears. */
+  ok('the screen is reloaded once, after the whole batch', /_pmReload\(\);/.test(save) &&
+     save.indexOf('_pmReload();') > save.indexOf('_pdFileReadings('),
+     'a reload inside the loop would re-download the collection once per activity');
+  ok('and the writer does not reload at all', !/_pmReload\(/.test(writer),
+     'the writer is shared; a reload inside it would fire for the Detail Schedule too');
 }
 
 // ══ 6. the button ══════════════════════════════════════════════════════════════════════════════

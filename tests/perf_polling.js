@@ -63,9 +63,18 @@ const line = (mark, what) => {
   return stmt + '\n';
 };
 
-// ══ 1. the attendance history hydrates once, not every 30 seconds ══════════════════════════════
+/* ══ 1. boot does not pull the whole attendance history at all ═════════════════════════════════
+   This section used to assert that tkBootstrap fetched the whole table exactly ONCE per account,
+   guarded by `let _attHydratedFor`. That guard is gone, and so is the fetch: the full history is
+   no longer part of signing in — _attEnsureHistory pulls it only when a screen actually needs an
+   older month, and tests/attendance_history_is_on_demand.js is where that behaviour is pinned.
+
+   The marker went stale, `take()` exited 2, and because this file is not registered in CI nobody
+   was told. It is asserted here as the CURRENT truth — boot fetches the window and nothing else,
+   on every tick — rather than deleted, because "the poll must not re-pull the big table" is still
+   the property worth holding, and holding it at zero is stronger than holding it at one. */
 async function hydrateOnce() {
-  console.log('\nThe whole attendance history is pulled once per account, not every poll tick\n');
+  console.log('\nBoot pulls a recent window of attendance, never the whole table\n');
   const calls = [];
   const API = new Function('calls',
     'let _DEMO_EMPLOYEES, _DEMO_ATTENDANCE, _DEMO_LEAVE, _DEMO_ZONES;\n' +
@@ -84,7 +93,6 @@ async function hydrateOnce() {
     'function _tkPaintUserAva(){} function _tkMergeAttendance(){}\n' +
     'function tkFillDeptSelects(){} function tkFillSchedSelects(){}\n' +
     'function tkLoadColl(){ return Promise.resolve([]); }\n' +
-    line('let _attHydratedFor', 'the hydrate guard') +
     take('async function tkBootstrap(', 'tkBootstrap') +
     '\nreturn { tkBootstrap: tkBootstrap, who: function (v) { TK.user = { id: v }; } };')(calls);
 
@@ -92,23 +100,21 @@ async function hydrateOnce() {
   const windowed = () => calls.filter(p => p.indexOf('/api/attendance?start=') === 0).length;
 
   await API.tkBootstrap();
-  ok('the first boot pulls the whole history once', full() === 1, 'got ' + full());
-  ok('and the recent window alongside it', windowed() === 1, 'got ' + windowed());
+  ok('the first boot pulls the recent window', windowed() === 1, 'got ' + windowed());
+  ok('and does NOT pull the whole history', full() === 0,
+     'got ' + full() + ' full-history fetches at boot. This is the single largest payload in the ' +
+     'portal and it grows with every workday of every employee; it belongs to the screens that ' +
+     'need an older month, not to signing in.');
 
   await API.tkBootstrap();          // the 30s poll tick
   await API.tkBootstrap();          // and the next one
-  ok('two more poll ticks do NOT pull it again', full() === 1,
-     'got ' + full() + ' full-history fetches. This is the single largest repeated payload in ' +
-     'the portal and it grows with every workday of every employee — unguarded it was re-fetched ' +
-     'and re-parsed every 30s for as long as a manager left the tab open.');
+  ok('two more poll ticks still do not', full() === 0, 'got ' + full());
   ok('while the recent window IS re-pulled every tick — that is where new punches land',
      windowed() === 3, 'got ' + windowed());
 
   API.who('u2');                    // the Admin view switcher changes identity without reloading
   await API.tkBootstrap();
-  ok('a different account hydrates its own history', full() === 2,
-     'attendance is scoped per user, so a bare boolean would leave the staff workspace believing ' +
-     "the admin's history had already been fetched");
+  ok('and switching account does not reintroduce it', full() === 0, 'got ' + full());
 }
 
 // ══ 2. a collection read that never answers fails, instead of hanging on a skeleton ════════════
