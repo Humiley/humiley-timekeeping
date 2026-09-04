@@ -653,22 +653,22 @@ select.form-control{cursor:pointer}
 .detail-cell span { font-size:14px;font-weight:700;color:var(--navy); }
 
 /* ── LOGIN OVERLAY ── */
-#login-overlay{position:fixed;inset:0;display:flex;z-index:9999;transition:opacity .45s ease;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:radial-gradient(1100px 780px at 78% 10%,rgba(0,176,96,.16),transparent 60%),radial-gradient(900px 700px at 10% 92%,rgba(32,80,144,.38),transparent 64%),linear-gradient(158deg,#143059 0%,#0d1c39 54%,#08132a 100%)}
-/* readability scrim so the sign-in panel stays legible over any photo */
-#login-overlay::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,rgba(6,15,34,.14) 0%,rgba(6,15,34,0) 32%,rgba(6,15,34,.30) 100%)}
+#login-overlay{position:fixed;inset:0;display:flex;z-index:9999;transition:opacity .45s ease;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:#fff}
+/* No scrim: it existed to hold white text off a photograph, and over a white ground it is
+   just a grey wash across the page. */
 #login-overlay.fade-out{opacity:0;pointer-events:none}
 /* Shown again. It was hidden because the background photograph carried the Humiley logo and
    tagline itself — and the photograph is gone, so without this the sign-in screen had no brand
    mark on it at all. The file was being downloaded the whole time it was hidden. */
 #login-main-logo{height:64px;width:auto;max-width:260px;display:block;margin:0 auto 26px}
-.login-card{position:relative;z-index:2;margin:auto;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px;padding:26px 30px 22px;text-align:center;background:rgba(255,255,255,.14);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25);border:1px solid rgba(255,255,255,.32);border-radius:20px;box-shadow:0 24px 70px rgba(4,12,30,.5)}
+.login-card{position:relative;z-index:2;margin:auto;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px;padding:26px 30px 22px;text-align:center;background:#fff;border:1px solid #E4E9F0;border-radius:20px;box-shadow:0 10px 40px rgba(16,40,80,.10)}
 .login-logo{height:56px;width:auto;max-width:200px;margin:0 auto 20px;display:block}
 /* Navy with a white halo was legible over a bright photograph and is navy-on-navy without one.
    The card is dark, so the title is light — and the halo goes, because a glow exists to lift
    text off a busy image and there is no longer a busy image. */
-.login-title{font-size:clamp(19px,4.6vw,23px);font-weight:700;color:#EAF0F8;margin-bottom:8px;white-space:normal;letter-spacing:-.2px}
-.login-sub{font-size:13px;color:rgba(255,255,255,.92);margin-bottom:26px;line-height:1.55;text-shadow:0 1px 6px rgba(0,0,0,.35)}
-.login-sub span{font-size:12px;color:rgba(255,255,255,.75) !important}
+.login-title{font-size:clamp(19px,4.6vw,23px);font-weight:700;color:var(--navy);margin-bottom:8px;white-space:normal;letter-spacing:-.2px}
+.login-sub{font-size:13px;color:#3F4854;margin-bottom:26px;line-height:1.55}
+.login-sub span{font-size:12px;color:#6B7380 !important}
 .login-perm-note{font-size:12px;color:#9CA3AF;margin-top:16px;line-height:1.5}
 /* ── APP FOOTER ── */
 /* ── LOGIN ROLE-STEP (demo / post-auth role picker) ── */
@@ -682,8 +682,8 @@ select.form-control{cursor:pointer}
 .lrs-text{flex:1}
 .lrs-title{font-size:14px;font-weight:700;display:block}
 .lrs-sub{font-size:11px;font-weight:400;color:var(--text-light);display:block;margin-top:2px}
-.login-ms-btn{width:100%;padding:15px;border-radius:12px;border:2px solid #fff;background:transparent;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;gap:12px;transition:all .18s;box-shadow:none;text-shadow:0 1px 4px rgba(0,0,0,.3)}
-.login-ms-btn:hover{background:rgba(255,255,255,.22)}
+.login-ms-btn{width:100%;padding:15px;border-radius:12px;border:2px solid var(--navy);background:var(--navy);cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;gap:12px;transition:all .18s;box-shadow:0 2px 10px rgba(32,80,144,.22)}
+.login-ms-btn:hover{background:#1A4279;border-color:#1A4279}
 
 /* ── ROLE-BASED SIDEBAR ITEMS ── */
 .nav-item[data-roles]{transition:opacity .2s}
@@ -1226,10 +1226,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="login-card">
 
     <!-- ── Humiley 2-colour brand logo (Navy on white card) ── -->
-    <!-- The WHITE lock-up: the sign-in card is dark navy, and portal-logo-login.png is the navy
-         one drawn for a white card — it was invisible here the moment the photo went. It is
-         also 20,667 B against 25,895. -->
-    <img src="/static/brand/Humiley_Logo_White.png"
+    <!-- The original navy lock-up. It is the one drawn FOR a white card, which is what this is
+         again — the white version was only ever here because the card was dark. -->
+    <img src="/static/brand/portal-logo-login.png"
          alt="Humiley Engineering &amp; Solutions"
          id="login-main-logo">
 
@@ -1248,7 +1247,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </svg>
       Sign in with Microsoft 365
     </button>
-    <div style="margin-top:18px;font-size:12px;color:rgba(255,255,255,.8)"><a href="/privacy" target="_blank" rel="noopener" style="color:rgba(255,255,255,.85);text-decoration:underline">Privacy Policy</a></div>
+    <div style="margin-top:18px;font-size:12px;color:#6B7380"><a href="/privacy" target="_blank" rel="noopener" style="color:#205090;text-decoration:underline">Privacy Policy</a></div>
 
 
     <!-- ── Role-step panel (shown after simulated MS365 auth in demo) ── -->
