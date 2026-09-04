@@ -27375,7 +27375,11 @@ function _pmLvlBar(deepest, shown, total) {
       ';color:' + (on ? '#fff' : 'var(--text-light)') + ';border-radius:7px;padding:3px 9px;font-weight:600;' +
       'font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">' + label + '</button>';
   };
-  let out = '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">' + _t('Levels') + '</span>';
+  /* _t2, not _t: "Levels" is a bare generic word, and the DOM-walk translator matches on TEXT, so a
+     dictionary entry for it would rewrite the word everywhere it appears in the app. Carrying the
+     Vietnamese inline keeps the rewrite to this one label. */
+  let out = '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">' +
+    _t2('Levels', 'C\u1ea5p WBS') + '</span>';
   for (let n = 1; n <= deepest; n++)
     out += chip(n, 'L' + n, _t2('Show level ' + n + ' and above', 'Hi\u1ec3n c\u1ea5p ' + n + ' tr\u1edf l\u00ean'));
   out += chip(0, _t('All'), _t2('Show every level', 'Hi\u1ec3n t\u1ea5t c\u1ea3 c\u00e1c c\u1ea5p'));
