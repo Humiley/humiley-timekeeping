@@ -6356,6 +6356,8 @@ window._VI = {
   'A pin is placed — click the map (or drag the pin) to move it to your location, then Save.': 'Đã đặt ghim — bấm vào bản đồ (hoặc kéo ghim) để chuyển tới vị trí của bạn, rồi bấm Lưu.',
   'Searching for “{0}”…': 'Đang tìm “{0}”…',
   /* ── Our Library / Company Wiki / Knowledge Hub ── */
+  'No department documents for your account yet': 'Tài khoản của bạn chưa có tài liệu phòng ban',
+  'Documents here are organised by department, and your employee record does not name one. Ask HR to set your department, and this page will show it.': 'Tài liệu ở đây được sắp xếp theo phòng ban, và hồ sơ nhân viên của bạn chưa ghi phòng ban nào. Hãy đề nghị Nhân sự cập nhật phòng ban, trang này sẽ hiển thị ngay.',
   'List view': 'Dạng danh sách',
   'Grid view': 'Dạng lưới',
   'complete': 'hoàn thành',
