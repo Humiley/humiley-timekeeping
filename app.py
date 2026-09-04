@@ -11449,6 +11449,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "items": mine})
             return self._err("Access restricted to %s level or above." % need, 403)
         items = db.list_collection(name)
+        # How many rows exist BEFORE any scoping, so the caller can be told the difference between
+        # "there is nothing here" and "there is nothing here THAT YOU CAN SEE". The payment register
+        # printed "No payment requests yet — click New Payment Request" at a Managing Director whose
+        # account sat at manager level with no department: every row was still in the database, and
+        # the screen said the company had never raised a payment. Only a count is kept, and only to
+        # decide a yes/no — no row, field or figure from outside the caller's scope goes back.
+        _unscoped = len(items)
         lvl = self._caller_level(u)
         if name in ("decisions", "hrletters"):
             items = self._issued_doc_lite(items)
@@ -11621,7 +11628,9 @@ class Handler(BaseHTTPRequestHandler):
         # carries it (once, for the email). Stops a requester from reading their own token and
         # self-approving via the unauthenticated /capprove link.
         items = [{k: v for k, v in it.items() if k != "token"} for it in items]
-        return self._json({"items": items})
+        # Only when the answer is empty AND it was not empty before scoping. Anything wider would be
+        # telling a caller about records they have no business knowing exist.
+        return self._json({"items": items, "scoped": bool(_unscoped and not items)})
 
     @staticmethod
     def _issued_doc_lite(rows):

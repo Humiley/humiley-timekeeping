@@ -413,6 +413,13 @@ jobs:
       - name: The boot requests are issued in the right order
         run: node tests/boot_request_order.js
 
+      # The Approval Inbox showed shimmer bars and never the approvals behind them. Two faults met:
+      # it awaited the WHOLE audit chain before drawing anything (30s timeout), and _armManagerPoll
+      # re-ran it every 30s while blanking the panel to a skeleton first — the same number, so the
+      # render could never win. Either alone is slow; together they are a screen that never loads.
+      - name: The Approval Inbox draws before the audit log
+        run: node tests/inbox_renders_before_the_audit_log.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the
