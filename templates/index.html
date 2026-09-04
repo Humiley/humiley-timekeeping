@@ -40262,7 +40262,7 @@ function _libTab(hub, dept) {
   st.tab = dept || '';
   st.crumbs = []; st.drive = null; st.baseRef = null; st.rel = ''; st.found = null;
   _crmLF['lib-' + hub + '-f'] = '';
-  _libSpList(hub, true);
+  return _libSpList(hub, true);      // returned so a caller can await the listing; onclick ignores it
 }
 /* The tab to open on arrival: the reader's OWN department when they have one and may see it,
    otherwise the first they are allowed. Their own first is the point — for most of the company
@@ -40484,22 +40484,58 @@ async function _libGraphPage(url, token, st) {
    separate action with its own wording: the box above the list filters what is in front of
    you, and a filter that silently reached across folders would make an empty folder look
    full. */
+/* WHICH FOLDER A SEARCH LOOKS IN.
+
+   This library is deliberately one folder per department, and the search ignored that entirely:
+   every query went to the drive root, so a site engineer looking for "checklist" inside
+   Engineering got hits from Sales, HR and the Board mixed in, ranked by nothing they could see.
+   In a navigation model built around departments that is the wrong default.
+
+   So the default is the folder you are standing in — which, at the top of a department tab, is
+   that department — and the whole library is one choice away. The heading says which of the two
+   it actually used, because a result list that does not state its own scope is a list you cannot
+   act on: three hits could mean "three in Engineering" or "three in the entire company". */
+function _libSearchScope(hub) {
+  const st = _libState(hub);
+  const wide = String(_crmLF['lib-' + hub + '-scope'] || '') === 'The whole library';
+  const here = st.crumbs.length ? st.crumbs[st.crumbs.length - 1] : null;
+  /* No crumb means nothing has resolved to a folder yet, and there is no id to search inside —
+     the whole library is then the only address that exists, not a preference. */
+  return (!wide && here && here.id) ? here : null;
+}
+
+/* Changing the scope while results are on screen re-runs them. Anything else would leave a list
+   headed "in this folder" that was fetched from somewhere else. */
+function _libRescope(hub) { if (_libState(hub).found) _libSpSearch(hub); }
+function _libScope_wiki() { _libRescope('wiki'); }
+function _libScope_knowledge() { _libRescope('knowledge'); }
+
 async function _libSpSearch(hub) {
   const st = _libState(hub);
   const gen = ++st.gen;                 // a slow search must not land on a folder the reader left
   const q = String(_crmLF['lib-' + hub + '-q'] || '').trim();
   if (!q) { st.found = null; _libPaintDocs(hub); return; }
   if (!st.drive) { await _libSpList(hub, true); if (!st.drive) return; }
+  /* THE FOLDER FILTER IS CLEARED BEFORE THE SEARCH RUNS. It was written to narrow the folder in
+     front of you; left standing over a set of results from elsewhere it silently removes hits the
+     reader never saw and cannot account for. _libTab already does exactly this when a department
+     changes, for the same reason. The period goes with it. */
+  _crmLF['lib-' + hub + '-f'] = '';
+  _crmLF['lib-' + hub + '-period'] = '';
+  const inFolder = _libSearchScope(hub);
   st.loading = true; st.error = '';
   _libPaintDocs(hub);
   try {
     const token = await _libToken();
+    const base = inFolder
+      ? _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(inFolder.id) + '/search'
+      : _GRAPH + '/drives/' + st.drive + '/root/search';
     const rows = await _libGraphPage(
-      _GRAPH + '/drives/' + st.drive + "/root/search(q='" + encodeURIComponent(q.replace(/'/g, "''")) + "')" +
+      base + "(q='" + encodeURIComponent(q.replace(/'/g, "''")) + "')" +
       '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime,parentReference',
       token, st);
     if (gen !== st.gen) return;
-    st.found = { q: q, rows: rows, partial: !!st.partial };
+    st.found = { q: q, rows: rows, partial: !!st.partial, scope: inFolder ? inFolder.name : '' };
   } catch (e) {
     if (gen !== st.gen) return;
     st.found = null; st.error = String((e && e.message) || e);
@@ -40510,10 +40546,25 @@ async function _libSpSearch(hub) {
   _libPaintDocs(hub);
 }
 
+/* A SEARCH HIT CAN LIVE ANYWHERE, so opening its folder cannot just push a crumb.
+
+   Pushing would write a trail that names a path which does not exist — "Engineering / Drawings"
+   for a folder that is actually Engineering/2026/Project-14/Drawings, or worse, sits under a
+   different department entirely when the search was library-wide. Every button in that trail
+   would then be a lie about where it goes.
+
+   The department root IS real and IS reachable, so it is kept; the levels in between are replaced
+   by a non-clickable ellipsis, which says "there is more here than is shown" instead of naming
+   rungs that were never climbed. No extra Graph call. */
 function _libSpEnter(hub, id, name) {
   const st = _libState(hub);
-  st.crumbs.push({ id: id, name: name });
-  _libSpList(hub, true);
+  if (st.found) {
+    const root = st.tab && st.crumbs.length ? st.crumbs[0] : null;
+    st.crumbs = root ? [root, { id: id, name: name, jumped: true }] : [{ id: id, name: name }];
+  } else {
+    st.crumbs.push({ id: id, name: name });
+  }
+  return _libSpList(hub, true);
 }
 /* -1 = back to the configured root. */
 function _libSpCrumb(hub, i) {
@@ -40751,7 +40802,12 @@ function _libPaintDocs(hub) {
     _crmEsc(inDept ? st.tab : _t('Library root')) + '</button>' +
     shown.map(function (c, i) {
       const at = inDept ? i + 1 : i;
-      return '<span class="lib-crumb-sep">/</span><button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',' + at + ')">' + _crmEsc(c.name) + '</button>';
+      /* `jumped` marks a folder reached from a search result rather than by walking into it. The
+         ellipsis is deliberately NOT a button: nothing here knows what those folders are called,
+         and a control that cannot go anywhere is worse than an honest gap. */
+      return '<span class="lib-crumb-sep">/</span>' +
+        (c.jumped ? '<span class="lib-crumb-sep" title="' + _libAttr(_t('Folders between here and the top are not shown')) + '">…</span><span class="lib-crumb-sep">/</span>' : '') +
+        '<button type="button" class="lib-crumb" onclick="_libSpCrumb(\'' + hub + '\',' + at + ')">' + _crmEsc(c.name) + '</button>';
     }).join('') + '</div>';
   const bar = _crmFiltBar(
     _crmFiltSearch('lib-' + hub + '-f', _t('Filter this folder…'), fn) +
@@ -40762,8 +40818,11 @@ function _libPaintDocs(hub) {
                 ['Name (Z–A)', 'Newest first', 'Oldest first', 'Largest first'], fn) +
     _crmFiltPeriod('lib-' + hub + '-period', fn) +
     '<span style="flex:1 0 auto"></span>' +
-    '<input id="lib-' + hub + '-q" type="search" class="form-control" style="width:auto;min-width:160px;font-size:12px" placeholder="' +
-      _tkEscA(_t('Search the whole library')) + '" aria-label="' + _tkEscA(_t('Search the whole library')) + '" value="' + _tkEscA(_crmLF['lib-' + hub + '-q'] || '') +
+    /* The scope sits BESIDE the box rather than inside the button, so the reader can see what a
+       search is about to do before pressing it rather than after. */
+    _crmFiltSel('lib-' + hub + '-scope', 'This folder', ['The whole library'], '_libScope_' + hub) +
+    '<input id="lib-' + hub + '-q" type="search" class="form-control" style="width:auto;min-width:150px;font-size:12px" placeholder="' +
+      _tkEscA(_t('Search files…')) + '" aria-label="' + _tkEscA(_t('Search files…')) + '" value="' + _tkEscA(_crmLF['lib-' + hub + '-q'] || '') +
       '" oninput="_crmLF[\'lib-' + hub + '-q\']=this.value" onkeydown="if(event.key===\'Enter\')_libSpSearch(\'' + hub + '\')">' +
     '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="_libSpSearch(\'' + hub + '\')">' + _t('Search') + '</button>');
   const canWrite = _libMayWrite() && !st.error && !!st.drive;
@@ -40828,7 +40887,9 @@ function _libBodyHtml(hub) {
   const shown = list.slice(0, st.shown || _LIB_PAGE);
   const head = st.found
     ? '<div class="lib-found">' +
-      _crmEsc(_t('Results across the whole library') + ': “' + st.found.q + '” — ' + list.length + ' ') + _t(list.length === 1 ? 'item' : 'items') +
+      _crmEsc((st.found.scope ? _t('Results in') + ' ' + st.found.scope
+                              : _t('Results across the whole library')) +
+              ': “' + st.found.q + '” — ' + list.length + ' ') + _t(list.length === 1 ? 'item' : 'items') +
       (st.found.partial ? ' <b>' + _t('and more — narrow the search') + '</b>' : '') +
       ' <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpCrumb(\'' + hub + '\',' + (st.crumbs.length - 1) + ')">' +
       _t('Back to the folder') + '</button></div>'
