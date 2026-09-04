@@ -421,6 +421,15 @@ jobs:
       - name: The boot requests are issued in the right order
         run: node tests/boot_request_order.js
 
+      # Chart.js was a <script defer> in the head: 60 KB on the wire and 200 KB parsed on every
+      # first visit, before sign-in, for a login screen with no chart on it. Making it lazy is the
+      # easy half — roughly twenty chart builders guard with `typeof Chart === 'undefined'` and
+      # return SILENTLY, so the failure mode of a careless version is blank canvases and an empty
+      # console. This pins the fetch off the boot path AND the three things that keep charts
+      # appearing: the post-auth kick, _mkChart's own retry, and a failed load that settles.
+      - name: Chart.js is fetched when a chart is wanted, not at boot
+        run: node tests/chart_is_lazy.js
+
       # The sign-in screen no longer downloads a photograph. The risk is not the photo coming back —
       # it is that the logo was hidden BECAUSE the photo carried the branding, so removing the photo
       # silently removed the brand mark and left a title coloured for a bright image. A fast screen
