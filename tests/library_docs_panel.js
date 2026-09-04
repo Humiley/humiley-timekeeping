@@ -415,14 +415,28 @@ ok('only sharepoint.com is accepted as a library host',
   const names = () => grab('lib-row-name');
   const tabs = () => grab('tab(?: active)?');
 
+  /* There is no General tab. Every document reaches a reader through a department, and files
+     left loose at the root are not shown at all — untouched in SharePoint, simply not presented
+     as a place. The risk in removing it is landing somebody nowhere, so what the bar opens ON
+     matters as much as what it contains. */
   api._libTab('wiki', '');
   await new Promise(r => setTimeout(r, 0));
-  ok('the bar is General plus every real department',
-    tabs().join('|') === 'General|Engineering|Factory|Sales & Tender', tabs().join('|'));
-  ok('General lists the company-wide documents', names().indexOf('Employee Handbook.pdf') >= 0);
-  ok('...and a folder that is NOT a department stays on General', names().indexOf('Company Policies') >= 0);
-  ok('...but a department folder is not listed twice — it has its own tab',
-    names().indexOf('Engineering') < 0, names().join('|'));
+  ok('the bar is one tab per department, with no General',
+    tabs().join('|') === 'Engineering|Factory|Sales & Tender', tabs().join('|'));
+  ok('the root of the library is never listed',
+    names().indexOf('Employee Handbook.pdf') < 0 && names().indexOf('Company Policies') < 0, names().join('|'));
+  ok('an unset tab lands on a department rather than nowhere',
+    api._libState('wiki').tab === 'Engineering', String(api._libState('wiki').tab));
+
+  /* Whose department it lands on is the point: for most of the company the documents they came
+     for are their own, and landing anywhere else makes them choose before they can read. */
+  api.setMyDept('Factory');
+  api._libState('wiki').tab = '';
+  api._libTab('wiki', '');
+  await new Promise(r => setTimeout(r, 0));
+  ok('...and specifically on the reader\'s OWN department when they have one',
+    api._libState('wiki').tab === 'Factory', String(api._libState('wiki').tab));
+  api.setMyDept('');
 
   api._libTab('wiki', 'Engineering');
   await new Promise(r => setTimeout(r, 0));
@@ -497,20 +511,37 @@ ok('only sharepoint.com is accepted as a library host',
   ok('and a department that is not offered cannot be opened anyway',
     api._libState('wiki').tab === before, String(api._libState('wiki').tab));
 
-  /* General hides EVERY department's folder, not just the ones on this person's bar — otherwise
-     the Board folder reappears underneath the bar it was taken off. */
+  /* With no General tab there is no way to reach the root at all, which is what makes the Board
+     folder unreachable rather than merely unlisted. The old design had to filter it out of
+     General by hand; removing the tab removes the whole class of leak — but only if nothing
+     still routes there, which is what this checks. */
   api.setDrive({ DRV: { root: [
     { id: 'FB', name: 'Board Management (BM)', folder: { childCount: 2 }, webUrl: 'https://a/b' },
     { id: 'FE', name: 'Engineering', folder: { childCount: 2 }, webUrl: 'https://a/e' },
     { id: 'R1', name: 'Handbook.pdf', file: {}, size: 10, webUrl: 'https://a/h' }
-  ] } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+  ], FE: [{ id: 'E9', name: 'Spec.pdf', file: {}, size: 10, webUrl: 'https://a/e9' }] } },
+    () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+  api.setLevel('manager'); api.setMyDept('Engineering');
+  api._libState('wiki').tab = '';
   api._libTab('wiki', '');
   await new Promise(r => setTimeout(r, 0));
-  ok('General shows the company files', names().indexOf('Handbook.pdf') >= 0, names().join('|'));
-  ok('...and hides the Board folder from someone who has no Board tab',
-    names().indexOf('Board Management (BM)') < 0, names().join('|'));
-  ok('...and hides a department folder they cannot open either',
-    names().indexOf('Engineering') < 0, names().join('|'));
+  ok('an empty tab request lands in a department, never at the root',
+    api._libState('wiki').tab === 'Engineering' && names().join('|') === 'Spec.pdf', names().join('|'));
+  ok('...so the loose root files are not on screen', names().indexOf('Handbook.pdf') < 0, names().join('|'));
+  ok('...and neither is the Board folder', names().indexOf('Board Management (BM)') < 0, names().join('|'));
+
+  /* Nobody's department, and nothing they may see: the honest answer is about the ACCOUNT, not
+     about the library — "this folder is empty" would be a claim about the company's documents. */
+  api.setLevel('staff'); api.setMyDept('');
+  api._libState('wiki').tab = '';
+  api._libTab('wiki', '');
+  await new Promise(r => setTimeout(r, 0));
+  ok('an account with no department is told that, not shown an empty folder',
+    /No department documents for your account yet/.test(el.innerHTML) && !/This folder is empty/.test(el.innerHTML),
+    el.innerHTML.slice(el.innerHTML.indexOf('lib-note'), el.innerHTML.indexOf('lib-note') + 260));
+  ok('...and is pointed at HR, who can fix it', /Ask HR to set your department/.test(el.innerHTML));
+  ok('...and gets no tab bar to choose from', !/class="tabs"/.test(el.innerHTML));
+  api.setLevel('management');
 
   /* ── the token path that broke in production ──────────────────────────────────
      Two real errors, both from the same cause: the silent renewal is blocked by Safari's
@@ -537,15 +568,20 @@ ok('only sharepoint.com is accepted as a library host',
      one gains a filter the other lacks, and the count above them agrees with neither. */
   api.setSilentOk(true);
   api.setLevel('management'); api.setMyDept('');
-  api.setDepts([]); api.setPortal({ deptTabs: [], deptDocs: [] });
-  api.setDrive({ DRV: { root: [
-    { id: 'F1', name: 'Policies', folder: { childCount: 4 }, webUrl: 'https://a/p', lastModifiedDateTime: '2026-08-01T09:00:00Z' },
-    { id: 'D1', name: 'Employee Handbook.pdf', file: {}, size: 2411724, webUrl: 'https://a/h.pdf', lastModifiedDateTime: '2026-07-15T09:00:00Z' },
-    { id: 'D2', name: 'Leave Form.docx', file: {}, size: 51200, webUrl: 'https://a/l.docx', lastModifiedDateTime: '2026-07-20T09:00:00Z' }
-  ] } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+  api.setDepts(['Engineering']); api.setPortal({ deptTabs: [], deptDocs: [] });
+  /* Inside a DEPARTMENT, not at the root — there is no root view any more, and a fixture that
+     still used one would be testing a screen nobody can reach. */
+  api.setDrive({ DRV: {
+    root: [{ id: 'FE', name: 'Engineering', folder: { childCount: 3 }, webUrl: 'https://a/e' }],
+    FE: [
+      { id: 'F1', name: 'Policies', folder: { childCount: 4 }, webUrl: 'https://a/p', lastModifiedDateTime: '2026-08-01T09:00:00Z' },
+      { id: 'D1', name: 'Employee Handbook.pdf', file: {}, size: 2411724, webUrl: 'https://a/h.pdf', lastModifiedDateTime: '2026-07-15T09:00:00Z' },
+      { id: 'D2', name: 'Leave Form.docx', file: {}, size: 51200, webUrl: 'https://a/l.docx', lastModifiedDateTime: '2026-07-20T09:00:00Z' }
+    ]
+  } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
 
   api._libSetView('wiki', 'list');
-  api._libTab('wiki', '');
+  api._libTab('wiki', 'Engineering');
   await new Promise(r => setTimeout(r, 0));
   const listNames = names();
   ok('the list view still lists everything', listNames.length === 3, listNames.join('|'));
@@ -651,8 +687,12 @@ ok('only sharepoint.com is accepted as a library host',
   api._libState('wiki').tab = '';
   api._libResumeAfterReconnect();
   await new Promise(r => setTimeout(r, 0));
-  ok('a remembered department the reader may no longer open drops back to General',
-    api._libState('wiki').tab === '', String(api._libState('wiki').tab));
+  /* It used to drop to General. There is no General now, so it must drop to a department this
+     reader MAY open — landing on the Board tab would be the bug, and landing nowhere would be a
+     different one. */
+  ok('a remembered department the reader may no longer open drops to one they can',
+    api._libState('wiki').tab !== 'Board Management (BM)' && api._libDeptAllowed(api._libState('wiki').tab),
+    String(api._libState('wiki').tab));
 
   api.setPortal({ library: [{ label: 'Wiki', url: 'view:wiki', level: 'admin' }] });
   api._libState('wiki').tab = '';

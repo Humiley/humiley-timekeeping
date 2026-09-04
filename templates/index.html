@@ -39410,7 +39410,10 @@ function _libResumeAfterReconnect() {
   if (!_libMayOpen(hub)) return false;           // the level rule still decides, not the crumb
   const st = _libState(hub);
   st.tab = typeof saved.tab === 'string' ? saved.tab : '';
+  // A department they may no longer open falls back to the default one, not to a root that no
+  // longer exists as a place.
   if (st.tab && !_libDeptAllowed(st.tab)) { st.tab = ''; st.crumbs = []; }
+  if (!st.tab) st.crumbs = [];
   showView(hub, null, _LIB_HUBS[hub].title);
   // The crumbs address items in a drive this reload has not resolved yet, so the folder is
   // re-entered rather than restored: _libSpList resolves the tab first, and only then are the
@@ -39446,11 +39449,17 @@ function _libReconnect() {
 async function _libSpList(hub, interactive) {
   const st = _libState(hub), meta = _LIB_HUBS[hub];
   if (!meta) return;
+  // Land on a department rather than asking a question nobody was posed: on the first open the
+  // reader has chosen nothing, and their own department is what they came for.
+  if (!st.tab) st.tab = _libDefaultTab(hub);
   const dept = st.tab || '', own = _libDeptUrl(hub, dept);
   const base = own || _libCfg(meta.docsKey);
   st.loading = true; st.error = ''; st.found = null;
   _libPaintDocs(hub);
   try {
+    // No department to show: not an error, and not an empty folder either — those would both
+    // be claims about the library rather than about this account.
+    if (!dept) throw new Error('nodepts');
     if (!base) throw new Error('nolink');
     if (!_libIsSharePoint(base)) throw new Error('nothost');
     if (typeof DEMO_MODE === 'function' && DEMO_MODE()) throw new Error('demo');
@@ -39463,7 +39472,7 @@ async function _libSpList(hub, interactive) {
       return (((await r.json()) || {}).value) || [];
     };
     const here = st.crumbs.length ? st.crumbs[st.crumbs.length - 1] : null;
-    let url, atTabRoot = false;
+    let url;
     if (here && here.id && st.drive) {
       url = _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(here.id) + '/children';
     } else {
@@ -39475,7 +39484,6 @@ async function _libSpList(hub, interactive) {
       st.baseRef = r.baseRef; st.rel = r.projRel || '';
       const rel = r.projRel ? ':/' + r.projRel.split('/').map(encodeURIComponent).join('/') + ':' : '';
       url = _GRAPH + '/drives/' + r.driveId + '/' + r.baseRef + rel + '/children';
-      atTabRoot = true;
       // A department tab with no address of its own means "the folder of that name". Found by
       // LISTING the root and matching, not by guessing a path: a library whose folder is called
       // "Engineering Dept" would 404 on a guessed /Engineering, and a 404 here reads as "this
@@ -39486,18 +39494,9 @@ async function _libSpList(hub, interactive) {
         if (!f) throw new Error('nodept');
         st.crumbs = [{ id: f.id, name: f.name }];
         url = _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(f.id) + '/children';
-        atTabRoot = false;
       }
     }
     st.items = await children(url);
-    // General is the root MINUS the folders that have a tab of their own.
-    if (!dept && atTabRoot) {
-      const tabs = _libDeptTabs();   // ALL of them — a folder hidden from the bar must not
-                                     // reappear in General, which would undo the whole rule
-      st.items = st.items.filter(function (x) {
-        return !(x.folder && tabs.some(function (d) { return _libSameName(d, x.name); }));
-      });
-    }
   } catch (e) {
     st.items = null;
     st.error = String((e && e.message) || e);
@@ -39519,7 +39518,14 @@ async function _libSpList(hub, interactive) {
 
    General is the library root with the department folders taken OUT of it — they each have a
    tab, and listing them twice is how a tidy structure starts looking untidy. */
-const _LIB_GENERAL = '';        // the tab id for company-wide documents = the library root
+/* There is no General tab. Every document reaches a reader through a department, and files left
+   loose at the root of the library are not shown here at all — they are untouched in SharePoint
+   and still reachable through "Open the document library", but the portal does not present the
+   root as a place, because a place called General that anybody can put anything in is how a
+   document library stops being navigable.
+
+   So an unset tab is not "the root" any more; it is "no department chosen yet", and the panel
+   says so rather than listing whatever happens to be lying around. */
 
 function _libSameName(a, b) {
   return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase();
@@ -39586,19 +39592,28 @@ function _libTab(hub, dept) {
   // but "nothing should" is not a check, and this one costs a line.
   if (dept && !_libDeptAllowed(dept)) { toast(_t('That department is not open to your account.'), 'warn'); return; }
   const st = _libState(hub);
-  st.tab = dept || _LIB_GENERAL;
+  st.tab = dept || '';
   st.crumbs = []; st.drive = null; st.baseRef = null; st.rel = ''; st.found = null;
   _crmLF['lib-' + hub + '-f'] = '';
   _libSpList(hub, true);
 }
+/* The tab to open on arrival: the reader's OWN department when they have one and may see it,
+   otherwise the first they are allowed. Their own first is the point — for most of the company
+   the documents they came for are their own department's, and landing anywhere else makes them
+   choose before they can read anything. */
+function _libDefaultTab(hub) {
+  const mine = _libMyDept(), seen = _libVisibleDepts();
+  const own = seen.filter(function (d) { return _libSameName(d, mine); })[0];
+  return own || seen[0] || '';
+}
 function _libTabBar(hub) {
-  const st = _libState(hub), cur = st.tab || _LIB_GENERAL;
-  const tab = function (id, label) {
-    return '<button type="button" class="tab' + (_libSameName(id, cur) ? ' active' : '') +
-      '" onclick="_libTab(\'' + hub + '\',\'' + _libArg(id) + '\')">' + _crmEsc(_t(label)) + '</button>';
-  };
-  return '<div class="tabs" style="margin:0 14px">' + tab(_LIB_GENERAL, 'General') +
-    _libVisibleDepts().map(function (d) { return tab(d, d); }).join('') + '</div>';
+  const st = _libState(hub), cur = st.tab || '';
+  const seen = _libVisibleDepts();
+  if (!seen.length) return '';        // nothing to choose between; the panel explains why
+  return '<div class="tabs" style="margin:0 14px">' + seen.map(function (d) {
+    return '<button type="button" class="tab' + (_libSameName(d, cur) ? ' active' : '') +
+      '" onclick="_libTab(\'' + hub + '\',\'' + _libArg(d) + '\')">' + _crmEsc(d) + '</button>';
+  }).join('') + '</div>';
 }
 
 /* ── HR: updating the files ───────────────────────────────────────────────────
@@ -39801,6 +39816,12 @@ function _libDocsMsg(hub) {
   if (e === 'nothost')
     return box(_t('That link is not a SharePoint address'),
       _t('The library location must be a sharepoint.com address. An administrator can correct it in Access & Permissions.'), '');
+  if (e === 'nodepts')
+    /* Almost always a missing field rather than a policy: somebody's employee record has no
+       department on it, so there is nothing for the rule to let them see. Said as the fixable
+       thing it is, and pointed at the person who can fix it. */
+    return box(_t('No department documents for your account yet'),
+      _t('Documents here are organised by department, and your employee record does not name one. Ask HR to set your department, and this page will show it.'), '');
   if (e === 'nodept') {
     /* Not an error — a fact about the library. The department exists (somebody is assigned to it)
        and its folder does not, which is exactly the gap the button below closes. */
