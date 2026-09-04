@@ -62,6 +62,11 @@ const PRELUDE = `
   function _crmFiltPeriod(id){ return '<period id="' + id + '">'; }
   let PERIOD_OK = true;
   function _inPeriodLF(){ return PERIOD_OK; }
+  /* _libVisibleRows moved to _crmInPeriodLF — the one that KEEPS a row with no date rather than
+     dropping it. Stubbed separately so a future swap back to _inPeriodLF fails here loudly. */
+  function _crmInPeriodLF(){ return PERIOD_OK; }
+  /* The pager routes through the Retry-After helper now; a folder open is up to 40 calls. */
+  async function _graphFetch(u, o){ return fetch(u, o); }
   function _tkPortalData(){ return PORTAL; }
   let PORTAL = { library: [], wiki: [], learning: [], resources: [] };
   const _LEVELS = ['staff', 'manager', 'management', 'editor', 'admin'];
@@ -79,13 +84,14 @@ const PRELUDE = `
      tests rendering from a state somebody set by hand; the department tabs are different — the
      work is in the resolving (find the folder of that name, or fall back, or say there is none),
      and none of that runs unless there is something to fetch from. */
-  let DRIVE = null, RESOLVE = null, POSTED = [];
+  let DRIVE = null, RESOLVE = null, POSTED = [], DELAY = {}, FETCH_OVERRIDE = null;
   function _pmSpToken(){ if (!DRIVE) throw new Error('no token in this harness'); return Promise.resolve('T'); }
   function _pmSpResolve(base){
     if (!DRIVE) throw new Error('no graph in this harness');
     return Promise.resolve(RESOLVE(base));
   }
   async function fetch(url, opts) {
+    if (FETCH_OVERRIDE) return FETCH_OVERRIDE(url, opts);
     const u = String(url);
     if (opts && opts.method === 'POST') {          // create folder
       POSTED.push({ url: u, body: JSON.parse(opts.body) });
@@ -100,6 +106,11 @@ const PRELUDE = `
     if (!drv || seg.indexOf('children') < 0) return { ok: false, status: 404, json: async () => ({}), text: async () => 'no route: ' + u };
     const rows = (DRIVE[drv] || {})[key];
     if (!rows) return { ok: false, status: 404, json: async () => ({}), text: async () => 'no folder ' + key };
+    /* A per-folder delay, so a test can make a big department reply AFTER a small one clicked
+       later. Without it the generation guard cannot be exercised at all: everything resolves in
+       the order it was asked for and the race never happens. */
+    const d = DELAY[key] || 0;
+    if (d) await new Promise(r => setTimeout(r, d));
     return { ok: true, status: 200, json: async () => ({ value: rows }), text: async () => '' };
   }
   function _pmSpCtx(){ return { mode: 'path' }; }
@@ -118,6 +129,10 @@ new Function(PRELUDE + src.slice(i, j) + `
     _libFmtSize: _libFmtSize,
     _libState: _libState,
     _libPaintDocs: _libPaintDocs,
+    _libBodyHtml: _libBodyHtml,
+    _libCountText: _libCountText,
+    _libMore: _libMore,
+    _libVisibleRows: _libVisibleRows,
     _libTilesHtml: _libTilesHtml,
     tkRenderLibrary: tkRenderLibrary,
     _libMaySee: _libMaySee,
@@ -130,11 +145,18 @@ new Function(PRELUDE + src.slice(i, j) + `
     setLevel: function (l) { _userLevel = l; },
     setCanWrite: function (v) { CAN_WRITE = v; },
     mount: function (id) { DOM[id] = { innerHTML: '' }; return DOM[id]; },
+    el: function (id) { return DOM[id]; },
     _libTab: _libTab,
     _libSpList: _libSpList,
     _libTabBar: _libTabBar,
     _libDeptUrl: _libDeptUrl,
-    setDrive: function (d, resolve) { DRIVE = d; RESOLVE = resolve; POSTED = []; },
+    setDrive: function (d, resolve) { DRIVE = d; RESOLVE = resolve; POSTED = []; DELAY = {}; },
+    setDelay: function (k, ms) { DELAY[k] = ms; },
+    setFetch: function (f) { FETCH_OVERRIDE = f; },
+    setDepts: function (d) { DEPTS = d; },
+    _libGraphPage: _libGraphPage,
+    _libSortCmp: _libSortCmp,
+    _libSpFilter_wiki: _libSpFilter_wiki,
     posted: function () { return POSTED; },
     setDepts: function (d) { DEPTS = d; },
     setMyDept: function (d) { TK.user.dept = d; },
@@ -175,7 +197,8 @@ function paint(mutate) {
   const st = api._libState('wiki');
   st.crumbs = []; st.items = null; st.drive = 'drv'; st.loading = false; st.error = ''; st.found = null;
   api.setPeriod(true);
-  api.setFilter('lib-wiki-f', ''); api.setFilter('lib-wiki-kind', '');
+  api.setFilter('lib-wiki-f', ''); api.setFilter('lib-wiki-kind', ''); api.setFilter('lib-wiki-sort', '');
+  st.shown = 0;
   if (mutate) mutate(st);
   api._libPaintDocs('wiki');
   return el.innerHTML;
@@ -214,8 +237,14 @@ ok('the kind filter keeps folders only', /Policies/.test(html) && !/handbook\.pd
 html = paint(st => { st.items = ROWS; api.setFilter('lib-wiki-kind', 'Files only'); });
 ok('the kind filter keeps files only', !/_libSpEnter/.test(html) && /Employee Handbook/.test(html));
 
+/* THIS TEST USED TO ASSERT THE BUG. With the period stub forced false it expected "Nothing
+   matches that filter." over a fixture containing the FOLDER "Policies" — i.e. it asserted that
+   picking a period deletes the sub-folders, and with them the only route into the sub-tree.
+   A folder's own lastModifiedDateTime is not its contents'; judging it by the period is asking a
+   question the value cannot answer. Files are filtered; folders stay. */
 html = paint(st => { st.items = ROWS; api.setPeriod(false); });
-ok('the period control actually filters', /Nothing matches that filter\./.test(html));
+ok('the period control filters the FILES', !/Employee Handbook/.test(html) && !/Leave Form/.test(html));
+ok('the period control leaves the folders reachable', /Policies/.test(html));
 
 /* Each failure names ITSELF. This is the assertion that matters most: all four used to be
    expressible as "no rows", and the reader could not tell which had happened. */
@@ -586,7 +615,7 @@ ok('only sharepoint.com is accepted as a library host',
   const listNames = names();
   ok('the list view still lists everything', listNames.length === 3, listNames.join('|'));
   ok('the count beside the heading matches what is on screen',
-    /class="lib-chip">3 items</.test(el.innerHTML), (el.innerHTML.match(/lib-chip">[^<]*/) || [''])[0]);
+    /id="lib-count-wiki">3 items</.test(el.innerHTML), (el.innerHTML.match(/lib-count-wiki">[^<]*/) || [''])[0]);
 
   api._libSetView('wiki', 'grid');
   const gridNames = grab('lib-doc-name');   // grab(), not a hand-rolled match: see its comment
@@ -602,8 +631,8 @@ ok('only sharepoint.com is accepted as a library host',
   api._libPaintDocs('wiki');
   const gridFiltered = grab('lib-doc-name');
   ok('the filter applies in grid view too', gridFiltered.join('|') === 'Leave Form.docx', gridFiltered.join('|'));
-  ok('and the count follows the filter', /class="lib-chip">1 item</.test(el.innerHTML),
-    (el.innerHTML.match(/lib-chip">[^<]*/) || [''])[0]);
+  ok('and the count follows the filter', /id="lib-count-wiki">1 item</.test(el.innerHTML),
+    (el.innerHTML.match(/lib-count-wiki">[^<]*/) || [''])[0]);
   api.setFilter('lib-wiki-f', '');
   api._libSetView('wiki', 'list');
 
@@ -709,6 +738,129 @@ ok('only sharepoint.com is accepted as a library host',
   ok('unreadable saved state is dropped, not guessed at', api._libResumeAfterReconnect() === false);
   api.session().tkLibReturn = JSON.stringify({ hub: 'nosuchhub', tab: '', crumbs: [] });
   ok('a hub that no longer exists is ignored', api._libResumeAfterReconnect() === false);
+
+
+  /* ══ A THOUSAND FILES ═══════════════════════════════════════════════════════════════════
+     Everything below is about a folder nobody could open comfortably before. The assertions
+     count NODES and CALLS, never milliseconds: an idle CI runner hides a regression a phone
+     will not, and this repo has already shipped a 4-second page that CI called green. */
+  const many = function (n, mk) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(mk(i));
+    return out;
+  };
+  const BIG = many(400, i => ({
+    id: 'B' + i, name: 'Drawing-' + (i + 1) + '.pdf', file: {}, size: 1000 + i,
+    webUrl: 'https://x.sharepoint.com/b' + i,
+    lastModifiedDateTime: '2026-0' + (1 + (i % 9)) + '-01T00:00:00Z'
+  }));
+
+  let h = paint(st => { st.items = BIG; });
+  const rendered = (h.match(/class="lib-row-name"/g) || []).length;
+  ok('a 400-file folder puts 150 rows in the DOM, not 400', rendered === 150, 'rendered ' + rendered);
+  /* Assert the FOOTER, not just the digits: "150 / 400" also appears in the count chip, so an
+     assertion on the text alone passed with the whole footer deleted — a list that simply stops
+     at 150 with no way to see the rest. A mutant found this; the number was never the claim. */
+  ok('...and offers the rest rather than just stopping',
+    /class="lib-more"/.test(h) && /_libMore\('wiki'\)/.test(h) && /150 \/ 400/.test(h));
+  ok('the count chip states both numbers too', /id="lib-count-wiki">150 \/ 400 items</.test(h),
+    (h.match(/lib-count-wiki">[^<]*/) || [''])[0]);
+
+  /* The reason this is a button and not a virtual scroller: it has state you can assert. */
+  const elBig = api.el('lib-docs-wiki');
+  api._libMore('wiki');
+  const afterMore = (elBig.innerHTML.match(/class="lib-row-name"/g) || []).length;
+  ok('Show more adds exactly one page', afterMore === 300, 'after ' + afterMore);
+
+  /* The subtle one. Miss a reset and a reader who pressed Show more six times in a big folder
+     gets 900 rows of the next one painted the moment they change the filter. */
+  /* The fixture has to be able to FAIL. 'Drawing-1.' matches 111 rows — under the cap whether or
+     not it is reset — so the first version of this test passed with the reset removed. Filter to
+     something matching all 400 while st.shown is 300: with the reset it renders 150, without it
+     300. A mutant found this too. */
+  api.setFilter('lib-wiki-f', 'Drawing-');            // matches all 400; st.shown is 300 from above
+  api._libSpFilter_wiki();
+  const filtered = (elBig.innerHTML.match(/class="lib-row-name"/g) || []).length;
+  ok('changing the filter puts the cap back', filtered === 150, 'rendered ' + filtered);
+  ok('and the filter box itself survived that repaint', /id="lib-wiki-f"/.test(elBig.innerHTML));
+  api.setFilter('lib-wiki-f', '');
+
+  /* THE CARET FIX CANNOT BE PROVEN IN THIS HARNESS — there is no real focus here, and a test
+     that called document.activeElement would be measuring the stub. It was verified in a browser
+     by node identity: the <input> survives a filter repaint as the SAME element, and is replaced
+     by a full _libPaintDocs. What CAN be held here is the structure that makes it true, so a
+     future edit cannot quietly point the filter back at the whole-card repaint. */
+  {
+    const body = src.slice(src.indexOf('function _libSpFilter_wiki'),
+                           src.indexOf('function _libSpFilter_wiki') + 400);
+    ok('the filter callbacks repaint the BODY, not the whole card',
+      /_libPaintBody/.test(body) && !/_libPaintDocs/.test(body), body.slice(0, 160));
+    const bh = src.slice(src.indexOf('function _libBodyHtml'), src.indexOf('function _libCountText'));
+    ok('...and the body does not contain the filter toolbar it would destroy',
+      !/_crmFiltSearch|_crmFiltBar/.test(bh));
+  }
+
+  /* AHU-10 before AHU-2 is wrong the moment a folder holds ten numbered drawings, and this
+     company's folders are full of numbered drawings. */
+  const NUM = [
+    { id: 'n1', name: 'AHU-10.dwg', file: {}, size: 5, webUrl: 'https://x/1' },
+    { id: 'n2', name: 'AHU-2.dwg', file: {}, size: 9, webUrl: 'https://x/2' },
+    { id: 'n3', name: 'AHU-1.dwg', file: {}, size: 1, webUrl: 'https://x/3' }
+  ];
+  h = paint(st => { st.items = NUM; });
+  ok('names sort in natural order', h.indexOf('AHU-2.dwg') < h.indexOf('AHU-10.dwg'));
+  h = paint(st => { st.items = NUM; api.setFilter('lib-wiki-sort', 'Largest first'); });
+  ok('largest first sorts by size, not by name', h.indexOf('AHU-2.dwg') < h.indexOf('AHU-1.dwg'));
+  api.setFilter('lib-wiki-sort', '');
+
+  /* ── the ceiling tells the truth even when the overflow lands on the LAST page ────────── */
+  {
+    const stp = api._libState('wiki');
+    const page = (from, to, next) => ({
+      ok: true, status: 200, text: async () => '',
+      json: async () => {
+        const v = [];
+        for (let i = from; i < to; i++) v.push({ id: 'x' + i, name: 'f' + i + '.pdf', file: {} });
+        return next ? { value: v, '@odata.nextLink': next } : { value: v };
+      }
+    });
+    const pages = { u0: page(0, 4500, 'u1'), u1: page(4500, 5100, '') };
+    api.setFetch(u => pages[String(u)] || pages.u0);
+    const rows = await api._libGraphPage('u0', 'T', stp);
+    api.setFetch(null);
+    ok('the fetch ceiling caps the list at 5000', rows.length === 5000, 'got ' + rows.length);
+    ok('AND SAYS SO when the overflow arrived in the final page', stp.partial === true,
+      'partial=' + stp.partial + ' — 100 files would have been dropped in silence');
+  }
+
+  /* ── two overlapping listings: the loser must not paint ───────────────────────────────── */
+  {
+    api.setDrive({ DRV: {
+      root: [{ id: 'ENG', name: 'Engineering', folder: { childCount: 2 } },
+             { id: 'SAL', name: 'Sales', folder: { childCount: 1 } }],
+      ENG: many(200, i => ({ id: 'e' + i, name: 'ENGINEERING-' + i + '.pdf', file: {}, size: 1, webUrl: 'https://x/e' + i })),
+      SAL: [{ id: 's1', name: 'SALES-Quote.xlsx', file: {}, size: 1, webUrl: 'https://x/s1' }]
+    } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+    api.setDelay('ENG', 60);                  // Engineering is big and slow; Sales returns at once
+    api.setDepts(['Engineering', 'Sales']);
+    api.setLevel('admin');
+    api.mount('lib-docs-wiki');
+    const stw = api._libState('wiki');
+    stw.crumbs = []; stw.items = null; stw.drive = null; stw.error = ''; stw.found = null;
+
+    const slow = api._libTab('wiki', 'Engineering');   // clicked first
+    await new Promise(r => setTimeout(r, 5));
+    const fast = api._libTab('wiki', 'Sales');         // clicked a moment later
+    await Promise.all([slow, fast]);
+    await new Promise(r => setTimeout(r, 150));        // let Engineering's reply land
+
+    const painted = api.el('lib-docs-wiki').innerHTML;
+    ok('the department last clicked is the one showing', /SALES-Quote/.test(painted), 'tab=' + stw.tab);
+    ok('a superseded listing does not paint its rows under the new heading',
+      !/ENGINEERING-0\.pdf/.test(painted),
+      'one thousand Engineering files under a highlighted Sales tab is what this prevents');
+    ok('...and does not leave a false error banner either', !stw.error, 'error=' + stw.error);
+  }
 
   console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);

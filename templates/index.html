@@ -966,6 +966,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
 /* A count beside the heading, so "Documents" stops being a word with nothing behind it. */
 .lib-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--text-light);background:var(--soft-bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px 9px;white-space:nowrap}
+/* Amber, not red: an incomplete list is a limit the reader must know about, not a failure. */
+.lib-chip-warn{color:#B45309;background:#FEF3C7;border-color:#FCD34D;cursor:help}
 /* List or grid. A segmented control rather than two buttons: it is one choice with two states. */
 .lib-view{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-btn);overflow:hidden;background:var(--card)}
 .lib-view button{border:none;background:none;font-family:inherit;cursor:pointer;padding:5px 9px;color:var(--text-light);display:flex;align-items:center}
@@ -1035,7 +1037,22 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   .lib-hero-act .btn{flex:1}
   .lib-row-name{white-space:normal}
   .lib-docgrid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:12px}
+  /* .lib-crumb and .lib-view button are bare <button>s, so they miss both .tab{min-height:40px}
+     and .btn{min-height:38px} and land at roughly half of the 44px a finger needs. */
+  .lib-crumb{min-height:36px;display:inline-flex;align-items:center;padding:6px 8px}
+  .lib-view button{min-height:38px;padding:8px 12px}
+  .lib-more{padding:14px 12px}
 }
+/* The corner action on a grid card is opacity:0 until :hover or :focus-visible — and a phone has
+   neither. On a folder card it is the ONLY "Open in SharePoint"; on a file card it is HR's only
+   "Replace this file". Invisible and fully tappable is the worst of both, so on a touch device it
+   is simply shown. */
+@media (hover:none){
+  .lib-doc-act{opacity:1;color:var(--text-light);min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center}
+}
+/* The "Show more" footer. It has to read as the end of a list rather than as another row. */
+.lib-more{display:flex;align-items:center;justify-content:center;gap:12px;padding:14px;border-top:1px solid var(--line)}
+.lib-more-n{font-size:11.5px;color:var(--text-light);font-variant-numeric:tabular-nums}
 
 @media (max-width:820px){
   /* The phone topbar is already tight, and the drawer carries "All Apps" at the top —
@@ -2576,7 +2593,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
 
-  <div class="tabs">
+  <div class="tabs" id="hr-tabs">
     <button class="tab active" onclick="switchHRTab('balances',this)">Leave Balances</button>
     <button class="tab" onclick="switchHRTab('benefits',this)">Benefits</button>
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
@@ -2645,6 +2662,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <button class="btn btn-emerald btn-sm" onclick="tkSavePortal()">Save Portal Content</button>
     </div>
     <!-- Integrations moved to Access & Permissions (admin) — see #perm-integrations -->
+    <!-- Grouped by WHICH SCREEN EACH CARD FEEDS. An admin's only question here is "where does
+         this show up?", and the tab name answers it. Save stays above the bar, one button for
+         one model, reachable from every tab. -->
+    <div class="tabs" id="portal-tabs" style="margin-bottom:16px">
+      <button class="tab active" data-ptab="dash" onclick="tkPortalTab('dash')">Dashboard</button>
+      <button class="tab" data-ptab="board" onclick="tkPortalTab('board')">Library board</button>
+      <button class="tab" data-ptab="docs" onclick="tkPortalTab('docs')">Documents</button>
+    </div>
+
+    <!-- DASHBOARD: what a member of staff sees when they sign in -->
+    <div id="portal-pane-dash">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
         <div class="card-hdr"><div class="card-title">Announcements</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('announcements')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
@@ -2662,6 +2690,15 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <div class="card-hdr"><div class="card-title">Resources &amp; Quick Links</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('resources')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div id="portal-resources"></div>
       </div>
+      </div>
+    </div>
+
+    <!-- LIBRARY BOARD: the tiles on Our Library. This is one card and still its own tab, because
+         editing it is a PERMISSIONS act — the rows whose url is view:wiki / view:knowledge carry
+         a `level`, and app.py withholds the SharePoint addresses from anyone below it. That does
+         not belong between Holidays and Resources in a grid an admin scrolls past. -->
+    <div id="portal-pane-board" style="display:none">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
         <div class="card-hdr"><div class="card-title">Our Library (board tiles)</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('library')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">The tiles on the Library page. Paste the SharePoint or intranet address for each. Leave the address blank and the tile still shows, marked as needing a link — <b>view:wiki</b> and <b>view:knowledge</b> open this portal's own Wiki and Knowledge Hub pages.</div>
@@ -2670,6 +2707,15 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <!-- HR owns where the library points. Not Access & Permissions: which SharePoint site
            holds the company handbook is a fact about the company's documents, and the people who
            publish those documents are the ones who know it. The server agrees (_is_hr_admin). -->
+      </div>
+    </div>
+
+    <!-- DOCUMENTS: everything that decides what the Company Wiki and Knowledge Hub show. These
+         four were the ones the owner asked to have taken out of the flat grid, and they belong
+         together: where the libraries are, which department tabs exist, which department reads
+         from somewhere else, and what is pinned above the files. -->
+    <div id="portal-pane-docs" style="display:none">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card" id="portal-libloc-card">
         <div class="card-hdr"><div class="card-title">Library locations (SharePoint)</div></div>
         <div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Where the <b>Company Wiki</b> and <b>Knowledge Hub</b> pages read from. Files are listed with each reader's <b>own</b> SharePoint permissions and are never copied into the portal, so changing these widens nobody's access.</div>
@@ -2692,6 +2738,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <div class="card-hdr"><div class="card-title">Wiki — pinned pages</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('wiki')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Optional shortcuts shown under the wiki's documents — a SharePoint page or folder worth putting in front of everybody. The wiki's own contents come from SharePoint and need nothing here.</div>
         <div id="portal-wiki"></div>
+      </div>
       </div>
     </div>
   </div>
@@ -6756,7 +6803,16 @@ const _TK_RES_ICON_DEFAULT = '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.
 
 function _tkPortalData() {
   const o = window._TK_PORTAL || {};
-  const pick = k => (Array.isArray(o[k]) && o[k].length) ? o[k] : _TK_PORTAL_DEFAULTS[k];
+  /* `&& o[k].length` made "deliberately empty" indistinguishable from "never configured", so
+     removing every row of a card and saving brought the shipped DEMO content back — and
+     tkSavePortal assigns window._TK_PORTAL in the same tick, so the placeholders reappeared while
+     the "Company portal updated" toast was still on screen. HR could not empty a card at all.
+
+     An array is the answer whether or not it has anything in it. The distinction survives the
+     whole round trip without needing length: tkLoadPortal normalises a missing key to null (never
+     []), and app.py's _portal_get returns None when the setting is absent. Only this test was
+     throwing the difference away. */
+  const pick = k => Array.isArray(o[k]) ? o[k] : _TK_PORTAL_DEFAULTS[k];
   return { announcements: pick('announcements'), holidays: pick('holidays'), learning: pick('learning'), resources: pick('resources'),
            library: pick('library'), wiki: pick('wiki'), deptDocs: pick('deptDocs'), deptTabs: pick('deptTabs') };
 }
@@ -6817,11 +6873,47 @@ const _tkEscA = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/
 const _tkEscT = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 async function tkRenderPortalEditor() {
+  /* Leaving HR Admin's Company Portal tab and coming back used to reseed the model from the boot
+     cache, throwing away every unsaved row without a word. If there are unsaved edits, redraw
+     what is in hand instead. */
+  if (_tkPortalModel && _tkPortalTouched.size) {
+    _tkPortalRenderRows(); _tkLibLocFill(); _tkPortalTab(_tkPortalTabId); return;
+  }
+  /* Re-seed from the SERVER, not from the snapshot taken at boot — the other half of saving only
+     what was touched. */
+  try { await tkLoadPortal(); } catch (e) {}
   const PD = _tkPortalData();
   _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources, library: PD.library, wiki: PD.wiki, deptDocs: PD.deptDocs, deptTabs: PD.deptTabs }));
+  _tkPortalTouched.clear();
   _tkPortalRenderRows();
   _tkLibLocFill();
+  _tkPortalTab(_tkPortalTabId);
 }
+
+/* ── the Company Portal editor's own tabs ─────────────────────────────────────────────────────
+   Nine cards in one auto-fit grid meant an admin scrolled past a permissions control to reach a
+   holiday. Grouped by WHICH SCREEN EACH CARD FEEDS, so the only question an admin has — "where
+   does this show up?" — is answered by the tab name.
+
+   These are VISIBILITY ONLY. One model, one Save button, and it sits above the bar so it is
+   reachable from every tab: a per-tab save is how two halves of one page start disagreeing.
+   _tkPortalRenderRows writes into all nine containers by id whether or not their pane is
+   showing, so the model stays in sync across tabs with no extra work. */
+let _tkPortalTabId = 'dash';
+function _tkPortalTab(id) {
+  _tkPortalTabId = ['dash', 'board', 'docs'].indexOf(id) >= 0 ? id : 'dash';
+  ['dash', 'board', 'docs'].forEach(function (t) {
+    const p = document.getElementById('portal-pane-' + t);
+    if (p) p.style.display = (t === _tkPortalTabId) ? '' : 'none';
+  });
+  document.querySelectorAll('#portal-tabs .tab').forEach(function (b) {
+    b.classList.toggle('active', b.getAttribute('data-ptab') === _tkPortalTabId);
+  });
+  try {
+    document.querySelector('#portal-tabs .tab.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  } catch (e) {}
+}
+function tkPortalTab(id) { _tkPortalTab(id); }
 
 // System Integrations now live on the Access & Permissions view (admin), NOT the Company Portal tab.
 // Load their live values when that view opens. We fetch FRESH from the server (not the boot cache)
@@ -7117,15 +7209,29 @@ function _tkLibLocFill() {
   if (note) note.style.display = mine ? 'none' : '';
 }
 
-function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = el.value; }
+/* WHICH SECTIONS THIS ADMIN HAS ACTUALLY TOUCHED.
+
+   tkSavePortal used to send all eight lists every time, rebuilt from a model seeded at boot and
+   never refreshed. Saving one announcement therefore rewrote deptTabs, library and five others
+   from an hours-old snapshot, quietly reverting whatever another admin had changed in between.
+   Tabs make that worse rather than better, because an admin will reasonably assume a tab they
+   never opened was not written to.
+
+   app.py's _portal_update already writes only the keys present in the body, so a partial PATCH
+   needs nothing new on the server — only for the client to stop sending what it was not asked
+   to change. */
+const _tkPortalTouched = new Set();
+
+function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) { _tkPortalModel[type][i][field] = el.value; _tkPortalTouched.add(type); } }
 /* A checkbox has no useful .value — it is the literal string "on" whether ticked or not, so
    tkPortalSet would store "on" for both states and the flag would never turn off. */
-function tkPortalSetBool(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = !!el.checked; }
-function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
+function tkPortalSetBool(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) { _tkPortalModel[type][i][field] = !!el.checked; _tkPortalTouched.add(type); } }
+function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalTouched.add(type); _tkPortalRenderRows(); } }
 function tkPortalAdd(type) {
   if (!_tkPortalModel) tkRenderPortalEditor();
   const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' }, library: { label: '', url: '', desc: '', icon: 'link', level: '' }, wiki: { label: '', url: '', desc: '' }, deptDocs: { hub: 'wiki', dept: '', url: '' }, deptTabs: { dept: '', board: false } }[type];
   _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
+  _tkPortalTouched.add(type);
   _tkPortalRenderRows();
 }
 
@@ -7186,7 +7292,7 @@ async function _digestTest() {
 }
 async function tkSavePortal() {
   const m = _tkPortalModel; if (!m) { toast('Open the Company Portal tab first', 'warn'); return; }
-  const payload = {
+  const built = {
     announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '', audience: x.audience || 'All' })),
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
@@ -7198,6 +7304,11 @@ async function tkSavePortal() {
     deptTabs: m.deptTabs.filter(x => (x.dept || '').trim())
       .map(x => ({ dept: String(x.dept).trim(), board: !!x.board }))
   };   // the OTHER integration URLs are saved on Access & Permissions (tkSaveIntegrations); the backend merges per-key
+  /* Only the sections this admin edited. The library-location URLs below are separate keys the
+     server already merges individually, and they are echoed from the live inputs rather than a
+     snapshot, so they keep their existing behaviour. */
+  const payload = {};
+  Object.keys(built).forEach(function (k) { if (_tkPortalTouched.has(k)) payload[k] = built[k]; });
   if (_tkCanPublishDocs()) {
     _TK_LIBLOC.forEach(function (f) {
       const el = document.getElementById(f[0]); if (el) payload[f[1]] = (el.value || '').trim();
@@ -7207,7 +7318,11 @@ async function tkSavePortal() {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, library: payload.library, wiki: payload.wiki, deptDocs: payload.deptDocs, deptTabs: payload.deptTabs });   // preserve integration URLs / invtrackSpUrl already cached
+    /* Merge only what was sent, so a section this admin never opened keeps whatever the server
+       has — including a change somebody else made since this page loaded. */
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {});
+    Object.keys(built).forEach(function (k) { if (_tkPortalTouched.has(k)) window._TK_PORTAL[k] = payload[k]; });
+    _tkPortalTouched.clear();
     _TK_LIBLOC.forEach(function (f) { if (typeof payload[f[1]] === 'string') window._TK_PORTAL[f[1]] = payload[f[1]]; });
     // A repointed library must not keep listing the old one: the browser holds a resolved
     // SharePoint drive per hub, and a level change can take a whole page away.
@@ -39825,7 +39940,11 @@ const _LIB_HUBS = {
    costs one request instead of re-resolving the site every time. */
 const _LIB_SP = {};
 function _libState(hub) {
-  if (!_LIB_SP[hub]) _LIB_SP[hub] = { crumbs: [], items: null, drive: null, loading: false, error: '', found: null };
+  /* `gen` is what makes an overlapping listing safe. Everything else here belongs to the LAST
+     REPLY; st.tab, st.crumbs and st.drive are set synchronously by the LAST CLICK. Without a
+     generation those two disagree, and the disagreement is silent — see _libSpList. */
+  if (!_LIB_SP[hub]) _LIB_SP[hub] = { crumbs: [], items: null, drive: null, loading: false, error: '', found: null,
+                                      gen: 0, partial: false, shown: 0 };
   return _LIB_SP[hub];
 }
 
@@ -39846,7 +39965,10 @@ function _libFmtWhen(iso) {
 const _LIB_EXT_TONE = {
   pdf: '#DC2626', doc: '#205090', docx: '#205090', xls: '#15803D', xlsx: '#15803D', csv: '#15803D',
   ppt: '#EA580C', pptx: '#EA580C', png: '#7C3AED', jpg: '#7C3AED', jpeg: '#7C3AED', gif: '#7C3AED',
-  zip: '#A16207', rar: '#A16207', dwg: '#0EA5E9', mp4: '#DB4C8C', txt: '#5C6470'
+  /* dwg and mp4 were #0EA5E9 and #DB4C8C — drawn as small bold text on an 8%-alpha tint of
+     themselves, which put .dwg at about 2.6:1 against a 4.5:1 minimum. .dwg is this company's
+     most common extension, so it was the least readable chip on the busiest screen. */
+  zip: '#A16207', rar: '#A16207', dwg: '#0369A1', mp4: '#BE1E6E', txt: '#5C6470'
 };
 function _libExt(name) { const m = String(name || '').match(/\.([A-Za-z0-9]{1,5})$/); return m ? m[1].toLowerCase() : ''; }
 const _LIB_CHEVRON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
@@ -39967,16 +40089,38 @@ function _libReconnect() {
 /* One folder's children. `interactive` is passed to _pmSpToken: false on the automatic first
    render (a pop-up opened outside a click is blocked by the browser, and a blocked pop-up is
    worse than a message), true when the reader pressed Refresh or opened a folder. */
+/* WHY THIS FUNCTION COUNTS ITS OWN CALLS.
+
+   st.tab, st.crumbs and st.drive are written SYNCHRONOUSLY by _libTab the moment a department
+   tab is clicked. st.items, st.error and st.partial are written when a reply arrives. Those are
+   not the same ordering, and paging made the gap much wider: one request became up to forty.
+
+   Click Engineering (1,000 files, several sequential pages), then Sales a second later. Sales
+   paints correctly. Then Engineering's reply lands and overwrites st.items — and the screen now
+   shows a highlighted Sales tab, a "Sales" breadcrumb, and one thousand Engineering files
+   underneath, with the truncation chip claiming Sales was too big to list. Nothing errors. Click
+   a folder in that list and _libSpEnter pushes an Engineering folder id onto a Sales-rooted
+   crumb stack, which is what _libUploadUrl then addresses.
+
+   The same unconditional write puts "SharePoint could not be reached" over a department that
+   listed perfectly well, because a tab the reader abandoned failed on a later page.
+
+   A generation counter is the whole fix: a reply that is no longer the current one is dropped
+   rather than painted. The file already says this in _libTab's own comment — reusing a stale
+   drive id "would list the wrong library's files under the right heading — which is worse than
+   an error". This is that, arriving by a different door. */
 async function _libSpList(hub, interactive) {
   const st = _libState(hub), meta = _LIB_HUBS[hub];
   if (!meta) return;
+  const gen = ++st.gen;
   // Land on a department rather than asking a question nobody was posed: on the first open the
   // reader has chosen nothing, and their own department is what they came for.
   if (!st.tab) st.tab = _libDefaultTab(hub);
   const dept = st.tab || '', own = _libDeptUrl(hub, dept);
   const base = own || _libCfg(meta.docsKey);
-  st.loading = true; st.error = ''; st.found = null;
+  st.loading = true; st.error = ''; st.found = null; st.shown = _LIB_PAGE;
   _libPaintDocs(hub);
+  let _items = null, _err = '';
   try {
     // No department to show: not an error, and not an empty folder either — those would both
     // be claims about the library rather than about this account.
@@ -39987,10 +40131,8 @@ async function _libSpList(hub, interactive) {
     if (!_msalApp || !_account) throw new Error('nosession');
     const token = await _libToken();
     const children = async function (u) {
-      const r = await fetch(u + '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime',
-        { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!r.ok) throw new Error('graph ' + r.status);
-      return (((await r.json()) || {}).value) || [];
+      return await _libGraphPage(u + '?$top=999&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime',
+                                 token, st);
     };
     const here = st.crumbs.length ? st.crumbs[st.crumbs.length - 1] : null;
     let url;
@@ -39999,6 +40141,7 @@ async function _libSpList(hub, interactive) {
     } else {
       st.crumbs = [];   // nothing resolved yet, so any crumb still held names a folder we cannot address
       const r = await _pmSpResolve(base, _pmSpCtx(base), token);
+      if (gen !== st.gen) throw new Error('superseded');
       st.drive = r.driveId;
       // Kept for the upload path: Graph addresses a new file by its PARENT, and at the root of a
       // configured library that parent is baseRef + the folder the link pointed into.
@@ -40011,17 +40154,20 @@ async function _libSpList(hub, interactive) {
       // department has no documents" — a claim about the company, not about a path.
       if (dept && !own) {
         const rows = await children(url);
+        if (gen !== st.gen) throw new Error('superseded');
         const f = rows.filter(function (x) { return x.folder && _libSameName(x.name, dept); })[0];
         if (!f) throw new Error('nodept');
         st.crumbs = [{ id: f.id, name: f.name }];
         url = _GRAPH + '/drives/' + st.drive + '/items/' + encodeURIComponent(f.id) + '/children';
       }
     }
-    st.items = await children(url);
+    _items = await children(url);
   } catch (e) {
-    st.items = null;
-    st.error = String((e && e.message) || e);
+    _items = null;
+    _err = String((e && e.message) || e);
   }
+  if (gen !== st.gen) return;          // a newer listing owns the panel; this reply is history
+  st.items = _items; st.error = _err;
   st.loading = false;
   _libPaintDocs(hub);
 }
@@ -40269,12 +40415,78 @@ function _libReplacePick(hub, itemId, name) {
   inp.click();
 }
 
+/* HOW MANY ITEMS THE PORTAL WILL HOLD IN MEMORY FOR ONE LIST.
+
+   Graph returns a PAGE, not a folder. Both readers below used to take the first page and drop
+   `@odata.nextLink` on the floor, so a folder of 1,000 files was a folder of 200 and a search
+   across the library was the first 100 hits — silently, with the filter box, the period select
+   and the item count all then operating on that truncated set. The count said "200 items" about a
+   folder holding a thousand, and it was not a rounding error: it was the wrong answer to the
+   question the reader asked, printed confidently. Two other Graph readers in this same file (the
+   invoice mailbox and the user directory) already follow nextLink; this one had been missed.
+
+   A ceiling is still needed, because "keep asking until Graph runs out" is how a browser tab dies
+   on a library with 80,000 files in it. 5,000 is roughly ten pages, comfortably more than any real
+   department folder here, and small enough to render. WHAT MATTERS IS THAT REACHING IT IS SAID
+   OUT LOUD — `st.partial` is set, and the panel prints "the first 5,000 of more" rather than a
+   count that looks complete. A truncation nobody is told about is the bug being fixed; a
+   truncation with a ceiling and a sentence is a limit. */
+const _LIB_MAX_ITEMS = 5000;
+
+/* HOW MANY ROWS ARE PUT IN THE DOM AT ONCE — a different question from how many are fetched,
+   and conflating the two is what makes a big folder freeze a phone.
+
+   Measured on the real row builders: one list row is 14 elements for a reader and 21 for someone
+   who may replace files. A thousand files is therefore 14,001 to 21,001 nodes written in a single
+   innerHTML, and five thousand is 70,001 to 105,001 — rebuilt in full on every debounced
+   keystroke in the filter box. The string is cheap to build (tens of milliseconds); parsing and
+   laying out that many nodes on a phone is not.
+
+   150 rows is about eight screens on a phone, ~2,100 nodes, and more than anybody scrolls before
+   reaching for the filter. Beyond it a "Show more" button — not a virtual scroller: a button has
+   visible state, works from a keyboard and a screen reader, and cannot desync from the filter the
+   way scroll maths can. */
+const _LIB_PAGE = 150;
+
+/* Every page of a Graph collection, up to the ceiling. Sets st.partial when there was more. */
+async function _libGraphPage(url, token, st) {
+  const out = [];
+  let u = url, guard = 0;
+  if (st) st.partial = false;
+  while (u && guard++ < 40) {
+    /* _graphFetch, not fetch: this is now up to 40 sequential calls for one folder, and Graph
+       throttles. The file's two other nextLink loops already go through it. On a bare fetch a
+       single 429 turns a healthy folder into "SharePoint could not be reached". */
+    const r = await _graphFetch(u, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('graph ' + r.status);
+    const j = (await r.json()) || {};
+    (j.value || []).forEach(function (x) { out.push(x); });
+    u = j['@odata.nextLink'] || '';
+    if (out.length >= _LIB_MAX_ITEMS) {
+      /* `u` is '' on the LAST page, so asking only about the cursor misses the case where the
+         overflow arrived in the final page: 5,100 items came back, 100 were sliced away, and
+         nothing was said — the exact silent truncation this function was written to end, one
+         layer further down. The length is its own proof that there was more, and it does not
+         depend on the cursor. With $top=999 the window that went unreported was every total
+         between 5,000 and 5,994. */
+      if (st && (u || out.length > _LIB_MAX_ITEMS)) st.partial = true;
+      break;
+    }
+  }
+  /* The guard is not a second ceiling to be quiet about either: 40 pages of 999 is well past
+     _LIB_MAX_ITEMS, so hitting it means Graph is paging in very small pages and there is still
+     more. Either way the reader is told the list is not everything. */
+  if (st && u && guard >= 40) st.partial = true;
+  return out.slice(0, _LIB_MAX_ITEMS);
+}
+
 /* Search the whole document library rather than the folder on screen. Deliberately a
    separate action with its own wording: the box above the list filters what is in front of
    you, and a filter that silently reached across folders would make an empty folder look
    full. */
 async function _libSpSearch(hub) {
   const st = _libState(hub);
+  const gen = ++st.gen;                 // a slow search must not land on a folder the reader left
   const q = String(_crmLF['lib-' + hub + '-q'] || '').trim();
   if (!q) { st.found = null; _libPaintDocs(hub); return; }
   if (!st.drive) { await _libSpList(hub, true); if (!st.drive) return; }
@@ -40282,12 +40494,18 @@ async function _libSpSearch(hub) {
   _libPaintDocs(hub);
   try {
     const token = await _libToken();
-    const res = await fetch(_GRAPH + '/drives/' + st.drive + "/root/search(q='" + encodeURIComponent(q.replace(/'/g, "''")) + "')" +
-      '?$top=100&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime,parentReference',
-      { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!res.ok) throw new Error('graph ' + res.status);
-    st.found = { q: q, rows: (((await res.json()) || {}).value) || [] };
-  } catch (e) { st.found = null; st.error = String((e && e.message) || e); }
+    const rows = await _libGraphPage(
+      _GRAPH + '/drives/' + st.drive + "/root/search(q='" + encodeURIComponent(q.replace(/'/g, "''")) + "')" +
+      '?$top=200&$select=id,name,size,folder,file,webUrl,lastModifiedDateTime,parentReference',
+      token, st);
+    if (gen !== st.gen) return;
+    st.found = { q: q, rows: rows, partial: !!st.partial };
+  } catch (e) {
+    if (gen !== st.gen) return;
+    st.found = null; st.error = String((e && e.message) || e);
+  }
+  if (gen !== st.gen) return;
+  st.shown = _LIB_PAGE;
   st.loading = false;
   _libPaintDocs(hub);
 }
@@ -40383,12 +40601,36 @@ function _libView(hub) {
   return st.view;
 }
 function _libSetView(hub, v) {
+  _libResetShown(hub);
   _libState(hub).view = (v === 'grid') ? 'grid' : 'list';
   try { localStorage.setItem('tkLibView-' + hub, _libState(hub).view); } catch (e) {}
   _libPaintDocs(hub);
 }
 /* The filtering and ordering, once, so the list and the grid can never disagree about what is
    in the folder — which they would the first time somebody fixed a filter in one of them. */
+/* Folders ALWAYS come before files, whatever the sort. A folder has no size worth comparing and
+   its own timestamp is not its contents' — so ranking it among the files by either would be
+   sorting on a value that does not mean what the column says. */
+function _libSortCmp(hub) {
+  const how = String(_crmLF['lib-' + hub + '-sort'] || '');
+  /* Numeric collation, so AHU-2 comes before AHU-10. The bare localeCompare puts AHU-10 first,
+     which is wrong the moment a folder holds more than nine numbered drawings — and this is a
+     company whose folders are full of numbered drawings. */
+  const byName = function (a, b) {
+    return String(a.name || '').localeCompare(String(b.name || ''), undefined,
+                                              { numeric: true, sensitivity: 'base' });
+  };
+  const when = function (r) { return String(r.lastModifiedDateTime || ''); };
+  return function (a, b) {
+    if (!!a.folder !== !!b.folder) return a.folder ? -1 : 1;
+    if (how === 'Name (Z–A)') return -byName(a, b);
+    if (how === 'Newest first') return when(b).localeCompare(when(a)) || byName(a, b);
+    if (how === 'Oldest first') return when(a).localeCompare(when(b)) || byName(a, b);
+    if (how === 'Largest first') return ((+b.size || 0) - (+a.size || 0)) || byName(a, b);
+    return byName(a, b);
+  };
+}
+
 function _libVisibleRows(hub, rows) {
   const q = String(_crmLF['lib-' + hub + '-f'] || '').trim().toLowerCase();
   const kind = String(_crmLF['lib-' + hub + '-kind'] || '');
@@ -40396,19 +40638,20 @@ function _libVisibleRows(hub, rows) {
     if (q && String(r.name || '').toLowerCase().indexOf(q) < 0) return false;
     if (kind === 'Folders only' && !r.folder) return false;
     if (kind === 'Files only' && r.folder) return false;
-    if (!_inPeriodLF(r.lastModifiedDateTime || '', 'lib-' + hub + '-period')) return false;
+    /* FILES ONLY. A folder's lastModifiedDateTime is the folder's, not its contents' — so judging
+       a folder by the period removed the sub-folders whenever somebody picked "This month", and
+       with them the only way into the sub-tree. The reader would have seen an empty department
+       and concluded the documents were gone.
+       _crmInPeriodLF, not _inPeriodLF: the first keeps a row with no date, the second drops it. */
+    if (!r.folder && !_crmInPeriodLF(r.lastModifiedDateTime || '', 'lib-' + hub + '-period')) return false;
     return true;
-  }).sort(function (a, b) {
-    if (!!a.folder !== !!b.folder) return a.folder ? -1 : 1;
-    return String(a.name || '').localeCompare(String(b.name || ''));
-  });
+  }).sort(_libSortCmp(hub));
 }
 /* The document cards. Folders keep both destinations here too — the card opens the folder, the
    corner button opens it in SharePoint — so switching view never changes what a click does. */
-function _libCardsHtml(hub, rows, showPath) {
-  const list = _libVisibleRows(hub, rows);
+function _libCardsHtml(hub, list, showPath, total) {
   if (!list.length)
-    return '<div class="lib-empty">' + _t((rows && rows.length) ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
+    return '<div class="lib-empty">' + _t(total ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
   return '<div class="lib-docgrid">' + list.map(function (r) {
     const ext = _libExt(r.name), tone = r.folder ? '#D97706' : (_LIB_EXT_TONE[ext] || '#5C6470');
     const url = _crmHref(r.webUrl);
@@ -40421,8 +40664,11 @@ function _libCardsHtml(hub, rows, showPath) {
       (bits.length ? '<span class="lib-doc-meta">' + _crmEsc(bits.join(' · ')) + '</span>' : '');
     const corner = url ? '<a class="lib-doc-act" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
       _libAttr(_t('Open in SharePoint')) + '" aria-label="' + _libAttr(_t('Open in SharePoint')) + '" onclick="event.stopPropagation()">' + _LIB_EXTERNAL + '</a>' : '';
+    /* A real <button>, not a div wearing role="button". The div was focusable and announced as a
+       button and did nothing on Enter or Space — the list view has always used a button here, and
+       the CSS is class-based, so this inherits the styling and gains the keyboard for free. */
     if (r.folder)
-      return '<div class="lib-doc" role="button" tabindex="0" onclick="_libSpEnter(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' + _libAttr(r.name) + '">' + body + corner + '</div>';
+      return '<button type="button" class="lib-doc" onclick="_libSpEnter(\'' + hub + '\',\'' + _libArg(r.id) + '\',\'' + _libArg(r.name) + '\')" title="' + _libAttr(r.name) + '">' + body + corner + '</button>';
     if (!url) return '<span class="lib-doc lib-row-dead" title="' + _libAttr(_t('This file has no SharePoint address')) + '">' + body + '</span>';
     return '<a class="lib-doc" href="' + _libAttr(url) + '" target="_blank" rel="noopener" title="' +
       _libAttr(r.name + ' — ' + _t('View or download in SharePoint')) + '">' + body +
@@ -40431,10 +40677,9 @@ function _libCardsHtml(hub, rows, showPath) {
   }).join('') + '</div>';
 }
 
-function _libRowsHtml(hub, rows, showPath) {
-  const list = _libVisibleRows(hub, rows);
+function _libRowsHtml(hub, list, showPath, total) {
   if (!list.length)
-    return '<div class="lib-empty">' + _t((rows && rows.length) ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
+    return '<div class="lib-empty">' + _t(total ? 'Nothing matches that filter.' : 'This folder is empty.') + '</div>';
   return '<div class="lib-rows">' + list.map(function (r) {
     const ext = _libExt(r.name), tone = r.folder ? '#D97706' : (_LIB_EXT_TONE[ext] || '#5C6470');
     const ico = r.folder
@@ -40484,13 +40729,18 @@ function _libParentLabel(r) {
 }
 
 /* One entry point, so every caller gets whichever view the reader chose. */
-function _libDocsHtml(hub, rows, showPath) {
-  return _libView(hub) === 'grid' ? _libCardsHtml(hub, rows, showPath) : _libRowsHtml(hub, rows, showPath);
+function _libDocsHtml(hub, list, showPath, total) {
+  return _libView(hub) === 'grid'
+    ? _libCardsHtml(hub, list, showPath, total)
+    : _libRowsHtml(hub, list, showPath, total);
 }
 function _libPaintDocs(hub) {
   const el = document.getElementById('lib-docs-' + hub); if (!el) return;
   const st = _libState(hub);
   const fn = '_libSpFilter_' + hub;
+  const _a = document.activeElement;
+  const keep = (_a && _a.id && el.contains && el.contains(_a))
+    ? { id: _a.id, s: _a.selectionStart, e: _a.selectionEnd } : null;
   /* The first crumb is the TAB, not the drive. Inside a department tab crumbs[0] is already the
      department's own folder, so listing it again after a "Library root" that cannot be reached
      from here would be two lies in one row: a level that is not above this one, and a name shown
@@ -40506,24 +40756,17 @@ function _libPaintDocs(hub) {
   const bar = _crmFiltBar(
     _crmFiltSearch('lib-' + hub + '-f', _t('Filter this folder…'), fn) +
     _crmFiltSel('lib-' + hub + '-kind', 'All items', ['Folders only', 'Files only'], fn) +
+    /* The two questions a thousand-file folder is actually asked — what changed, and what is
+       large — had no answer at all before this. */
+    _crmFiltSel('lib-' + hub + '-sort', 'Name (A–Z)',
+                ['Name (Z–A)', 'Newest first', 'Oldest first', 'Largest first'], fn) +
     _crmFiltPeriod('lib-' + hub + '-period', fn) +
     '<span style="flex:1 0 auto"></span>' +
     '<input id="lib-' + hub + '-q" type="search" class="form-control" style="width:auto;min-width:160px;font-size:12px" placeholder="' +
       _tkEscA(_t('Search the whole library')) + '" aria-label="' + _tkEscA(_t('Search the whole library')) + '" value="' + _tkEscA(_crmLF['lib-' + hub + '-q'] || '') +
       '" oninput="_crmLF[\'lib-' + hub + '-q\']=this.value" onkeydown="if(event.key===\'Enter\')_libSpSearch(\'' + hub + '\')">' +
     '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="_libSpSearch(\'' + hub + '\')">' + _t('Search') + '</button>');
-  let body;
-  if (st.loading) body = '<div class="lib-empty">' + _t('Loading…') + '</div>';
-  else if (st.error) body = _libDocsMsg(hub);
-  else if (st.found) body = '<div class="lib-found">' +
-    _crmEsc(_t('Results across the whole library') + ': “' + st.found.q + '” — ' + st.found.rows.length + ' ') + _t(st.found.rows.length === 1 ? 'item' : 'items') +
-    ' <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpCrumb(\'' + hub + '\',' + (st.crumbs.length - 1) + ')">' + _t('Back to the folder') + '</button></div>' +
-    _libDocsHtml(hub, st.found.rows, true);
-  else body = _libDocsHtml(hub, st.items || [], false);
   const canWrite = _libMayWrite() && !st.error && !!st.drive;
-  /* The count is of what is ON SCREEN, after the filters — a total that ignores the filter above
-     it is a number nobody can check against the rows underneath. */
-  const onScreen = st.error ? null : _libVisibleRows(hub, (st.found ? st.found.rows : st.items) || []);
   const view = _libView(hub);
   const vbtn = function (v, label, ico) {
     return '<button type="button" class="' + (view === v ? 'on' : '') + '" onclick="_libSetView(\'' + hub + '\',\'' + v + '\')" title="' +
@@ -40533,7 +40776,12 @@ function _libPaintDocs(hub) {
   el.innerHTML =
     '<div class="card-hdr"><div style="display:flex;align-items:center;gap:9px;min-width:0">' +
       '<div class="card-title">' + _t('Documents') + '</div>' +
-      (onScreen ? '<span class="lib-chip">' + onScreen.length + ' ' + _t(onScreen.length === 1 ? 'item' : 'items') + '</span>' : '') +
+      '<span class="lib-chip" id="lib-count-' + hub + '">' + _libCountText(hub) + '</span>' +
+      /* A count that is not the whole folder must never be printed as if it were. This is the
+         same claim the reader is making by looking at the list, so it is said in the same place. */
+      ((!st.error && st.partial) ? '<span class="lib-chip lib-chip-warn" title="' +
+        _tkEscA(_t('This folder holds more than the portal will list at once. Use the search box to narrow it.')) + '">' +
+        _t('More not shown') + '</span>' : '') +
     '</div>' +
     '<div style="display:flex;gap:6px;align-items:center">' +
     (st.error ? '' : '<span class="lib-view">' +
@@ -40544,12 +40792,90 @@ function _libPaintDocs(hub) {
       _tkEscA(_t('Add a file to the folder you are in')) + '">' + tkIcon('plus', 13) + ' ' + _t('Upload file') + '</button>' : '') +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpRetry(\'' + hub + '\')" title="' + _tkEscA(_t('Reload from SharePoint')) + '">' +
     tkIcon('refresh', 13) + ' ' + _t('Refresh') + '</button></div></div>' +
-    _libTabBar(hub) + (st.error ? '' : crumbs + bar) + body;
+    _libTabBar(hub) + (st.error ? '' : crumbs + bar) +
+    '<div id="lib-body-' + hub + '">' + _libBodyHtml(hub) + '</div>';
+  /* Belt and braces. _libPaintBody is what runs on a keystroke and it leaves the toolbar alone,
+     but this function still replaces the whole card — on a tab change, a crumb, a view toggle —
+     and the reader may have been in the filter box when they pressed it. _pmSet solved exactly
+     this and its eight lines are worth repeating rather than paraphrasing. */
+  if (keep) {
+    const back = document.getElementById(keep.id);
+    if (back) {
+      try {
+        back.focus({ preventScroll: true });
+        if (keep.s != null && back.setSelectionRange) back.setSelectionRange(keep.s, keep.e);
+      } catch (e) {}
+    }
+  }
+  try { el.querySelector('.tabs .tab.active')?.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {}
 }
+
+/* THE ROWS AND NOTHING ELSE — everything that changes when a filter changes.
+
+   This is split out of _libPaintDocs because the filter box lives in the chrome. Rewriting the
+   whole card on every debounced keystroke destroyed the <input> being typed into: the text
+   survived (_crmLF re-emits it) but focus fell to <body>, and on a phone the keyboard dropped.
+   170 ms of hesitation was enough — a glance at the list, or a Telex tone key.
+
+   This is the house convention, not an invention: devFillTable and eleven other _crmFiltSearch
+   registers rewrite a table BODY and leave their toolbar alive. */
+function _libBodyHtml(hub) {
+  const st = _libState(hub);
+  if (st.loading) return '<div class="lib-empty">' + _t('Loading…') + '</div>';
+  if (st.error) return _libDocsMsg(hub);
+  const raw = (st.found ? st.found.rows : st.items) || [];
+  const list = _libVisibleRows(hub, raw);            // filtered and sorted ONCE per paint
+  const shown = list.slice(0, st.shown || _LIB_PAGE);
+  const head = st.found
+    ? '<div class="lib-found">' +
+      _crmEsc(_t('Results across the whole library') + ': “' + st.found.q + '” — ' + list.length + ' ') + _t(list.length === 1 ? 'item' : 'items') +
+      (st.found.partial ? ' <b>' + _t('and more — narrow the search') + '</b>' : '') +
+      ' <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_libSpCrumb(\'' + hub + '\',' + (st.crumbs.length - 1) + ')">' +
+      _t('Back to the folder') + '</button></div>'
+    : '';
+  /* The footer states BOTH numbers. "Showing 150 of 1,412" is the only honest way to put a cap on
+     screen: a list that simply stops at 150 is the truncation this whole change is about. */
+  const more = list.length > shown.length
+    ? '<div class="lib-more"><button type="button" class="btn btn-outline btn-sm" onclick="_libMore(\'' + hub + '\')">' +
+      _t('Show more') + '</button><span class="lib-more-n">' +
+      _crmEsc(shown.length + ' / ' + list.length) + '</span></div>'
+    : '';
+  return head + _libDocsHtml(hub, shown, !!st.found, raw.length) + more;
+}
+
+/* What the header chip says. Two numbers when a cap or a filter is hiding rows, one when it is
+   not — a bare total beside a shorter list is a number nobody can check against what they see. */
+function _libCountText(hub) {
+  const st = _libState(hub);
+  if (st.error) return '';
+  const list = _libVisibleRows(hub, (st.found ? st.found.rows : st.items) || []);
+  const n = Math.min(list.length, st.shown || _LIB_PAGE);
+  return (n < list.length ? n + ' / ' + list.length : String(list.length)) + ' ' +
+         _t(list.length === 1 ? 'item' : 'items');
+}
+
+function _libPaintBody(hub) {
+  const b = document.getElementById('lib-body-' + hub);
+  if (!b) { _libPaintDocs(hub); return; }     // first paint, or a harness with no child lookup
+  b.innerHTML = _libBodyHtml(hub);
+  const c = document.getElementById('lib-count-' + hub);
+  if (c) c.textContent = _libCountText(hub);
+}
+
+function _libMore(hub) {
+  const st = _libState(hub);
+  st.shown = (st.shown || _LIB_PAGE) + _LIB_PAGE;
+  _libPaintBody(hub);
+}
+
+/* Every route that changes WHICH rows are being looked at resets the cap. Miss one and a reader
+   who pressed "Show more" six times in a thousand-file folder gets 900 rows of the next
+   department painted at once — the cap silently stops being a cap. */
+function _libResetShown(hub) { _libState(hub).shown = _LIB_PAGE; }
 /* One named callback per hub, because _crmSearchInput / _crmFiltSel take a function NAME and
    call window[name] — a closure cannot be reached that way. */
-function _libSpFilter_wiki() { _libPaintDocs('wiki'); }
-function _libSpFilter_knowledge() { _libPaintDocs('knowledge'); }
+function _libSpFilter_wiki() { _libResetShown('wiki'); _libPaintBody('wiki'); }
+function _libSpFilter_knowledge() { _libResetShown('knowledge'); _libPaintBody('knowledge'); }
 
 /* ── the two hub pages ──────────────────────────────────────────────────────── */
 /* No <h2> here. The page header directly above already says "Company Wiki", and repeating it is
@@ -40559,7 +40885,7 @@ const _LIB_HERO_ICO = {
   wiki: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="16" y2="7"/>',
   knowledge: '<path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><line x1="9" y1="21" x2="15" y2="21"/>'
 };
-function _libHubHtml(hub) {
+function _libHubHtml(hub, extra) {
   const meta = _LIB_HUBS[hub];
   const page = _libCfg(meta.pageKey), docs = _libCfg(meta.docsKey);
   return '<div class="lib-hero" style="--lib-tone:' + meta.tone + '">' +
@@ -40570,14 +40896,20 @@ function _libHubHtml(hub) {
       (page ? '<a class="btn btn-primary btn-sm" href="' + _libAttr(page) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _crmEsc(_t(meta.open)) + '</a>' : '') +
       (docs ? '<a class="btn btn-outline btn-sm" href="' + _libAttr(docs) + '" target="_blank" rel="noopener">' + tkIcon('external', 13) + ' ' + _t('Open the document library') + '</a>' : '') +
     '</div></div>' +
+    /* The curated shortcuts go ABOVE the documents card, not after it.
+       They were appended below a list that can now be a thousand rows deep behind a "Show more"
+       button — so the handful of pages somebody chose BY HAND to put in front of everybody sat
+       under the one thing nobody scrolls past. The pinned pages are the answer for most readers
+       most of the time; the file browser is where you go when they are not. */
+    (extra || '') +
     '<div class="card" id="lib-docs-' + hub + '"></div>';
 }
 
 function tkRenderWiki() {
   const root = document.getElementById('wiki-root'); if (!root) return;
   const pinned = (_tkPortalData().wiki || []).filter(function (s) { return (s.label || '').trim(); });
-  root.innerHTML = _libHubHtml('wiki') +
-    (pinned.length ? '<div class="lib-sec-lbl">' + _t('Pinned pages') + '</div>' + _libTilesHtml(pinned) : '');
+  root.innerHTML = _libHubHtml('wiki',
+    pinned.length ? '<div class="lib-sec-lbl">' + _t('Pinned pages') + '</div>' + _libTilesHtml(pinned) : '');
   _libSpList('wiki', false);
 }
 
@@ -40605,7 +40937,7 @@ function tkRenderKnowledge() {
           '</span></a>';
       }).join('') + '</div>'
     : '';
-  root.innerHTML = _libHubHtml('knowledge') + learn;
+  root.innerHTML = _libHubHtml('knowledge', learn);
   _libSpList('knowledge', false);
 }
 
@@ -43616,7 +43948,21 @@ function switchMgrTab(tab, el) {
 }
 
 function switchHRTab(tab, el) {
-  document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
+  /* '#hr-tabs .tab', NOT '#view-hradmin .tabs .tab' — the Company Portal pane now has a tab bar
+     of its own inside this view, and the broad selector stripped .active off it on every HR tab
+     switch. */
+  document.querySelectorAll('#hr-tabs .tab').forEach(b => b.classList.remove('active'));
+  /* Leaving with unsaved portal edits asks first. No beforeunload: a browser-level dialog on
+     every navigation is worse than the problem it solves. */
+  if (tab !== 'portal' && typeof _tkPortalTouched !== 'undefined' && _tkPortalTouched.size) {
+    const go = el;
+    tkConfirm({ title: _t('Leave without saving?'),
+                body: _t('The Company Portal has changes that have not been saved. Leaving this tab keeps them in the editor, but they are not published until you press Save Portal Content.'),
+                okText: _t('Leave the tab') }).then(function (yes) {
+      if (yes) { _tkPortalTouched.clear(); switchHRTab(tab, go); }
+    });
+    return;
+  }
   ['balances','benefits','compliance','portal','contracts','decisions','statutory','osh','minors','minwage','pack','certs'].forEach(id => {
     // 'compliance' is a WRAPPER holding the document register and the computed matrix, so the panel
     // it shows is not the same element the matrix paints into.
