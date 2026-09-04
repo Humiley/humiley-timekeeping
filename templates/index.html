@@ -6051,6 +6051,8 @@ async function doLogin(role, opts = {}) {
   // AFTER _applyRole, never before: the level gates hide nav rows with style.display and this
   // reads that same property back. Running first would be overwritten a line later.
   try { _libApplyLevels(); } catch (e) {}
+  // ...and if this load is the far side of a Reconnect, go back to the folder they were in.
+  try { _libResumeAfterReconnect(); } catch (e) { console.warn('library resume:', e.message); }
   /* dismiss overlay */
   const ov = document.getElementById('login-overlay');
   if (ov) { ov.classList.add('fade-out'); setTimeout(() => { ov.style.display = 'none'; }, 460); }
@@ -39376,14 +39378,65 @@ async function _libToken() {
   }
 }
 /* The one interactive step, and it only ever runs from a real click. */
+/* Where the reader was standing, so reconnecting can put them back there.
+
+   A redirect reloads the whole app, and without this it comes back on the dashboard — so the
+   person who was three folders deep in Engineering, hit an expired token and pressed the only
+   button offered, is punished for it: they lose their place AND still have to walk back to find
+   out whether it worked. Recovering the session is only half of recovering the failure.
+
+   sessionStorage, not localStorage: this is one interrupted journey, not a preference. It should
+   not still be waiting to fire in a tab somebody opens next week. */
+const _LIB_RETURN = 'tkLibReturn';
+function _libRemember(hub) {
+  const st = _libState(hub);
+  try {
+    sessionStorage.setItem(_LIB_RETURN, JSON.stringify({
+      hub: hub, tab: st.tab || '', crumbs: (st.crumbs || []).map(function (c) { return { id: c.id, name: c.name }; })
+    }));
+  } catch (e) {}
+}
+/* Called once the app is up. Anything unreadable is dropped rather than guessed at — landing
+   somebody in the wrong folder is worse than landing them on the page they asked for. */
+function _libResumeAfterReconnect() {
+  let saved = null;
+  try {
+    const raw = sessionStorage.getItem(_LIB_RETURN);
+    sessionStorage.removeItem(_LIB_RETURN);      // one journey, taken once
+    saved = raw ? JSON.parse(raw) : null;
+  } catch (e) { saved = null; }
+  if (!saved || !_LIB_HUBS[saved.hub]) return false;
+  const hub = saved.hub;
+  if (!_libMayOpen(hub)) return false;           // the level rule still decides, not the crumb
+  const st = _libState(hub);
+  st.tab = typeof saved.tab === 'string' ? saved.tab : '';
+  if (st.tab && !_libDeptAllowed(st.tab)) { st.tab = ''; st.crumbs = []; }
+  showView(hub, null, _LIB_HUBS[hub].title);
+  // The crumbs address items in a drive this reload has not resolved yet, so the folder is
+  // re-entered rather than restored: _libSpList resolves the tab first, and only then are the
+  // ids it was given meaningful again.
+  const want = Array.isArray(saved.crumbs) ? saved.crumbs : [];
+  _libSpList(hub, false).then(function () {
+    if (!want.length || st.crumbs.length >= want.length) return;
+    st.crumbs = st.crumbs.concat(want.slice(st.crumbs.length));
+    _libSpList(hub, false);
+  });
+  return true;
+}
 function _libReconnect() {
   if (!_msalApp) return;
+  // Remember BEFORE navigating: after acquireTokenRedirect there is no more of this page to run.
+  const hub = (_currentView === 'knowledge') ? 'knowledge' : 'wiki';
+  _libRemember(hub);
   try {
     _msalApp.acquireTokenRedirect({
       scopes: ['Sites.ReadWrite.All'],
       account: _account || (_msalApp.getAllAccounts && _msalApp.getAllAccounts()[0]) || undefined
     });
-  } catch (e) { toast(_t('Microsoft sign-in could not be started.'), 'error', 7000); }
+  } catch (e) {
+    try { sessionStorage.removeItem(_LIB_RETURN); } catch (_e) {}   // no journey happened
+    toast(_t('Microsoft sign-in could not be started.'), 'error', 7000);
+  }
 }
 
 /* ── reading the library ────────────────────────────────────────────────────── */

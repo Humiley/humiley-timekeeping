@@ -106,7 +106,9 @@ const PRELUDE = `
   const _GRAPH = 'https://graph.microsoft.com/v1.0';
   function msalLogin(){}
   function tkConfirm(){ return Promise.resolve(false); }
-  function showView(){}
+  let _currentView = 'wiki';
+  function showView(id){ if (id) _currentView = id; }
+  const sessionStorage = { _d: {}, getItem(k){ return this._d[k] || null; }, setItem(k,v){ this._d[k] = String(v); }, removeItem(k){ delete this._d[k]; } };
 `;
 
 const api = {};
@@ -144,6 +146,11 @@ new Function(PRELUDE + src.slice(i, j) + `
     setSilentOk: function (v) { SILENT_OK = v; },
     redirected: function () { return REDIRECTED; },
     _libReconnect: _libReconnect,
+    _libRemember: _libRemember,
+    _libResumeAfterReconnect: _libResumeAfterReconnect,
+    session: function(){ return sessionStorage._d; },
+    currentView: function(){ return _currentView; },
+    setCurrentView: function(v){ _currentView = v; },
     _libSetView: _libSetView,
     _libView: _libView,
     _libHubHtml: _libHubHtml,
@@ -585,6 +592,83 @@ ok('only sharepoint.com is accepted as a library host',
   ok('a course with no progress recorded gets no bar, not a 0% bar',
     (kroot.innerHTML.match(/lib-prog"/g) || []).length === 2,
     String((kroot.innerHTML.match(/lib-prog"/g) || []).length));
+
+  /* ── getting back what the failure took ──────────────────────────────────────
+     Reconnecting reloads the whole app, so without this it returns on the dashboard: the person
+     who was three folders deep, hit an expired token and pressed the only button offered loses
+     their place AND still has to walk back to find out whether it worked. Recovering the session
+     is only half of recovering the failure.
+
+     The saved position is also the one thing here that must NOT be trusted on the way back — it
+     was written before the reload, and the level rules are re-read after it. */
+  api.setSilentOk(true);
+  api.setLevel('management'); api.setMyDept('');
+  api.setDepts(['Engineering', 'Factory']);
+  api.setPortal({ deptTabs: [{ dept: 'Board Management (BM)', board: true }], deptDocs: [], library: [] });
+  api.setDrive({ DRV: {
+    root: [{ id: 'FE', name: 'Engineering', folder: { childCount: 1 }, webUrl: 'https://a/e' }],
+    FE: [{ id: 'SUB', name: 'Drawings', folder: { childCount: 1 }, webUrl: 'https://a/e/d' }],
+    SUB: [{ id: 'D9', name: 'GA-101.pdf', file: {}, size: 10, webUrl: 'https://a/e/d/1' }]
+  } }, () => ({ driveId: 'DRV', baseRef: 'root', projRel: '' }));
+
+  api._libTab('wiki', 'Engineering');
+  await new Promise(r => setTimeout(r, 0));
+  api._libState('wiki').crumbs.push({ id: 'SUB', name: 'Drawings' });
+
+  /* Through _libReconnect, NOT by calling _libRemember directly. Written the lazy way first, and
+     deleting the _libRemember call from _libReconnect then broke nothing: the feature would have
+     stopped working — reconnect, land on the dashboard — with the suite still green. The button
+     is the only way a reader reaches this, so the button is what has to be driven. */
+  delete api.session().tkLibReturn;
+  api.setCurrentView('wiki');
+  api._libReconnect();
+  ok('pressing Reconnect remembers the hub, the tab and the folder first',
+    /"hub":"wiki"/.test(api.session().tkLibReturn || '') &&
+    /"tab":"Engineering"/.test(api.session().tkLibReturn || '') &&
+    /"name":"Drawings"/.test(api.session().tkLibReturn || ''),
+    String(api.session().tkLibReturn));
+  ok('...and only then hands over to Microsoft', api.redirected() === true);
+
+  api.setCurrentView('staff-dashboard');
+  api._libState('wiki').tab = ''; api._libState('wiki').crumbs = [];
+  const resumed = api._libResumeAfterReconnect();
+  await new Promise(r => setTimeout(r, 0));
+  ok('...and coming back reopens that hub', resumed === true && api.currentView() === 'wiki', api.currentView());
+  ok('...on the department they were in', api._libState('wiki').tab === 'Engineering', String(api._libState('wiki').tab));
+  ok('...and back down in the folder they were in',
+    api._libState('wiki').crumbs.map(c => c.name).join('/') === 'Engineering/Drawings',
+    api._libState('wiki').crumbs.map(c => c.name).join('/'));
+  ok('...with that folder\'s documents actually loaded', names().join('|') === 'GA-101.pdf', names().join('|'));
+  ok('the saved position is consumed, so a later reload does not jump again',
+    !api.session().tkLibReturn && api._libResumeAfterReconnect() === false);
+
+  /* The levels are re-read AFTER the reload, and they may have moved — or the position may have
+     been written by an account that is no longer the one signed in. A crumb is a note about where
+     somebody was, never a permission to be there. */
+  api._libState('wiki').tab = 'Board Management (BM)';
+  api._libRemember('wiki');
+  api.setLevel('manager');            // Contributor: everything except the Board
+  api._libState('wiki').tab = '';
+  api._libResumeAfterReconnect();
+  await new Promise(r => setTimeout(r, 0));
+  ok('a remembered department the reader may no longer open drops back to General',
+    api._libState('wiki').tab === '', String(api._libState('wiki').tab));
+
+  api.setPortal({ library: [{ label: 'Wiki', url: 'view:wiki', level: 'admin' }] });
+  api._libState('wiki').tab = '';
+  api._libRemember('wiki');
+  api.setLevel('staff');
+  api.setCurrentView('staff-dashboard');
+  ok('and a hub the reader may no longer open is not reopened at all',
+    api._libResumeAfterReconnect() === false && api.currentView() === 'staff-dashboard');
+  api.setPortal({ library: [] });
+
+  /* Nothing saved, or nonsense saved, must be silent — this runs on every single boot. */
+  ok('an ordinary boot resumes nothing', api._libResumeAfterReconnect() === false);
+  api.session().tkLibReturn = '{not json';
+  ok('unreadable saved state is dropped, not guessed at', api._libResumeAfterReconnect() === false);
+  api.session().tkLibReturn = JSON.stringify({ hub: 'nosuchhub', tab: '', crumbs: [] });
+  ok('a hub that no longer exists is ignored', api._libResumeAfterReconnect() === false);
 
   console.log('\n  ' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
