@@ -24674,17 +24674,39 @@ function _pmWbsCmp(a, b) { a = String(a || ''); b = String(b || ''); const pa = 
    worth, and a level with no code at all is level 1 rather than an error. */
 function _pmWbsLevel(wbs) {
   const p = String(wbs == null ? '' : wbs).trim().split('.').filter(x => x !== '');
-  return Math.min(5, Math.max(1, p.length));
+  /* Twelve, not five. The cap used to be 5 and it was doing two jobs at once: bounding the INDENT,
+     and reporting the DEPTH. On this company's real programmes 1.4.8.2.1, 1.4.8.2.1.1 and
+     1.4.8.2.1.1.1 are three different levels and all three came back as 5 — so every surface that
+     multiplies by the level drew them at the same offset and the hierarchy simply vanished, on the
+     Timeline, in Activities and in the Daily-progress dialog. Depth is a FACT about the row; the
+     indent is a budget, and the budget belongs to whichever column is paying (see _pmWbsIndentPx).
+     A cap stays only so a malformed code cannot run the offset off the screen. */
+  return Math.min(12, Math.max(1, p.length));
 }
-/* px of indent for that level. Level 1 pays nothing: the top of a tree is not indented. */
-function _pmWbsIndent(lvl) { return (Math.max(1, +lvl || 1) - 1) * 12; }
+/* px of indent for a level, priced against the column paying for it. One step per surface, because
+   a 46%-wide Task column and a 176px phone gutter cannot afford the same one — and pricing them all
+   from a single 12px constant is what made the Activities indent too faint to read at the same time
+   as it made the timeline gutter too expensive to deepen. Cap = eight steps: eight levels each get
+   their own offset, and anything deeper shares the last. Level 1 pays nothing: the top of a tree is
+   not indented. */
+const _PM_WBS_STEP = {
+  table:  18,   // Activities — the Task column is 46% of a wide table and had room to spare
+  gutter:  8,   // Timeline label gutter / the Gantt's fixed 334px left column
+  narrow:  4,   // the same gutter at 176px, where the name budget is ~76px before the indent
+  dialog:  9,   // Daily progress — a 680px modal whose activity names already wrap
+};
+function _pmWbsIndentPx(lvl, where) {
+  const step = _PM_WBS_STEP[where] || _PM_WBS_STEP.gutter;
+  return Math.min(step * 8, (Math.max(1, +lvl || 1) - 1) * step);
+}
+function _pmWbsIndent(lvl) { return _pmWbsIndentPx(lvl, 'table'); }
 /* The same indent, priced against the gutter it is spent from. On a phone _pdLabW returns 176px
    total, of which the status cell takes 62 and the padding another 32 — measured, a level-4 row at
    the full 12px step plus the connector glyph left the name about EIGHTEEN pixels, one character
    and an ellipsis. Depth is still legible there because the WBS code is the first thing in the
    name, so a narrow gutter gets a token step and no connector rather than an unreadable tree. */
 function _pmWbsIndentFor(lvl, narrow) {
-  return narrow ? Math.min(15, (Math.max(1, +lvl || 1) - 1) * 5) : _pmWbsIndent(lvl);
+  return _pmWbsIndentPx(lvl, narrow ? 'narrow' : 'gutter');
 }
 /* Every activity strictly BELOW this one in the WBS, in the same project. Prefix + '.' is the whole
    test: 1.2 owns 1.2.1 and 1.2.3.1 but not 1.20 — which a bare startsWith would have swept in, and
@@ -27009,7 +27031,7 @@ function schFiltQ(ns, v) {
   clearTimeout(_schFilt._t);
   _schFilt._t = setTimeout(() => _pmReload(), 260);
 }
-function _schFilterBar(ns, shown, total) {
+function _schFilterBar(ns, shown, total, lvlBar) {
   const f = _schFilt[ns];
   const chip = (k, label) => '<button class="sch-chip" onclick="schFiltKind(\'' + ns + '\',\'' + k + '\')" style="border:1px solid ' +
     (f.k === k ? 'var(--navy)' : 'var(--line)') + ';background:' + (f.k === k ? 'var(--navy)' : 'var(--card,#fff)') +
@@ -27028,11 +27050,15 @@ function _schFilterBar(ns, shown, total) {
     ((f.q || f.from || f.to || f.k !== 'all')
       ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 9px" onclick="schFiltClear(\'' + ns + '\')">' + _t('Clear') + '</button>' : '') +
     (shown < total ? '<span style="font-size:11px;color:var(--text-light);margin-left:2px">' + shown + ' / ' + total + '</span>' : '') +
-    '</div>';
+    '</div>' + (lvlBar ? '<div style="padding:7px 16px;border-bottom:1px solid var(--line)">' + lvlBar + '</div>' : '');
 }
-function _schApplyFilter(rows, ns, day) {
+function _schApplyFilter(rows, ns, day, levelMax) {
   const f = _schFilt[ns], q = (f.q || '').trim().toLowerCase();
   return rows.filter(r => {
+    // Applied HERE and not by the caller, so the "shown / total" counter beside the chips counts a
+    // collapsed level as hidden. Pre-filtering the rows would have made total equal shown and the
+    // bar would have reported 152 / 152 with a hundred rows collapsed out of sight.
+    if (levelMax && (+r.level || 1) > levelMax) return false;
     if (q && (String(r.name || '') + ' ' + String(r.group || '') + ' ' + String(r.who || '')).toLowerCase().indexOf(q) < 0) return false;
     if (f.k !== 'all' && _schFlag(r, day).k !== f.k) return false;
     // A date window keeps anything that OVERLAPS it, not only what starts inside it — an activity
@@ -27065,9 +27091,10 @@ function _schTimeline(rows, o) {
   o = o || {};
   const day = o.day || _pmToday();
   const ns = o.ns || 'd', total = rows.length;
-  rows = _schApplyFilter(rows, ns, day);
+  const _deepest = o.levels ? _pmDeepest(rows) : 1;
+  rows = _schApplyFilter(rows, ns, day, o.levels ? _pmLvlMax : 0);
   if (!rows.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
-    _schFilterBar(ns, 0, total) + '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+    _schFilterBar(ns, 0, total, o.levels ? _pmLvlBar(_deepest) : '') + '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
     _t('Nothing matches this filter.') + '</div></div>';
   const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
   if (!ds.length) return '';
@@ -27237,7 +27264,7 @@ function _schTimeline(rows, o) {
           (_pdSlim ? _t('Show columns') : _t('More chart')) + '</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
-    _schFilterBar(ns, rows.length, total) +
+    _schFilterBar(ns, rows.length, total, o.levels ? _pmLvlBar(_deepest) : '') +
     /* sch-cap marks the capturable chart. The export finds the element by this class rather than
        by an id: the same builder renders both the master and the detail timelines, and two elements
        sharing an id is the trap _tkDialog's convention exists to avoid. */
@@ -27311,6 +27338,45 @@ function _schCalendar(rows, o) {
 /* ── the two adapters ─────────────────────────────────────────────────────────────────────────── */
 let _pmPhCol = {};
 function pmPhToggle(g) { g = decodeURIComponent(g); _pmPhCol[g] = !_pmPhCol[g]; _pmReload(); }
+/* How deep the Master Schedule is showing. 0 = all levels. ONE value for the whole level, not one
+   per view: "I am reading this programme two levels down" is a statement about the schedule, so
+   switching Timeline -> Activities must not silently re-expand it.
+   Collapsing here is a LENS, not a filter on the data — nothing is lost by hiding a level, because
+   a parent activity's percentage is already the weighted roll-up of the children beneath it
+   (_pmTaskPctRoll, children first). Level 2 shows level 2's own number, which is what levels 3 and
+   4 add up to. That is why this can hide rows without hiding work. */
+let _pmLvlMax = 0;
+function pmLvlMax(n) { _pmLvlMax = +n || 0; _pmReload(); }
+/* The deepest WBS level actually present, so the bar offers L1..L7 on a seven-level programme and
+   does not offer L9 on a flat one. */
+function _pmDeepest(rows) {
+  let d = 1; (rows || []).forEach(r => { const l = +(r && (r.level != null ? r.level : _pmWbsLevel(r.wbs))) || 1; if (l > d) d = l; });
+  return d;
+}
+/* Expand / collapse by WBS level. Picking a number shows every row at that level and above and
+   collapses everything below it; "All" is the way back. Both directions live on one control because
+   they are one question — how far down am I reading — and two separate buttons would have made the
+   reader hold the current depth in their head to know which one to press. */
+function _pmLvlBar(deepest, shown, total) {
+  if (!(deepest > 1)) return '';                 // a flat list has no hierarchy to collapse
+  const chip = (n, label, title) => {
+    const on = (_pmLvlMax || 0) === n;
+    return '<button onclick="pmLvlMax(' + n + ')" title="' + _tkEscA(title) + '" style="border:1px solid ' +
+      (on ? 'var(--navy)' : 'var(--line)') + ';background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') +
+      ';color:' + (on ? '#fff' : 'var(--text-light)') + ';border-radius:7px;padding:3px 9px;font-weight:600;' +
+      'font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">' + label + '</button>';
+  };
+  let out = '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">' + _t('Levels') + '</span>';
+  for (let n = 1; n <= deepest; n++)
+    out += chip(n, 'L' + n, _t2('Show level ' + n + ' and above', 'Hi\u1ec3n c\u1ea5p ' + n + ' tr\u1edf l\u00ean'));
+  out += chip(0, _t('All'), _t2('Show every level', 'Hi\u1ec3n t\u1ea5t c\u1ea3 c\u00e1c c\u1ea5p'));
+  // The count is the CALLER's to ask for: the timeline's chip bar already prints "shown / total"
+  // one line above this, and two copies of one number about one thing is worse than none. The
+  // Activities table has no such counter, so it passes them and gets it here.
+  if (_pmLvlMax && shown != null && total != null && shown < total)
+    out += '<span style="font-size:11px;color:var(--text-light)">' + shown + ' / ' + total + '</span>';
+  return '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">' + out + '</div>';
+}
 /* Master activities. Progress is the detail roll-up where detail lines exist — one source of truth,
    the same rule the Activities table already shows as "rolled up". */
 /* Every activity on the project, in the order the Timeline lists them, each carrying why it is or
@@ -27351,7 +27417,7 @@ function pmDailyEntry(pid) {
     }
     const why = r.lock === 'children' ? _t('from sub-tasks')
               : r.lock === 'detail' ? _t('from Detail Schedule') : '';
-    const pad = 6 + Math.max(0, (r.level || 1) - 1) * 14;
+    const pad = 6 + _pmWbsIndentPx(r.level, 'dialog');
     body += '<tr' + (r.lock ? ' style="color:var(--text-light)"' : '') + '>' +
       '<td style="font-size:12.5px;padding-left:' + pad + 'px">' +
         _pmEsc((r.t.wbs ? r.t.wbs + ' · ' : '') + (r.t.name || '')) +
@@ -27749,7 +27815,7 @@ function _pmGanttHtml(pid) {
       const dur = (t.start && t.finish) ? ((_pmDateDiff(t.start, t.finish) || 0) + 1) : (mile ? 0 : '');
       leftRows += '<div style="height:' + ROW + 'px;display:flex;align-items:center;gap:6px;padding:0 6px;border-bottom:1px solid var(--soft-bg)">' +
         '<span style="width:20px;text-align:center;flex:0 0 auto;font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + n + '</span>' +
-        '<span style="flex:1;min-width:0;display:flex;align-items:center;gap:5px' + (_pmWbsIndent(_pmWbsLevel(t.wbs)) ? ';padding-left:' + _pmWbsIndent(_pmWbsLevel(t.wbs)) + 'px' : '') + '">' + (t.wbs ? '<span style="font-family:Poppins,system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--text-light);font-size:9.5px;flex:0 0 auto">' + _pmEsc(t.wbs) + '</span>' : '') + /* the indent is spent out of a fixed 334px column, so an indented name truncates sooner — every surface that ellipsis-clips a name it just made narrower owes the reader the whole of it on hover */ '<span title="' + _tkEscA(t.name || '') + '" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(t.name || '') + '</span>' + (mile ? '<span title="Milestone" style="color:#8B5CF6;font-size:9px;flex:0 0 auto">◆</span>' : '') + (crit ? '<span title="Critical path" style="color:#EF4444;font-size:8px;font-weight:700;flex:0 0 auto">CP</span>' : '') + '</span>' +
+        '<span style="flex:1;min-width:0;display:flex;align-items:center;gap:5px' + (_pmWbsIndentPx(_pmWbsLevel(t.wbs), 'gutter') ? ';padding-left:' + _pmWbsIndentPx(_pmWbsLevel(t.wbs), 'gutter') + 'px' : '') + '">' + (t.wbs ? '<span style="font-family:Poppins,system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--text-light);font-size:9.5px;flex:0 0 auto">' + _pmEsc(t.wbs) + '</span>' : '') + /* the indent is spent out of a fixed 334px column, so an indented name truncates sooner — every surface that ellipsis-clips a name it just made narrower owes the reader the whole of it on hover */ '<span title="' + _tkEscA(t.name || '') + '" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(t.name || '') + '</span>' + (mile ? '<span title="Milestone" style="color:#8B5CF6;font-size:9px;flex:0 0 auto">◆</span>' : '') + (crit ? '<span title="Critical path" style="color:#EF4444;font-size:8px;font-weight:700;flex:0 0 auto">CP</span>' : '') + '</span>' +
         '<span style="width:24px;display:flex;justify-content:center;flex:0 0 auto">' + _pmMiniAvatar(t.assignee) + '</span>' +
         '<span style="width:50px;text-align:right;flex:0 0 auto;font-size:10px;color:var(--text-light);white-space:nowrap;font-variant-numeric:tabular-nums">' + _pmDShort(t.start) + '</span>' +
         '<span style="width:32px;text-align:right;flex:0 0 auto;font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + (dur !== '' ? dur + 'd' : '—') + '</span></div>';
@@ -27796,7 +27862,7 @@ function _pmGanttHtml(pid) {
 let _pmSchedBuild = null;   // per-render pane builders, closing over that render's tasks + CPM
 function pmRenderSchedule(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
-  if (_pmCalPid !== pid) { _pmCalMonth = ''; _pmCalPid = pid; _pmGanttCol = {}; }   // re-center calendar + reset collapsed Gantt phases on project switch
+  if (_pmCalPid !== pid) { _pmCalMonth = ''; _pmCalPid = pid; _pmGanttCol = {}; _pmLvlMax = 0; }   // re-center calendar + reset collapsed Gantt phases and reading depth on project switch
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
   const tr = _pmTaskRollup(pid);
   const cpm = _pmCPM(allTasks);
@@ -27808,7 +27874,7 @@ function pmRenderSchedule(pid) {
   _pmSchedBuild = {};
   _pmSchedBuild['m-timeline'] = () => {
     const _n = _pmTaskNorm(pid, _pmToday());
-    return _n.length ? _schTimeline(_n, { day: _pmToday(), ns: 'm', collapsed: _pmPhCol,
+    return _n.length ? _schTimeline(_n, { day: _pmToday(), ns: 'm', collapsed: _pmPhCol, levels: true,
         toggle: "pmPhToggle('{g}')", labelHead: 'Phase / Activity',
         rowHint: _t('Open this activity'), sub: _t('grouped by phase · click an activity to open it'),
         actions: '<button class="btn btn-emerald btn-sm" onclick="pmDailyEntry(\'' + pid + '\')">' +
@@ -27821,7 +27887,15 @@ function pmRenderSchedule(pid) {
   _pmSchedBuild['d-register'] = () => _pdView(pid, 'register');
   _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
   _pmSchedBuild['d-calendar'] = () => _pdView(pid, 'calendar');
-  _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
+  /* Activities reads the SAME _pmLvlMax the Timeline does — see pmLvlMax. Filtered here rather than
+     inside _pmTable because the count beside the chips has to name the rows that were collapsed
+     away, and _pmTable only ever sees the rows it is handed. */
+  const _actDeep = _pmDeepest(allTasks.map(t => ({ wbs: t.wbs })));
+  const _actRows = _pmLvlMax ? allTasks.filter(t => _pmWbsLevel(t.wbs) <= _pmLvlMax) : allTasks;
+  _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task',
+    (_actDeep > 1 ? '<div style="padding:9px 16px;border-bottom:1px solid var(--line)">' +
+       _pmLvlBar(_actDeep, _actRows.length, allTasks.length) + '</div>' : '') +
+    _pmTable('pm_tasks', [
     { label: 'WBS', sk: 'wbs', w: '1%', nowrap: true, render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     // The name is the column people read. Everything else takes a small fixed claim so this one
     // gets the remainder instead of losing width to a date that wrapped.
@@ -27882,7 +27956,7 @@ function pmRenderSchedule(pid) {
         return _pmBadge(st, _pmStatusColor(st));
       } },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
-  ], allTasks), pmMasterWipeBtn(pid) + schExportBtn(pid) + pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
+  ], _actRows), pmMasterWipeBtn(pid) + schExportBtn(pid) + pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
   _pmSchedBuild['m-calendar'] = () => _schCalendar(_pmTaskNorm(pid, _pmToday()), { day: _pmToday() });
   // LEVEL 1 picks the schedule; LEVEL 2 picks how to look at it. Both levels offer the same four
