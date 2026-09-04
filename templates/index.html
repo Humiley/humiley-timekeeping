@@ -3431,7 +3431,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
      payments + signs records must not load unpinned third-party script). Chart.js + MSAL are vendored
      under /static/vendor (same-origin, also fixes the offline-PWA claim); Leaflet stays on unpkg with
      SRI + crossorigin because its CSS pulls marker images by relative path. -->
-<script defer src="/static/vendor/chart.umd.min.js" integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD"></script>
 <script defer src="/static/vendor/msal-browser.min.js" integrity="sha384-hhkHFODse2T75wPL7oJ0RZ+0CgRa74LNPhgx6wO6DMNEhU3/fSbTZdVzxsgyUelp"></script>
 <script>
 (function () {
@@ -6106,6 +6105,16 @@ async function doLogin(role, opts = {}) {
   const ov = document.getElementById('login-overlay');
   if (ov) { ov.classList.add('fade-out'); setTimeout(() => { ov.style.display = 'none'; }, 460); }
   /* boot charts and data */
+  /* Signing in is the first moment a chart can possibly be wanted, so the fetch starts here — in
+     parallel with everything below, off the critical path, and long before any view with a canvas
+     can be opened by hand. The two initialisers below run twice on purpose: once now (a no-op if
+     Chart has not arrived, and every builder they call already guards for that) and once when it
+     has. Both destroy before rebuilding, so the second pass replaces rather than duplicates. */
+  _chartJs().then(function (ok) {
+    if (!ok) return;
+    try { initDashChart(); } catch (e) {}
+    try { initReportCharts(); } catch (e) {}
+  });
   initDashChart();
   initReportCharts();
   try { tkRenderApprovals(); } catch (e) {}
@@ -49024,14 +49033,62 @@ function _tuneChartDefaults() {
     Chart.defaults.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
   } catch (e) {}
 }
-(function _armChartTune() { if (typeof Chart !== 'undefined') { _tuneChartDefaults(); } else { setTimeout(_armChartTune, 400); } })();
+/* CHART.JS IS FETCHED WHEN SOMETHING WANTS A CHART, NOT AT BOOT.
+
+   It used to be a <script defer> in the document head, so every first visit downloaded 60 KB
+   (200 KB decoded, and every byte of it parsed) before anybody had signed in — on a login screen
+   that has never contained a chart. Measured on production: it was the second-largest thing after
+   the document itself.
+
+   The same reasoning is already written into static/sw.js about Leaflet: "loaded only when a map
+   opens, and precaching it would put back exactly the boot cost that moving it off the critical
+   path just removed." Chart.js is now in that group, and out of the service worker's precache
+   for the same reason.
+
+   The integrity hash is the one the <script> tag carried; a lazily injected script is exactly as
+   pinned as a static one, and dropping the pin to make the loader simpler would trade 60 KB of
+   boot for the ability to run unverified vendor code on a page that signs payment records. */
+const _CHART_SRI = 'sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD';
+let _chartJsP = null;
+function _chartJs() {
+  if (typeof Chart !== 'undefined') return Promise.resolve(true);
+  if (_chartJsP) return _chartJsP;
+  _chartJsP = new Promise(function (resolve) {
+    try {
+      const el = document.createElement('script');
+      el.src = '/static/vendor/chart.umd.min.js';
+      el.integrity = _CHART_SRI;
+      el.onload = function () {
+        /* Both of these used to run off a poll. They belong here: this is the one moment when
+           Chart is known to exist, and neither is safe to call before it. */
+        try { _registerChartPlugins(); } catch (e) {}
+        try { _tuneChartDefaults(); } catch (e) {}
+        resolve(true);
+      };
+      /* A failed load must SETTLE. A promise that never resolves would leave every _mkChart caller
+         waiting for ever on a canvas that is already showing its accessible data table, and the
+         retry below would never fire again because _chartJsP is already set. */
+      el.onerror = function () { _chartJsP = null; resolve(false); };
+      document.head.appendChild(el);
+    } catch (e) { _chartJsP = null; resolve(false); }
+  });
+  return _chartJsP;
+}
 function _mkChart(id, cfg, extra) {
   _registerChartPlugins();
   const ctx = document.getElementById(id);
   // Text alternative FIRST — so the hidden data table is present even when Chart.js failed to load
   // (in which case the canvas paints nothing and this table is the only copy of the data).
   if (ctx) { try { _a11yChart(ctx, cfg); } catch (e) {} }
-  if (!ctx || typeof Chart === 'undefined') return;
+  if (!ctx) return;
+  /* Not loaded yet: fetch it and come back, rather than returning and leaving a canvas blank for
+     the rest of the session. The accessible data table is already in the DOM from the line above,
+     so the reader has the numbers either way — this is what turns a silent nothing into a chart a
+     moment later. _mkChart destroys by id before rebuilding, so re-entry is safe by construction. */
+  if (typeof Chart === 'undefined') {
+    _chartJs().then(function (ok) { if (ok) _mkChart(id, cfg, extra); });
+    return;
+  }
   _tuneChartDefaults();
   if (_dashHrCharts[id]) { try { _dashHrCharts[id].destroy(); } catch (e) {} }
   const inst = new Chart(ctx, cfg);

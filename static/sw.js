@@ -13,9 +13,13 @@
    Re-read main immediately before merging and bump again if someone got there first. And verify a
    deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
    against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
-const CACHE = 'hml-pwa-v819';
+const CACHE = 'hml-pwa-v828';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
-  '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js',   // self-hosted libs — precache for offline
+  '/static/vendor/msal-browser.min.js',   // self-hosted, and needed to sign in — precache for offline
+  // Chart.js is NOT here, for the same reason Leaflet is not (see below): it is fetched when
+  // something wants a chart, and precaching it at install would put back the 60 KB of first-visit
+  // cost that taking it off the critical path just removed. The cache-first handler picks it up
+  // the first time a chart is drawn, so offline use is unaffected from then on.
   // The two weights the document preloads. Poppins came from Google until now, which meant the brand
   // face was the one asset a PWA could never have offline. The other weights and the latin-ext files
   // are left to the cache-first handler below: they are fetched the first time a glyph needs them and
