@@ -47,9 +47,10 @@ const F = new Function(
   take('function _schFitLab(', '_schFitLab') +
   take('function _schFitMin(', '_schFitMin') +
   take('function _pmWbsLevel(', '_pmWbsLevel') +
+  take('function _pmWbsIndentPx(', '_pmWbsIndentPx') +
   take('function _pmWbsIndent(', '_pmWbsIndent') +
   take('function _pmWbsIndentFor(', '_pmWbsIndentFor') +
-  '\nreturn { _schFitLab, _schFitMin, _pmWbsLevel, _pmWbsIndent, _pmWbsIndentFor,' +
+  '\nreturn { _schFitLab, _schFitMin, _pmWbsLevel, _pmWbsIndentPx, _pmWbsIndent, _pmWbsIndentFor,' +
   '  LAB_MIN: _SCH_LAB_MIN, PLOT_MIN: _SCH_PLOT_MIN };')();
 
 console.log('\nFit fits, and the gutter is spent out of the pane\n');
@@ -127,27 +128,55 @@ ok('_schFitPlot runs before _schXBar in the fit pass',
 
 // -- the folder tree --------------------------------------------------------------------------------
 console.log('\nWBS depth is visible in the shape of the list\n');
-const LV = [['', 1], ['1', 1], ['1.2', 2], ['1.10.2', 3], ['A.2.1', 3], ['1.2.3.4.5.6.7', 5], ['2.', 1], [null, 1]];
+const LV = [['', 1], ['1', 1], ['1.2', 2], ['1.10.2', 3], ['A.2.1', 3], ['1.2.3.4.5.6.7', 7], ['2.', 1], [null, 1]];
 LV.forEach(pair => ok('level of ' + JSON.stringify(pair[0]) + ' is ' + pair[1],
                       F._pmWbsLevel(pair[0]) === pair[1], 'got ' + F._pmWbsLevel(pair[0])));
+
+/* The reported defect: the level cap was 5 and it was doing two jobs — bounding the indent AND
+   reporting the depth — so on a real programme 1.4.8.2.1, 1.4.8.2.1.1 and 1.4.8.2.1.1.1 all came
+   back as 5 and every surface drew them at the same offset. Depth is a fact; the indent is a
+   budget, and the budget belongs to the column paying it. */
+ok('a seven-level code is seven levels deep, not five',
+   F._pmWbsLevel('1.4.8.2.1.1.1') === 7);
+['table', 'gutter', 'narrow', 'dialog'].forEach(where => {
+  const off = [];
+  for (let l = 1; l <= 7; l++) off.push(F._pmWbsIndentPx(l, where));
+  ok('on the ' + where + ', all seven of those levels get a DIFFERENT offset',
+     new Set(off).size === 7, where + ' -> ' + off.join(','));
+  ok('the ' + where + ' starts the tree at zero and steps evenly',
+     off[0] === 0 && off[2] - off[1] === off[1] - off[0]);
+});
 ok('the top of the tree is not indented', F._pmWbsIndent(1) === 0);
 ok('each level steps in by the same amount',
    F._pmWbsIndent(3) - F._pmWbsIndent(2) === F._pmWbsIndent(2) - F._pmWbsIndent(1));
-ok('the indent is bounded', F._pmWbsIndent(F._pmWbsLevel('1.2.3.4.5.6.7.8.9')) <= 70,
-   'past a point the indent costs more name than the depth is worth');
+/* Bounded still — but per surface, because that is who pays. Eight steps, then it stops: a
+   malformed twelve-dot code cannot walk the name off the screen. */
+['table', 'gutter', 'narrow', 'dialog'].forEach(where =>
+  ok('the ' + where + ' indent is bounded at eight steps',
+     F._pmWbsIndentPx(12, where) === F._pmWbsIndentPx(9, where) &&
+     F._pmWbsIndentPx(9, where) > F._pmWbsIndentPx(8, where),
+     where + ' -> L8 ' + F._pmWbsIndentPx(8, where) + ', L9 ' + F._pmWbsIndentPx(9, where) +
+     ', L12 ' + F._pmWbsIndentPx(12, where)));
 
-/* The indent is spent out of the gutter, and the phone gutter is 176px of which the status cell
-   takes 62. At the full 12px step a level-4 row left the name ~18px — one character and an
-   ellipsis, measured in the browser. */
+/* The indent is spent out of the gutter, and the phone gutter is 176px of which the delivery cell
+   takes 74. A level-4 row at the Activities table's step would leave the name ~18px — one character
+   and an ellipsis, measured in the browser. */
 {
   const deep = F._pmWbsLevel('1.4.4.3');            // level 4
   ok('a narrow gutter pays a token indent, not the full one',
      F._pmWbsIndentFor(deep, true) < F._pmWbsIndentFor(deep, false),
      'got ' + F._pmWbsIndentFor(deep, true) + ' narrow vs ' + F._pmWbsIndentFor(deep, false) + ' wide');
   ok('and it is capped hard enough to leave a readable name',
-     F._pmWbsIndentFor(F._pmWbsLevel('1.2.3.4.5.6'), true) <= 15,
+     F._pmWbsIndentFor(F._pmWbsLevel('1.2.3.4.5.6.7.8.9'), true) <= 32,
      'the phone name budget is ~76px before the indent');
-  ok('a wide gutter is unaffected', F._pmWbsIndentFor(deep, false) === F._pmWbsIndent(deep));
+  /* These used to be the same number. They are not any more, and that is the point: a 46%-wide
+     Task column and a label gutter cannot afford the same step, and pricing both from one constant
+     is what left Activities too faint to read while the gutter could not afford to go deeper. */
+  ok('the wide gutter pays LESS than the Activities table, which has the room',
+     F._pmWbsIndentFor(deep, false) < F._pmWbsIndent(deep),
+     'gutter ' + F._pmWbsIndentFor(deep, false) + ' vs table ' + F._pmWbsIndent(deep));
+  ok('and the table step really did grow — the complaint was that it was too small to see',
+     F._pmWbsIndent(2) >= 16, 'one level in is ' + F._pmWbsIndent(2) + 'px');
   ok('level 1 is never indented either way',
      F._pmWbsIndentFor(1, true) === 0 && F._pmWbsIndentFor(1, false) === 0);
 }
@@ -172,7 +201,8 @@ ok('the indent is bounded', F._pmWbsIndent(F._pmWbsLevel('1.2.3.4.5.6.7.8.9')) <
   const gStart = src.indexOf("let leftRows = '<div style=\"height:' + HDR");
   if (gStart < 0) { console.error('Could not find the Gantt left column builder.'); process.exit(2); }
   const gantt = src.slice(gStart, src.indexOf('class="pm-gantt-left"'));
-  ok('the Gantt column indents by level', /padding-left:' \+ _pmWbsIndent\(_pmWbsLevel\(t\.wbs\)\)/.test(gantt));
+  ok('the Gantt column indents by level, at the GUTTER price — its left column is a fixed 334px',
+     /padding-left:' \+ _pmWbsIndentPx\(_pmWbsLevel\(t\.wbs\), 'gutter'\)/.test(gantt));
   ok('and gives the truncated name a tooltip',
      /<span title="' \+ _tkEscA\(t\.name \|\| ''\) \+ '" style="font-size:11\.5px;overflow:hidden;text-overflow:ellipsis/.test(gantt),
      'it was indented without one — an indent that hides a name and offers no way to read it');
