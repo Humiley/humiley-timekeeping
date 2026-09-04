@@ -71,6 +71,9 @@ new Function(PRELUDE +
   take('function _pdAcc(', '_pdAcc') +
   take('function _pmLeafPct(', '_pmLeafPct') +
   take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
+  // _pmDelivRoll's two-ladder composition lives here now, so that the client report, the
+  // work-package register and the project KPI cannot spell the same rule three ways.
+  take('function _pmTaskPctFinal(', '_pmTaskPctFinal') +
   take('function _pmDelivBuckets(', '_pmDelivBuckets') +
   take('function _pmDelivRoll(', '_pmDelivRoll') +
   take('function _pmStatusFromPct(', '_pmStatusFromPct') +

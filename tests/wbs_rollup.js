@@ -62,10 +62,23 @@ const F = new Function(
   take('function _pmWbsChildIndex(', '_pmWbsChildIndex') +
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  // _pmTaskPctRollWalk asks _pmLeafPct what a leaf is worth — daily readings first, the typed
+  // figure otherwise — and _pmLeafPct reads the dated log through _pdLog/_pdAcc/_pdReadPct. The
+  // whole chain is lifted rather than stubbed: this file exists to check the register against the
+  // ladder every screen uses, and a stub would let it agree with something nobody ships.
+  take('function _pmLeafPct(', '_pmLeafPct') +
+  take('function _pdLog(', '_pdLog') +
+  take('function _pdAcc(', '_pdAcc') +
+  take('function _pdReadPct(', '_pdReadPct') +
+  'const _pdQtyPlan = () => 0;\n' +          // master activities carry no quantity plan
+  'const _pmToday = () => "2026-09-04";\n' +
   take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   // NOTE: this slice runs to the next '\nfunction ', which is _pmDelivRoll — so it already carries
   // the `const _PM_DELIV_SIGNED` declared between them. Injecting SIGNED here as well is a
   // redeclaration and a SyntaxError. SIGNED is asserted against `src` instead, below.
+  // _pmDelivRoll's two-ladder composition lives here now, so that the client report, the
+  // work-package register and the project KPI cannot spell the same rule three ways.
+  take('function _pmTaskPctFinal(', '_pmTaskPctFinal') +
   take('function _pmDelivBuckets(', '_pmDelivBuckets') +
   take('function _pmDelivRoll(', '_pmDelivRoll') +
   '\nreturn { _pmDelivBuckets, _pmDelivRoll, _pmTaskWeight, _pmTaskPctRoll, _PM_DELIV_SIGNED };')();

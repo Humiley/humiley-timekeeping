@@ -435,6 +435,40 @@ jobs:
       - name: Master daily progress locks match the roll-up
         run: node tests/master_daily_progress.js
 
+      # _pmTaskPctRoll().from gained a fourth value, 'daily', and two branches that tested for what
+      # it is NOT absorbed it into the wrong case: a FINISHED activity carrying an older reading
+      # contributed that reading — not 100 — to its work package, to EV, to CPI/SPI and to the RAG
+      # colour, while its own row read "Completed"; and the Activities % column called three daily
+      # readings "3 detail items" on an activity with no detail schedule at all.
+      - name: A finished activity is 100% wherever the fourth `from` value reaches
+        run: node tests/pct_from_fourth_value.js
+
+      # Both S-curves recomputed every per-row constant at every plotted point — weight, plan
+      # bounds, and _pdLog's filter+slice+SORT of the row's whole reading history. 400 detail lines
+      # over two years measured 46,400 log reads, 5.5M entries re-sorted and 261 ms of blocked main
+      # thread per render of a pane that repaints when somebody collapses a group. The point of the
+      # test is not the speed: it compares the one-pass series against the per-point roll-up field
+      # by field, because a faster curve that draws a different line is a new defect.
+      - name: The S-curves draw the same picture in one pass
+        run: node tests/scurve_is_one_pass.js
+
+      # Both daily-progress tables sent one PATCH per changed row as fast as the round trip allowed,
+      # into a server that refuses every non-GET past 240 writes per 60s. Filling in a 400-activity
+      # programme met the ceiling at row 240 and reported 160 failures — an afternoon of site
+      # readings to type again. Run against a fake server implementing ratelimit.py's actual rule on
+      # a virtual clock, so "it waits long enough" is measured rather than asserted.
+      - name: A day's readings all arrive, even four hundred of them
+        run: node tests/daily_readings_are_paced.js
+
+      # The steps above name node tests one at a time, which is worth keeping — a red step says
+      # what broke without opening anything. The cost is a hand-maintained list, and a test file
+      # missing from it is not a test. There were 67 test files and 42 steps when this was added;
+      # of the 25 unnamed files THREE were red, two of them broken by a feature commit that merged
+      # green. This runs everything the list does not name, so a new test file is exercised the
+      # moment it lands.
+      - name: Every other node test (nothing is trusted just because the list forgot it)
+        run: node tools/node_tests_sweep.js
+
       # The Approval Inbox showed shimmer bars and never the approvals behind them. Two faults met:
       # it awaited the WHOLE audit chain before drawing anything (30s timeout), and _armManagerPoll
       # re-ran it every 30s while blanking the panel to a skeleton first — the same number, so the

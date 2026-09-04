@@ -142,3 +142,25 @@ def _company_tax_settings_are_not_shared_between_tests():
     for k, v in before.items():
         conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
     conn.commit(); conn.close()
+
+
+@pytest.fixture(scope="session")
+def staff_on_p1(base_url):
+    """Staff One and Other Staff are on project "P1"'s Team.
+
+    pm_* writes are scoped by project membership — Handler._pm_project_write_ok, the same
+    _pm_visible_projects test that already decides reading a chat message and deleting a schedule
+    row. A fixture that POSTs a variation order or an NCR to "P1" on a staff token is modelling a
+    site engineer raising one on their OWN job, so the Team row is part of that model rather than a
+    way around the guard: without it the fixture describes a stranger writing to somebody else's
+    contract, which is exactly what the server now refuses.
+
+    Seeded through db, not the API, because creating the Team row is setup and not the thing under
+    test — and because pm_resources is itself scoped by the same rule.
+    """
+    have = {(r.get("projectId"), r.get("empId")) for r in db.list_collection("pm_resources")}
+    for eid, nm in (("HML-STF", "Staff One"), ("HML-OTH", "Other Staff")):
+        if ("P1", eid) not in have:
+            db.put_collection_item("pm_resources", {"projectId": "P1", "empId": eid, "name": nm,
+                                                    "role": "Engineer"})
+    return "P1"

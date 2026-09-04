@@ -3750,8 +3750,10 @@ function _attEnsureHistory(again) {
 async function tkBootstrap() {
   // Attendance is the fastest-growing table (headcount × every workday). Loading ALL of it for a
   // management/admin session blocked login and got slower every month. Boot fetches a recent window
-  // (this month + last, covers the dashboard + check-in state + default In/Out view); the full
-  // history hydrates in the background so older-month reports still work — off the critical path.
+  // — this month and last, which covers the dashboard, the check-in state and the default In/Out
+  // view — and nothing else. The full history is fetched by _attEnsureHistory when a screen asks
+  // for an older month, so signing in never pays for it. (This comment said "hydrates in the
+  // background" for a while after that background fetch was removed.)
   const _d = new Date(); const _attStart = new Date(_d.getFullYear(), _d.getMonth() - 1, 1).toISOString().slice(0, 10);
   const [emps, att, lv, zn] = await Promise.all([
     tkApi('/api/employees'), tkApi('/api/attendance?start=' + _attStart),
@@ -22312,6 +22314,27 @@ function _pmActivityPct(t, pid) {
   if (t && (t.actualFinish || (t.status || '') === 'Completed')) return { pct: 100, basis: 'complete', n: 0 };
   return { pct: _pmPct(t && t.pctComplete), basis: 'typed', n: 0 };
 }
+/* How far along an activity is, for a screen that has to agree with the work-package roll-up,
+   with earned value, and with the RAG colour — the composition _pmDelivRoll used to spell out
+   inline. Extracted the moment a second caller needed it: the failure being repaired here is two
+   surfaces stating two numbers for one activity, and the surest way to get a third is to write the
+   rule down twice.
+
+   Children and detail evidence outrank a completion stamp; a completion stamp outranks the
+   activity's own estimate, whether typed or filed as a daily reading.
+
+   NOT what the Activities table and the Gantt print. Those show _pmTaskPctRoll — the ladder
+   without the completion step — and they agree with each other, which is what matters for two
+   panes of one tab. A leaf stamped Completed while carrying a lower figure therefore still reads
+   as that figure on the schedule and as 100 in its package; that difference predates daily
+   progress, it is _pmActivityPct's documented grading, and closing it is a decision about what a
+   completion stamp MEANS rather than a defect to patch in passing. */
+function _pmTaskPctFinal(t, allTasks, pid) {
+  const r = _pmTaskPctRoll(t, allTasks || [], pid);
+  if (r.from === 'children' || r.from === 'detail') return r.pct;
+  const a = _pmActivityPct(t, pid);
+  return a.basis === 'complete' ? a.pct : r.pct;
+}
 /* What an activity is worth inside its work package.
    NOT `t.duration`: _pmCPMCompute reads that as NETWORK duration, so tuning the critical path
    would silently re-price reported progress. Explicit weight wins; otherwise the inclusive
@@ -22370,13 +22393,26 @@ function _pmDelivRoll(d, mine, pid, allTasks) {
   });
   /* Both ladders, composed — neither one alone is right for a package.
      _pmTaskPctRoll knows that CHILDREN WIN and is what the Activities tab and the Gantt bar print;
-     it stops at the typed number. _pmActivityPct knows that an activity carrying an actual finish,
-     or status Completed, is done however it was typed; it has no children step. Take the roll-up,
-     and where it bottomed out at 'typed' let the stronger evidence speak. */
-  const roll = t => {
-    const r = _pmTaskPctRoll(t, allTasks || [], pid);
-    return r.from === 'typed' ? _pmActivityPct(t, pid).pct : r.pct;
-  };
+     it stops at a leaf's own figure. _pmActivityPct knows that an activity carrying an actual
+     finish, or status Completed, is done however it was estimated; it has no children step. Take
+     the roll-up, and where it bottomed out at a LEAF ESTIMATE let the stronger evidence speak.
+
+     The test used to be `from === 'typed'`, and that was right while 'typed' was the only leaf
+     answer there was. _pmLeafPct then added a fourth value — 'daily', for an activity reported
+     through the Master Schedule's Daily progress table — and a finished activity carrying an older
+     reading stopped reaching this branch: it contributed 60 instead of 100 to its work package, to
+     project EV, to CPI/SPI and to the RAG colour, and went on doing so until somebody filed a fresh
+     100. The activity's own row read "Completed" the whole time.
+
+     Named by what they ARE rather than by what they are not: 'children' and 'detail' are derived
+     from evidence beneath the activity and outrank a completion stamp; anything else is that
+     activity's own estimate, and a stamped finish outranks an estimate. A fifth leaf value added
+     later lands on the safe side of that line by default.
+
+     _pmActivityPct's own grading decides it, not a copy of its test — two spellings of "is this
+     activity finished" would drift, and the pair that drifts silently is a package reading 94%
+     whose every activity says Completed. */
+  const roll = t => _pmTaskPctFinal(t, allTasks, pid);
   let aw = 0, ap = 0, fin = '', done = 0;
   top.forEach(t => {
     const tw = _pmTaskWeight(t), a = roll(t);
@@ -22937,7 +22973,7 @@ function _schExportMaster(pid) {
       days: (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : '',
       predecessors: String(t.predecessors || '').trim(),
       pct: ro.pct,
-      pctFrom: ro.from,                       // 'typed' | 'children' | 'detail' — see _pmTaskPctRoll
+      pctFrom: ro.from,             // 'typed' | 'daily' | 'children' | 'detail' — see _pmTaskPctRoll
       status: _pmTaskStatus(t, ro.pct),
       phase: String(t.phase || '').trim(),
       milestone: String(t.isMilestone) === 'Yes',
@@ -23864,14 +23900,26 @@ function pmReport(pid, mode) {
     : 'not computable — no earned value recorded');
 
   const tasks = _pmScopeFor('pm_tasks', p.id);
+  /* Derived, not read off the record — the same two functions the screen this report is generated
+     from uses.
+
+     Both halves of this section were stale. The percentage came from t.pctComplete, which nothing
+     writes any more: an activity reported at 65% through Daily progress, or fed by the Detail
+     Schedule, printed whatever number was last typed into the form — often 0 — while Overall
+     Progress and the EVM block three lines above were computed from the 65. One document, issued
+     to the client on the letterhead, stating both. And the lists themselves came from t.status,
+     which is DERIVED on every screen and written on none, so an activity driven to 100% appeared
+     under "Work in progress" at 100%. */
+  const _rpct = t => _pmTaskPctFinal(t, tasks, p.id);
+  const _rst = t => _pmTaskStatus(t, _rpct(t));
   sect('3. Progress this ' + R.word);
-  const doneNow = tasks.filter(t => t.status === 'Completed' && _pmInRange(t.finish, R));
-  const inprog = tasks.filter(t => t.status === 'In progress');
+  const doneNow = tasks.filter(t => _rst(t) === 'Completed' && _pmInRange(t.finish, R));
+  const inprog = tasks.filter(t => _rst(t) === 'In progress');
   const msNow = tasks.filter(t => String(t.isMilestone) === 'Yes' && _pmInRange(t.finish, R));
   sub('Completed this ' + R.word.toLowerCase() + ':');
   if (doneNow.length) doneNow.forEach(t => bullet((t.wbs ? t.wbs + '  ' : '') + (t.name || '') + '   (completed ' + _pmFmt(t.finish) + ')')); else none();
   sub('Work in progress:');
-  if (inprog.length) inprog.slice(0, 14).forEach(t => bullet((t.wbs ? t.wbs + '  ' : '') + (t.name || '') + '   (' + _pmPct(t.pctComplete) + '%' + (t.assignee ? ', ' + t.assignee : '') + ')')); else none();
+  if (inprog.length) inprog.slice(0, 14).forEach(t => bullet((t.wbs ? t.wbs + '  ' : '') + (t.name || '') + '   (' + _rpct(t) + '%' + (t.assignee ? ', ' + t.assignee : '') + ')')); else none();
   if (msNow.length) { sub('Milestones reached / due this ' + R.word.toLowerCase() + ':'); msNow.forEach(t => bullet((t.name || '') + '   (' + _pmFmt(t.finish) + ')')); }
 
   sect('4. Key Risks & Issues');
@@ -24849,11 +24897,20 @@ function _pmCalendarHtml(pid, opts) {
 
   // Active filter (chips below the header). Month clamp + CPM still use ALL tasks; only what's PLOTTED narrows.
   const _meL = ((TK.user && TK.user.name) || '').toLowerCase();
+  /* Bucketed by project BEFORE any roll-up, because _pmWbsChildren matches WBS codes inside the
+     array it is handed. On the portfolio calendar `tasks` spans every project, and two jobs both
+     having a '1.1' would make each the other's sub-task — a wrong number produced by the very fix
+     meant to stop wrong numbers. Once per render, not once per row. */
+  const _calByPid = {};
+  tasks.forEach(t => { const k = String(t.projectId || pid || ''); (_calByPid[k] = _calByPid[k] || []).push(t); });
+  const _calPct = t => { const k = String(t.projectId || pid || ''); return _pmTaskPctRoll(t, _calByPid[k] || [], k).pct; };
   const _calMatch = t => {
     if (_pmCalFilter === 'milestones') return String(t.isMilestone) === 'Yes';
     if (_pmCalFilter === 'critical') return crit(t);
     if (_pmCalFilter === 'mine') return String(t.assignee || '').toLowerCase() === _meL;
-    if (_pmCalFilter === 'open') return String(t.status) !== 'Completed' && _pmPct(t.pctComplete) < 100;
+    // An activity finished on site and reported through Daily progress stayed in "Open" for ever,
+    // because the field this used to read is not the one that moved.
+    if (_pmCalFilter === 'open') return String(t.status) !== 'Completed' && _calPct(t) < 100;
     return true;
   };
   const vtasks = _pmCalFilter === 'all' ? tasks : tasks.filter(_calMatch);
@@ -24869,7 +24926,7 @@ function _pmCalendarHtml(pid, opts) {
     if (fi < 0 || si > totalCells - 1) return;                                    // task lies outside this month view
     const color = portfolio ? _pmProjColor(t.projectId) : (ms ? '#8B5CF6' : (crit(t) ? '#EF4444' : ((t.status === 'Completed') ? '#00B060' : '#205090')));
     events.push({ id: t.id, si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), rsi: si, rfi: fi, ms, color,
-      pct: ms ? 0 : ((t.status === 'Completed') ? 100 : _pmPct(t.pctComplete)),
+      pct: ms ? 0 : ((t.status === 'Completed') ? 100 : _calPct(t)),
       roundL: si >= 0, roundR: fi <= totalCells - 1,
       click: portfolio ? ('pmGoto(\'' + t.projectId + '\',\'schedule\')') : ('tkQuickAdd(\'pm_tasks\',\'' + t.id + '\')'),
       label: (ms ? '◆ ' : '') + (portfolio ? (_pmProjName(t.projectId) ? _pmProjName(t.projectId) + ' · ' : '') : (t.wbs ? t.wbs + ' ' : '')) + (t.name || '(untitled)') });
@@ -25757,6 +25814,66 @@ function _pmDateAdd(iso, n) {
    Planned vs actual cumulative progress — the one chart a client asks for. Drawn as inline SVG
    rather than through Chart.js: no canvas lifecycle to manage inside a tab that rebuilds on every
    render, and it survives the html2canvas PDF export, which a canvas often does not. */
+/* The whole curve in ONE pass over the rows.
+ *
+ * _pdSCurve called _pdRollup once per plotted point, and _pdRollup asks every row for its weight,
+ * its accumulated reading and its planned position. None of those three re-reads anything that
+ * changed: the weight and the plan bounds do not depend on the date at all, and the accumulated
+ * reading only ever moves FORWARD as the dates ascend. So a 400-line schedule spanning two years
+ * re-sorted every row's reading log at all 116 sample points — measured on the shipping code at
+ * 46,400 _pdLog() calls, 5.5 million log entries re-sorted, 321,042 date parses and 261 ms of
+ * blocked main thread for one render, on a device this file elsewhere notes a phone is 4–6x
+ * slower than. The Detail Timeline is the default pane at that level and every _pmReload() —
+ * collapsing a group included — rebuilds it.
+ *
+ * Hoisted instead: each row's weight, plan bounds and sorted log with each reading's percentage
+ * already resolved, computed once; then a cursor per row that walks forward through that log as
+ * the day advances. Same arithmetic, same rounding, same helpers for the parts that are not in
+ * the loop — the equivalence is asserted point-for-point against _pdRollup in
+ * tests/scurve_is_one_pass.js rather than argued here.
+ *
+ * `days` must be ascending. The cursor is the whole optimisation and it cannot go backwards. */
+function _pdSeries(rows, days) {
+  const st = (rows || []).map(r => {
+    const log = _pdLog(r);
+    return {
+      w: _pdWeight(r),
+      hasPlan: _pdHasPlan(r),
+      s: r && r.start, f: r && r.finish,
+      // Both bounds parsed once. _pdPlanned would rebuild these two Date objects for every row at
+      // every point — the single biggest term once the logs are short.
+      sMs: Date.parse(String((r && r.start) || '')), fMs: Date.parse(String((r && r.finish) || '')),
+      d: log.map(e => String(e.d)),
+      pct: log.map(e => _pdReadPct(r, e)),      // per READING, exactly as _pdAcc grades it
+      i: 0, acc: 0,
+    };
+  });
+  return (days || []).map(day => {
+    let wsum = 0, a = 0, ad = 0, pw = 0, p = 0, undated = 0;
+    st.forEach(o => {
+      while (o.i < o.d.length && o.d[o.i] <= day) { o.acc = o.pct[o.i]; o.i++; }
+      wsum += o.w; a += o.w * o.acc;
+      if (o.hasPlan) {
+        pw += o.w; ad += o.w * o.acc;
+        let pl;
+        if (day < o.s) pl = 0;
+        else if (day >= o.f) pl = 100;
+        else {
+          const total = Math.max(1, Math.round((o.fMs - o.sMs) / 86400000) + 1);
+          const done = Math.max(0, Math.round((Date.parse(day) - o.sMs) / 86400000) + 1);
+          pl = _pmPct(done * 100 / total);
+        }
+        p += o.w * pl;
+      } else { undated += o.w; }
+    });
+    if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0, undatedWeight: 0,
+                        plannedWeight: 0, undatedPct: 0, measured: false };
+    const acc = a / wsum, planned = pw ? p / pw : 0, accDated = pw ? ad / pw : 0;
+    return { acc: acc, planned: planned, variance: pw ? accDated - planned : 0, weight: wsum,
+             undatedWeight: undated, plannedWeight: pw, undatedPct: undated / wsum * 100,
+             measured: pw > 0 };
+  });
+}
 function _pdSCurve(rows, day) {
   if (!rows.length) return '';
   const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
@@ -25766,15 +25883,11 @@ function _pdSCurve(rows, day) {
   // Weekly sampling beyond ~4 months: a 400-point polyline is no more informative and makes the
   // page heavier than the table it sits under.
   const step = span > 120 ? 7 : 1;
-  const pts = [];
-  for (let i = 0; i <= span; i += step) {
-    const d = _pmDateAdd(min, i), roll = _pdRollup(rows, d);
-    pts.push({ d: d, planned: roll.planned, actual: d <= day ? roll.acc : null });
-  }
-  if (pts.length && pts[pts.length - 1].d !== max) {
-    const roll = _pdRollup(rows, max);
-    pts.push({ d: max, planned: roll.planned, actual: max <= day ? roll.acc : null });
-  }
+  const days = [];
+  for (let i = 0; i <= span; i += step) days.push(_pmDateAdd(min, i));
+  if (days.length && days[days.length - 1] !== max) days.push(max);
+  const pts = _pdSeries(rows, days).map((roll, i) =>
+    ({ d: days[i], planned: roll.planned, actual: days[i] <= day ? roll.acc : null }));
   const W = 100, H = 100;                       // viewBox units; the SVG scales to its container
   const X = d => ((_pmDateDiff(min, d) || 0) / span) * W;
   const Y = v => H - (Math.max(0, Math.min(100, v)) / 100) * H;
@@ -25859,6 +25972,67 @@ function pdDailyEntry(pid) {
     '<button class="btn btn-emerald" id="pd-entry-save" onclick="pdDailyEntrySave()">' + _t('File readings') + '</button></div></div>';
   document.body.appendChild(el);
 }
+/* File a day's readings — the write half of both entry tables, shared so they cannot drift.
+ *
+ * PACED, AND A 429 IS A DELAY RATHER THAN A LOST READING. app.py refuses every non-GET past 240
+ * writes per 60 seconds per client IP, and this loop sent one PATCH per changed row as fast as the
+ * round trip allowed. Filling in a 400-activity programme and pressing File progress therefore hit
+ * the limit at row 240 and reported 160 failures — with the site engineer's whole afternoon of
+ * readings in the dialog, to be typed again. _pmBulkCreate learnt this on the importer already
+ * ("a 500-line programme is a legitimate 500 writes"); these two did not, and they are the paths a
+ * site engineer uses every day rather than once.
+ *
+ * The budget is a sliding window, so a refusal is genuinely "later": waiting and re-sending turns
+ * the ceiling into a pause. Only after several refusals is a row given up on — and then it is
+ * NAMED, because a count with no reason reads as a product limit.
+ *
+ * KEEPS THE SERVER'S _rev. tkApi attaches If-Match from the row it is handed, so a row left holding
+ * the revision it had before the write self-409s on the next save of the same day. _pmBulkCreate's
+ * comment says the same thing about POST. Nothing masked it here yet — the reload after the save
+ * happens to replace the array — but "it works because something else refetches" is a dependency,
+ * not a design.
+ *
+ * Returns { ok, failed: [ 'name: why' ] }. The caller decides what to say. */
+async function _pdFileReadings(coll, jobs) {
+  /* Six writes per 1.62 s — 120 ms of round trip plus the gap — is about 222 per minute, under the
+     server's 240. Worth doing the arithmetic rather than copying a number: _pmBulkCreate's 900 ms
+     gap is 6 per 1.02 s, about 356 per minute, which is ABOVE the budget however its comment reads,
+     and simulating 400 rows through the real sliding window gives 114 refusals against 0 here. The
+     retry below would absorb those, but a path a site engineer uses every evening should not need
+     to be rescued from a limit it could simply stay inside; the retry is for the cases pacing
+     cannot predict — a second person filing at the same moment, a shared office IP.
+     Under seven rows there is no gap at all, which is almost every real filing. */
+  const BATCH = 6, GAP_MS = 1500, RETRIES = 6;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let ok = 0; const failed = [];
+  for (let i = 0; i < jobs.length; i += BATCH) {
+    await Promise.all(jobs.slice(i, i + BATCH).map(async j => {
+      let wait = 1500;
+      for (let attempt = 0; attempt <= RETRIES; attempt++) {
+        try {
+          const res = await tkApi('/api/coll/' + coll + '/' + j.r.id,
+            { method: 'PATCH', body: Object.assign({}, j.r, { log: j.log }) });
+          j.r.log = j.log;
+          if (res && res.item && res.item._rev !== undefined) j.r._rev = res.item._rev;
+          ok++;
+          return;
+        } catch (e) {
+          // 429 is the rate limiter saying "later". Anything else is a real refusal, and re-sending
+          // it would only produce the same answer more slowly.
+          if (e && e.status === 429 && attempt < RETRIES) {
+            await sleep(wait);
+            wait = Math.min(wait * 2, 20000);
+            continue;
+          }
+          failed.push((j.r.name || j.r.id) + ': ' + _errMsg(e));
+          return;
+        }
+      }
+    }));
+    if (i + BATCH < jobs.length) await sleep(GAP_MS);
+  }
+  return { ok: ok, failed: failed };
+}
 async function pdDailyEntrySave() {
   const day = _pmToday();
   // Compare RAW values, not percentages: two different site quantities can round to the same
@@ -25866,7 +26040,7 @@ async function pdDailyEntrySave() {
   const changed = [...document.querySelectorAll('.pd-e')].filter(i => String(i.value).trim() !== String(i.dataset.was).trim());
   if (!changed.length) { toast(_t('Nothing changed — no readings filed.'), 'warn'); return; }
   const btn = document.getElementById('pd-entry-save'); if (btn) { btn.disabled = true; btn.textContent = _t('Filing…'); }
-  let ok = 0; const failed = [];
+  const jobs = [];
   for (const inp of changed) {
     const r = (_HR[_PD_COLL] || []).find(x => x.id === inp.dataset.id); if (!r) continue;
     const qp = +inp.dataset.plan || 0;
@@ -25878,9 +26052,10 @@ async function pdDailyEntrySave() {
     const entry = { d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString() };
     if (qty !== null) entry.qty = qty;
     log.push(entry);
-    try { await tkApi('/api/coll/' + _PD_COLL + '/' + r.id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) }); r.log = log; ok++; }
-    catch (e) { failed.push((r.name || r.id) + ': ' + _errMsg(e)); }
+    jobs.push({ r: r, log: log });
   }
+  const _res = await _pdFileReadings(_PD_COLL, jobs);
+  const ok = _res.ok, failed = _res.failed;
   document.getElementById('pdEntryOverlay')?.remove();
   tkAudit('Daily progress filed', tkFmtDate(day), ok + ' item(s)' + (failed.length ? ' · ' + failed.length + ' FAILED' : ''));
   // A partial save is the case worth being loud about: some readings are in and some are not, and
@@ -26125,7 +26300,11 @@ function _pdKpis(pid, rows, day) {
    Returns { created:[], failed:[{row, why}] }. The caller decides what to say. */
 async function _pmBulkCreate(coll, rows, onProgress, extra) {
   const created = [], failed = [];
-  const BATCH = 6, GAP_MS = 900;        // ~400/min ceiling, comfortably inside the server's 240/min
+  // ~356 writes/min (6 per 120 ms round trip + 900 ms gap) against the server's 240/min, so a long
+  // import DOES meet the limit and relies on the retry below to turn each refusal into a delay.
+  // That is why the retry is not optional here. (_pdFileReadings, on the daily-entry path, paces
+  // to stay under instead — a nightly task should not need rescuing from a predictable ceiling.)
+  const BATCH = 6, GAP_MS = 900;
   const RETRIES = 6;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -27048,7 +27227,7 @@ async function pmDailyEntrySave() {
   if (!changed.length) { toast(_t('Nothing changed — no progress filed.'), 'warn'); return; }
   const btn = document.getElementById('pm-entry-save');
   if (btn) { btn.disabled = true; btn.textContent = _t('Filing…'); }
-  let ok = 0; const failed = [];
+  const jobs = [];
   for (const inp of changed) {
     const r = (_HR.pm_tasks || []).find(x => x.id === inp.dataset.id); if (!r) continue;
     const raw = String(inp.value).trim();
@@ -27056,11 +27235,10 @@ async function pmDailyEntrySave() {
     const v = _pmPct(raw);
     const log = _pdLog(r).filter(e => String(e.d) !== day);
     log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString() });
-    try {
-      await tkApi('/api/coll/pm_tasks/' + r.id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) });
-      r.log = log; ok++;
-    } catch (e) { failed.push((r.name || r.id) + ': ' + _errMsg(e)); }
+    jobs.push({ r: r, log: log });
   }
+  const _res = await _pdFileReadings('pm_tasks', jobs);
+  const ok = _res.ok, failed = _res.failed;
   document.getElementById('pmEntryOverlay')?.remove();
   tkAudit('Master progress filed', tkFmtDate(day),
           ok + ' activity(ies)' + (failed.length ? ' · ' + failed.length + ' FAILED' : ''));
@@ -27073,10 +27251,15 @@ async function pmDailyEntrySave() {
       _t('Re-enter the ones below — the rest are saved.') + '</div><ul style="font-size:12px;padding-left:18px;margin:0">' +
       failed.map(f => '<li>' + _pmEsc(f) + '</li>').join('') + '</ul>' });
   else toast(_t('Progress filed') + ' — ' + ok + ' ' + _t('activity(ies)'));
-  /* No forced re-fetch. The rows were updated in place, _pmLeafPct reads r.log on every call, and
-     the per-render memo is dropped by a microtask so it cannot survive the awaits above. Re-reading
-     the whole collection here would be a full download after every daily report, for figures the
-     page can already recompute — which is the cost this schedule spent a long time shedding. */
+  /* This DOES re-read pm_tasks, and the comment that used to sit here said it did not.
+     tkApi invalidates the load cache of any collection it writes to, so the PATCHes above zero
+     _COLL_TS['pm_tasks']; _pmReload() runs pmTab('schedule'), whose need list includes pm_tasks;
+     tkLoadColl sees a cold slot and fetches. Once per save click, not once per row.
+
+     Kept rather than removed, and now described accurately. One collection read after filing a
+     day's progress is a fair price for every derived figure on the page being rebuilt from what
+     the server actually stored — and the alternative, trusting rows mutated in place, is how a
+     screen ends up confidently showing something nobody saved. */
   _pmReload();
 }
 
@@ -27377,7 +27560,10 @@ function _pmGanttHtml(pid) {
   secKeys.forEach(sk => {
     const items = groups[sk], collapsed = !!_pmGanttCol[sk];
     let ss = null, sf = null, wsum = 0, wpct = 0;
-    items.forEach(t => { const s = t.start || t.finish, f = t.finish || t.start; if (s && (!ss || s < ss)) ss = s; if (f && (!sf || f > sf)) sf = f; const dur = Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1); wsum += dur; wpct += dur * _pmPct(t.pctComplete); });
+    // _pmTaskPctRoll, not t.pctComplete: this pane and the Activities table are two views of one
+    // schedule, and the phase bar was averaging a field nothing writes any more — so an activity at
+    // 70% by daily reading or by detail measurement pulled its whole phase towards 0.
+    items.forEach(t => { const s = t.start || t.finish, f = t.finish || t.start; if (s && (!ss || s < ss)) ss = s; if (f && (!sf || f > sf)) sf = f; const dur = Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1); wsum += dur; wpct += dur * _pmTaskPctRoll(t, allTasks, pid).pct; });
     const secPct = wsum ? Math.round(wpct / wsum) : 0;
     leftRows += '<div data-ph="' + _tkEscA(sk) + '" onclick="pmGanttSection(this.dataset.ph)" style="height:' + SECH + 'px;display:flex;align-items:center;gap:5px;padding:0 6px;background:var(--soft-bg);border-bottom:1px solid var(--line);cursor:pointer;font-weight:700;font-size:11.5px;color:var(--text-dark)"><span style="width:12px;flex:0 0 auto;color:var(--text-light);font-size:10px">' + (collapsed ? '▸' : '▾') + '</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(sk) + '</span><span style="font-weight:500;color:var(--text-light);font-size:10px;flex:0 0 auto">' + items.length + ' · ' + secPct + '%</span></div>';
     const sg = (ss && sf) ? geo(ss, sf) : { off: 0, w: 0 };
@@ -27386,7 +27572,7 @@ function _pmGanttHtml(pid) {
     if (collapsed) return;
     items.forEach(t => {
       n++;
-      const crit = isCrit(t), mile = String(t.isMilestone) === 'Yes', pc = _pmPct(t.pctComplete);
+      const crit = isCrit(t), mile = String(t.isMilestone) === 'Yes', pc = _pmTaskPctRoll(t, allTasks, pid).pct;
       const dur = (t.start && t.finish) ? ((_pmDateDiff(t.start, t.finish) || 0) + 1) : (mile ? 0 : '');
       leftRows += '<div style="height:' + ROW + 'px;display:flex;align-items:center;gap:6px;padding:0 6px;border-bottom:1px solid var(--soft-bg)">' +
         '<span style="width:20px;text-align:center;flex:0 0 auto;font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + n + '</span>' +
@@ -27502,8 +27688,14 @@ function pmRenderSchedule(pid) {
         // percentage on the sub-tasks and the parent follows.
         const ro = _pmTaskPctRoll(r, allTasks, pid);
         if (ro.from === 'typed') return _pmPct(r.pctComplete) + '%';
+        // Four sources now, and each says which one it is. 'daily' used to fall into the detail
+        // branch, so an activity with three daily readings and no detail schedule at all printed
+        // "rolled up" under the tooltip "Rolled up from 3 detail items" — a false statement about
+        // provenance, in the column a PM reads to decide whether a number can be trusted.
         const src = ro.from === 'children'
           ? { tip: 'Rolled up from ' + ro.n + ' sub-task' + (ro.n === 1 ? '' : 's'), lbl: _t('from sub-tasks') }
+          : ro.from === 'daily'
+          ? { tip: 'From ' + ro.n + ' daily reading' + (ro.n === 1 ? '' : 's'), lbl: _t('daily progress') }
           : { tip: 'Rolled up from ' + ro.n + ' detail item' + (ro.n === 1 ? '' : 's'), lbl: _t('rolled up') };
         return '<span title="' + _tkEscA(src.tip) + '" style="font-weight:700">' + ro.pct + '%</span>' +
                '<span style="font-size:9.5px;color:var(--text-light);display:block;line-height:1">' + src.lbl + '</span>';
@@ -27682,15 +27874,25 @@ function _pmSCurve(pid, day) {
      finish, weighted by the weight frozen with it. Linear within one activity is an assumption, and
      it is the honest one — the portal stores no intra-activity curve, so anything richer would be
      invented shape presented as plan. */
+  /* Hoisted for the same reason _pdSeries is: `total` and the row's weight depend on the ROW and
+     not on the point, and _pmDateDiff builds two Date objects from strings on every call — so both
+     baseline dates of every activity were re-parsed once per plotted point. A 400-activity project
+     over 828 days is 124 points: 49,600 row visits and 198,400 date constructions, measured at
+     43.7 ms of a 45.5 ms call. Parsed once here, and the loop below does arithmetic. */
+  const plan = rows.map(r => {
+    const sMs = Date.parse(String(r.start || '')), fMs = Date.parse(String(r.finish || ''));
+    return { w: +r.w || 1, sMs: sMs, finish: r.finish,
+             total: Math.round((fMs - sMs) / 86400000) + 1 };
+  });
+  let planW = 0; plan.forEach(o => { planW += o.w; });
   const plannedAt = (d) => {
-    let w = 0, acc = 0;
-    rows.forEach(r => {
-      const rw = +r.w || 1; w += rw;
-      const total = (_pmDateDiff(r.start, r.finish) || 0) + 1;
-      const done = (_pmDateDiff(r.start, d) || 0) + 1;
-      acc += rw * Math.max(0, Math.min(100, total > 0 ? (done / total) * 100 : (d >= r.finish ? 100 : 0)));
+    const dMs = Date.parse(String(d));
+    let acc = 0;
+    plan.forEach(o => {
+      const done = Math.round((dMs - o.sMs) / 86400000) + 1;
+      acc += o.w * Math.max(0, Math.min(100, o.total > 0 ? (done / o.total) * 100 : (d >= o.finish ? 100 : 0)));
     });
-    return w ? acc / w : 0;
+    return planW ? acc / planW : 0;
   };
   const pts = [];
   for (let i = 0; i <= span; i += step) { const d = _pmDateAdd(min, i); pts.push({ d: d, planned: plannedAt(d) }); }
@@ -27706,9 +27908,15 @@ function _pmSCurve(pid, day) {
      curve through values that were never recorded over time would be inventing the past. Today's
      figure is known, so today's figure is what is drawn. */
   const all = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_tasks', pid) : [];
+  /* Indexed once. This was `all.filter(t => t.id === r.id)[0]` inside the loop — a full scan of the
+     programme per baseline row, so 400 baselined activities cost 160,000 comparisons and 400
+     discarded arrays per render. FIRST wins, exactly as [0] did: two rows sharing an id is a data
+     fault, and quietly changing which one the curve reads would be a second one. */
+  const byId = new Map();
+  all.forEach(t => { if (!byId.has(t.id)) byId.set(t.id, t); });
   let aw = 0, aacc = 0;
   rows.forEach(r => {
-    const cur = all.filter(t => t.id === r.id)[0]; if (!cur) return;
+    const cur = byId.get(r.id); if (!cur) return;
     const rw = +r.w || 1; aw += rw;
     aacc += rw * ((typeof _pmTaskPctRoll === 'function') ? _pmTaskPctRoll(cur, all, pid).pct : 0);
   });

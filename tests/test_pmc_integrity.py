@@ -21,8 +21,13 @@ the result to "Pass" with nothing recorded about who decided that.
 import os
 import re
 
+import pytest
 import app
 import db
+
+# Every pm_ row below writes to project "P1" on a staff token, and pm_ writes are now scoped by
+# project membership — so the fixture states the membership these scenarios always assumed.
+pytestmark = pytest.mark.usefixtures("staff_on_p1")
 
 IDX = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "templates", "index.html")
