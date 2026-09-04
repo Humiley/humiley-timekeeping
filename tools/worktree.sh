@@ -112,8 +112,32 @@ cmd_list() {
 
 cmd_rm() {
   local name=${1:-}; [ -n "$name" ] || usage 1
-  local wt="$ROOT/$name" branch="claude/$name"
+  local wt="$ROOT/$name"
   [ -d "$wt" ] || { echo "no such worktree: $wt" >&2; exit 1; }
+
+  # Ask the WORKTREE what branch it is on. This used to assume "claude/$name" from the directory
+  # name, which is right for cmd_new — it creates that branch — and wrong here, where the answer
+  # decides whether work is about to be lost. A worktree on any other branch made every check
+  # below run against a ref that does not exist: `rev-parse --verify claude/<name>` fails, both
+  # counters stay 0, and the tool reports "safe to delete" having examined nothing.
+  #
+  # Demonstrated, not deduced: a worktree `guard-probe` on branch `test/guard-probe` carrying one
+  # unmerged commit was removed with exit 0 and the message "and branch claude/guard-probe". The
+  # commit survived on its own branch, so this loses a WORKSPACE rather than data — but it deletes
+  # a live peer session's directory while printing a verdict it never computed, which is the exact
+  # hazard this script exists to prevent.
+  local branch
+  branch=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [ -z "$branch" ]; then
+    echo "could not read the branch of $wt — refusing to guess" >&2; exit 1
+  fi
+  if [ "$branch" = "HEAD" ]; then
+    # detached: there is no branch to weigh or delete, and a detached worktree is not this tool's
+    # to reason about. Say so rather than silently removing it.
+    echo "$wt is on a detached HEAD, not a branch — remove it yourself if you are sure:" >&2
+    echo "  git -C \"$MAIN_REPO\" worktree remove \"$wt\"" >&2
+    exit 1
+  fi
   # `git worktree remove` already refuses on uncommitted changes; commits that exist only on this
   # branch are the other way to lose work, so check that too before deleting the branch.
   #
