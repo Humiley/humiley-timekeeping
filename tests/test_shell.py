@@ -56,9 +56,20 @@ def test_shell_carries_sri_integrity_on_vendored_scripts(base_url):
         "stylesheet must be pinned" % len(pins)
     )
 
-    assert html.count('integrity="sha384-') + len(pins) >= 4, (
-        "expected pins for chart.js, msal and both Leaflet files"
-    )
+    # Chart.js moved the same way Leaflet did — out of a <script defer> tag in the head and into an
+    # on-demand loader — so it is checked the same way: its own loader body, its own pin.
+    cstart = html.index("function _chartJs()")
+    cbody = html[cstart:html.index("\nfunction ", cstart + 10)]
+    assert "/static/vendor/chart.umd.min.js" in cbody, "_chartJs no longer fetches Chart.js"
+    assert re.search(r"\.integrity\s*=\s*_CHART_SRI", cbody), "the injected Chart.js is not pinned"
+    assert re.search(r"const _CHART_SRI = 'sha384-", html), "the Chart.js pin is not a sha384 hash"
+
+    # NO BARE COUNT HERE. There used to be one — `count('integrity="sha384-') + len(pins) >= 4` —
+    # and it went red the day Chart.js stopped being a boot-time <script>, for exactly the reason
+    # written twenty lines above about Leaflet: a total cannot tell a DROPPED PIN from a library
+    # that is no longer loaded at boot, and only the first is a regression. Restoring the count
+    # would mean this file warns against an instrument on one line and uses it on the next.
+    # The property is what matters, and every loader above asserts it for itself.
 
 
 def test_shell_leaks_no_server_error(base_url):
