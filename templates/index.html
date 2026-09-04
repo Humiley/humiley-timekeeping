@@ -28347,6 +28347,73 @@ function _pmItpTimeline(itps) {
   const legend = '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#00B060;border-radius:2px"></span> Approved</span><span><span style="display:inline-block;width:10px;height:8px;background:#F59E0B;border-radius:2px"></span> Draft</span><span><span style="display:inline-block;width:10px;height:8px;background:#94a3b8;border-radius:2px"></span> Superseded</span><span><span style="display:inline-block;width:9px;height:9px;background:#94a3b8;transform:rotate(45deg)"></span> Single date</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div>';
   return '<div class="card itp-cap" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div class="itp-vp" tabindex="0" role="group" aria-label="' + _tkEscA(_t('Scroll the ITP timeline')) + '" style="display:flex;align-items:flex-start;padding:0 16px 4px;overflow:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + labels + '</div><div style="flex:1;min-width:340px">' + timeline + '</div><div style="width:96px;flex-shrink:0">' + dates + '</div></div>' + legend + '</div>';
 }
+/* ── Workspace sub-tabs ────────────────────────────────────────────────────────────────────────
+   Several workspace tabs stack independent registers on one scroll. Quality carries three (the
+   quality register, the ITP timeline, the ITP register) and on a project with 151 plans the timeline
+   alone is 151 rows, so the table under it starts several screens down and nobody reaches it. Comms
+   & Issues carries two logs that are read for different reasons on different days.
+
+   ONE implementation, shared. The Schedule tab's equivalent list once existed twice, and a pane
+   added to only one copy rendered correctly and was never displayed — every pane hidden, none shown,
+   nothing logged. A second hand-rolled copy of this for a second tab is that bug waiting.
+
+   Labels carry their Vietnamese inline rather than through the dictionary: these are heading-shaped
+   phrases and the DOM walker matches on TEXT, so a shared entry would rewrite them wherever else
+   they appear in the app. */
+const _PM_SUBTABS = {
+  quality: [['register', 'Quality Register',       'S\u1ed5 \u0111\u0103ng k\u00fd ch\u1ea5t l\u01b0\u1ee3ng'],
+            ['itpsched', 'ITP Schedule',           'Ti\u1ebfn \u0111\u1ed9 ITP'],
+            ['itp',      'Inspection & Test Plan', 'K\u1ebf ho\u1ea1ch ki\u1ec3m tra & th\u1eed nghi\u1ec7m']],
+  comms:   [['log',      'Communications Log',     'Nh\u1eadt k\u00fd trao \u0111\u1ed5i'],
+            ['issues',   'Issue Log',              'Nh\u1eadt k\u00fd v\u1ea5n \u0111\u1ec1']],
+};
+/* Which page you are on is a way of looking, not a fact about the project: it survives a re-render,
+   so filtering a register does not throw you back to page one, and it is deliberately NOT reset on
+   project switch — the same choice the Schedule tab's sub-tabs already make. */
+let _pmSubTab = { quality: 'register', comms: 'log' };
+let _pmSubBuild = {};      // key -> { pane: () => html }, rebuilt per render so rows are never stale
+
+function pmSubTab(key, name) {
+  const panes = _PM_SUBTABS[key]; if (!panes || !panes.some(p => p[0] === name)) return;
+  _pmSubTab[key] = name;
+  /* Built the first time it is shown, and never while hidden: a pane off screen measures ZERO, so
+     the table-scroll pass would size its box from nothing. The render re-creates the hosts every
+     time, so data-built resets naturally and a pane can never show stale rows. */
+  const host = document.getElementById('psub-' + key + '-' + name);
+  const build = (_pmSubBuild[key] || {})[name];
+  if (host && !host.dataset.built && build) {
+    try { host.innerHTML = build(); }
+    catch (e) { host.innerHTML = '<div class="card" style="padding:16px;color:#C00000">' +
+      _t2('Could not render', 'Kh\u00f4ng hi\u1ec3n th\u1ecb \u0111\u01b0\u1ee3c') + ': ' + _pmEsc(e.message) + '</div>'; }
+    host.dataset.built = '1';
+  }
+  panes.forEach(p => {
+    const el = document.getElementById('psub-' + key + '-' + p[0]); if (el) el.style.display = (p[0] === name) ? '' : 'none';
+    // .tab/.active carries the styling — inline colours here would beat the stylesheet and make
+    // these the one tab bars in the portal that look like nothing else.
+    const b = document.getElementById('psubtab-' + key + '-' + p[0]); if (b) b.classList.toggle('active', p[0] === name);
+  });
+  // Re-showing a pane only flips style.display, which fires no childList mutation, so nothing else
+  // re-runs the sizing pass over the table that just became measurable. Say it explicitly.
+  try { _fitTablesSoon(); } catch (e) {}
+}
+/* The bar and its panes. `builds` is {paneKey: () => html} — thunks, so only the page on screen is
+   rendered; every one of them used to be built on every render and all but one inserted hidden,
+   parsed, styled and laid out for nothing. */
+function _pmSubTabsHtml(key, builds) {
+  const panes = _PM_SUBTABS[key];
+  _pmSubBuild[key] = builds;
+  // A stored page that this render does not offer (a renamed pane, a stale session) would leave
+  // every pane hidden and the screen blank. Fall back to the first rather than show nothing.
+  if (!panes.some(p => p[0] === _pmSubTab[key])) _pmSubTab[key] = panes[0][0];
+  const cur = _pmSubTab[key];
+  const bar = '<div class="tabs" style="margin:0 0 14px" data-html2canvas-ignore="true">' +
+    panes.map(p => '<button id="psubtab-' + key + '-' + p[0] + '" class="tab' + (cur === p[0] ? ' active' : '') +
+      '" onclick="pmSubTab(\'' + key + '\',\'' + p[0] + '\')">' + _t2(p[1], p[2]) + '</button>').join('') + '</div>';
+  return bar + panes.map(p => '<div id="psub-' + key + '-' + p[0] + '"' +
+    (cur === p[0] ? ' data-built="1"' : ' style="display:none"') + '>' +
+    (cur === p[0] ? builds[p[0]]() : '') + '</div>').join('');
+}
 function pmRenderQuality(pid) {
   const all = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
   const _qcons = [...new Set(all.map(x => x.contractor).filter(Boolean))].sort();
@@ -28364,7 +28431,7 @@ function pmRenderQuality(pid) {
   const ncrOverdue = q.filter(x => x.type === 'NCR' && x.status !== 'Closed' && x.due && x.due < _qToday).length;
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
   const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('NCRs overdue', ncrOverdue, ncrOverdue ? '#C00000' : 'var(--text-light)'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
-  const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
+  const buildRegister = () => _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
     { label: 'Ref', sk: 'refNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
     { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
     { label: 'Title', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
@@ -28393,7 +28460,7 @@ function pmRenderQuality(pid) {
                      { k: 'status', label: 'Status' }];
   const _itpBar = _pmFiltBar('pm_quality_itp', itp, _itpSpecs);
   const _itpRows = _pmFiltApply('pm_quality_itp', itp, _itpSpecs);
-  const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _itpBar + _pmTable('pm_quality_itp', [
+  const buildItpTable = () => _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _itpBar + _pmTable('pm_quality_itp', [
     /* The number it was ISSUED under rides underneath the current one wherever the register has
        been renumbered. A consolidated register that shows only its new numbers cannot be reconciled
        against a signed plan or a contractor's transmittal; this keeps that answer on the screen
@@ -28417,7 +28484,11 @@ function pmRenderQuality(pid) {
         _tkEscA(_t('Close the gaps so the register reads 1, 2, 3 …')) + '">' +
         _tp('Renumber 1…{0}', itp.length) + '</button>'
       : ''));
-  _pmSet(kpis + tbl + _pmItpTimeline(itp) + itpTbl);
+  /* The KPI strip stays ABOVE the bar. It answers "how is quality on this job" — open NCRs, pass
+     rate, plan count — which is true of the whole tab, not of whichever page you happen to be on,
+     and hiding the overdue-NCR count behind a tab is how it stops being read. */
+  _pmSet(kpis + _pmSubTabsHtml('quality', {
+    register: buildRegister, itpsched: () => _pmItpTimeline(itp), itp: buildItpTable }));
 }
 
 /* ---------- Consolidate the ITP numbering ----------
@@ -29339,7 +29410,7 @@ function pmRenderComms(pid) {
   const kpis = _hrKpiRow([_hrKpi('Communications', comms.length), _hrKpi('Issues', issues.length, '#3168A8'), _hrKpi('Open issues', openIss, '#EF4444')]);
   const _cSpecs = [{ k: 'type', label: 'Type' }, { k: 'status', label: 'Status' }, { k: 'audience', label: 'Audience' }];
   const _cBar = _pmFiltBar('pm_comms', comms, _cSpecs), _cRows = _pmFiltApply('pm_comms', comms, _cSpecs);
-  const commsTbl = _pmCard('Communications Log', 'pm_comms', 'Log comm', _cBar + _pmTable('pm_comms', [
+  const buildCommsLog = () => _pmCard('Communications Log', 'pm_comms', 'Log comm', _cBar + _pmTable('pm_comms', [
     { label: 'Date', sk: 'date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Audience', k: 'audience' },
     { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') },
@@ -29347,7 +29418,7 @@ function pmRenderComms(pid) {
   ], _cRows), '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + pid + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status Report</button>');
   const _iSpecs = [{ k: 'priority', label: 'Priority' }, { k: 'status', label: 'Status' }, { k: 'owner', label: 'Owner' }];
   const _iBar = _pmFiltBar('pm_issues', issues, _iSpecs), _iRows = _pmFiltApply('pm_issues', issues, _iSpecs);
-  const issuesTbl = _pmCard('Issue Log', 'pm_issues', 'Add issue', _iBar + _pmTable('pm_issues', [
+  const buildIssueLog = () => _pmCard('Issue Log', 'pm_issues', 'Add issue', _iBar + _pmTable('pm_issues', [
     { label: 'No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
@@ -29355,7 +29426,9 @@ function pmRenderComms(pid) {
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' || r.status === 'Resolved' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_issues', r) }
   ], _iRows));
-  _pmSet(kpis + commsTbl + issuesTbl);
+  /* The KPI strip stays above the bar: Communications / Issues / Open issues describes the tab, not
+     the page, and open-issue count is the one number here somebody must not have to click to see. */
+  _pmSet(kpis + _pmSubTabsHtml('comms', { log: buildCommsLog, issues: buildIssueLog }));
 }
 
 /* ---------- 8. Risk (5x5 heatmap) ---------- */
