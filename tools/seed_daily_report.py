@@ -50,9 +50,14 @@ TAIKISHA = {
                    "Plumbing Works", "Utility Works"],
     "lists": {}, "owner": "Admin User", "createdById": "HML-ADM",
 }
+# ⚠️ The SOURCE REPORT spells this role Office Manger — a typo on the document the client has been
+# reading. Humiley corrected it to Office Manager on 2026-09-05, so that is what is seeded here and
+# what table 2.1 now prints. The note stays because this file's whole purpose is side-by-side
+# comparison with the source PDF, and a one-character difference nobody explained reads as a
+# transcription error rather than as a decision.
 NEWTECONS = {
     "id": "C-NEW", "name": "Newtecons", "projectId": "P-MEGA", "logo": "",
-    "mgmtRoles": ["Design Coordination", "HSSE Supervisor", "Office Manger", "Project Manager",
+    "mgmtRoles": ["Design Coordination", "HSSE Supervisor", "Office Manager", "Project Manager",
                   "QAQC Supervisor", "Quantity Surveyor", "Secretary", "Site Manager",
                   "Supervisor Engineer"],
     "workerTrades": ["Finishing", "Infrastructure", "Steel structure", "Structure", "Surveying",
@@ -215,7 +220,7 @@ def main():
     # 02/09 — the Newtecons report.
     db.put_collection_item("dr_reports", report(
         "C-NEW", "2026-09-02", clear,
-        {"Design Coordination": 1, "HSSE Supervisor": 2, "Office Manger": 1, "Project Manager": 1,
+        {"Design Coordination": 1, "HSSE Supervisor": 2, "Office Manager": 1, "Project Manager": 1,
          "QAQC Supervisor": 1, "Quantity Surveyor": 1, "Secretary": 1, "Site Manager": 1,
          "Supervisor Engineer": 4},
         {"Finishing": 30, "Infrastructure": 0, "Steel structure": 0, "Structure": 52,
