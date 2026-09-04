@@ -28,6 +28,8 @@ import csv
 import datetime
 import io
 
+import progress
+
 MAX_DAYS = 400          # a densified series is items x days; refuse to build an unbounded one
 
 
@@ -59,37 +61,12 @@ def _pct(v):
 
 
 # ── the rules, ported from the frontend ─────────────────────────────────────────────────────────
-
-def clean_log(item):
-    """Readings oldest-first, ignoring anything undated. This is user data; it arrives malformed."""
-    log = item.get("log")
-    if not isinstance(log, list):
-        return []
-    good = [e for e in log if isinstance(e, dict) and e.get("d")]
-    return sorted(good, key=lambda e: str(e.get("d")))
-
-
-def qty_plan(item):
-    """The scheduled quantity — 500 m of pipe, 240 m2 of ceiling. Zero means the line is judged."""
-    try:
-        q = float(item.get("qtyPlan") or 0)
-    except (TypeError, ValueError):
-        return 0.0
-    return q if q > 0 else 0.0
-
-
-def read_pct(item, e):
-    """One reading as a percentage. A reading carrying a QUANTITY is a measurement; one carrying only
-    a percentage is an estimate. Decided per READING so a line that gained a quantity partway keeps
-    the history it already had."""
-    qp = qty_plan(item)
-    q = (e or {}).get("qty")
-    if qp > 0 and q not in (None, ""):
-        try:
-            return _pct(float(q) / qp * 100.0)
-        except (TypeError, ValueError, ZeroDivisionError):
-            pass
-    return _pct((e or {}).get("pct"))
+#
+# These four moved to progress.py when qsurvey.py needed to ask the same question. They are still
+# reachable as bi.clean_log / bi.read_pct / bi.qty_plan / bi.accumulated_at, which is what every
+# caller and every test in this repo uses — the point of the move was to stop a THIRD copy of the
+# reading rules being written, not to rename anything.
+from progress import clean_log, qty_plan, read_pct, accumulated_at   # noqa: E402,F401
 
 
 def qty_at(item, day):
@@ -108,17 +85,6 @@ def qty_at(item, day):
         return (v, False)
     qp = qty_plan(item)
     return ((qp * accumulated_at(item, day) / 100.0) if qp else 0.0, True)
-
-
-def accumulated_at(item, day):
-    """The latest reading on or before `day`. Zero before the first one."""
-    v = 0
-    for e in clean_log(item):
-        if str(e.get("d")) <= day:
-            v = read_pct(item, e)
-        else:
-            break
-    return v
 
 
 def daily_at(item, day):
@@ -170,7 +136,7 @@ PROGRESS_COLS = [
     "date", "projectId", "project", "category", "itemId", "item", "masterRef", "unit",
     "startDate", "finishDate", "weight", "qtyPlanned", "qtyAtSite", "qtyMeasured",
     "accumulatedPct", "dailyPct", "plannedPct", "variancePct",
-    "weightedAccum", "weightedPlanned", "reportedToday",
+    "weightedAccum", "weightedPlanned", "reportedToday", "source",
 ]
 
 
@@ -195,6 +161,53 @@ def window(items, frm=None, to=None, today=None):
         # Silently truncating would understate the history with no sign that anything was dropped.
         lo = _iso(_d(hi) - datetime.timedelta(days=MAX_DAYS - 1))
     return (lo, hi)
+
+
+def master_progress_items(tasks, details):
+    """Master activities whose progress belongs in the fact table, shaped like detail lines.
+
+    The fact table was fed pm_detail and nothing else, so a project run WITHOUT a detail schedule —
+    exactly the case the Master Schedule\'s Daily progress table exists for — exported an empty
+    progress history. Its S-curve in Power BI was a flat line at zero while the portal drew the real
+    one.
+
+    THE SELECTION IS THE WHOLE CARE HERE, because these rows are summed alongside the detail rows
+    and double counting is the failure this repo has already had once, in the subcontract ledger.
+    An activity is included only when nothing else in the table already speaks for it:
+
+      · it has readings of its own — nothing to say otherwise;
+      · no detail line points at it (`taskRef` == its ref), because those lines ARE its progress and
+        are already rows here;
+      · it has no WBS children among the tasks, because their rows are already here for the same
+        reason.
+
+    That is `_pmDailyLock`\'s rule in the frontend — children, then detail, then the activity itself
+    — and it is the same rule for the same reason: whichever source is closest to the work wins, and
+    exactly one source may speak per unit of work. tests/test_bi_master_progress.py holds the two
+    together on one tree.
+    """
+    tasks = [t for t in (tasks or []) if t]
+    refd = set()
+    for d in (details or []):
+        r = str((d or {}).get("taskRef") or "").strip()
+        if r:
+            refd.add(r)
+    wbs_codes = [str(t.get("wbs") or "").strip() for t in tasks]
+    out = []
+    for t in tasks:
+        if not progress.has_readings(t):
+            continue
+        ref = progress.master_ref(t)
+        if not ref or ref in refd:
+            continue
+        w = str(t.get("wbs") or "").strip()
+        if w and any(c != w and c.startswith(w + ".") for c in wbs_codes):
+            continue                       # a summary activity; its children are already rows here
+        out.append(dict(t,
+                        category=t.get("phase") or "Activities",
+                        taskRef=ref,
+                        biSource="master"))
+    return out
 
 
 def progress_fact(items, project=None, frm=None, to=None, today=None):
@@ -238,6 +251,12 @@ def progress_fact(items, project=None, frm=None, to=None, today=None):
                 "weightedAccum": round(w * acc, 4),
                 "weightedPlanned": round(w * pl, 4),
                 "reportedToday": 1 if dly > 0 else 0,
+                # Which schedule level this row came from. Both are real progress and both belong in
+                # the same weighted roll-up — SUM(weightedAccum)/SUM(weight) is correct across the
+                # whole table — but a model that wants only the site\'s detail reporting, or only the
+                # activities reported at master level, can now say so instead of guessing from
+                # whether masterRef happens to equal itemId.
+                "source": it.get("biSource") or "detail",
             })
     return rows
 
@@ -269,15 +288,26 @@ def items_dim(items):
 
 
 ACTIVITY_COLS = ["taskId", "projectId", "masterRef", "wbs", "activity", "phase", "assignee",
-                 "startDate", "finishDate", "actualFinish", "isMilestone", "status", "typedPct"]
+                 "startDate", "finishDate", "actualFinish", "isMilestone", "status", "typedPct",
+                 "reportedPct", "readings", "lastReadingDate"]
 
 
 def activities_dim(tasks):
     """The master schedule, as the dimension detail lines roll up into.
 
     `masterRef` is the join key and matches the frontend's `_pdTaskRef`: the WBS code where there is
-    one, else the activity name. `typedPct` is deliberately named — where detail lines exist the
-    authoritative figure is their weighted roll-up, not this.
+    one, else the activity name.
+
+    THREE COLUMNS FOR THREE SOURCES, because there are now three. `typedPct` is what somebody typed
+    into the form and was for a long time the only figure here; where detail lines exist the
+    authoritative figure is their weighted roll-up, in schedule_progress. `reportedPct` is what the
+    site has filed against the activity ITSELF through the Master Schedule's Daily progress table —
+    a source that did not exist when this dimension was written, so a project reported entirely at
+    master level exported `typedPct: 0` for every activity and looked like a job nobody had started.
+
+    `readings` and `lastReadingDate` are what let a model tell 0% "not started" from 0% "never
+    asked": a `reportedPct` of 0 with no readings behind it is not a measurement, and a chart that
+    plots it as one is inventing a fact.
     """
     out = []
     for t in (tasks or []):
@@ -296,6 +326,9 @@ def activities_dim(tasks):
             "isMilestone": 1 if str(t.get("isMilestone")) == "Yes" else 0,
             "status": t.get("status") or "Not started",
             "typedPct": _pct(t.get("pctComplete")),
+            "reportedPct": progress.latest_pct(t),
+            "readings": len(clean_log(t)),
+            "lastReadingDate": progress.last_reading_date(t),
         })
     return out
 
