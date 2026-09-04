@@ -34,6 +34,9 @@ const PRELUDE = `
   var _HR = { pm_deliverables: [], pm_tasks: [], pm_detail: [], pm_costs: [] };
   function _pmScopeFor(coll, pid) { return (_HR[coll] || []).filter(x => x.projectId === pid); }
   function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }
+  // _pmTaskPctRollWalk now asks _pmLeafPct what a leaf is worth; these are the leaves of that.
+  function _pdQtyPlan() { return 0; }
+  function _pmToday() { return '2026-09-04'; }
   function _pmDateDiff(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }
   function _pmToday() { return '2026-08-21'; }
   function _pdTaskPct(t, pid) { return global._pdTaskPct ? global._pdTaskPct(t, pid) : null; }
@@ -63,6 +66,10 @@ new Function(PRELUDE +
   take('function _pmWbsChildIndex(', '_pmWbsChildIndex') +
   take('function _pmWbsChildren(', '_pmWbsChildren') +
   take('function _pmTaskPctRoll(', '_pmTaskPctRoll') +
+  take('function _pdReadPct(', '_pdReadPct') +
+  take('function _pdLog(', '_pdLog') +
+  take('function _pdAcc(', '_pdAcc') +
+  take('function _pmLeafPct(', '_pmLeafPct') +
   take('function _pmTaskPctRollWalk(', '_pmTaskPctRollWalk') +
   take('function _pmDelivBuckets(', '_pmDelivBuckets') +
   take('function _pmDelivRoll(', '_pmDelivRoll') +

@@ -25633,8 +25633,40 @@ function _pmTaskPctRoll(task, allTasks, pid, _depth) {
   }
   return _pmTaskPctRollWalk(task, allTasks, pid, _depth);
 }
+/* What a LEAF activity is worth, before any roll-up.
+ *
+ * Daily progress is filed as dated readings — the same `log` the Detail Schedule keeps, same shape,
+ * so _pdLog and _pdAcc read it unchanged — and the activity is worth its latest reading on or
+ * before today. `pctComplete` remains the answer for an activity nobody has filed against, so
+ * every figure typed before this existed still stands.
+ *
+ * A reading is never LOST by being superseded: _pdAcc walks the log, so back-dating a correction
+ * and asking for last week's number both work, and the history of who reported what, when, stays. */
+function _pmLeafPct(task) {
+  const l = (typeof _pdLog === 'function') ? _pdLog(task) : [];
+  if (l.length) return { pct: _pmPct(_pdAcc(task)), from: 'daily', n: l.length };
+  return { pct: _pmPct(task && task.pctComplete), from: 'typed', n: 0 };
+}
+
+/* Why an activity's percentage is NOT the reporter's to type — or null when it is theirs.
+ *
+ * This deliberately mirrors _pmTaskPctRollWalk below, in the same order, on the same predicates.
+ * The two must agree: if this said "editable" where the roll-up reads children, somebody would file
+ * a number that is accepted, stored, and then silently never shown — which is the failure this
+ * whole feature is meant to avoid, not introduce. tests/master_daily_progress.js holds them
+ * together.
+ *
+ * 'detail' is decided by _pdTaskPct returning a row count, NOT by the activity merely carrying a
+ * WBS code. An activity nobody has reported detail against yet is still the planner's to fill in;
+ * it locks itself the moment the first detail line points at it. */
+function _pmDailyLock(task, allTasks, pid) {
+  if (_pmWbsChildren(task, allTasks).length) return 'children';
+  if (typeof _pdTaskPct === 'function' && pid && _pdTaskPct(task, pid)) return 'detail';
+  return null;
+}
+
 function _pmTaskPctRollWalk(task, allTasks, pid, _depth) {
-  const typed = { pct: _pmPct(task && task.pctComplete), from: 'typed', n: 0 };
+  const typed = _pmLeafPct(task);
   if (_depth > 12) return typed;
   const kids = _pmWbsChildren(task, allTasks);
   if (kids.length) {
@@ -26934,6 +26966,120 @@ let _pmPhCol = {};
 function pmPhToggle(g) { g = decodeURIComponent(g); _pmPhCol[g] = !_pmPhCol[g]; _pmReload(); }
 /* Master activities. Progress is the detail roll-up where detail lines exist — one source of truth,
    the same rule the Activities table already shows as "rolled up". */
+/* Every activity on the project, in the order the Timeline lists them, each carrying why it is or
+   is not editable. NOT filtered to activities with dates the way _pmTaskNorm is: an activity with
+   no dates still has progress to report, and leaving it out of the only screen that can report it
+   would make it permanently unreportable. Its planned figure is simply 0, which is honest. */
+function _pmDailyRows(pid) {
+  const all = _pmScopeFor('pm_tasks', pid);
+  const day = _pmToday();
+  return all.slice()
+    .sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || String(a.start || '').localeCompare(String(b.start || '')))
+    .map(t => {
+      const lock = _pmDailyLock(t, all, pid);
+      const roll = _pmTaskPctRoll(t, all, pid);
+      return { t: t, lock: lock, roll: roll,
+               group: t.phase || _t('Activities'),
+               level: _pmWbsLevel(t.wbs),
+               planned: _pdPlanned({ start: t.start, finish: t.finish }, day),
+               acc: lock ? roll.pct : _pmPct(_pmLeafPct(t).pct) };
+    });
+}
+
+/* The table. Locked rows are SHOWN, greyed, with the reason and their computed figure, rather than
+   hidden — a parent missing from the list reads as a gap in the schedule, and somebody goes looking
+   for where to type its number. Seeing it, locked, with "from sub-tasks" beside it, answers the
+   question the hidden version would raise. */
+function pmDailyEntry(pid) {
+  const rows = _pmDailyRows(pid), day = _pmToday();
+  if (!rows.length) { toast(_t('No activities yet.'), 'warn'); return; }
+  document.getElementById('pmEntryOverlay')?.remove();
+  const openN = rows.filter(r => !r.lock).length;
+  let body = '', lastG = null;
+  rows.forEach(r => {
+    if (r.group !== lastG) {
+      lastG = r.group;
+      body += '<tr style="background:var(--soft-bg)"><td colspan="4" style="font-weight:700;font-size:12px">' +
+              _pmEsc(r.group) + '</td></tr>';
+    }
+    const why = r.lock === 'children' ? _t('from sub-tasks')
+              : r.lock === 'detail' ? _t('from Detail Schedule') : '';
+    const pad = 6 + Math.max(0, (r.level || 1) - 1) * 14;
+    body += '<tr' + (r.lock ? ' style="color:var(--text-light)"' : '') + '>' +
+      '<td style="font-size:12.5px;padding-left:' + pad + 'px">' +
+        _pmEsc((r.t.wbs ? r.t.wbs + ' · ' : '') + (r.t.name || '')) +
+        (why ? '<div style="font-size:10.5px;color:var(--text-light)">' + _pmEsc(why) + '</div>' : '') + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:var(--text-light);font-variant-numeric:tabular-nums">' + r.planned + '%</td>' +
+      '<td style="text-align:right;font-size:12px;font-variant-numeric:tabular-nums">' + r.acc + '%</td>' +
+      '<td style="text-align:right">' +
+        (r.lock
+          ? '<span title="' + _tkEscA(_t('Calculated — not entered here')) + '" ' +
+            'style="font-size:12px;font-variant-numeric:tabular-nums">' + r.roll.pct + '%</span>'
+          : '<input type="number" min="0" max="100" step="1" inputmode="decimal" class="form-control pm-e" ' +
+            'data-id="' + _tkEscA(r.t.id) + '" data-was="' + r.acc + '" value="' + r.acc + '" ' +
+            'title="' + _tkEscA(_t('Accumulated progress today (%)')) + '" ' +
+            'style="width:86px;text-align:right;padding:3px 6px;font-size:12.5px">') +
+      '</td></tr>';
+  });
+  const el = document.createElement('div');
+  el.id = 'pmEntryOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:680px;max-height:92vh;display:flex;flex-direction:column">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Daily progress') + ' — ' + tkFmtDate(day) + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'pmEntryOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">' +
+      _t('Enter the accumulated total for each activity. Leave a row unchanged and nothing is filed against it.') +
+      ' <b>' + openN + '</b> ' + _t('of') + ' ' + rows.length + ' ' + _t('can be entered here; the rest are calculated.') + '</div>' +
+    '<div style="overflow:auto;flex:1;min-height:0"><table style="width:100%"><thead><tr>' +
+      '<th>' + _t('Activity') + '</th><th style="text-align:right">' + _t('Planned') + '</th>' +
+      '<th style="text-align:right">' + _t('Now') + '</th><th style="text-align:right">' + _t('Today') + '</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pmEntryOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-emerald" id="pm-entry-save" onclick="pmDailyEntrySave()">' + _t('File progress') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+
+/* One PATCH per changed activity, each carrying the whole row, exactly as the Detail Schedule files
+   its readings. A row that fails is NAMED rather than counted: "3 of 5 saved" tells somebody that
+   something is wrong and nothing about which activity to go back to. */
+async function pmDailyEntrySave() {
+  const day = _pmToday();
+  const changed = [...document.querySelectorAll('.pm-e')]
+    .filter(i => String(i.value).trim() !== String(i.dataset.was).trim());
+  if (!changed.length) { toast(_t('Nothing changed — no progress filed.'), 'warn'); return; }
+  const btn = document.getElementById('pm-entry-save');
+  if (btn) { btn.disabled = true; btn.textContent = _t('Filing…'); }
+  let ok = 0; const failed = [];
+  for (const inp of changed) {
+    const r = (_HR.pm_tasks || []).find(x => x.id === inp.dataset.id); if (!r) continue;
+    const raw = String(inp.value).trim();
+    if (raw === '') continue;                                  // cleared, not measured — file nothing
+    const v = _pmPct(raw);
+    const log = _pdLog(r).filter(e => String(e.d) !== day);
+    log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString() });
+    try {
+      await tkApi('/api/coll/pm_tasks/' + r.id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) });
+      r.log = log; ok++;
+    } catch (e) { failed.push((r.name || r.id) + ': ' + _errMsg(e)); }
+  }
+  document.getElementById('pmEntryOverlay')?.remove();
+  tkAudit('Master progress filed', tkFmtDate(day),
+          ok + ' activity(ies)' + (failed.length ? ' · ' + failed.length + ' FAILED' : ''));
+  /* A partial save is the case worth being loud about, and the reason this is a dialog rather than
+     a toast: some readings are in and some are not, and a green "Filed" over the top of that sends
+     somebody home believing the report was complete. Named, so they know which to re-enter. */
+  if (failed.length) tkAlert({ title: _t('Some progress was not filed'),
+    body: '<div style="font-size:13px;margin-bottom:8px">' + ok + ' ' + _t('filed') + ', <b>' +
+      failed.length + ' ' + _t('failed') + '</b>. ' +
+      _t('Re-enter the ones below — the rest are saved.') + '</div><ul style="font-size:12px;padding-left:18px;margin:0">' +
+      failed.map(f => '<li>' + _pmEsc(f) + '</li>').join('') + '</ul>' });
+  else toast(_t('Progress filed') + ' — ' + ok + ' ' + _t('activity(ies)'));
+  /* No forced re-fetch. The rows were updated in place, _pmLeafPct reads r.log on every call, and
+     the per-render memo is dropped by a microtask so it cannot survive the awaits above. Re-reading
+     the whole collection here would be a full download after every daily report, for figures the
+     page can already recompute — which is the cost this schedule spent a long time shedding. */
+  _pmReload();
+}
+
 function _pmTaskNorm(pid, day) {
   // SORTED. This mapped in whatever order the collection came back in, so the Gantt listed 1.2.4.4
   // above 1.3.2 above 1.4.4.1.2 above 1.2.1 — a schedule nobody can read down. _pmWbsCmp compares
@@ -27306,7 +27452,9 @@ function pmRenderSchedule(pid) {
     return _n.length ? _schTimeline(_n, { day: _pmToday(), ns: 'm', collapsed: _pmPhCol,
         toggle: "pmPhToggle('{g}')", labelHead: 'Phase / Activity',
         rowHint: _t('Open this activity'), sub: _t('grouped by phase · click an activity to open it'),
-        actions: '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' }) + _pmSCurve(pid, _pmToday())
+        actions: '<button class="btn btn-emerald btn-sm" onclick="pmDailyEntry(\'' + pid + '\')">' +
+                   _t('Daily progress') + '</button>' +
+                 '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' }) + _pmSCurve(pid, _pmToday())
       : '<div class="card" style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
         _t('No activities with dates yet.') + '</div>';
   };
