@@ -2832,6 +2832,10 @@ def cash_flow(ctx):
 # It computes the moves and returns them. Writing them is the endpoint's job, and it writes only
 # what this returns.
 
+# Dated readings are what the site files; progress.py holds the rules for reading them, so
+# this module, bi.py and the frontend cannot answer "is it finished" three ways.
+import progress
+
 BASELINE_NONE = "no baseline"
 HELD_DONE = "already complete"
 HELD_NO_DATES = "no planned dates"
@@ -2840,9 +2844,24 @@ HELD_UP_TO_DATE = "already carries the full extension"
 
 
 def _task_done(t):
+    """Has this activity been finished — by ANY of the ways this platform records finishing?
+
+    This module\'s contract is "work that is DONE does not move", and it was asking three questions
+    that between them missed the newest answer. An activity driven to 100% through the Master
+    Schedule\'s Daily progress table has `pctComplete` untouched (pmDailyEntrySave writes only `log`)
+    and `status` untouched (status is DERIVED on every screen and written on none). So the site
+    reported the work finished, the portal showed it finished, and this said False — and the
+    endpoint above then rewrote the completion date of finished work, on the one path explicitly
+    guarded against destroying the record of the plan.
+
+    progress.latest_pct, not accumulated-as-at-today: see its docstring for why the future-dated
+    reading is resolved towards LEAVING AN ACTIVITY ALONE. Nothing here reads the clock.
+    """
     if str(t.get("actualFinish") or "").strip():
         return True
     if _num(t.get("pctComplete")) >= 100:
+        return True
+    if progress.latest_pct(t) >= 100:
         return True
     return _norm(t.get("status")) in ("complete", "completed", "done", "closed")
 

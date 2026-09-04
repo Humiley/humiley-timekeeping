@@ -14010,7 +14010,13 @@ class Handler(BaseHTTPRequestHandler):
                                  bi.ACTIVITY_COLS, qs, "master_activities")
         pid = (qs.get("project", [""])[0] or "").strip()
         proj = (db.get_collection_item("pm_projects", pid) or {}) if pid else {}
-        rows = bi.progress_fact(self._bi_scope(qs, "pm_detail"), proj,
+        # Both levels. A project with no detail schedule reports its progress on the master
+        # activities themselves, and feeding this pm_detail alone exported an empty history for it —
+        # a flat line at zero in Power BI beside a portal drawing the real curve.
+        # bi.master_progress_items decides which activities may speak, so nothing is counted twice.
+        _det = self._bi_scope(qs, "pm_detail")
+        _mst = bi.master_progress_items(self._bi_scope(qs, "pm_tasks"), _det)
+        rows = bi.progress_fact(_det + _mst, proj,
                                 (qs.get("from", [""])[0] or None), (qs.get("to", [""])[0] or None))
         return self._bi_send(rows, bi.PROGRESS_COLS, qs, "schedule_progress")
 
