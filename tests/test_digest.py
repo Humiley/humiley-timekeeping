@@ -46,7 +46,9 @@ def test_digest_gather_and_send(monkeypatch, base_url):
     tos = [t for t, _, _ in sent]
     assert "boss@h.com" in tos and "md@h.com" in tos
     boss_html = next(h for t, _, h in sent if t == "boss@h.com")
-    assert "PAY-A" in boss_html and "Humiley_Logo_White.png" in boss_html
+    # Split, so a failure names which half broke rather than "the and was false".
+    assert "PAY-A" in boss_html, "the manager's own row is missing from their digest"
+    assert "cid:humileylogo" in boss_html, "the digest lost the reverse brand mark"
 
 
 def test_digest_off_switch(monkeypatch, base_url):

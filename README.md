@@ -1,138 +1,103 @@
-# Humiley Timekeeping & Leave Management
+# Humiley Portal — People & Workplace Platform
 
-A standalone web app for Humiley / Cowork — employees check in/out (with GPS),
-request leave, and managers track everyone from a back-office dashboard.
+The internal operations platform for **Humiley Engineering & Solutions**, live at
+**portal.humiley.com**. What began as a timekeeping app is now a broad HR / Finance /
+Projects / CRM system of record for the company, built on the Python standard library
+(`http.server` + `sqlite3`) with a single-file vanilla-JS PWA front end.
 
-It reuses the design of the original **Humiley Timekeeping & Leave Management**
-platform (sidebar, modules, branding) but replaces the Microsoft 365 /
-SharePoint backend with a **self-contained Python + SQLite** backend so the data
-**persists** and the app runs anywhere — **no dependencies to install**.
-
-> Built on the Python standard library only (`http.server` + `sqlite3`). If you
-> have Python 3.8+, you can run it.
+> **Architecture & the non-obvious internals are documented in [ARCHITECTURE.md](ARCHITECTURE.md).**
+> Read that before making backend changes — the generic JSON store, the auth boundary,
+> the e-signature chain, and the invoice-register shape all have important gotchas.
 
 ---
 
-## Features
+## What's in it
 
-The full platform UI, served from a real database:
+- **Timekeeping** — GPS-aware check in/out, attendance, work schedules, overtime, push nudges.
+- **Leave** — requests with working-day calculation and balance tracking.
+- **HR** — employee database, recruitment, onboarding, performance/PADR, talent, offboarding, training, org.
+- **Payroll** — Vietnam statutory computation (3P, social-insurance cap, 7-bracket PIT, reliefs), payslips.
+- **Finance** — payment requests, Invoice Tracking (VN TT78 e-invoice capture + reconciliation), accounting export.
+- **Approvals** — a server-enforced 3-level workflow (Perform → Review → Approve) with escalation,
+  weekly digests, and a monthly leadership pack, across claims / travel / payments / leave.
+- **E-signatures** — FDA-Part-11-style: fresh Microsoft 365 re-authentication + a PIN (scrypt + pepper),
+  a keyed HMAC signature chain, on every submit and approval.
+- **Projects / PMC** — portfolio, EVM, RACI, risk (P–I), IPC certification.
+- **CRM** — pipeline, leads, companies, contacts, products, a quotation builder.
+- **Assets** — device & asset register with signed assignment/return.
+- **Executive Dashboard** — company-wide people / approvals / finance / project rollups (management-only).
+- **Procurement** — a **separate** Next.js / Prisma app embedded via iframe (not in this repo's Python).
 
-- **Dashboard** — KPIs, attendance charts, today's activity, pending approvals
-- **Check In / Out** — GPS-aware check-in/out; on-time vs late detection
-- **Attendance** — every record, filterable; staff see only their own
-- **GPS Locations** — approved geofence zones (HQ, Factory, …)
-- **Work Schedules** — shift configuration
-- **Leave Management** — request annual/sick/etc. leave with working-day calc
-- **Manager Approval** — approve / reject leave requests
-- **HR Admin** — add / edit employees, departments, leave balances, roles
-- **Reports & Analytics** — department, leave, payroll, trend charts
-- **Settings / Integration** — Microsoft 365 connection guide
-
-**Roles:** *Manager* (full access) and *Staff* (personal workspace) — enforced
-both in the UI and the API.
+**Access model:** role (staff / manager / director) **and** access level, re-derived from the
+database on every request, with default-deny reads, staff self-owner scoping, and per-user app
+gating. See [ARCHITECTURE.md](ARCHITECTURE.md) → *Authorization*.
 
 ---
 
-## Quick start
+## Run it locally
 
 ```bash
-cd "TimeKeeping Web App"
-python3 app.py
+pip install -r requirements-dev.txt        # pytest only (the app itself is stdlib + a couple of optional wheels)
+python3 app.py                             # serves http://localhost:8000
 ```
 
-Open **http://localhost:8000/**.
+- Microsoft 365 SSO is used when `TK_M365_CLIENT_ID` / `TK_M365_TENANT_ID` are set; otherwise a
+  local development sign-in path is available. See [M365_SETUP.md](M365_SETUP.md).
+- Set `TK_BOOTSTRAP_ADMIN=1` to seed a first admin on an empty database.
+- **Never** run against real data inside a cloud-synced folder — keep `TK_DB_PATH` outside any
+  OneDrive/Dropbox tree (`*.db` is gitignored, but a synced folder still auto-uploads plaintext PII).
 
-On first run the database is seeded with the platform's 15 demo employees, GPS
-zones, and sample attendance/leave so every screen has realistic data.
+### Tests
 
-### Logging in
+```bash
+python3 -m pytest -q
+```
 
-**Demo mode (default — no Microsoft account needed):**
-Click **Sign in with Microsoft 365**, then choose **Manager** or **Staff**.
-- *Manager* signs in as the Managing Director (full access).
-- *Staff* signs in as an engineer (personal workspace).
-
-**Live Microsoft 365 mode:** see [Microsoft 365 setup](#microsoft-365-setup-live-mode).
-
----
-
-## Configuration
-
-Environment variables (all optional):
-
-| Variable             | Default            | Purpose                                  |
-| -------------------- | ------------------ | ---------------------------------------- |
-| `TK_PORT` / `PORT`   | `8000`             | Port to listen on                        |
-| `TK_HOST`            | `0.0.0.0`          | Bind address                             |
-| `TK_DB_PATH`         | `./timekeeping.db` | SQLite database file                     |
-| `TK_M365_CLIENT_ID`  | *(empty)*          | Azure AD app (client) ID — enables live mode |
-| `TK_M365_TENANT_ID`  | *(empty)*          | Azure AD directory (tenant) ID           |
-| `TK_MAPS_KEY`        | *(empty)*          | Google Maps API key (optional, for maps) |
-
-If `TK_M365_CLIENT_ID` **and** `TK_M365_TENANT_ID` are set, the app switches to
-**live Microsoft 365** login automatically; otherwise it runs in **demo mode**.
+The suite boots the real HTTP / auth / e-sign stack in-thread (see `tests/conftest.py`). CI runs it
+on Python 3.9 + 3.12, plus an axe-core accessibility scan and a Lighthouse budget
+(`.github/workflows/`).
 
 ---
 
-## Microsoft 365 setup (live mode)
+## Configuration (environment)
 
-1. In the **Azure Portal → App registrations**, register a Single-Page App.
-   - Redirect URI (SPA): the URL where you host this app (e.g. `http://localhost:8000/`).
-   - API permissions: **Microsoft Graph → User.Read** (delegated).
-2. Copy the **Application (client) ID** and **Directory (tenant) ID**.
-3. Run with them set:
+| Variable | Purpose |
+|---|---|
+| `TK_DB_PATH` | SQLite database path (keep it out of any synced folder) |
+| `TK_PORT` / `PORT` · `TK_HOST` | Listen port / bind address (default `8000` / `0.0.0.0`) |
+| `TK_M365_CLIENT_ID` / `TK_M365_TENANT_ID` | Microsoft 365 / Entra SSO |
+| `TK_M365_CLIENT_SECRET` | App-only Graph (approval mail, SharePoint archive, invoice mailbox sync) — **prod `.env` only** |
+| `TK_ESIGN_PEPPER` | Server-side pepper for e-signature PIN hashing — **escrow this; losing it invalidates every PIN** |
+| `TK_ESIGN_REQUIRE_VERIFIED_TOKEN` | Hard-fail e-sign token verification (recommended `1` in prod) |
+| `TK_SSO_SECRET` | Signs the portal↔procurement SSO handoff |
+| `TK_BOOTSTRAP_ADMIN` | Seed a first admin on an empty DB |
 
-   ```bash
-   TK_M365_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
-   TK_M365_TENANT_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy \
-   python3 app.py
-   ```
-
-4. Add each person as an employee (HR Admin) with their **work email**. On
-   sign-in, the backend verifies their Microsoft token via Microsoft Graph,
-   matches the email to their employee record, and applies their role.
-
-> Users without a matching employee record are refused — add them in HR Admin first.
+Secrets live only in the VPS `.env` — **the repo is public; never commit secrets or real data.**
 
 ---
 
-## How it works
+## Deployment & operations
 
-| File             | Role                                                          |
-| ---------------- | ------------------------------------------------------------ |
-| `app.py`         | HTTP server, routing, REST API, Microsoft 365 token verify   |
-| `db.py`          | SQLite schema + data access (employees, attendance, leave, zones) |
-| `seed_data.py`   | First-run seed data (employees, zones, attendance, leave)    |
-| `templates/index.html` | The full single-page platform UI (design preserved)    |
-| `static/brand/`  | Humiley logos                                                |
-
-- The frontend authenticates to the backend, then **loads all data from the
-  database** — every screen reflects real, persisted records.
-- **Check-in/out, leave requests, approvals, and employee edits persist** to
-  SQLite via the REST API (`/api/*`).
-- The database file (`timekeeping.db`) is **git-ignored** so real data is never
-  committed.
-
-### REST API (selected)
-
-| Method | Path | Notes |
-| ------ | ---- | ----- |
-| `POST` | `/api/auth/demo` | Demo login (`{role}`) |
-| `POST` | `/api/auth/m365` | Live login (`{accessToken}`) |
-| `GET`  | `/api/employees` · `POST` · `PATCH /:id` · `DELETE /:id` | manager-only writes |
-| `GET`  | `/api/attendance` · `POST /checkin` · `POST /checkout` | staff see own only |
-| `GET`  | `/api/leave` · `POST` · `PATCH /:id` | approve/reject = manager |
-| `GET`  | `/api/zones` · `POST` · `PATCH /:id` · `DELETE /:id` | manager-only writes |
+Production runs in Docker behind Caddy on a single VPS, auto-deploying on push to `main`.
+See **[DEPLOY.md](DEPLOY.md)**, **[UPDATE.md](UPDATE.md)**, and **[GO_LIVE_GUIDE.md](GO_LIVE_GUIDE.md)**.
+Mobile app scaffolding: **[IOS-APP.md](IOS-APP.md)**, **[ANDROID-APP.md](ANDROID-APP.md)**.
 
 ---
 
-## Notes & next steps
+## Repository layout
 
-- Admin sessions are kept in memory, so restarting the server signs users out.
-- Times/dates are stored as written; production deployments should run behind HTTPS.
-- The original SharePoint integration guide is preserved in the project history
-  if you ever want to connect Power Automate / Graph instead of SQLite.
+```
+app.py            HTTP server + REST API + request handler (the backend core)
+db.py             SQLite access, schema, migrations
+tkutil.py         pure leaf utilities (extracted from app.py)
+einv.py           Vietnam TT78 e-invoice XML/ZIP parser
+ratelimit.py      in-process sliding-window rate limiter
+templates/        index.html — the entire single-file PWA front end
+static/           service worker, icons, manifest, brand assets
+tests/            pytest regression suite
+.github/workflows CI (tests) + a11y + Lighthouse
+```
 
 ---
 
-*Humiley Engineering & Solutions · Timekeeping & Leave Management*
+*Humiley Engineering & Solutions — internal platform. Not for public distribution.*

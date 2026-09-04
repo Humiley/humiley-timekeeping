@@ -1,6 +1,10 @@
 # Database (runtime data — do not commit)
 *.db
 timekeeping.db
+# WAL sidecars. journal_mode=WAL leaves these next to the database; they hold committed pages that
+# have not been checkpointed yet, so they are live data — and *.db above does not match them.
+*.db-wal
+*.db-shm
 
 # Deploy secrets / per-server config
 .env
@@ -38,3 +42,7 @@ static/brand/2.png
 static/brand/3.png
 static/brand/4.png
 static/brand/5.png
+
+# The live staging site definition — carries a real domain and a password hash, and must survive
+# the auto-deploy git pull. The committed template is caddy.d/staging.caddy.example.
+caddy.d/staging.caddy

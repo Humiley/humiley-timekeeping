@@ -5,8 +5,17 @@
    fallback when the network is offline OR slower than the timeout (keeps the "fast to open on 4G"
    behaviour + offline use). Every successful load refreshes the cached shell, so the fallback is always
    the last-known-good version; static assets + CDN libs stay cache-first. */
-const CACHE = 'hml-pwa-v153';
-const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
+/* MUST be unique per deploy, and higher than whatever is on main when you branch — /api/build reports
+   this string as the deployed BUILD, and "Check for updates" compares against it. Two branches picked
+   v294 independently (#43 and #44) and both merged, so production answered v294 both before and after
+   the second deploy: the version could not distinguish two different builds, and a deploy check that
+   polled /api/build returned green ~20s after a merge that had not deployed yet.
+   Re-read main immediately before merging and bump again if someone got there first. And verify a
+   deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
+   against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
+const CACHE = 'hml-pwa-v457';
+const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
+  '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js'];   // self-hosted libs — precache for offline
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -23,6 +32,20 @@ self.addEventListener('activate', e => {
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+/* Tell the page which build is actually controlling it. The page cannot read CACHE any other way,
+   and this is the number that matters: a device keeps serving the shell cached under THIS name, so
+   comparing anything else could say "up to date" while an old screen was still in front of someone.
+   An installed PWA can hold a worker across app restarts, which is how a phone stayed several
+   deploys behind while the same account on a desktop was current. */
+self.addEventListener('message', e => {
+  if (e.data === 'tk-which-build') {
+    const reply = { tkBuild: CACHE };
+    if (e.ports && e.ports[0]) e.ports[0].postMessage(reply);
+    else if (e.source && e.source.postMessage) e.source.postMessage(reply);
+  }
+  if (e.data === 'tk-skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('fetch', e => {

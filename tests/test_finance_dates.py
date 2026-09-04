@@ -39,11 +39,36 @@ def test_approve_and_pay_stamp_the_date_trail(api, tokens, monkeypatch):
     assert row.get("status") == "Approved"
     assert row.get("approvedBy") and row.get("approvedOn"), "approval must stamp approvedBy + approvedOn"
 
-    # Pay (editor, with the required bank slip) -> paidBy + paidOn stamped.
-    st, b = api("POST", "/api/esign", tokens["editor"],
+    # Pay: a DIFFERENT Editor/Admin than the approver releases the money (disbursement SoD), with the
+    # required bank slip -> paidBy + paidOn stamped. (editor approved above, so admin pays.)
+    st, b = api("POST", "/api/esign", tokens["admin"],
                 {"coll": "payments", "id": pid, "meaning": "Paid — PR-DATE", "setStatus": "Paid",
                  "attach": {"bankSlip": "data:application/pdf;base64,YmFuaw==", "bankSlipName": "slip.pdf"}})
     assert st == 200, b
     row = _row(pid)
     assert row.get("status") == "Paid"
     assert row.get("paidBy") and row.get("paidOn"), "disbursement must stamp paidBy + paidOn"
+
+
+def test_sod_blocks_same_person_pay_through_the_real_esign_stack(api, tokens, monkeypatch):
+    # End-to-end (not just the _appr_check unit): the disbursement SoD must hold through the full
+    # /api/esign request path — the same Editor who approved cannot then pay; a different one can.
+    monkeypatch.setattr(app, "DEMO_MODE", True)
+    pid = _submit_payment(api, tokens)
+    st, b = api("POST", "/api/esign", tokens["mgr"],
+                {"coll": "payments", "id": pid, "meaning": "Reviewed", "setStatus": "Reviewed"})
+    assert st == 200, b
+    st, b = api("POST", "/api/esign", tokens["editor"],
+                {"coll": "payments", "id": pid, "meaning": "Approved", "setStatus": "Approved"})
+    assert st == 200, b
+    # the SAME editor tries to release payment -> rejected by SoD through the whole stack
+    slip = {"bankSlip": "data:application/pdf;base64,YmFuaw==", "bankSlipName": "s.pdf"}
+    st, b = api("POST", "/api/esign", tokens["editor"],
+                {"coll": "payments", "id": pid, "meaning": "Paid", "setStatus": "Paid", "attach": slip})
+    assert st != 200 and "different person" in str(b).lower(), (st, b)
+    assert _row(pid).get("status") == "Approved", "the request must NOT be paid by the approver"
+    # a different Editor/Admin CAN pay
+    st, b = api("POST", "/api/esign", tokens["admin"],
+                {"coll": "payments", "id": pid, "meaning": "Paid", "setStatus": "Paid", "attach": slip})
+    assert st == 200, b
+    assert _row(pid).get("status") == "Paid"
