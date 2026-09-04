@@ -421,6 +421,13 @@ jobs:
       - name: The boot requests are issued in the right order
         run: node tests/boot_request_order.js
 
+      # The sign-in screen no longer downloads a photograph. The risk is not the photo coming back —
+      # it is that the logo was hidden BECAUSE the photo carried the branding, so removing the photo
+      # silently removed the brand mark and left a title coloured for a bright image. A fast screen
+      # that looks wrong and errors nowhere.
+      - name: The login screen costs nothing and still looks like Humiley
+        run: node tests/login_screen_costs_nothing.js
+
       # The Approval Inbox showed shimmer bars and never the approvals behind them. Two faults met:
       # it awaited the WHOLE audit chain before drawing anything (30s timeout), and _armManagerPoll
       # re-ran it every 30s while blanking the panel to a skeleton first — the same number, so the
