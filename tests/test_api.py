@@ -151,18 +151,49 @@ def test_attendance_gps_is_scoped(api, tokens):
     assert any(row.get("emp_id") == "HML-ADM" for row in r["attendance"])
 
 
-# --------------------------------------------------------------------------- appsDenied on writes (round-3 hunt)
-def test_appsdenied_blocks_hr_writes(api, tokens):
-    """A user whose HR app is disabled by an admin must be blocked from CREATING HR records via the
-    API, not just from reading them — the appsDenied gate was read-only before."""
-    # appsDenied is stored as a comma-separated string (the admin UI joins the list), matching _apps_denied
-    db.update_employee("HML-MGR", {"appsDenied": "hr"})
+# --------------------------------------------------------------------------- the HR app gate (opt-in)
+def test_hr_app_grant_is_what_opens_hr(api, tokens):
+    """HR is an OPT-IN app: it is granted through `appsAllowed`, never un-denied through `appsDenied`.
+
+    The gate this replaces asked `"hr" in appsDenied` — and nothing in the product can put "hr"
+    there, because tkSetApp() routes hr/finance/procurement to appsAllowed. So the check passed on
+    a condition that could not occur: every manager-tier account could read the recruitment board,
+    the appraisal file and the talent grid of an app nobody had given them. The old test held it
+    upright by writing appsDenied by hand — a value production never writes.
+
+    Both directions are asserted here, because a gate that only ever refuses is as broken as one
+    that only ever allows.
+    """
+    before = (db.get_employee("HML-MGR") or {}).get("appsAllowed") or ""
     try:
-        st, r = api("POST", "/api/coll/candidates", tokens["mgr"],
+        # withdraw the grant → HR is shut, on reads AND on writes
+        db.update_employee("HML-MGR", {"appsAllowed": ""})
+        st, _ = api("GET", "/api/coll/candidates", tokens["mgr"])
+        assert st == 403, "HR must be shut to a manager who was never granted it"
+        st, _ = api("POST", "/api/coll/candidates", tokens["mgr"],
                     {"id": "CAND-DENY", "name": "X Candidate", "stage": "Offer"})
-        assert st == 403, "a disabled HR app must block writes too, not only reads"
+        assert st == 403, "an ungranted HR app must block writes too, not only reads"
+
+        # writing the OLD column must change nothing — it is not the switch any more
+        db.update_employee("HML-MGR", {"appsDenied": "hr"})
+        st, _ = api("GET", "/api/coll/candidates", tokens["mgr"])
+        assert st == 403, "appsDenied is not how HR is governed; it must not be the thing that decides"
+
+        # grant it → HR opens, with appsDenied still carrying the stale "hr"
+        db.update_employee("HML-MGR", {"appsAllowed": "hr"})
+        st, _ = api("GET", "/api/coll/candidates", tokens["mgr"])
+        assert st == 200, "a granted HR app must actually open — a gate that never allows is also broken"
     finally:
-        db.update_employee("HML-MGR", {"appsDenied": ""})
+        db.update_employee("HML-MGR", {"appsAllowed": before, "appsDenied": ""})
+
+
+def test_an_admin_reaches_hr_without_a_grant(api, tokens):
+    """Admins hold every app, granted or not — _appDeniedCurrent says so in the browser, and the
+    server has to agree or an administrator locks themselves out of the module they administer."""
+    assert not (db.get_employee("HML-ADM") or {}).get("appsAllowed"), \
+        "this test is only meaningful while the admin fixture has NO explicit grant"
+    st, _ = api("GET", "/api/coll/candidates", tokens["admin"])
+    assert st == 200
 
 
 # --------------------------------------------------------------------------- leave-days balance integrity
@@ -235,3 +266,95 @@ def test_checkout_time_cannot_be_in_the_future(api, tokens, monkeypatch):
     st, r = api("POST", "/api/attendance/checkout", tokens["editor"], {"time": "21:00"})
     assert st == 400, "a future check-out time must be rejected"
     assert "future" in (r.get("error") or "").lower()
+
+
+# ── a forgotten check-out must never become an ordinary-looking day ──────────────────────────────
+
+def _open_row(emp_id, date, cin):
+    """One open row and no other. Through db.clock_in — the production path, and it does not fight
+    the server thread for the SQLite write lock the way a second raw connection does.
+
+    The rows are cleared first because a REFUSED check-out leaves its row open, and
+    open_attendance_any would then close a leftover from the previous test instead of this one.
+    """
+    conn = db.get_conn()
+    conn.execute("DELETE FROM attendance WHERE emp_id = ?", (emp_id,))
+    conn.commit()
+    conn.close()
+    return db.clock_in(emp_id, date, cin)
+
+
+def test_a_forgotten_checkout_closed_the_next_AFTERNOON_is_refused(api, tokens, monkeypatch):
+    """The guard wrapped +1440 only on a NEGATIVE subtraction, so it fired only when the check-out
+    time-of-day was EARLIER than the check-in. Closing yesterday's 08:00 row at 17:00 today
+    subtracted to +540 and was stored as a nine-hour day nobody worked — with no amendment flag and
+    no overnight marker, indistinguishable from a measured day in the register a client audits."""
+    _freeze_company_clock(monkeypatch)                     # company clock = 2026-07-18 09:05
+    _open_row("HML-MGT", "2026-07-17", "08:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "09:00"})
+    assert st == 400, b
+    assert "missed check-out" in b["error"]
+
+
+def test_and_closed_the_next_MORNING_is_refused_too(api, tokens, monkeypatch):
+    """The mirror error: it stored twenty minutes and erased the whole day."""
+    _freeze_company_clock(monkeypatch)
+    _open_row("HML-MGT", "2026-07-17", "08:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "08:20"})
+    assert st == 400, b
+
+
+def test_a_genuine_night_shift_still_closes(api, tokens, monkeypatch):
+    """20:00 -> 04:00 is eight hours and must go through — the guard must not punish shift work."""
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt(2026, 7, 18, 4, 30)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day",
+                        staticmethod(lambda offset_days=0:
+                                     (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
+    _open_row("HML-MGT", "2026-07-17", "20:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "04:00"})
+    assert st == 200, b
+    assert b["hrs"] == "8h 00m"
+
+
+def test_the_overtime_ceiling_is_computed_from_the_true_span_not_the_subtraction(api, tokens, monkeypatch):
+    """The OT plausibility guard divides by the same span, so a fabricated one licensed a
+    fabricated overtime request alongside it."""
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt(2026, 7, 18, 4, 30)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day",
+                        staticmethod(lambda offset_days=0:
+                                     (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
+    _open_row("HML-MGT", "2026-07-17", "20:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"],
+                {"time": "04:00", "otHours": 9})
+    assert st == 400 and "cannot exceed" in b["error"], "8h worked cannot carry 9h of overtime"
+
+
+def test_a_same_day_shift_over_sixteen_hours_is_refused_too(api, tokens, monkeypatch):
+    """The future-punch guard bounded a punch from ABOVE and nothing bounded it from below. An
+    authenticated POST of {"time":"00:05"} at 17:00 company time was backdated, accepted, classified
+    on-time and closed as a 16h55m day — no device tampering needed, just the API."""
+    _freeze_company_clock(monkeypatch)                     # company clock = 2026-07-18 09:05
+    st, b = api("POST", "/api/attendance/checkin", tokens["management"], {"time": "00:05"})
+    assert st == 200, b                                    # backdating a punch stays allowed
+    from datetime import datetime as _dt, timedelta as _td
+    later = _dt(2026, 7, 18, 21, 0)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: later))
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "21:00"})
+    assert st == 400, b
+    assert "cannot be right" in b["error"]
+
+
+def test_an_ordinary_long_day_still_closes(api, tokens, monkeypatch):
+    """The ceiling must not punish a genuine long day — 06:00 to 20:00 is fourteen hours."""
+    from datetime import datetime as _dt
+    fixed = _dt(2026, 7, 18, 20, 30)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day", staticmethod(lambda offset_days=0: "2026-07-18"))
+    _open_row("HML-MGT", "2026-07-18", "06:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "20:00"})
+    assert st == 200, b
+    assert b["hrs"] == "14h 00m"

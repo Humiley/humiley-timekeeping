@@ -59,7 +59,8 @@ def test_monthly_preview_is_branded_and_scoped(monkeypatch, base_url):
     n = app._monthly_send(preview_to="boss@h.com", ym="2026-05")
     assert n == 1 and sent[0][0] == "boss@h.com"
     assert "Month-end pack" in sent[0][1] and "May 2026" in sent[0][1]
-    assert "2,500,000" in sent[0][2] and "Humiley_Logo_White.png" in sent[0][2]
+    assert "2,500,000" in sent[0][2], "the month-end figures are missing"
+    assert "cid:humileylogo" in sent[0][2], "the month-end pack lost the reverse brand mark"
 
     db.set_setting("portal_apprEmail", "0")        # Mail.Send master off → even preview sends nothing
     sent2 = []

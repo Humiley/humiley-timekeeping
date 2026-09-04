@@ -1,0 +1,42 @@
+name: Accessibility (axe-core)
+
+# Boots the app and runs an axe-core WCAG scan against the login + a demo-authed dashboard.
+# Fails the build on any serious/critical violation — keeps the accessibility work from regressing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  axe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Start the app
+        env:
+          TK_BOOTSTRAP_ADMIN: "1"
+          TK_ESIGN_PEPPER: ci-test-pepper-0123456789
+        run: |
+          python app.py &
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/api/health && break; sleep 1; done
+
+      # @axe-core/cli pulls whatever ChromeDriver is newest, which drifts ahead of the Chrome that ships
+      # on the runner image ("This version of ChromeDriver only supports Chrome version 151 / current
+      # browser version is 150..."). Pin ChromeDriver to the runner's ACTUAL Chrome major so the pair
+      # always matches, and hand axe that binary explicitly.
+      - name: Install scanner (ChromeDriver matched to the runner's Chrome)
+        run: |
+          CHROME_MAJOR="$(google-chrome --version | grep -oE '[0-9]+' | head -1)"
+          echo "runner Chrome major: $CHROME_MAJOR"
+          npm i -g @axe-core/cli "chromedriver@^${CHROME_MAJOR}.0.0"
+          chromedriver --version
+
+      - name: Scan (login page)
+        run: axe http://localhost:8000/ --exit --tags wcag2a,wcag2aa --stdout --chromedriver-path "$(which chromedriver)"

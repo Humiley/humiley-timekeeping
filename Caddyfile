@@ -1,3 +1,10 @@
+# Optional extra sites, one file each, loaded from caddy.d/ (mounted read-only at /etc/caddy/conf.d).
+# Staging lives here rather than in this file because it is switched on and off far more often than
+# the production edge is touched, and an edit that breaks it must not be an edit that can break
+# portal.humiley.com. caddy.d/00-placeholder.caddy is a comment-only file that keeps this glob
+# matching on a clean checkout; see caddy.d/staging.caddy.example.
+import /etc/caddy/conf.d/*.caddy
+
 # Caddy automatically obtains + renews a Let's Encrypt certificate for this domain
 # and reverse-proxies HTTPS traffic to the app container. The domain comes from .env.
 {$PORTAL_DOMAIN} {

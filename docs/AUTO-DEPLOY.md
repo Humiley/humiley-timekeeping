@@ -97,6 +97,28 @@ failing commit with exponential backoff (2, 4, 8, 16, 32 min…), and after `AUT
 file (something a monitor can watch for). Pushing a new commit clears the failure state and deploys
 immediately. Check `autodeploy.log` for the reason, fix it, and push again.
 
+## Confirming a deploy actually landed
+
+`/api/build` reports the `CACHE` string from `static/sw.js`. It identifies the **build**, not the
+service-worker file — so a PR that changes `templates/index.html` without bumping it leaves production
+reporting a version that is not what is running.
+
+Worse, two branches can pick the same number. On 2026-08-20 #43 and #44 both chose `v294` and both
+merged; production answered `v294` before *and* after the second deploy. A watcher polling `/api/build`
+went green ~20 seconds after a merge that had not deployed yet, and the false positive was reported as
+success.
+
+**Verify by content, not by version.** The served page either is the commit or it is not:
+
+```bash
+curl -s https://portal.humiley.com/ | shasum -a 256          # what is being served
+git show <sha>:templates/index.html | shasum -a 256          # what you merged
+curl -s https://portal.humiley.com/api/health                # uptime_s < time-since-merge = it restarted
+```
+
+Three signals worth having together: the hashes match, `uptime_s` is smaller than the time since your
+merge, and `/api/build` shows a version no earlier build used. The first is the one that cannot lie.
+
 ## Notes / safety
 
 * **No secrets, no inbound access.** It only fetches a **public** repo outbound (`GIT_TERMINAL_PROMPT=0`,

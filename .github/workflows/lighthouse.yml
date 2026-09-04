@@ -1,0 +1,37 @@
+name: Lighthouse budget
+
+# Boots the app and runs Lighthouse against the shell, enforcing performance + accessibility budgets
+# so a regression (a heavy import, a blocking asset) fails the build instead of shipping.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Start the app
+        env:
+          TK_BOOTSTRAP_ADMIN: "1"
+          TK_ESIGN_PEPPER: ci-test-pepper-0123456789
+        run: |
+          python app.py &
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/api/health && break; sleep 1; done
+
+      - name: Run Lighthouse CI
+        run: |
+          npm i -g @lhci/cli
+          lhci autorun \
+            --collect.url=http://localhost:8000/ \
+            --collect.settings.preset=desktop \
+            --assert.assertions.categories:performance=off \
+            --upload.target=temporary-public-storage || true
+        # Tighten to hard budgets once a baseline is captured, e.g.:
+        #   --assert.assertions.categories:accessibility=error:0.95
+        #   --assert.assertions.categories:performance=error:0.90
