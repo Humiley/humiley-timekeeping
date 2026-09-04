@@ -57,17 +57,27 @@ const line = (mark, what) => {
 const run = (wraps, opts) => {
   opts = opts || {};
   const api = new Function('WRAPS', 'OPTS',
+    /* documentElement is part of the stub because _fitTableScroll PUBLISHES the height it computed
+       onto --scrollbox-h, which is what the chart boxes (.sch-vp/.itp-vp) read. Modelling it here
+       means the test exercises that write instead of stepping around it. */
+    'const ROOTVARS = {};\n' +
     'const document = {\n' +
     '  getElementById: () => ({ querySelectorAll: () => WRAPS }),\n' +
+    '  documentElement: { style: {\n' +
+    '    getPropertyValue: k => ROOTVARS[k] || "",\n' +
+    '    setProperty: (k, v) => { ROOTVARS[k] = v; },\n' +
+    '    removeProperty: k => { delete ROOTVARS[k]; },\n' +
+    '  } },\n' +
     '  body: { classList: { contains: c => c === "exporting" && !!OPTS.exporting } },\n' +
     '};\n' +
     'const window = { innerHeight: OPTS.vh || 900,\n' +
     '  matchMedia: () => ({ matches: !!OPTS.phone }) };\n' +
     /* Lifted separately: `take` stops at the NEXT top-level declaration, so asking it for the const
        returns the const and nothing else — the function that uses it starts the next declaration. */
-    line('const _TW_CAP_PX', 'the cap') +
+    line('const _TW_CAP_PX', 'the ceiling') +
+    line('const _TW_CHROME_PX', 'the chrome allowance') +
     take('function _fitTableScroll(', '_fitTableScroll') +
-    '\nreturn { _fitTableScroll, cap: _TW_CAP_PX };');
+    '\nreturn { _fitTableScroll, cap: _TW_CAP_PX, chrome: _TW_CHROME_PX, vars: ROOTVARS };');
   const r = api(wraps, opts);
   r._fitTableScroll();
   return r;
@@ -77,7 +87,8 @@ const run = (wraps, opts) => {
 console.log('\nOne cap, every table\n');
 {
   const ws = [wrap(89), wrap(300), wrap(560), wrap(920), wrap(2962), wrap(40000)];
-  const { cap } = run(ws);
+  const { chrome } = run(ws);
+  const expect = 900 - chrome;      // the harness's default window is 900px tall
   ok('every table is capped, however short',
      ws.every(w => w.classList.contains('tw-tall')),
      'capped: ' + ws.map(w => w.classList.contains('tw-tall')).join(', ') +
@@ -85,38 +96,62 @@ console.log('\nOne cap, every table\n');
   ok('and they are all capped to the SAME height',
      new Set(ws.map(w => w.style.maxHeight)).size === 1,
      'heights: ' + ws.map(w => w.style.maxHeight).join(', '));
-  ok('which is the declared cap', ws[0].style.maxHeight === cap + 'px',
-     'got ' + ws[0].style.maxHeight + ', cap is ' + cap);
+  /* The height is COMPUTED from the window now, not read off the constant, so assert the number
+     the rule produces rather than the constant it clamps with — comparing a box to _TW_CAP_PX
+     passed only while the ceiling happened to be the term that won. */
+  ok('which is the window minus the chrome above the table',
+     ws[0].style.maxHeight === expect + 'px',
+     'got ' + ws[0].style.maxHeight + ', expected ' + expect + 'px');
 
   /* The point of a uniform cap: a 1-row register and a 135-row one occupy the same space, so the
      filter bar, the KPI strip and the next card are in the same place on every tab. */
   ok('a short register and a long one end up the same size',
      ws[0].style.maxHeight === ws[5].style.maxHeight);
+
+  /* The chart boxes read --scrollbox-h. If the table height is computed and that variable is not,
+     Quality shows a chart and a table of two different heights on one screen. */
+  const pub = run([wrap(3000)], { vh: 1000 });
+  ok('the computed height is published for the chart boxes to read',
+     pub.vars['--scrollbox-h'] === (1000 - pub.chrome) + 'px',
+     'got ' + JSON.stringify(pub.vars));
+  const phone = run([wrap(3000)], { vh: 900, phone: true });
+  ok('and an uncapped mode clears it instead of pinning the charts to a stale number',
+     phone.vars['--scrollbox-h'] === undefined, JSON.stringify(phone.vars));
 }
 
-// ══ the cap is a real ceiling, not a share of the screen ═══════════════════════════════════════
-console.log('\nThe same on a laptop and on a large monitor\n');
+/* ══ the box FILLS the window, under a ceiling ═════════════════════════════════════════════════
+   This block used to assert the opposite: a fixed 560px ceiling, identical on a laptop and a
+   2000px monitor, on the reasoning that a viewport-relative box moves the layout under you when
+   the window resizes. That was reversed deliberately, by the owner, because 560 on an ordinary
+   window left about a third of the screen empty beneath the card — and because the registers the
+   fixed ceiling was protecting (a SECOND one, pushed off screen by a tall first) are now separate
+   sub-tab pages and no longer share a scroll. The ceiling survives; it is just much higher and no
+   longer the term that decides on an ordinary screen. */
+console.log('\nThe box fills the window, under a ceiling\n');
 {
-  /* `big.cap === _capOf(big)` was here, which is x === x — it passed on anything. Assert the box
-     the code actually produced instead. */
-  const tall = [wrap(3000)];
-  const big = run(tall, { vh: 2000 });
-  ok('a 2000px-tall monitor does not get a 1240px table',
-     tall[0].style.maxHeight === big.cap + 'px',
-     'got ' + tall[0].style.maxHeight + ' — the ceiling is fixed, not a fraction of the viewport');
-  const a = [wrap(3000)], b = [wrap(3000)];
-  run(a, { vh: 900 }); run(b, { vh: 2000 });
-  ok('the box is the same height on both', a[0].style.maxHeight === b[0].style.maxHeight,
-     'got ' + a[0].style.maxHeight + ' vs ' + b[0].style.maxHeight +
-     ' — a viewport-relative cap moves the layout under you when the window resizes');
+  const laptop = [wrap(3000)], monitor = [wrap(3000)];
+  run(laptop, { vh: 900 }); run(monitor, { vh: 1400 });
+  ok('a taller window gets a taller box — that is the point of the change',
+     parseInt(monitor[0].style.maxHeight, 10) > parseInt(laptop[0].style.maxHeight, 10),
+     'got ' + laptop[0].style.maxHeight + ' on 900 vs ' + monitor[0].style.maxHeight + ' on 1400');
+  ok('and it really does fill, rather than stopping a third of the way down',
+     parseInt(laptop[0].style.maxHeight, 10) === 900 - run([wrap(10)], { vh: 900 }).chrome,
+     'got ' + laptop[0].style.maxHeight + ' on a 900px window');
+  ok('an ordinary window clears the old fixed 560 by a wide margin',
+     parseInt(laptop[0].style.maxHeight, 10) > 560, 'got ' + laptop[0].style.maxHeight);
 
-  /* On a short window the ceiling would fill the screen, so the vh term pulls it DOWN — only ever
-     down, never up. */
+  /* A ceiling still, or a wall-mounted display would produce a two-thousand-pixel scroll box. */
+  const huge = [wrap(6000)];
+  const big = run(huge, { vh: 3000 });
+  ok('a 3000px display stops at the ceiling instead of filling',
+     huge[0].style.maxHeight === big.cap + 'px',
+     'got ' + huge[0].style.maxHeight + ', ceiling is ' + big.cap);
+
+  /* And a floor, so a short window does not produce a box with two rows in it. */
   const tiny = [wrap(3000)];
   run(tiny, { vh: 500 });
-  ok('but a short window gets a smaller box, not a screen-filling one',
-     parseInt(tiny[0].style.maxHeight, 10) < 560,
-     'got ' + tiny[0].style.maxHeight);
+  ok('a very short window gets the floor, not a negative box',
+     parseInt(tiny[0].style.maxHeight, 10) === 360, 'got ' + tiny[0].style.maxHeight);
 }
 
 // ══ the two exemptions ═════════════════════════════════════════════════════════════════════════

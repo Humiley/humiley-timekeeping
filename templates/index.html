@@ -28310,7 +28310,7 @@ function _pmItpTimeline(itps) {
   let dated = itps.filter(function (t) { return t.plannedStart || t.plannedFinish; }).slice().sort(function (a, b) { return (a.plannedStart || a.plannedFinish || '').localeCompare(b.plannedStart || b.plannedFinish || ''); });
   if (_itpIsR && (_itpRp[0] || _itpRp[1])) { const rs = _itpRp[0] || '0000-00-00', re = _itpRp[1] || '9999-12-31'; dated = dated.filter(function (t) { const st = t.plannedStart || t.plannedFinish, fi = t.plannedFinish || t.plannedStart; return (st || '9999') <= re && (fi || '0000') >= rs; }); }
   const _itpRangeUi = '<span style="font-size:11px;color:var(--text-light)">Day range</span><input type="date" id="pm-itp-from" value="' + (_itpRp[0] || '') + '" onchange="pmItpRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px"><span style="color:var(--text-light)">→</span><input type="date" id="pm-itp-to" value="' + (_itpRp[1] || '') + '" onchange="pmItpRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px">' + (_itpIsR ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmItpRangeClear()">Clear</button>' : '');
-  const hdr = '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">ITP Schedule (timeline)</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + _itpRangeUi + '</div></div>';
+  const hdr = '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title"></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + _itpRangeUi + '</div></div>';
   if (!dated.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div style="padding:16px;color:var(--text-light);font-size:12px;text-align:center">' + (_itpIsR ? 'No ITP in this day range.' : 'No ITP dates yet — set <b>Planned start</b> / <b>Planned finish</b> on an ITP to see the timeline.') + '</div></div>';
   let alld = []; dated.forEach(function (t) { if (t.plannedStart) alld.push(t.plannedStart); if (t.plannedFinish) alld.push(t.plannedFinish); });
   let min = alld.reduce(function (a, b) { return a < b ? a : b; }), max = alld.reduce(function (a, b) { return a > b ? a : b; });
@@ -28431,7 +28431,10 @@ function pmRenderQuality(pid) {
   const ncrOverdue = q.filter(x => x.type === 'NCR' && x.status !== 'Closed' && x.due && x.due < _qToday).length;
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
   const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('NCRs overdue', ncrOverdue, ncrOverdue ? '#C00000' : 'var(--text-light)'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
-  const buildRegister = () => _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
+  /* The sub-tab above already says "Quality Register", so the card header keeps only the part the
+     tab does not — what a record in here can BE. Repeating the tab's own words back at the reader
+     costs a line and tells them nothing. */
+  const buildRegister = () => _pmCard('<span style="font-weight:600;color:var(--text-light);font-size:12.5px">Inspections · NCRs · Audits · Tests</span>', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
     { label: 'Ref', sk: 'refNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
     { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
     { label: 'Title', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
@@ -28460,7 +28463,8 @@ function pmRenderQuality(pid) {
                      { k: 'status', label: 'Status' }];
   const _itpBar = _pmFiltBar('pm_quality_itp', itp, _itpSpecs);
   const _itpRows = _pmFiltApply('pm_quality_itp', itp, _itpSpecs);
-  const buildItpTable = () => _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _itpBar + _pmTable('pm_quality_itp', [
+  // Named by its sub-tab; this row is here for Add ITP and Renumber.
+  const buildItpTable = () => _pmCard('', 'pm_quality_itp', 'Add ITP', _itpBar + _pmTable('pm_quality_itp', [
     /* The number it was ISSUED under rides underneath the current one wherever the register has
        been renumbered. A consolidated register that shows only its new numbers cannot be reconciled
        against a signed plan or a contractor's transmittal; this keeps that answer on the screen
@@ -29410,7 +29414,8 @@ function pmRenderComms(pid) {
   const kpis = _hrKpiRow([_hrKpi('Communications', comms.length), _hrKpi('Issues', issues.length, '#3168A8'), _hrKpi('Open issues', openIss, '#EF4444')]);
   const _cSpecs = [{ k: 'type', label: 'Type' }, { k: 'status', label: 'Status' }, { k: 'audience', label: 'Audience' }];
   const _cBar = _pmFiltBar('pm_comms', comms, _cSpecs), _cRows = _pmFiltApply('pm_comms', comms, _cSpecs);
-  const buildCommsLog = () => _pmCard('Communications Log', 'pm_comms', 'Log comm', _cBar + _pmTable('pm_comms', [
+  // Named by its sub-tab; this row is here for Log comm and the Status Report button.
+  const buildCommsLog = () => _pmCard('', 'pm_comms', 'Log comm', _cBar + _pmTable('pm_comms', [
     { label: 'Date', sk: 'date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Audience', k: 'audience' },
     { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') },
@@ -29418,7 +29423,7 @@ function pmRenderComms(pid) {
   ], _cRows), '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + pid + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status Report</button>');
   const _iSpecs = [{ k: 'priority', label: 'Priority' }, { k: 'status', label: 'Status' }, { k: 'owner', label: 'Owner' }];
   const _iBar = _pmFiltBar('pm_issues', issues, _iSpecs), _iRows = _pmFiltApply('pm_issues', issues, _iSpecs);
-  const buildIssueLog = () => _pmCard('Issue Log', 'pm_issues', 'Add issue', _iBar + _pmTable('pm_issues', [
+  const buildIssueLog = () => _pmCard('', 'pm_issues', 'Add issue', _iBar + _pmTable('pm_issues', [
     { label: 'No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
@@ -43704,7 +43709,19 @@ function showView(id, navEl, title) {
    A fixed ceiling rather than a share of the viewport, so a register is the same size on a laptop
    and on a 27-inch monitor and the layout below it does not move when somebody resizes. The vh
    term only ever pulls it DOWN, for a short window where 560px would fill the screen. */
-const _TW_CAP_PX = 560;
+/* The ceiling was 560px and FIXED, so that a laptop and a 2000px monitor produced an identical
+   box — deliberate, and asserted. It is raised and made viewport-relative here at the owner's
+   request: the table should run down the page the way the sidebar does, instead of stopping short
+   with empty page beneath it. Two things changed that make the trade different from when 560 was
+   chosen. The registers that used to sit stacked on one scroll are now separate sub-tab pages
+   (see _PM_SUBTABS), so a tall table no longer pushes a SECOND register somewhere you have to go
+   looking for it — the thing the fixed ceiling was protecting is gone. And 560 on a 1050px window
+   left roughly a third of the screen empty under the card.
+   Still a ceiling, not a free-for-all: a very tall monitor stops at _TW_CAP_PX rather than
+   producing a two-thousand-pixel scroll box, and a short window is still pulled DOWN by the
+   viewport term, never up. */
+const _TW_CAP_PX = 1200;
+const _TW_CHROME_PX = 240;   // topbar + project header + tab bars + KPI strip + filter row, measured
 function _fitTableScroll() {
   /* SHORT tables grow to full height and the PAGE scrolls, as one natural list — the note beside
      .table-wrap explains why, and a 12-row register that made you scroll a little inner box is
@@ -43720,10 +43737,22 @@ function _fitTableScroll() {
   const content = document.getElementById('content'); if (!content) return;
   const off = (window.matchMedia && window.matchMedia('(max-width:820px)').matches) ||
               document.body.classList.contains('exporting');
-  /* 0.8, not 0.62: at 0.62 a 900px laptop window computed 558 and the box was NOT the same
-     height as on a taller screen, which is the whole point. The vh term is a floor for SHORT
-     windows only — under about 700px — and must not touch an ordinary one. */
-  const cap = Math.min(_TW_CAP_PX, Math.max(300, Math.round(window.innerHeight * 0.8)));
+  /* Fill the window, minus the chrome above the table, and clamp both ends. The old form was
+     `min(560, max(300, innerHeight * 0.8))`, where the 560 always won on any ordinary window and
+     the viewport term only ever bit under ~700px. Now the viewport term is what decides, so the
+     box grows with the screen up to _TW_CAP_PX. The 360 floor keeps a very short window from
+     producing a box with two rows in it. */
+  const cap = Math.min(_TW_CAP_PX, Math.max(360, window.innerHeight - _TW_CHROME_PX));
+  /* The charts' boxes (.sch-vp, .itp-vp) size themselves from --scrollbox-h in the stylesheet, and
+     that used to be a 560px CONSTANT kept equal to this one BY HAND — Quality stacks a table
+     directly under the ITP chart, so the moment the two numbers drift they are two visibly
+     different boxes on one screen. Now the height is computed, so hand-matching is not even
+     possible: publish the computed value and let the stylesheet read it. The 560px in :root is
+     only the value before this first runs. Compared before assigning, so this writes no layout it
+     did not change. */
+  const rootS = document.documentElement.style;
+  if (off) { if (rootS.getPropertyValue('--scrollbox-h')) rootS.removeProperty('--scrollbox-h'); }
+  else if (rootS.getPropertyValue('--scrollbox-h') !== cap + 'px') rootS.setProperty('--scrollbox-h', cap + 'px');
   content.querySelectorAll('.table-wrap').forEach(w => {
     /* An inline max-height set by whoever built the box — a dialog's own list, say — is a decision
        already taken about that table, so leave it alone rather than overruling it from here. */

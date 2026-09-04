@@ -115,12 +115,23 @@ console.log('\nThe chart is in a scroll box\n');
 // ══ 2. one height for every scroll box in the app ══════════════════════════════════════════════
 console.log('\nThe same height as a register table\n');
 {
-  const K = new Function(line('const _TW_CAP_PX', 'the table cap') + 'return _TW_CAP_PX;')();
   const m = /--scrollbox-h:\s*(\d+)px/.exec(src);
   ok('the stylesheet declares one shared box height', !!m, 'no --scrollbox-h in the stylesheet');
-  ok('and the tables and the Gantts agree on it', m && +m[1] === K,
-     'stylesheet says ' + (m && m[1]) + 'px, _TW_CAP_PX says ' + K + ' — Quality stacks a table ' +
-     'directly on this chart, so two numbers here are two visibly different boxes on one screen');
+  /* This used to assert `--scrollbox-h === _TW_CAP_PX`: two constants, kept equal BY HAND, and
+     Quality stacks a table directly under this chart so any drift is two visibly different boxes
+     on one screen. The table height is computed from the window now, so hand-matching is not even
+     available — the agreement has to come from ONE value. _fitTableScroll publishes what it
+     computed onto --scrollbox-h and the stylesheet reads it, which makes drift impossible rather
+     than merely detectable. */
+  const fit = take('function _fitTableScroll(', '_fitTableScroll');
+  ok('the table sizer PUBLISHES its computed height to that variable',
+     /setProperty\('--scrollbox-h', cap \+ 'px'\)/.test(fit),
+     'the chart boxes read --scrollbox-h, so whoever computes the table height has to write it');
+  ok('and it writes only when the value actually changed',
+     /getPropertyValue\('--scrollbox-h'\) !== cap \+ 'px'/.test(fit));
+  ok('uncapped modes clear it rather than pinning the charts to a stale number',
+     /if \(off\) \{ if \(rootS\.getPropertyValue\('--scrollbox-h'\)\) rootS\.removeProperty\('--scrollbox-h'\); \}/.test(fit),
+     'phones and exporting are deliberately uncapped');
   ok('both Gantt viewports read that variable',
      /\.sch-vp,\.itp-vp\{max-height:var\(--scrollbox-h\)\}/.test(src));
   /* The Schedule Gantt used to carry max-height:520px inline. An inline declaration beats the class,
