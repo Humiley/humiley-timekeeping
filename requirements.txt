@@ -18,7 +18,7 @@ pypdf>=6.16.2
 # Pinned explicitly (also a transitive dep of pywebpush) so the e-signature RS256/JWKS token
 # verification path is always available in production — without it, verification soft-fails.
 # Ships manylinux wheels, so no compiler is needed. Pair with TK_ESIGN_REQUIRE_VERIFIED_TOKEN=1.
-cryptography>=50.0.0
+cryptography>=50.0.1
 
 # The shell is one 3.9 MB HTML file, and gzip -6 gets it to 1.15 MB. Brotli at quality 11 gets it
 # to 833 KB — 319 KB less on every cold load, which on a phone on Vietnamese mobile data is the
