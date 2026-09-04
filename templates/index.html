@@ -8180,6 +8180,105 @@ async function tkRenderHrOverview() {
 }
 
 /* Centralized Employee Database — KPIs + the rich, searchable employee table. */
+/* ── employees with no department ────────────────────────────────────────────
+   A blank department used to cost nothing visible. It does now: the document bar is organised by
+   department, so somebody whose record names none sees no documents at all and is told to ask HR.
+   That is the right message, but it is only useful if HR can find out who it is going to reach —
+   which is what this panel is for, and why it lives on the roster rather than in a report nobody
+   opens.
+
+   It fills nothing in by itself. Which department somebody works in is a fact about the company
+   that no code can infer, and a wrong guess here silently decides which documents a person can
+   read. So the panel names the gap, and a person closes it. */
+const _deptFill = { open: false, sel: {} };
+
+function _deptGapRows() {
+  return (_DEMO_EMPLOYEES || []).filter(function (e) {
+    return e && String(e.status || 'Active').toLowerCase() !== 'inactive' && !String(e.dept || '').trim();
+  });
+}
+/* The server gates `dept` at management and above — it drives the finance read-scope as well as
+   the document bar — so the panel offers editing to exactly the people the API will accept it
+   from. Anyone below still SEES the gap; being able to see what is missing is not a privilege. */
+function _deptFillMayEdit() { return _lvlRank(_userLevel) >= _lvlRank('management'); }
+
+function _deptGapPaint() {
+  const el = document.getElementById('dept-gap-root'); if (!el) return;
+  const rows = _deptGapRows();
+  if (!rows.length) { el.innerHTML = ''; return; }
+  const may = _deptFillMayEdit();
+  const head =
+    '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+      '<span style="width:34px;height:34px;border-radius:9px;background:#F59E0B1f;display:flex;align-items:center;justify-content:center;flex:none">' +
+        '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>' +
+      '<div style="flex:1;min-width:220px">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--navy)">' + rows.length + ' ' +
+          _t(rows.length === 1 ? 'active employee has no department' : 'active employees have no department') + '</div>' +
+        '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-top:3px">' +
+          _t('Company documents are organised by department, so each of these people currently sees none of them.') + '</div>' +
+      '</div>' +
+      (may ? '<button class="btn btn-outline btn-sm" onclick="tkDeptFillToggle()">' +
+        _t(_deptFill.open ? 'Close' : 'Assign departments') + '</button>' : '') +
+    '</div>';
+  let body = '';
+  if (may && _deptFill.open) {
+    const opts = tkAllDepts();
+    const sel = function (id, cur) {
+      return '<select class="form-control" style="width:auto;min-width:180px;font-size:12px" onchange="tkDeptFillSet(\'' + _libArg(id) + '\',this)">' +
+        '<option value="">' + _t('— not set —') + '</option>' +
+        opts.map(function (d) {
+          return '<option value="' + _tkEscA(d) + '"' + (_libSameName(cur, d) ? ' selected' : '') + '>' + _crmEsc(d) + '</option>';
+        }).join('') + '</select>';
+    };
+    body =
+      '<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
+          '<span style="font-size:11.5px;color:var(--text-light)">' + _t('Set every row at once') + '</span>' +
+          '<select class="form-control" style="width:auto;min-width:180px;font-size:12px" onchange="tkDeptFillAll(this)">' +
+            '<option value="">' + _t('— choose —') + '</option>' +
+            opts.map(function (d) { return '<option value="' + _tkEscA(d) + '">' + _crmEsc(d) + '</option>'; }).join('') + '</select>' +
+          '<span style="flex:1"></span>' +
+          '<button class="btn btn-emerald btn-sm" onclick="tkDeptFillSave()">' + _t('Save departments') + '</button>' +
+        '</div>' +
+        '<div style="max-height:340px;overflow:auto">' + rows.map(function (e) {
+          return '<div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--soft-bg)">' +
+            '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crmEsc(e.name || e.id) + '</div>' +
+            '<div style="font-size:10.5px;color:var(--text-light)">' + _crmEsc([e.title, e.email].filter(Boolean).join(' · ')) + '</div></div>' +
+            sel(e.id, _deptFill.sel[e.id] || '') + '</div>';
+        }).join('') + '</div>' +
+      '</div>';
+  }
+  el.innerHTML = '<div class="card" style="padding:14px 16px;margin-bottom:20px;border-left:4px solid #F59E0B">' + head + body + '</div>';
+}
+function tkDeptFillToggle() { _deptFill.open = !_deptFill.open; _deptGapPaint(); }
+function tkDeptFillSet(id, el) { _deptFill.sel[id] = el.value; }
+function tkDeptFillAll(el) {
+  const v = el.value; if (!v) return;
+  _deptGapRows().forEach(function (e) { _deptFill.sel[e.id] = v; });
+  _deptGapPaint();
+}
+/* Saved one at a time on purpose: there is no bulk employee endpoint, and inventing one to save a
+   few requests would put a second write path next to the one that already carries the level rules
+   and the audit trail. Each failure is reported with the NAME it belongs to — "3 failed" tells
+   nobody which three. */
+async function tkDeptFillSave() {
+  if (!_requireLevel('management')) return;
+  const picked = _deptGapRows().filter(function (e) { return String(_deptFill.sel[e.id] || '').trim(); });
+  if (!picked.length) { toast(_t('Choose a department for at least one person first.'), 'warn'); return; }
+  let ok = 0; const bad = [];
+  for (const e of picked) {
+    const d = String(_deptFill.sel[e.id]).trim();
+    try {
+      await tkApi('/api/employees/' + e.id, { method: 'PATCH', body: { dept: d } });
+      e.dept = d; delete _deptFill.sel[e.id]; ok++;
+      try { tkAudit('Department set', e.name || e.id, d); } catch (x) {}
+    } catch (err) { bad.push((e.name || e.id) + ' (' + _errMsg(err) + ')'); }
+  }
+  if (ok) toast(ok + ' ' + _t(ok === 1 ? 'department saved' : 'departments saved'), 'success', 5000);
+  if (bad.length) toast(_t('Could not update') + ': ' + bad.join(', '), 'error', 12000);
+  try { tkRenderDatabase(); } catch (x) { _deptGapPaint(); }
+}
+
 function tkRenderDatabase() {
   const emps = _DEMO_EMPLOYEES || [];
   const active = emps.filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').length;
@@ -8195,7 +8294,8 @@ function tkRenderDatabase() {
     _hrKpi('Active', active, 'var(--emerald)'),
     _hrKpi('Departments', depts.length, '#8B5CF6'),
     _hrKpi('Managers', emps.filter(e => e.role === 'manager').length, '#F59E0B')
-  ]) + '<div class="card" style="padding:14px 16px;margin-bottom:20px"><div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Headcount by Department</div><div style="display:flex;gap:12px;flex-wrap:wrap">' + (deptCard || '<span style="font-size:12px;color:var(--text-light)">No data</span>') + '</div></div>';
+  ]) + '<div class="card" style="padding:14px 16px;margin-bottom:20px"><div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Headcount by Department</div><div style="display:flex;gap:12px;flex-wrap:wrap">' + (deptCard || '<span style="font-size:12px;color:var(--text-light)">No data</span>') + '</div></div><div id="dept-gap-root"></div>';
+  try { _deptGapPaint(); } catch (e) {}
   try { _renderEmployeeTable(); } catch (e) {}
   const lbl = document.getElementById('emp-count-label');
   if (lbl) lbl.textContent = emps.length + ' employees';
