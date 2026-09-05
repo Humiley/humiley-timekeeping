@@ -63,11 +63,23 @@
   .wrap{max-width:680px;margin:0 auto;padding:0 14px 40px}
 
 
-  /* The portal sidebar's gradient, so somebody who has seen the platform recognises this as the
-     same product rather than as a form on some other website. */
-  header{background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
-         color:#fff;padding:calc(14px + env(safe-area-inset-top)) 0 16px}
-  header .wrap{display:flex;align-items:center;gap:12px}
+  /* An INSET navy panel with rounded corners, which is what AeroSano's PageHero actually is —
+     its own docstring calls it that. The full-bleed square-cornered strip this had was the one
+     piece of the page that never matched: it welded the header to the window while every other
+     surface floated on the light ground. The gradient is still the portal sidebar's, so the
+     product is still recognisable. */
+  header{padding:calc(10px + env(safe-area-inset-top)) 14px 0;background:transparent}
+  header .wrap{position:relative;overflow:hidden;border-radius:var(--r-panel);
+               background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
+               color:#fff;display:flex;align-items:center;gap:12px;padding:18px 20px;
+               box-shadow:var(--shadow-card)}
+  /* The engineering grid, at the same weight and pitch the system uses. It is what stops a large
+     navy field reading as a blank rectangle. */
+  header .wrap::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.4;
+    background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);
+    background-size:56px 56px}
+  header .wrap > *{position:relative}
   /* `color:#fff` explicitly, not inherited. The base h1 rule sets headings navy — correct on every
      white card and catastrophic here, where it painted the title navy on the navy bar and left it
      just about readable. A colour that arrives by inheritance is a colour one later rule can take
@@ -92,7 +104,7 @@
      should be able to see at a glance whose report it is; the form used to say only "Daily Report"
      and the contractor's own name, which is the one party that never needed telling. */
   .doc{background:var(--card);border:0;border-radius:var(--r-panel);position:relative;
-       margin-top:12px;overflow:hidden;box-shadow:var(--ring),var(--shadow-card)}
+       margin-top:14px;overflow:hidden;box-shadow:var(--ring),var(--shadow-card)}
   /* The Humiley signature graphic: ONE emerald corner triangle per surface. It goes on the document
      panel and nowhere else — repeated on every card it stops being a signature and becomes a
      pattern. Sized so it sits under the date line rather than beside anything readable. */
