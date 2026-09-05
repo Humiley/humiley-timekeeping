@@ -33,9 +33,13 @@ TAIKISHA = {
     "categories": ["Electrical Works", "Fire Fighting Works", "HVAC Works", "Other Works",
                    "Plumbing Works", "Utility Works"],
 }
+# ⚠️ "Office Manager" — the source report spells it "Manger", and Humiley corrected it on
+# 2026-09-05. The heading is not what these assertions turn on (the total of 13 is), but the list is
+# a transcription of that report's columns, so the difference is recorded rather than left to look
+# like a slip.
 NEWTECONS = {
     "id": "C-NEW", "name": "Newtecons", "projectId": "P-MEGA",
-    "mgmtRoles": ["Design Coordination", "HSSE Supervisor", "Office Manger", "Project Manager",
+    "mgmtRoles": ["Design Coordination", "HSSE Supervisor", "Office Manager", "Project Manager",
                   "QAQC Supervisor", "Quantity Surveyor", "Secretary", "Site Manager",
                   "Supervisor Engineer"],
     "workerTrades": ["Finishing", "Infrastructure", "Steel structure", "Structure", "Surveying",
@@ -151,7 +155,7 @@ def test_management_and_worker_totals_match_the_printed_tables():
 
 def test_the_newtecons_tables_have_different_columns_and_still_total_correctly():
     """Page 2 of the Newtecons file: 1+2+1+1+1+1+1+1+4 = 13, and 30+0+0+52+4+0 = 86."""
-    rep = {"mgmt": {"Design Coordination": 1, "HSSE Supervisor": 2, "Office Manger": 1,
+    rep = {"mgmt": {"Design Coordination": 1, "HSSE Supervisor": 2, "Office Manager": 1,
                     "Project Manager": 1, "QAQC Supervisor": 1, "Quantity Surveyor": 1,
                     "Secretary": 1, "Site Manager": 1, "Supervisor Engineer": 4},
            "workers": {"Finishing": 30, "Infrastructure": 0, "Steel structure": 0,
