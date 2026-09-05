@@ -4740,6 +4740,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._dr_site_day(qs)
         if path == "/api/dr/site/logo":
             return self._dr_site_logo((qs.get("token") or [""])[0])
+        if path == "/api/dr/site/clientlogo":
+            return self._dr_site_client_logo((qs.get("token") or [""])[0])
         if path == "/api/dr/report":
             return self._guard(lambda u: self._dr_report_ep(u, qs))
         if path.startswith("/api/dr/photo/"):
@@ -10551,32 +10553,10 @@ class Handler(BaseHTTPRequestHandler):
         con, _sess = self._dr_site_auth(token)
         if not con:
             return self._err("Please sign in again.", 401)
-        raw = str(con.get("logo") or "")
-        m = re.match(r"^data:(image/[A-Za-z0-9.+-]{1,40});base64,(.+)$", raw, re.S)
-        if not m:
-            return self._err("No logo.", 404)
-        try:
-            data = base64.b64decode(m.group(2), validate=False)
-        except Exception:
-            return self._err("No logo.", 404)
-        if not data or len(data) > 4 * 1024 * 1024:
-            return self._err("No logo.", 404)
-        ctype = m.group(1)
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
         # private: it is one contractor's mark on one contractor's form, and a shared cache has no
         # business holding it. Short enough that replacing the logo in Report Setup shows up the
         # same working day.
-        self.send_header("Cache-Control", "private, max-age=3600")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
-        self._emit_sec_headers(ctype)
-        self.end_headers()
-        try:
-            self.wfile.write(data)
-        except Exception:
-            pass
+        return self._dr_send_data_uri(str(con.get("logo") or ""))
 
     def _dr_photo_bytes(self, row):
         """(bytes, content-type, error). Exactly one of bytes/error is meaningful."""
@@ -11082,6 +11062,12 @@ class Handler(BaseHTTPRequestHandler):
             # contractor with no mark gets its name at full width instead of a broken frame.
             "contractor": {"name": con.get("name") or "", "email": sess.get("email"),
                            "hasLogo": bool(str(con.get("logo") or "").startswith("data:image/"))},
+            # The same masthead the printed report carries. Without it the form was a stack of
+            # fourteen headings that never said which project, or for whom — fine for a crew filling
+            # in the only site they work on, wrong for anybody covering two, and wrong on a document
+            # somebody is about to sign their name to. Read through merge_project so the form and
+            # the report cannot disagree about the project's own name.
+            "project": self._dr_site_masthead(con),
             "setup": {"mgmtRoles": list(con.get("mgmtRoles") or []),
                       "workerTrades": list(con.get("workerTrades") or []),
                       "categories": list(con.get("categories") or []),
@@ -11103,6 +11089,63 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def _dr_site_report_id(con, day):
         return "DR-%s-%s" % (con["id"], day)
+
+    @staticmethod
+    def _dr_site_masthead(con):
+        """Project name, client, location and whether there is a client logo — nothing more.
+
+        Deliberately NOT the whole project record: this goes to a page opened by somebody outside
+        the tenant, so it carries what belongs on the top of their own report and not one field
+        more. No dates, no manager, no budget, no id anybody could use elsewhere.
+        """
+        pid = str(con.get("projectId") or "")
+        st = db.get_collection_item("dr_settings", pid) or {}
+        pm = db.get_collection_item("pm_projects", pid) or {}
+        merged = daily_report.merge_project(pm, st)
+        return {"name": merged.get("name") or "",
+                "client": merged.get("clientName") or merged.get("client") or "",
+                "location": st.get("location") or "",
+                "investor": st.get("investor") or "",
+                "hasLogo": bool(str(st.get("clientLogo") or "").startswith("data:image/"))}
+
+    def _dr_site_client_logo(self, token):
+        """The OWNER's mark, for the top of the form — the same image the report prints top-left.
+
+        Behind the session for the same reason as the contractor's: before sign-in a valid-shaped
+        guessed token must render exactly what a real one does, and a client logo would say both
+        that the link is real and whose project it belongs to.
+        """
+        con, _sess = self._dr_site_auth(token)
+        if not con:
+            return self._err("Please sign in again.", 401)
+        st = db.get_collection_item("dr_settings", str(con.get("projectId") or "")) or {}
+        return self._dr_send_data_uri(str(st.get("clientLogo") or ""))
+
+    def _dr_send_data_uri(self, raw):
+        """Serve a stored `data:image/…;base64,…` as bytes, or 404. Shared by the two logo routes so
+        the sandbox headers and the size ceiling cannot drift apart between them."""
+        m = re.match(r"^data:(image/[A-Za-z0-9.+-]{1,40});base64,(.+)$", raw or "", re.S)
+        if not m:
+            return self._err("No logo.", 404)
+        try:
+            data = base64.b64decode(m.group(2), validate=False)
+        except Exception:
+            return self._err("No logo.", 404)
+        if not data or len(data) > 4 * 1024 * 1024:
+            return self._err("No logo.", 404)
+        ctype = m.group(1)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
+        self._emit_sec_headers(ctype)
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
 
     def _dr_site_save(self, body):
         """Save one section of one day. Section at a time, not the whole report.
