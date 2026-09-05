@@ -320,3 +320,36 @@ def test_a_lockout_says_roughly_how_long():
     msg = acc.code_failure_message("locked", wait_s=8 * 60)
     assert "8 minute" in msg
     assert "1 minute" in acc.code_failure_message("locked", wait_s=20)
+
+
+# ── the generation the cookie is stamped with ────────────────────────────────────────────────────
+def test_the_generation_is_carried_back_out_of_the_cookie():
+    s = acc.derive_secret("pepper")
+    c = acc.sign_session(s, "C-TAI", "a@b.co", 4, now=T0)
+    assert acc.verify_session(s, c, now=T0)["epoch"] == 4
+
+
+def test_the_generation_is_inside_the_signature_not_beside_it():
+    """If the generation were appended outside the signed body, anybody holding an old cookie could
+    edit the number and sign themselves back in. Re-signing a body with a different generation must
+    produce a different cookie, and swapping the bodies over must not verify."""
+    s = acc.derive_secret("pepper")
+    old = acc.sign_session(s, "C-TAI", "a@b.co", 1, now=T0)
+    new = acc.sign_session(s, "C-TAI", "a@b.co", 2, now=T0)
+    assert old != new
+
+    # the body of the new one carried on the signature of the old one
+    forged = new.split(".")[0] + "." + old.split(".")[1]
+    assert acc.verify_session(s, forged, now=T0) is None
+
+
+def test_a_contractor_that_was_never_signed_out_is_generation_zero():
+    """The field does not exist until the button is first pressed, and every cookie issued before
+    then carries 0. Reading a missing or unparseable value as anything else would sign a whole site
+    out the first time somebody opened Report Setup."""
+    assert acc.session_epoch({}) == 0
+    assert acc.session_epoch({"sessionEpoch": ""}) == 0
+    assert acc.session_epoch({"sessionEpoch": None}) == 0
+    assert acc.session_epoch({"sessionEpoch": "not a number"}) == 0
+    assert acc.session_epoch({"sessionEpoch": "3"}) == 3
+    assert acc.session_epoch({"sessionEpoch": 3}) == 3

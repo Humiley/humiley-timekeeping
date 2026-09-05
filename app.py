@@ -10746,6 +10746,8 @@ class Handler(BaseHTTPRequestHandler):
             return None, None
         if not dr_access.email_allowed(con, sess.get("email")):
             return None, None   # removed from the list since the cookie was issued
+        if int(sess.get("epoch") or 0) != dr_access.session_epoch(con):
+            return None, None   # "sign everyone out" was pressed after this cookie was issued
         return con, sess
 
     @staticmethod
@@ -10866,7 +10868,8 @@ class Handler(BaseHTTPRequestHandler):
                 "detail": "%s · %s" % (con.get("name") or "?", reason), "ts": self._utc_now()})
             return self._err(dr_access.code_failure_message(
                 reason, dr_access.locked_for(updated)), 429 if reason == "locked" else 400)
-        self._dr_set_cookie(dr_access.sign_session(self._dr_secret(), con["id"], email),
+        self._dr_set_cookie(dr_access.sign_session(self._dr_secret(), con["id"], email,
+                                                   dr_access.session_epoch(con)),
                             dr_access.SESSION_TTL)
         db.put_collection_item("audit", {
             "actor": email, "actorId": "", "action": "Daily report sign-in",
@@ -10895,7 +10898,8 @@ class Handler(BaseHTTPRequestHandler):
                   if str(p.get("contractorId") or "") == str(con["id"])
                   and daily_report.iso(p.get("date")) == day]
         if sess.get("renew"):
-            self._dr_set_cookie(dr_access.sign_session(self._dr_secret(), con["id"], sess["email"]),
+            self._dr_set_cookie(dr_access.sign_session(self._dr_secret(), con["id"], sess["email"],
+                                                       dr_access.session_epoch(con)),
                                 dr_access.SESSION_TTL)
         return self._json({
             "ok": True, "date": day, "today": self._vn_day(),
@@ -11167,29 +11171,37 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "url": url, "sent": True})
 
     def _dr_revoke_ep(self, u, body):
-        """Cut every confirmed device for one contractor, and optionally re-mint the link.
+        """Sign every device out of one contractor's form, and optionally re-mint the link.
 
-        Two different needs: somebody left the site (drop the confirmations, keep the link), or the
-        link itself leaked (mint a new one, which invalidates every old bookmark).
+        Two different needs: somebody left the site (sign the devices out, keep the link, so the
+        crew that remains can carry on and the person who left cannot — they are off the address
+        list), or the link itself leaked (mint a new one, which invalidates every old bookmark).
         """
         con, err = self._dr_contractor_for(u, body)
         if err:
             return err
-        gone = 0
+        # Bumping the generation is what actually signs anyone out. The cookie is self-contained —
+        # the server never stored it and cannot delete it — so the only lever is to stop honouring
+        # the generation it carries. Dropping the dr_access rows below is housekeeping on pending
+        # codes and lockout counters; on its own it would leave every issued cookie live for its
+        # remaining thirty days behind a button that says otherwise.
+        con = dict(con, sessionEpoch=dr_access.session_epoch(con) + 1)
+        addresses = 0
         for a in db.list_collection("dr_access"):
             if str(a.get("contractorId") or "") == str(con["id"]):
                 db.delete_collection_item("dr_access", a.get("id"))
-                gone += 1
-        detail = "%s · %d confirmed device(s) cut" % (con.get("name") or "?", gone)
+                addresses += 1
+        detail = ("%s · signed out; %d address(es) cleared of pending codes"
+                  % (con.get("name") or "?", addresses))
         if body.get("newLink"):
             con = dict(con, token=dr_access.new_token(), linkSentAt="", linkSentTo="")
-            db.put_collection_item("dr_contractors", con)
             detail += " · link re-issued"
+        db.put_collection_item("dr_contractors", con)
         db.put_collection_item("audit", {
             "actor": u.get("name") or "System", "actorId": u.get("id") or "",
             "action": "Daily report access revoked",
             "target": "dr_contractors/" + str(con["id"]), "detail": detail, "ts": self._utc_now()})
-        return self._json({"ok": True, "revoked": gone,
+        return self._json({"ok": True, "signedOut": True, "addresses": addresses,
                            "url": dr_access.form_url(self._request_origin(), con["token"])})
 
     def _dr_formspec_ep(self, u, body):

@@ -235,8 +235,23 @@ def derive_secret(pepper):
     return hmac.new(_b(pepper), b"dr-access-v1", hashlib.sha256).digest()
 
 
-def sign_session(secret, contractor_id, email, now=None, ttl=SESSION_TTL):
-    """A signed, self-contained cookie value: contractor, address, expiry.
+def session_epoch(contractor):
+    """The generation number every cookie for this contractor is stamped with.
+
+    A self-contained cookie cannot be deleted server-side — the server never saw it. So the ONE
+    thing the server does keep is a counter, and a cookie is only accepted while it carries the
+    current value. Bumping the counter is what "sign everyone out" means here; without it the
+    button would be a label on nothing, since dropping the `dr_access` rows only clears pending
+    codes and lockout counters and leaves every issued cookie valid for its full thirty days.
+    """
+    try:
+        return int(str((contractor or {}).get("sessionEpoch") or 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def sign_session(secret, contractor_id, email, epoch=0, now=None, ttl=SESSION_TTL):
+    """A signed, self-contained cookie value: contractor, address, generation, expiry.
 
     Self-contained on purpose — no server-side session table. The portal's own sessions live in
     memory and are lost on restart, and a site crew being logged out of their form every deploy is
@@ -244,17 +259,21 @@ def sign_session(secret, contractor_id, email, now=None, ttl=SESSION_TTL):
     """
     now = int(now if now is not None else time.time())
     exp = now + int(ttl)
-    body = "%s|%s|%d" % (str(contractor_id), norm_email(email), exp)
+    body = "%s|%s|%d|%d" % (str(contractor_id), norm_email(email), int(epoch or 0), exp)
     raw = base64.urlsafe_b64encode(body.encode("utf-8")).decode("ascii").rstrip("=")
     mac = hmac.new(secret, raw.encode("ascii"), hashlib.sha256).digest()
     return raw + "." + base64.urlsafe_b64encode(mac).decode("ascii").rstrip("=")[:43]
 
 
 def verify_session(secret, cookie, now=None):
-    """{"contractorId", "email", "expires", "renew"} or None.
+    """{"contractorId", "email", "epoch", "expires", "renew"} or None.
 
     `renew` says the cookie is inside its sliding window and should be re-issued, so a crew using
     the form daily is never logged out while one idle for a month is.
+
+    The signature and the expiry are checked here; the `epoch` is returned rather than judged,
+    because only the caller can read the contractor's current generation. `_dr_site_auth` compares
+    them — a cookie one generation behind is refused there.
     """
     now = int(now if now is not None else time.time())
     try:
@@ -266,13 +285,13 @@ def verify_session(secret, cookie, now=None):
         if not hmac.compare_digest(mac, want_b):
             return None
         body = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8")
-        cid, email, exp = body.rsplit("|", 2)
-        exp = int(exp)
+        cid, email, epoch, exp = body.rsplit("|", 3)
+        epoch, exp = int(epoch), int(exp)
     except (ValueError, TypeError, UnicodeDecodeError):
         return None
     if exp <= now:
         return None
-    return {"contractorId": cid, "email": email, "expires": exp,
+    return {"contractorId": cid, "email": email, "epoch": epoch, "expires": exp,
             "renew": (exp - now) < SESSION_SLIDE}
 
 

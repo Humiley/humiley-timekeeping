@@ -380,3 +380,76 @@ def test_a_sharepoint_sync_does_not_overwrite_a_day_the_site_filed(base_url):
     assert out.get("skipped")
     row = db.get_collection_item("dr_reports", "DR-C-TAI-2026-09-01")
     assert row["equipment"][0]["item"] == "Excavator", "the site's typed report was overwritten"
+
+
+# ── signing a device out ─────────────────────────────────────────────────────────────────────────
+# These are here rather than in test_dr_access.py because the defect they pin was not in the
+# arithmetic. `_dr_revoke_ep` deleted the contractor's `dr_access` rows and reported "N confirmed
+# device(s) cut" — but a `dr_access` row is the pending code, the send throttle and the lockout
+# counter for ONE ADDRESS. It is not a session. The session is a self-contained signed cookie the
+# server never stored, so deleting those rows signed nobody out: a phone kept working for the
+# remaining thirty days behind a button that said otherwise, and the whole suite stayed green
+# because nothing asked what happened to a cookie afterwards.
+def _cookie_for_current(contractor_id=CONTRACTOR["id"], email=SITE_EMAIL):
+    """A cookie minted from the contractor's CURRENT generation — what a fresh code gives you."""
+    con = db.get_collection_item("dr_contractors", contractor_id) or {}
+    return dr_access.sign_session(app.Handler._dr_secret(app.Handler), contractor_id, email,
+                                  dr_access.session_epoch(con))
+
+
+def test_signing_everyone_out_stops_a_cookie_that_was_working(base_url, api, tokens):
+    c = _cookie_for()
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + TOKEN, cookie=c)
+    assert st == 200, "the cookie did not work to begin with — this test proves nothing"
+
+    st, b = api("POST", "/api/dr/revoke", tokens["mgr"],
+                {"contractorId": CONTRACTOR["id"], "projectId": PID})
+    assert st == 200, b
+
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + TOKEN, cookie=c)
+    assert st == 401, "the device is still signed in after Sign everyone out"
+
+
+def test_signing_everyone_out_leaves_the_link_working(base_url, api, tokens):
+    """The other half of the promise, and what makes this a different control from re-issuing the
+    link: the crew that remains signs in again with a code, off the same bookmark."""
+    before = db.get_collection_item("dr_contractors", CONTRACTOR["id"])["token"]
+    api("POST", "/api/dr/revoke", tokens["mgr"],
+        {"contractorId": CONTRACTOR["id"], "projectId": PID})
+    after = db.get_collection_item("dr_contractors", CONTRACTOR["id"])["token"]
+    assert after == before, "the link changed when only the devices should have"
+
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + TOKEN,
+                       cookie=_cookie_for_current())
+    assert st == 200, "a device signing in again after the sign-out is refused"
+
+
+def test_a_new_link_signs_everyone_out_as_well(base_url, api, tokens):
+    """Re-issuing is the stronger control and must not be weaker in any direction: a leaked link is
+    a leaked link, and a device already signed in through it does not get to stay."""
+    c = _cookie_for()
+    st, b = api("POST", "/api/dr/revoke", tokens["mgr"],
+                {"contractorId": CONTRACTOR["id"], "projectId": PID, "newLink": True})
+    assert st == 200, b
+    new_token = db.get_collection_item("dr_contractors", CONTRACTOR["id"])["token"]
+    assert new_token != TOKEN
+
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + TOKEN, cookie=c)
+    assert st == 401, "the old link still resolves"
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + new_token, cookie=c)
+    assert st == 401, "the old cookie still works on the new link"
+
+
+def test_one_contractors_sign_out_does_not_touch_another(base_url, api, tokens):
+    """The generation is per contractor. If it were global — or if the loop matched on the wrong
+    field — pressing the button for one site would sign out every other site on the portal, which is
+    the kind of blast radius nobody would connect to the button they pressed."""
+    other = _cookie_for(OTHER["id"], "other@newtecons.example")
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + OTHER_TOKEN, cookie=other)
+    assert st == 200
+
+    api("POST", "/api/dr/revoke", tokens["mgr"],
+        {"contractorId": CONTRACTOR["id"], "projectId": PID})
+
+    st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + OTHER_TOKEN, cookie=other)
+    assert st == 200, "signing Taikisha out also signed Newtecons out"

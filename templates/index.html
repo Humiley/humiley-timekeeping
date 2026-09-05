@@ -51473,9 +51473,12 @@ async function tkDrSignOutAll() {
   if (!await tkConfirm(_t('Sign every device out of this contractor’s form?\n\nThe link still works. Anyone still on the list can sign in again with a new code.'))) return;
   const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId); if (!cur) return;
   try {
-    const r = await tkApi('/api/dr/revoke', { method: 'POST', body: {
+    await tkApi('/api/dr/revoke', { method: 'POST', body: {
       contractorId: cur.id, projectId: _DR.pid } });
-    toast(_tp('{0} device(s) signed out.', r.revoked || 0));
+    // Not "N devices signed out": the server never held a device list to count. It raised the
+    // generation every cookie is stamped with, so every device is out — including ones nobody
+    // knew about, which is the whole point.
+    toast(_t('Every device has been signed out. The link still works.'));
   } catch (e) { toast(_t('Could not sign devices out') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
