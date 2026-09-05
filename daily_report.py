@@ -252,6 +252,50 @@ def _num(v):
         return 0
 
 
+def unreadable_counts(counts, columns):
+    """Raw headcount values that will silently become something else: text that is not a number, and
+    numbers below zero.
+
+    `_num` turns both into a figure — 0 for "tbc", -4 for -4 — and a report cannot refuse to render
+    because one cell is wrong. So the figure stands and this names it. The site FORM cannot produce
+    either (the server refuses a non-number and anything outside 0..100000 before it is stored); the
+    SharePoint sync can, because the column is typed by whoever built the list and read by us.
+
+    Returns [(column, raw, why)] in column order, then orphans, so the report says the same thing
+    twice for a value that is both unreadable AND under a name nobody recognises.
+    """
+    counts = counts if isinstance(counts, dict) else {}
+    cols = [str(c).strip() for c in (columns or []) if str(c).strip()]
+    lower = {c.lower(): c for c in cols}
+    out = []
+    seen = set()
+    for c in cols:
+        raw = counts.get(c)
+        seen.add(c)
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            n = float(str(raw).replace(",", "").strip())
+        except (ValueError, TypeError):
+            out.append((c, str(raw)[:40], "is not a number"))
+            continue
+        if n < 0:
+            out.append((c, str(raw)[:40], "is below zero"))
+    for k, v in sorted(counts.items()):
+        if str(k).strip() in seen or str(k).strip().lower() in lower:
+            continue
+        if v is None or str(v).strip() == "":
+            continue
+        try:
+            n = float(str(v).replace(",", "").strip())
+        except (ValueError, TypeError):
+            out.append((str(k), str(v)[:40], "is not a number"))
+            continue
+        if n < 0:
+            out.append((str(k), str(v)[:40], "is below zero"))
+    return out
+
+
 def manpower_row(counts, columns):
     """One row of table 2.1 / 2.2: the per-column figures and the total.
 
@@ -677,6 +721,10 @@ def warnings(project, contractor, report, photos=None):
 
     for kind, cols, label in (("mgmt", con.get("mgmtRoles"), "Management Staff"),
                               ("workers", con.get("workerTrades"), "Workers")):
+        for col, raw, why in unreadable_counts(rep.get(kind), cols):
+            out.append({"level": "warn", "msg":
+                        "%s: the figure for %s (%r) %s, so it is counted as %d."
+                        % (label, col, raw, why, _num(raw))})
         row = manpower_row(rep.get(kind), cols)
         if row["orphans"]:
             out.append({"level": "warn", "msg":
