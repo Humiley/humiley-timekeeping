@@ -11532,7 +11532,11 @@ class Handler(BaseHTTPRequestHandler):
             "project": self._dr_site_masthead(con),
             "setup": {"mgmtRoles": list(con.get("mgmtRoles") or []),
                       "workerTrades": list(con.get("workerTrades") or []),
-                      "categories": list(con.get("categories") or []),
+                      # Same contract as the safety checks below: the contractor's own list when
+                      # it has one, the shipped standard when it does not. A one-option dropdown
+                      # looks configured and is not, and every photo then lands under that option.
+                      "categories": [str(c) for c in (con.get("categories") or
+                                                      daily_report.CATEGORY_DEFAULTS)],
                       "safetyChecks": [str(c) for c in (con.get("safetyChecklist") or
                                                         daily_report.SAFETY_DEFAULTS)],
                       "weather": list(daily_report.WEATHER_ICONS.keys())},

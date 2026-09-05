@@ -31,9 +31,21 @@
     --danger:#C00000; --warn:#F59E0B;
     --ink:#1F2937; --mut:#5C6470; --faint:#8A93A5;
     --bg:#f0f2f8; --card:#FFFFFF; --line:#dde2ee; --soft:#e8edf6;
-    --r-sm:8px; --r-md:12px; --r-btn:14px; --r-lg:24px; --r-pill:999px;
-    --shadow-sm:0 1px 2px rgba(32,80,144,.06);
-    --shadow-card:0 14px 34px rgba(32,80,144,.09);
+    /* Radii and elevation from the AeroSano system (globals.css → HML-BG-002 Rev 07.0):
+       card 1.25rem, panel 1.75rem, and elevation that is FLAT AND ENGINEERED — a hairline ring
+       plus a barely-there lift, not the soft 34px drop this page had. On a phone in daylight the
+       heavy shadow read as a smudge under every card; the ring reads as a drawn edge, which is what
+       a document wants. */
+    --r-sm:8px; --r-md:12px; --r-btn:999px; --r-lg:20px; --r-panel:28px; --r-pill:999px;
+    --shadow-sm:0 1px 2px rgba(15,38,71,.04);
+    --shadow-card:0 1px 2px rgba(15,38,71,.04),0 8px 24px rgba(15,38,71,.06);
+    --ring:inset 0 0 0 1px var(--line);
+    /* HML-BG-002 p.28: ease-out in, ease-in out, no bounce. */
+    --ease:cubic-bezier(.16,.84,.44,1);
+    /* The inner content height shared by the header and footer bars. They bracket the document and
+       have to be the same height; left to their own content they were 75 and 68, which is close
+       enough to read as a mistake. */
+    --bar-inner:39px;
   }
   *,*::before,*::after{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -42,27 +54,71 @@
     font:16px/1.55 Calibri,'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
     padding-bottom:env(safe-area-inset-bottom);
     -webkit-text-size-adjust:100%;
+    text-rendering:optimizeLegibility;
+    -webkit-font-smoothing:antialiased;
+    font-synthesis-weight:none;   /* never let the browser fake a weight the face does not have */
   }
-  .wrap{max-width:680px;margin:0 auto;padding:0 14px 40px}
+  h1,h2,h3{color:var(--navy);font-weight:700;letter-spacing:-.018em;text-wrap:balance}
+  p{text-wrap:pretty}
+  ::selection{background:var(--emerald);color:#fff}
+  /* Emerald is the accent, and the focus ring is where an accent earns its keep — it has to be the
+     one thing on the page that is unmistakably not part of the form. */
+  :focus-visible{outline:2px solid var(--emerald);outline-offset:3px;border-radius:4px}
+  /* The sheet uses the window it is given. It was capped at 680/840/980px, which on a laptop left
+     the document floating in a column with two empty thirds beside it — a phone page shown on a
+     desk. A ceiling stays only so a very wide monitor does not stretch a line of body text past
+     reading width. */
+  .wrap{max-width:1600px;margin:0 auto;padding:0 14px 40px}
 
 
-  /* The portal sidebar's gradient, so somebody who has seen the platform recognises this as the
-     same product rather than as a form on some other website. */
-  header{background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
-         color:#fff;padding:calc(14px + env(safe-area-inset-top)) 0 16px}
-  header .wrap{display:flex;align-items:center;gap:12px}
-  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25;min-width:0}
+  /* An INSET navy panel with rounded corners, which is what AeroSano's PageHero actually is —
+     its own docstring calls it that. The full-bleed square-cornered strip this had was the one
+     piece of the page that never matched: it welded the header to the window while every other
+     surface floated on the light ground. The gradient is still the portal sidebar's, so the
+     product is still recognisable. */
+  header{padding:calc(10px + env(safe-area-inset-top)) 14px 0;background:transparent}
+  header .wrap{position:relative;overflow:hidden;border-radius:var(--r-panel);min-height:var(--bar-inner);
+               background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
+               color:#fff;display:flex;align-items:center;gap:12px;padding:18px 20px;
+               box-shadow:var(--shadow-card)}
+  /* The engineering grid, at the same weight and pitch the system uses. It is what stops a large
+     navy field reading as a blank rectangle. */
+  header .wrap::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.4;
+    background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);
+    background-size:56px 56px}
+  header .wrap > *{position:relative}
+  /* `color:#fff` explicitly, not inherited. The base h1 rule sets headings navy — correct on every
+     white card and catastrophic here, where it painted the title navy on the navy bar and left it
+     just about readable. A colour that arrives by inheritance is a colour one later rule can take
+     away without touching this one. */
+  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25;min-width:0;color:#fff}
+  /* The reverse mark, because this ground is navy. The colour lock-up would half-disappear on it —
+     the same reason every logo on the white sheet below gets a white plate. */
+  header .hml{height:26px;width:auto;flex:0 0 auto;display:block;order:-1;margin-right:2px}
   header .who{font-size:11.5px;opacity:.85;font-weight:400;display:block;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* The three marks moved onto the document masthead below, where they belong: this bar is the
      product's chrome, that is the report. They sit on a WHITE plate there because a logo is drawn
      for paper and most arrive as dark artwork on transparent — on any coloured ground half of them
      vanish, which looks exactly like a logo nobody set. */
-  .lang{background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12px;padding:7px 11px;
-        border-radius:var(--r-pill);cursor:pointer;font-weight:600;flex:0 0 auto}
+  /* Both languages visible, the current one lit. A single button showing the OTHER language is a
+     coin-flip for anybody who has not used it before — it never says which state you are in.
+     Flags are drawn inline as SVG, not emoji: 🇻🇳 does not render on Windows Chrome and degrades to
+     the bare letters "VN", which is the exact platform most specifiers are on. The written code
+     beside each flag carries the meaning; a flag is a country, not a language, so the SVGs are
+     hidden from screen readers. */
+  .lang{display:flex;gap:2px;flex:0 0 auto;background:rgba(255,255,255,.14);
+        border-radius:var(--r-pill);padding:3px}
+  .lang button{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;
+        color:rgba(255,255,255,.72);font-size:12px;font-weight:700;letter-spacing:.04em;
+        padding:6px 10px;border-radius:var(--r-pill);cursor:pointer;box-shadow:none;min-height:0}
+  .lang button[aria-pressed="true"]{background:#fff;color:var(--navy-deep)}
+  .lang svg{width:20px;height:14px;flex:none;border-radius:2px;
+            box-shadow:0 0 0 1px rgba(0,0,0,.12);display:block}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
-        padding:18px;margin-top:12px;box-shadow:var(--shadow-card)}
+  .card{background:var(--card);border:0;border-radius:var(--r-lg);
+        padding:18px;margin-top:12px;box-shadow:var(--ring),var(--shadow-card)}
 
   /* ── the masthead ───────────────────────────────────────────────────────────────────────────
      THREE marks, in the order the printed report uses them: the OWNER's on the left because it is
@@ -70,18 +126,30 @@
      and the CONTRACTOR's on the right because they are the ones filing it. Somebody who signs this
      should be able to see at a glance whose report it is; the form used to say only "Daily Report"
      and the contractor's own name, which is the one party that never needed telling. */
-  .doc{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
-       margin-top:12px;overflow:hidden;box-shadow:var(--shadow-card)}
+  .doc{background:var(--card);border:0;border-radius:var(--r-panel);position:relative;
+       margin-top:14px;overflow:hidden;box-shadow:var(--ring),var(--shadow-card)}
+  /* The Humiley signature graphic: ONE emerald corner triangle per surface. It goes on the document
+     panel and nowhere else — repeated on every card it stops being a signature and becomes a
+     pattern. Sized so it sits under the date line rather than beside anything readable. */
+  .doc .corner{position:absolute;right:0;bottom:0;width:52px;height:52px;background:var(--emerald);
+               clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
   .doc .marks{display:flex;align-items:center;gap:12px;padding:14px 18px;
               border-bottom:1px solid var(--line);background:#fff}
+  /* Sized against the REAL artwork, not a test shape. Both marks that actually go here are wide
+     wordmarks — MEGA is 3.84:1, Newtecons 3.48:1 — so the WIDTH cap binds long before the height
+     does: at 104px they rendered 26px tall against a 34px allowance and simply looked small, with
+     147px of the row spare. A logo is only ever as tall as its width lets it be. */
   .doc .mk{flex:0 0 auto;display:none;align-items:center;justify-content:center;
-           height:38px;max-width:104px}
+           height:40px;max-width:144px}
   .doc .mk.on{display:flex}
-  .doc .mk img{max-height:34px;max-width:100px;width:auto;height:auto;display:block}
+  .doc .mk img{max-height:36px;max-width:140px;width:auto;height:auto;display:block}
   /* The middle mark is also the spacer that pushes the contractor's to the right edge, so it must
      be free to grow — `max-width` on .mk would otherwise cap it and leave all three bunched to the
      left, which is what the tablet showed. The IMG inside stays capped; the BOX does not. */
-  .doc .mk.mid{flex:1 1 auto;justify-content:center;max-width:none}
+  /* The middle slot is also the spacer that holds the outer two apart, so it grows whether or not
+     it has a logo to show — `display:none` on it would collapse the header's whole geometry. */
+  .doc .mk.mid{flex:1 1 auto;justify-content:center;max-width:none;display:flex}
+  .doc .mk.mid:not(.on) img{display:none}
   .doc .mk.end{justify-content:flex-end}
   .doc .title{padding:15px 18px 4px;text-align:center}
   .doc .title h1{margin:0;font-size:17px;font-weight:700;color:var(--navy-deep);
@@ -99,8 +167,12 @@
      words so a mis-tapped month is visible rather than merely present, and offers the two days
      anybody actually files. */
   .dt{padding:14px 18px;border-top:1px solid var(--line);background:var(--soft)}
-  .dt .lab{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);
-           font-weight:700;margin-bottom:6px}
+  /* The eyebrow is the system's own device: uppercase, tracked out, an emerald dot holding the
+     line. It marks the one control on this page that decides which day everything else belongs to. */
+  .dt .lab{display:inline-flex;align-items:flex-start;gap:8px;font-size:11px;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--emerald-deep);font-weight:700;margin-bottom:8px}
+  .dt .lab::before{content:"";width:8px;height:8px;margin-top:.42em;border-radius:999px;
+                   background:var(--emerald);flex:none}
   .dt .pick{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .dt input[type=date]{flex:1 1 190px;min-width:0;font-weight:600;background:#fff}
   .dt .quick{display:flex;gap:6px}
@@ -111,7 +183,14 @@
   .filed{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;
          color:var(--emerald-deep);background:rgba(0,176,96,.12);border:1px solid rgba(0,176,96,.3);
          border-radius:var(--r-pill);padding:3px 10px}
-  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep);font-weight:700}
+  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep);font-weight:700;letter-spacing:-.012em}
+  /* Section eyebrow: the same device as the date's, so an open section announces which part of the
+     report it becomes before it asks for anything. */
+  .eyebrow{display:inline-flex;align-items:flex-start;gap:8px;font-size:11px;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--emerald-deep);font-weight:700;margin:0 0 6px}
+  .eyebrow::before{content:"";width:8px;height:8px;margin-top:.42em;border-radius:999px;
+                   background:var(--emerald);flex:none}
+  .card > h2:first-of-type{margin-top:0}
   p.hint{font-size:13px;color:var(--mut);margin:0 0 12px;line-height:1.5}
 
   label{display:block;font-size:12.5px;color:var(--mut);font-weight:600;margin:0 0 4px}
@@ -121,16 +200,24 @@
   }
   /* 16px is not a style choice: anything smaller makes iOS Safari zoom the whole page on focus. */
   textarea{min-height:64px;resize:vertical}
-  input:focus,select:focus,textarea:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy)}
+  /* ONE focus language. `input:focus` (0,1,1) outranks the `:focus-visible` rule above (0,1,0), so
+     fields were quietly keeping a navy ring while every button got the emerald one — two focus
+     colours on one page, by accident rather than decision. The ring is emerald everywhere; the
+     navy BORDER stays, because that is the field saying it is the active one. */
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--emerald);outline-offset:3px;
+                                          border-color:var(--navy)}
   .row{margin-bottom:12px}
   .grid{display:grid;gap:10px}
   .g2{grid-template-columns:1fr 1fr}
   .g3{grid-template-columns:repeat(3,1fr)}
 
-  button{font:15px/1 inherit;font-weight:600;border-radius:var(--r-btn);border:1px solid var(--line);
-         background:var(--card);color:var(--ink);padding:13px 16px;cursor:pointer;
-         box-shadow:var(--shadow-sm)}
-  button:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
+  button{font:15px/1 inherit;font-weight:700;border-radius:var(--r-btn);border:1px solid var(--line);
+         background:var(--card);color:var(--ink);padding:13px 18px;cursor:pointer;
+         box-shadow:var(--shadow-sm);
+         transition:background-color .18s var(--ease),color .18s var(--ease),
+                    border-color .18s var(--ease),transform .18s var(--ease),
+                    box-shadow .18s var(--ease)}
+  button:active{transform:translateY(1px)}
   .primary{background:var(--navy);border-color:var(--navy);color:#fff}
   .wide{width:100%}
   .link{background:none;border:0;color:var(--navy);text-decoration:underline;padding:6px 2px;font-size:13.5px}
@@ -145,9 +232,39 @@
   .sections{display:flex;flex-direction:column;gap:0;margin:0;padding:0;list-style:none}
   .sections li{border-top:1px solid var(--line)}
   .sections li:first-child{border-top:0}
+  /* A part heading — 2 Manpower, 5 Work progress, 9 Inspection — for the three numbers the report
+     splits into sub-sections. Without them the index read 1, 2.1, 2.2, 3, 4, 5.1, 5.3 as one flat
+     run, and the gaps looked like mistakes rather than structure. */
+  /* A MAIN item and a PART heading are the same level of the document and now look it: navy
+     number, the title at full weight. Before, "1 Weather" was a bold clickable row and "2 Manpower"
+     a small grey label, so two things at the same level of the report looked like two different
+     kinds of thing — which is what made the list read as arbitrary.
+     SUB items sit under a rule, indented from their parent's number. */
+  .sections .parthead{display:flex;align-items:center;gap:12px;padding:14px 8px 8px}
+  .sections .parthead .no{flex:0 0 2.7em;font-weight:700;color:var(--navy);font-size:13px;
+                          font-variant-numeric:tabular-nums}
+  .sections .parthead .nm{font-size:14.5px;font-weight:700;color:var(--navy)}
+  .sections .subs{margin:0 0 6px 2.7em;padding-left:12px;border-left:2px solid var(--line)}
+  .sections .subs button{padding-top:10px;padding-bottom:10px;font-weight:600}
+  .sections button.sub .no{flex:0 0 2.4em;color:var(--emerald-deep);font-size:12.5px}
   .sections button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;
-    border:0;background:none;padding:14px 2px;font-weight:600;font-size:14.5px}
-  .sections .n{flex:1}
+    border:0;background:none;padding:14px 8px;font-weight:700;font-size:14.5px;
+    border-radius:var(--r-sm);box-shadow:none;color:var(--navy)}
+  /* A sub-item is subordinate to its parent, so it steps back to the body colour and weight. */
+  .sections button.sub{color:var(--ink);font-weight:600}
+  .sections button:hover{background:var(--soft)}
+  .sections button:active{transform:none}
+  /* Fixed columns, or the count and the chevron drift left and right by however wide the row's
+     number happened to be — which is exactly what a reader notices as "not aligned". */
+  .sections .n{flex:1;min-width:0}
+  .sections .count{flex:0 0 2.2em;text-align:right}
+  .sections .chev{flex:0 0 1em;text-align:right}
+  /* The section's number in the PRINTED report, in the accent colour. This is the two-tone heading
+     the system asks for — one navy line, one emerald phrase — with the emerald carrying something
+     true rather than a word picked for emphasis. It also turns the menu into an index: a person can
+     see that 5.2 is missing and know why (the Gantt is drawn by the portal, not filed by the site). */
+  .sections .no{flex:0 0 2.7em;font-weight:700;color:var(--emerald-deep);
+                font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:.01em}
   .count{font-size:12px;font-weight:600;color:var(--faint);font-variant-numeric:tabular-nums}
   .count.has{color:var(--emerald)}
   .chev{color:var(--faint);font-size:13px}
@@ -166,27 +283,92 @@
   .photos figcaption{font-size:10.5px;color:var(--mut);padding:4px 5px;text-align:center;
                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-  .bar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
-       padding:10px 14px calc(10px + env(safe-area-inset-bottom));margin:16px -14px -40px;
-       display:flex;gap:10px}
+  /* It was a full-bleed white strip with square corners welded to the bottom of the window —
+     the last surface on the page that was not a rounded card on the light ground. Now it is one,
+     and it still sticks, because on a fourteen-section form the Save button has to stay reachable
+     without scrolling back. */
+  /* The bar's padding matches the CARD's, so Back begins exactly where the card's content begins
+     — inset by 10 against the card's 18 it looked like a near-miss, which is worse than a wide gap
+     because the eye reads it as an error rather than a margin. */
+  .bar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom));
+       background:var(--card);border-radius:var(--r-lg);
+       padding:12px 18px;margin:14px 0 0;display:flex;gap:10px;
+       box-shadow:var(--ring),var(--shadow-card)}
   .bar button{flex:1}
   .foot{font-size:11.5px;color:var(--faint);text-align:center;margin-top:18px;line-height:1.6}
+  /* A closing panel rather than a line of grey text. It says who issued the form, for which
+     project, and what happens to what is typed into it — which is the question somebody filing a
+     document for the first time actually has. */
+  footer.doc-foot{margin:16px 0 0;border-radius:var(--r-panel);overflow:hidden;position:relative;
+    background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
+    color:rgba(255,255,255,.82);box-shadow:var(--shadow-card);
+    /* The header's own padding, so the two bars are the same height. The right side clears the 52px
+       corner triangle — measured, not eyeballed: Sign out sat 20px from each edge, which put it
+       inside the mark. The triangle is behind it and pointer-events:none, so nothing broke and
+       nothing looked plainly wrong, which is exactly how it would have shipped. */
+    padding:18px 68px 18px 20px;display:flex;align-items:center}
+  footer.doc-foot::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.4;
+    background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);
+    background-size:56px 56px}
+  footer.doc-foot > *{position:relative}
+  /* ONE ROW, at the header's height, so the two navy bars bracket the document instead of one
+     being a strip and the other a block. Same padding, same mark size, same alignment — the footer
+     is the header's closing bracket and now reads as one. */
+  /* One row needs width. Below the tablet breakpoint there is none: the sentence squeezed into a
+     four-character column, the meta printed over it, and the panel grew to 281px — the exact
+     opposite of matching the header. It stacks on a phone, as the header's own content does, and
+     becomes a single bar the moment there is room for one. */
+  footer.doc-foot .frow{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+  footer.doc-foot .fmeta{flex-wrap:wrap}
+  @media (min-width:700px){
+    footer.doc-foot .frow{flex-direction:row;align-items:center;gap:16px;
+                          min-height:var(--bar-inner)}
+    footer.doc-foot .fmeta{flex-wrap:nowrap}
+  }
+  footer.doc-foot img{height:26px;width:auto;display:block;flex:0 0 auto}
+  footer.doc-foot .fline{font-size:12.5px;line-height:1.4;flex:1 1 auto;min-width:0}
+  footer.doc-foot .fline b{color:#fff;font-weight:700}
+  /* Who filed it sits WITH the button that ends their session, not stranded at the opposite edge
+     of a 1400px panel where the two read as unrelated. */
+  footer.doc-foot .fmeta{font-size:12px;color:rgba(255,255,255,.66);flex:0 0 auto;
+    display:flex;gap:14px;align-items:center}
+  footer.doc-foot .corner{position:absolute;right:0;bottom:0;width:52px;height:52px;
+    background:var(--emerald);clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
+  footer.doc-foot .signout{background:transparent;border:1px solid rgba(255,255,255,.28);
+    color:#fff;font-size:12px;font-weight:700;padding:8px 14px;border-radius:var(--r-pill);
+    box-shadow:none;min-height:0}
   .hide{display:none !important}
+  /* HML-BG-002 p.28. Motion is information: it says the page has finished arriving. One pass, no
+     stagger — a fourteen-row list that animates in sequence is a list somebody waits for. */
+  @keyframes reveal{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .reveal{animation:reveal .4s var(--ease) both}
   /* ── narrow phones ──────────────────────────────────────────────────────────────────────────
      Two number fields side by side stop being usable somewhere around a 360px screen — the label
      wraps to three lines and the input is too small to hit. Below that they stack. */
-  @media (max-width:400px){
+  @media (max-width:430px){
     .g2,.g3{grid-template-columns:1fr}
+    /* Three things competing for 375px: the mark, the title and the language switch. The mark and
+       the switch give way — the title and the contractor's name are what tell somebody which form
+       they have open, and a wrapped title with a truncated name told them neither. */
+    header .wrap{padding:14px}
+    header .hml{height:20px}
+    header h1{font-size:15.5px}
+    header .who{font-size:11px}
+    .lang button{padding:6px 8px;gap:5px;font-size:11px}
+    .lang svg{width:17px;height:12px}
   }
 
   /* ── tablets: iPad portrait upwards ─────────────────────────────────────────────────────── */
   @media (min-width:700px){
-    .wrap{max-width:840px;padding:0 20px 48px}
+    .wrap{padding:0 20px 48px}
+    header{padding-left:20px;padding-right:20px}
     .card{padding:22px 24px}
+    .bar{padding:14px 24px}
     header h1{font-size:19px}
     header .who{font-size:12.5px}
-    .doc .mk{height:46px;max-width:150px}
-    .doc .mk img{max-height:42px;max-width:146px}
+    .doc .mk{height:56px;max-width:210px}
+    .doc .mk img{max-height:52px;max-width:206px}
     .doc .title h1{font-size:19px}
     .doc dl{grid-template-columns:auto 1fr auto 1fr;padding:14px 22px 18px}
     /* The menu is 14 entries. On a phone that is a scroll; given width it is two columns and the
@@ -199,17 +381,25 @@
 
   /* ── desktop ────────────────────────────────────────────────────────────────────────────── */
   @media (min-width:1024px){
-    .wrap{max-width:980px}
     .sections{grid-template-columns:repeat(3,1fr);column-gap:26px}
     .sections li:nth-child(3){border-top:0}
-    /* A form field 900px wide is harder to read, not easier. The inputs keep a sane measure and
-       the width goes to the layout instead. */
+    /* A form field 900px wide is harder to read, not easier — so the width goes to the LAYOUT.
+       A repeating row has up to six fields; stacked in one column inside a 1400px card they made a
+       tall thin strip with two-thirds of the card empty, which is the "full page" complaint in its
+       real form. They flow into columns instead, and only the free-text ones span the whole width
+       because a note wants a line to run along. */
+    .item{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 18px}
+    .item .top{grid-column:1/-1}
+    .item .row:has(textarea){grid-column:1/-1}
+    .item .row textarea{max-width:none}
     .row input,.row select,.row textarea{max-width:520px}
     .g2 input,.g2 select,.g3 input,.g3 select{max-width:none}
     /* Sticky-to-the-bottom is a phone idiom. On a desktop the actions belong with the form. */
-    .bar{position:static;margin:18px 0 0;padding:14px 0 0;border-top:1px solid var(--line);
-         box-shadow:none;justify-content:flex-start}
-    .bar button{flex:0 0 auto;min-width:150px}
+    /* Back opens the row, Save closes it. Both crowded at the left of a 1400px bar read as
+       unplaced; at the two ends they read as the two ends of the same action. */
+    .bar{position:static;margin:14px 0 0;padding:14px 24px;
+         justify-content:space-between}
+    .bar button{flex:0 0 auto;min-width:160px}
   }
 
   /* A pointer is not a finger. Touch targets stay at 44px where there is no hover to help. */
@@ -224,7 +414,11 @@
 <body>
 <header><div class="wrap">
   <h1 id="hTitle">Daily Report<span class="who" id="hWho"></span></h1>
-  <button class="lang" id="langBtn" type="button">VN</button>
+  <img class="hml" src="/static/brand/Humiley_Logo_White.png" alt="Humiley">
+  <span class="lang" role="group" aria-label="Language">
+    <button type="button" id="langEn" aria-pressed="true"><svg viewBox="0 0 60 30" preserveAspectRatio="none" aria-hidden="true" focusable="false"><clipPath id="fgb"><path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z"/></clipPath><path d="M0,0 v30 h60 v-30 z" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#fgb)" stroke="#C8102E" stroke-width="4"/><path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/><path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6"/></svg>EN</button>
+    <button type="button" id="langVi" aria-pressed="false"><svg viewBox="0 0 640 480" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path fill="#DA251D" d="M0 0h640v480H0z"/><polygon fill="#FF0" points="320,130 344.7,206 424.6,206 360,253 384.7,329 320,282 255.3,329 280,253 215.4,206 295.3,206"/></svg>VN</button>
+  </span>
 </div></header>
 
 <div class="wrap">
@@ -245,6 +439,10 @@ var VI = {
   "Only the addresses Humiley has listed for your company can open this form.":
     "Chỉ những địa chỉ Humiley đã đăng ký cho công ty bạn mới mở được biểu mẫu này.",
   "Report date":"Ngày báo cáo","Today":"Hôm nay","Yesterday":"Hôm qua",
+  "Section":"Phần",
+  "Manpower":"Nhân lực","Work progress":"Tiến độ thi công","Inspection":"Nghiệm thu",
+  "This daily report is issued by Humiley as project management consultant for":"Báo cáo hằng ngày này do Humiley phát hành với vai trò tư vấn quản lý dự án cho",
+  "What you save here goes straight onto the report the client receives, so file the day as it happened — a section left empty is reported as not answered, never as nothing to report.":"Những gì bạn lưu ở đây sẽ đi thẳng vào báo cáo gửi khách hàng, nên hãy ghi đúng thực tế trong ngày — mục bỏ trống sẽ được báo là chưa trả lời, không phải là không có gì để báo.",
   "Client":"Chủ đầu tư","Contractor":"Nhà thầu","Filed by":"Người lập",
   "Reporting for":"Báo cáo cho ngày",
   "Weather":"Thời tiết","Morning":"Buổi sáng","Afternoon":"Buổi chiều","Evening":"Buổi tối",
@@ -418,7 +616,10 @@ async function load(date){
     S.email = (r.contractor || {}).email || S.email;
     S.project = r.project || S.project || {};
     S.hasLogo = !!(r.contractor || {}).hasLogo;
-    el('hWho').textContent = S.contractor + (S.email ? ' · ' + S.email : '');
+    /* The contractor only. The address was truncating to "site@n…" on a phone, which identifies
+       nobody — and it is already stated in full on the masthead below, under "Filed by", where
+       there is room for it. */
+    el('hWho').textContent = S.contractor;
     viewMenu();
   } catch(e){
     if (e.status === 401) { viewEmail(''); return; }
@@ -429,15 +630,24 @@ async function load(date){
 /* Which sections exist, in the order the printed report prints them, and how many rows each holds.
    The count is the whole navigation: a person coming back after lunch needs to see what is still
    empty without opening eleven screens. */
+/* The fourth entry is the section's number in the PRINTED report — read off the exporter's own
+   headings in index.html (`_drpHead`), not invented here, so the form and the document cannot
+   disagree about what 5.1 is. 5.2 is deliberately absent: the Work Progress Gantt is DRAWN by the
+   portal from the progress figures, not filed by the site, so there is nothing to collect for it. */
 var SECTIONS = [
-  ['weather','Weather','obj'], ['mgmt','Management staff','counts'], ['workers','Workers','counts'],
-  ['equipment','Equipment & machinery','rows'], ['materials','Material delivery','rows'],
-  ['progress','Work completed today','rows'], ['plan','Next day work plan','rows'],
-  ['photos','Progress photos','photos'], ['documents','Documents','rows'],
-  ['defects','Defects','rows'], ['inspections','Inspection today','rows'],
-  ['inspectionPlan','Next day inspection','rows'], ['safety','Safety checks','safety'],
-  ['recommendations','Requests & recommendations','rows']
+  ['weather','Weather','obj','1'], ['mgmt','Management staff','counts','2.1'],
+  ['workers','Workers','counts','2.2'],
+  ['equipment','Equipment & machinery','rows','3'], ['materials','Material delivery','rows','4'],
+  ['progress','Work completed today','rows','5.1'], ['plan','Next day work plan','rows','5.3'],
+  ['photos','Progress photos','photos','6'], ['documents','Documents','rows','7'],
+  ['defects','Defects','rows','8'], ['inspections','Inspection today','rows','9.1'],
+  ['inspectionPlan','Next day inspection','rows','9.2'], ['safety','Safety checks','safety','10'],
+  ['recommendations','Requests & recommendations','rows','11']
 ];
+function sectionNo(key){
+  for (var i = 0; i < SECTIONS.length; i++) if (SECTIONS[i][0] === key) return SECTIONS[i][3] || '';
+  return '';
+}
 function sectionCount(key, kind){
   if (kind === 'photos') return S.photos.length;
   var v = S.report[key];
@@ -478,10 +688,14 @@ function mastheadHtml(){
   var p = S.project || {};
   var yday = shiftDay(S.today || S.date, -1);
   return '<div class="doc">'
+    /* The two grounds carry different marks. HUMILEY sits on the navy bar, because that bar is
+       ours — it is the product speaking. The white sheet below is the DOCUMENT, and a document
+       carries the two parties to it: the owner on the left, whose project it is, and the contractor
+       on the right, who files it. That is also where the printed report puts them. */
     + '<div class="marks">'
     +   '<span class="mk' + (p.hasLogo ? ' on' : '') + '" id="mkOwner">'
     +     '<img id="mkOwnerImg" alt=""></span>'
-    +   '<span class="mk mid on"><img src="/static/brand/portal-logo-login.png" alt="Humiley"></span>'
+    +   '<span class="mk mid"></span>'
     +   '<span class="mk end' + (S.hasLogo ? ' on' : '') + '" id="mkCon">'
     +     '<img id="mkConImg" alt=""></span>'
     + '</div>'
@@ -504,18 +718,65 @@ function mastheadHtml(){
     +   '</div>'
     +   '<div class="said">' + t('Reporting for') + ' <b>' + esc(saidDate(S.date)) + '</b></div>'
     +   (S.report.submittedAt ? '<span class="filed">' + t('Filed') + '</span>' : '')
-    + '</div></div>';
+    + '</div><span class="corner"></span></div>';
 }
 
 function viewMenu(){
-  var html = mastheadHtml() + '<div class="card"><ul class="sections">';
+  var html = '<div class="reveal">' + mastheadHtml() + '<div class="card"><ul class="sections">';
+  /* The report splits three of its numbers into sub-sections; the rest stand alone. Printing the
+     part heading before the first child of each turns a flat run of fourteen into the document's
+     own contents page. Derived from the numbers themselves, so a section that gains a sibling gets
+     a heading without anybody remembering to add one. */
+  var majors = {};
+  SECTIONS.forEach(function(x){ var m = String(x[3]).split('.')[0]; majors[m] = (majors[m] || 0) + 1; });
+  var partOf = { '2':'Manpower', '5':'Work progress', '9':'Inspection' };
+
+  /* Grouped into BLOCKS before anything is drawn. A part and its children have to be ONE grid item:
+     laid out as a flat run, the multi-column grid fills row by row and cheerfully put "2 Manpower"
+     at the end of one column with 2.1 at the top of the next — a heading pointing at nothing. */
+  var blocks = [], byMajor = {};
   SECTIONS.forEach(function(sec){
-    var n = sectionCount(sec[0], sec[2]);
-    html += '<li><button data-sec="' + sec[0] + '"><span class="n">' + t(sec[1]) + '</span>'
-      + '<span class="count' + (n ? ' has' : '') + '">' + (n || '—') + '</span>'
-      + '<span class="chev">›</span></button></li>';
+    var major = String(sec[3]).split('.')[0];
+    if (majors[major] > 1) {
+      if (!byMajor[major]) { byMajor[major] = { major: major, rows: [] }; blocks.push(byMajor[major]); }
+      byMajor[major].rows.push(sec);
+    } else {
+      blocks.push({ major: major, rows: [sec] });
+    }
   });
-  html += '</ul></div><button class="link" id="out">' + t('Sign out') + '</button>';
+
+  function rowHtml(sec, sub){
+    var n = sectionCount(sec[0], sec[2]);
+    return '<button data-sec="' + sec[0] + '" class="' + (sub ? 'sub' : '') + '">'
+      + '<span class="no">' + esc(sec[3] || '') + '</span>'
+      + '<span class="n">' + t(sec[1]) + '</span>'
+      + '<span class="count' + (n ? ' has' : '') + '">' + (n || '—') + '</span>'
+      + '<span class="chev">›</span></button>';
+  }
+
+  blocks.forEach(function(b){
+    var grouped = b.rows.length > 1;
+    html += '<li>'
+      + (grouped ? '<div class="parthead"><span class="no">' + esc(b.major) + '</span>'
+                   + '<span class="nm">' + t(partOf[b.major] || '') + '</span></div>'
+                   + '<div class="subs">'
+                     + b.rows.map(function(r){ return rowHtml(r, true); }).join('')
+                   + '</div>'
+                 : rowHtml(b.rows[0], false))
+      + '</li>';
+  });
+  var p = S.project || {};
+  html += '</ul></div>'
+    + '<footer class="doc-foot"><div class="frow">'
+    +   '<img src="/static/brand/Humiley_Logo_White.png" alt="Humiley">'
+    +   '<div class="fline">'
+    +     t('This daily report is issued by Humiley as project management consultant for') + ' <b>'
+    +     esc(p.name || '') + '</b>.'
+    +   '</div>'
+    +   '<div class="fmeta"><span class="fwho">' + esc(S.contractor || '') + ' · '
+    +     esc(S.email || '') + '</span>'
+    +     '<button class="signout" id="out">' + t('Sign out') + '</button></div>'
+    + '</div><span class="corner"></span></footer></div>';
   show(html);
   el('dt').onchange = function(){ if (this.value) load(this.value); };
   /* The two days anybody actually files. A site fills in today's report at the end of today, or
@@ -569,7 +830,12 @@ function renderSection(note){
            : kind === 'safety' ? renderSafety()
            : kind === 'photos' ? renderPhotos()
            : renderRows(key);
-  show('<div class="card"><h2>' + t(S.section[1]) + '</h2>' + body + (note || '') + '</div>'
+  /* Eyebrow first: the number this becomes in the report the client reads. Somebody filling in a
+     column of headcounts should be able to see, without asking, that it is table 2.1. */
+  var no = S.section[3] || '';
+  show('<div class="card reveal">'
+     + (no ? '<div class="eyebrow">' + t('Section') + ' ' + esc(no) + '</div>' : '')
+     + '<h2>' + t(S.section[1]) + '</h2>' + body + (note || '') + '</div>'
      + (kind === 'photos' ? '' :
         '<div class="bar"><button id="back">' + t('Back') + '</button>'
         + '<button class="primary" id="save">' + t('Save') + '</button></div>'));
@@ -623,7 +889,11 @@ function renderRows(key){
   var spec = FIELDS[key] || [], rows = S.draft || [];
   var html = rows.length ? '' : msg('info', t('Nothing added yet.'));
   rows.forEach(function(r, i){
-    html += '<div class="item"><div class="top"><b>' + (i+1) + '</b>'
+    /* Not t('Item'): that key is already the FIELD label the report prints as "Item", and VI is a
+       single object literal, so a second entry under the same name would have silently replaced it
+       — every "Item" field on the form would have been relabelled by a change to a row number. */
+    html += '<div class="item"><div class="top"><b>'
+      + (lang === 'vi' ? 'Mục' : 'Item') + ' ' + (i+1) + '</b>'
       + '<button class="del" data-del="' + i + '">' + t('Remove') + '</button></div>';
     spec.forEach(function(f){
       html += '<div class="row"><label>' + t(f[1]) + '</label>' + field(f, r[f[0]] || '', i) + '</div>';
@@ -748,14 +1018,20 @@ async function uploadPhotos(){
 function wirePhotoBack(){ if (el('back2')) el('back2').onclick = viewMenu; }
 
 /* ── boot ──────────────────────────────────────────────────────────────────────────────────── */
-el('langBtn').onclick = function(){
-  lang = (lang === 'vi') ? 'en' : 'vi';
+/* Two buttons, both always visible, the current one pressed — rather than one button naming the
+   language you are NOT in, which never tells you which state you are already in. */
+function setLang(next){
+  lang = next;
   try { localStorage.setItem('drlang', lang); } catch(e){}
-  el('langBtn').textContent = (lang === 'vi') ? 'EN' : 'VN';
+  el('langEn').setAttribute('aria-pressed', String(lang !== 'vi'));
+  el('langVi').setAttribute('aria-pressed', String(lang === 'vi'));
   el('hTitle').firstChild.nodeValue = t('Daily Report');
   if (S.setup) { S.view === 'menu' ? viewMenu() : renderSection(''); } else { viewEmail(''); }
-};
-el('langBtn').textContent = (lang === 'vi') ? 'EN' : 'VN';
+}
+el('langEn').onclick = function(){ if (lang !== 'en') setLang('en'); };
+el('langVi').onclick = function(){ if (lang !== 'vi') setLang('vi'); };
+el('langEn').setAttribute('aria-pressed', String(lang !== 'vi'));
+el('langVi').setAttribute('aria-pressed', String(lang === 'vi'));
 el('hTitle').firstChild.nodeValue = t('Daily Report');
 var _origRender = renderSection;
 renderSection = function(n){ S.view = 'section'; _origRender(n); if (el('back2')) el('back2').onclick = viewMenu; };
