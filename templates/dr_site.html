@@ -42,6 +42,10 @@
     --ring:inset 0 0 0 1px var(--line);
     /* HML-BG-002 p.28: ease-out in, ease-in out, no bounce. */
     --ease:cubic-bezier(.16,.84,.44,1);
+    /* The inner content height shared by the header and footer bars. They bracket the document and
+       have to be the same height; left to their own content they were 75 and 68, which is close
+       enough to read as a mistake. */
+    --bar-inner:39px;
   }
   *,*::before,*::after{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -73,7 +77,7 @@
      surface floated on the light ground. The gradient is still the portal sidebar's, so the
      product is still recognisable. */
   header{padding:calc(10px + env(safe-area-inset-top)) 14px 0;background:transparent}
-  header .wrap{position:relative;overflow:hidden;border-radius:var(--r-panel);
+  header .wrap{position:relative;overflow:hidden;border-radius:var(--r-panel);min-height:var(--bar-inner);
                background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
                color:#fff;display:flex;align-items:center;gap:12px;padding:18px 20px;
                box-shadow:var(--shadow-card)}
@@ -131,10 +135,14 @@
                clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
   .doc .marks{display:flex;align-items:center;gap:12px;padding:14px 18px;
               border-bottom:1px solid var(--line);background:#fff}
+  /* Sized against the REAL artwork, not a test shape. Both marks that actually go here are wide
+     wordmarks — MEGA is 3.84:1, Newtecons 3.48:1 — so the WIDTH cap binds long before the height
+     does: at 104px they rendered 26px tall against a 34px allowance and simply looked small, with
+     147px of the row spare. A logo is only ever as tall as its width lets it be. */
   .doc .mk{flex:0 0 auto;display:none;align-items:center;justify-content:center;
-           height:38px;max-width:104px}
+           height:40px;max-width:144px}
   .doc .mk.on{display:flex}
-  .doc .mk img{max-height:34px;max-width:100px;width:auto;height:auto;display:block}
+  .doc .mk img{max-height:36px;max-width:140px;width:auto;height:auto;display:block}
   /* The middle mark is also the spacer that pushes the contractor's to the right edge, so it must
      be free to grow — `max-width` on .mk would otherwise cap it and leave all three bunched to the
      left, which is what the tablet showed. The IMG inside stays capped; the BOX does not. */
@@ -294,24 +302,37 @@
   footer.doc-foot{margin:16px 0 0;border-radius:var(--r-panel);overflow:hidden;position:relative;
     background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
     color:rgba(255,255,255,.82);box-shadow:var(--shadow-card);
-    /* Right and bottom clear the 52px corner triangle. Measured rather than eyeballed: the Sign out
-       button sat 20px from each edge, which put it inside the mark — the triangle is behind it and
-       pointer-events:none, so nothing broke and nothing looked obviously wrong, which is precisely
-       how it would have shipped. */
-    padding:20px 64px 20px 20px}
+    /* The header's own padding, so the two bars are the same height. The right side clears the 52px
+       corner triangle — measured, not eyeballed: Sign out sat 20px from each edge, which put it
+       inside the mark. The triangle is behind it and pointer-events:none, so nothing broke and
+       nothing looked plainly wrong, which is exactly how it would have shipped. */
+    padding:18px 68px 18px 20px;display:flex;align-items:center}
   footer.doc-foot::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.4;
     background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),
                      linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);
     background-size:56px 56px}
   footer.doc-foot > *{position:relative}
-  footer.doc-foot img{height:34px;width:auto;display:block;margin-bottom:14px}
-  footer.doc-foot .fline{font-size:12.5px;line-height:1.65}
+  /* ONE ROW, at the header's height, so the two navy bars bracket the document instead of one
+     being a strip and the other a block. Same padding, same mark size, same alignment — the footer
+     is the header's closing bracket and now reads as one. */
+  /* One row needs width. Below the tablet breakpoint there is none: the sentence squeezed into a
+     four-character column, the meta printed over it, and the panel grew to 281px — the exact
+     opposite of matching the header. It stacks on a phone, as the header's own content does, and
+     becomes a single bar the moment there is room for one. */
+  footer.doc-foot .frow{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+  footer.doc-foot .fmeta{flex-wrap:wrap}
+  @media (min-width:700px){
+    footer.doc-foot .frow{flex-direction:row;align-items:center;gap:16px;
+                          min-height:var(--bar-inner)}
+    footer.doc-foot .fmeta{flex-wrap:nowrap}
+  }
+  footer.doc-foot img{height:26px;width:auto;display:block;flex:0 0 auto}
+  footer.doc-foot .fline{font-size:12.5px;line-height:1.4;flex:1 1 auto;min-width:0}
   footer.doc-foot .fline b{color:#fff;font-weight:700}
   /* Who filed it sits WITH the button that ends their session, not stranded at the opposite edge
      of a 1400px panel where the two read as unrelated. */
-  footer.doc-foot .fmeta{margin-top:14px;padding-top:14px;font-size:12px;
-    border-top:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.66);
-    display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+  footer.doc-foot .fmeta{font-size:12px;color:rgba(255,255,255,.66);flex:0 0 auto;
+    display:flex;gap:14px;align-items:center}
   footer.doc-foot .corner{position:absolute;right:0;bottom:0;width:52px;height:52px;
     background:var(--emerald);clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
   footer.doc-foot .signout{background:transparent;border:1px solid rgba(255,255,255,.28);
@@ -341,12 +362,13 @@
   /* ── tablets: iPad portrait upwards ─────────────────────────────────────────────────────── */
   @media (min-width:700px){
     .wrap{padding:0 20px 48px}
+    header{padding-left:20px;padding-right:20px}
     .card{padding:22px 24px}
     .bar{padding:14px 24px}
     header h1{font-size:19px}
     header .who{font-size:12.5px}
-    .doc .mk{height:46px;max-width:150px}
-    .doc .mk img{max-height:42px;max-width:146px}
+    .doc .mk{height:56px;max-width:210px}
+    .doc .mk img{max-height:52px;max-width:206px}
     .doc .title h1{font-size:19px}
     .doc dl{grid-template-columns:auto 1fr auto 1fr;padding:14px 22px 18px}
     /* The menu is 14 entries. On a phone that is a scroll; given width it is two columns and the
@@ -745,16 +767,16 @@ function viewMenu(){
   });
   var p = S.project || {};
   html += '</ul></div>'
-    + '<footer class="doc-foot">'
+    + '<footer class="doc-foot"><div class="frow">'
     +   '<img src="/static/brand/Humiley_Logo_White.png" alt="Humiley">'
     +   '<div class="fline">'
     +     t('This daily report is issued by Humiley as project management consultant for') + ' <b>'
     +     esc(p.name || '') + '</b>.'
     +   '</div>'
-    +   '<div class="fmeta"><span>' + esc(S.contractor || '') + ' · ' + esc(S.email || '') + '</span>'
+    +   '<div class="fmeta"><span class="fwho">' + esc(S.contractor || '') + ' · '
+    +     esc(S.email || '') + '</span>'
     +     '<button class="signout" id="out">' + t('Sign out') + '</button></div>'
-    +   '<span class="corner"></span>'
-    + '</footer></div>';
+    + '</div><span class="corner"></span></footer></div>';
   show(html);
   el('dt').onchange = function(){ if (this.value) load(this.value); };
   /* The two days anybody actually files. A site fills in today's report at the end of today, or
