@@ -7273,7 +7273,11 @@ async function _apprEmailTest() {
   try {
     const r = await tkApi('/api/appr/emailtest', { method: 'POST', body: {} });
     if (el) el.textContent = (r && r.message) || (r && r.ok ? 'Sent — check your inbox.' : 'Send failed.');
-    toast((r && r.message) || 'Test email sent', (r && r.ok) ? 'info' : 'warn', 8000);
+    toast((r && r.message) || 'Test email sent', (r && r.ok) ? 'info' : 'warn', 12000);
+    // The test just produced a real result for every mailbox; repaint the rows so the panel shows
+    // it rather than the state from whenever the tab was opened. A partial failure is the whole
+    // point of the test, and it is the per-mailbox rows that say WHICH one.
+    _healthCheck();
   } catch (e) { if (el) el.textContent = 'Failed: ' + (e.message || ''); toast('Test failed: ' + (e.message || ''), 'error', 6000); }
 }
 async function _monthlyTest() {

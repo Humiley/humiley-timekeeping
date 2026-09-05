@@ -401,6 +401,60 @@ def _health_probe():
 # finance@, Procurement → procurement@. Needs Graph Mail.Send application consent; degrades gracefully.
 _APPR_EMAIL_HEALTH = {"at": "", "ok": 0, "failed": 0, "lastError": ""}
 
+# The aggregate above answers "is email working". It cannot answer "which mailbox stopped working",
+# and that is the question an Exchange application access policy creates: the policy is a whitelist
+# per mailbox, so it can leave the portal sending happily as one address and refused as another.
+# Approval mail goes through the fire-and-forget sender, which returns True before it tries — so a
+# mailbox dropping out of scope is silent everywhere except here.
+_MAIL_HEALTH = {}
+
+
+def _mail_note(sender, ok, err=""):
+    """Record one send attempt against the mailbox it was made from, and the aggregate."""
+    addr = (sender or "").strip().lower()
+    row = _MAIL_HEALTH.setdefault(addr, {"at": "", "ok": 0, "failed": 0, "lastError": ""})
+    if ok:
+        row.update({"at": _now_iso(), "ok": row["ok"] + 1, "lastError": ""})
+        _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "ok": _APPR_EMAIL_HEALTH["ok"] + 1,
+                                   "lastError": ""})
+    else:
+        row.update({"at": _now_iso(), "failed": row["failed"] + 1, "lastError": str(err)[:300]})
+        _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "failed": _APPR_EMAIL_HEALTH["failed"] + 1,
+                                   "lastError": str(err)[:300]})
+
+
+def _mail_senders():
+    """Every mailbox the app-only token touches, and what for.
+
+    ONE list, because the health panel and any advice about narrowing the app's reach have to agree
+    about what "the mailboxes it uses" means. Restricting the app to fewer than these breaks the
+    ones left out — and breaks them silently, which is the whole reason the panel exists.
+    """
+    hr = (db.get_setting("portal_apprSenderHr", "") or "").strip() or "hr@humiley.com"
+    fin = (db.get_setting("portal_apprSenderFinance", "") or "").strip() or "finance@humiley.com"
+    proc = (db.get_setting("portal_apprSenderProc", "") or "").strip() or "procurement@humiley.com"
+    out = [
+        {"address": hr, "access": "send", "purpose": "Leave, PADR, HR documents, weekly digest"},
+        {"address": fin, "access": "send", "purpose": "Claims, travel, payments, payroll, month-end"},
+        {"address": proc, "access": "send", "purpose": "Procurement"},
+        {"address": _dr_sender(), "access": "send", "purpose": "The daily report's links and codes"},
+        {"address": INVTRACK["mailbox"], "access": "read", "purpose": "Invoice inbox sync"},
+    ]
+    # Two departments pointed at one mailbox is a legitimate configuration, and the panel should say
+    # so once rather than draw the same row twice with different purposes.
+    merged = {}
+    for r in out:
+        k = (r["address"] or "").strip().lower()
+        if not k:
+            continue
+        if k in merged:
+            merged[k]["purpose"] += "; " + r["purpose"]
+            if r["access"] not in merged[k]["access"]:
+                merged[k]["access"] += "+" + r["access"]
+        else:
+            merged[k] = dict(r, address=k)
+    return list(merged.values())
+
 
 # ── the brand mark on an outgoing email ──────────────────────────────────────────────────────────
 # Every email this portal sends puts the logo on a NAVY header, so it takes the REVERSE (all-white)
@@ -464,6 +518,25 @@ def _portal_base():
     return "https://" + (os.environ.get("PORTAL_DOMAIN") or "portal.humiley.com").strip().rstrip("/")
 
 
+def _dr_sender():
+    """The mailbox the daily report's links and codes are sent FROM.
+
+    Module level, and the ONLY definition, because two things need the answer: the send itself, and
+    `_mail_senders`, which the health panel draws from and which an Exchange access-policy scope
+    group would be built from. When these were separate, `_mail_senders` assumed the procurement
+    mailbox while the sender could resolve to TK_ADMIN_EMAIL — so the daily report could send as an
+    address the panel never watched, and that a scope group built from the panel would have left
+    out. A mailbox nobody is watching is exactly the one that fails quietly.
+
+    NOT `portal_apprEmail`, which an earlier version fell back through: that key is the "Approval
+    emails" CHECKBOX and stores "1"/"0". Both are non-empty strings, so the fallback could never be
+    falsy — the sender became literally "1".
+    """
+    return ((db.get_setting("portal_apprSenderProc", "") or "").strip()
+            or (os.environ.get("TK_ADMIN_EMAIL") or "").strip()
+            or "procurement@humiley.com")
+
+
 def _appr_email_sender(coll):
     """Department mailbox that SENDS (and is CC'd on) a request's approval emails."""
     hr = (db.get_setting("portal_apprSenderHr", "") or "").strip() or "hr@humiley.com"
@@ -523,10 +596,9 @@ def _graph_send_mail(sender, to, subject, html, cc=None):
                     _post(_graph_app_token(force=True))
                 else:
                     raise
-            _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "ok": _APPR_EMAIL_HEALTH["ok"] + 1, "lastError": ""})
+            _mail_note(sender, True)
         except Exception as e:
-            _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "failed": _APPR_EMAIL_HEALTH["failed"] + 1,
-                                       "lastError": _graph_err_text(e)})
+            _mail_note(sender, False, _graph_err_text(e))
     try:
         threading.Thread(target=_send, daemon=True).start()
     except Exception:
@@ -570,10 +642,9 @@ def _graph_send_now(sender, to, subject, html, cc=None):
             else:
                 raise
     except Exception as e:
-        _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "failed": _APPR_EMAIL_HEALTH["failed"] + 1,
-                                   "lastError": _graph_err_text(e)})
+        _mail_note(sender, False, _graph_err_text(e))
         return False, _graph_err_text(e)[:200]
-    _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "ok": _APPR_EMAIL_HEALTH["ok"] + 1, "lastError": ""})
+    _mail_note(sender, True)
     return True, ""
 
 
@@ -11112,21 +11183,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── the emails ───────────────────────────────────────────────────────────────────────────────
     def _dr_mail_sender(self):
-        """The mailbox the site form's code and link are sent FROM.
-
-        NOT `portal_apprEmail`, which this used to fall back through: that key is the "Approval
-        emails — branded, sent per department" CHECKBOX and stores "1" or "0". Both are non-empty
-        strings, so the fallback could never be falsy — it made the sender literally "1", left
-        `TK_ADMIN_EMAIL` unreachable, and killed `_dr_send_code`'s own "no sender address
-        configured" guard, turning a missing setting into an opaque Graph error about a mailbox
-        named 1. See the same shape in `_flag`/settings-round-trip: a boolean read as a value.
-
-        The literal default matches `_appr_email_sender`, which has always had one; this function
-        was the only sender resolver in the file relying on a setting being present.
-        """
-        return ((db.get_setting("portal_apprSenderProc", "") or "").strip()
-                or (os.environ.get("TK_ADMIN_EMAIL") or "").strip()
-                or "procurement@humiley.com")
+        """See `_dr_sender` — one definition, so the health panel watches the address this actually
+        returns rather than the one it would have guessed."""
+        return _dr_sender()
 
     def _dr_send_code(self, con, email, code):
         """(sent, error). SYNCHRONOUS on purpose — the caller has to know.
@@ -13316,6 +13375,40 @@ class Handler(BaseHTTPRequestHandler):
             _fix = ""
         add("apprmail", "Approval emails (Mail.Send)", st, det, _fix)
 
+        # One row per mailbox. The aggregate row above goes green as soon as ANY send works, which
+        # is exactly wrong under an Exchange application access policy: the policy is a per-mailbox
+        # whitelist, so leaving one address out leaves the portal cheerfully sending as the others
+        # while that department's mail silently stops. Approval mail is fire-and-forget — it returns
+        # True before it tries — so these rows are the only place the difference is visible.
+        for _mb in _mail_senders():
+            _row = _MAIL_HEALTH.get(_mb["address"]) or {}
+            _err = _row.get("lastError") or ""
+            _denied = any(w in _err for w in ("AccessDenied", "ErrorAccessDenied", "Forbidden",
+                                              "ApplicationAccessPolicy"))
+            if _err:
+                _st = "down"
+                _det = "Last attempt failed · " + (_row.get("at") or "")
+            elif _row.get("ok"):
+                # Names the DATE of the last success, not just that there was one. A mailbox dropped
+                # from an access policy keeps its green until something tries again, and "last sent
+                # three weeks ago" is the only thing on screen that would give that away.
+                _det = str(_row.get("ok")) + " sent · last " + (_row.get("at") or "")
+                _st = "ok"
+            else:
+                # Never tried is not the same as working, and must not be coloured as if it were.
+                _st = "warn"
+                _det = "Nothing sent from here yet"
+            if _mb["access"] == "read":
+                _st = "ok" if ready else "down"
+                _det = "Read by the invoice sync" if ready else "No Microsoft 365 connection"
+            add("mbx:" + _mb["address"], "Mailbox — " + _mb["address"], _st,
+                _mb["purpose"] + " · " + _det,
+                ("This app is not allowed to use this mailbox. If an Exchange application access "
+                 "policy is in force, add this address to its scope group — a policy that omits a "
+                 "mailbox stops that department's mail without any other warning.") if _denied
+                else (_err[:200] if _err else
+                      ("Send a test email to prove it, rather than assuming." if _st == "warn" else "")))
+
         sp_conf = bool((db.get_setting("portal_invtrackSpUrl", "") or "").strip())
         sh = _INVTRACK_SP_HEALTH
         if not sp_conf:
@@ -13540,27 +13633,57 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(_invtrack_attach_file(body or {}))
 
     def _appr_email_test(self, u):
-        """Admin sends themselves a sample approval email — the way to verify Mail.Send consent works
-        and to preview the branded template. Reports the last-send health so a 403/consent error shows."""
+        """Admin sends themselves one test message FROM EVERY MAILBOX the portal sends as.
+
+        The way to verify Mail.Send consent end to end, and the only way to catch an Exchange
+        application access policy whose scope group is missing one of them.
+        """
         if self._caller_level(u) != "admin":
             return self._err("Admin access required.", 403)
         to = (u.get("email") or "").strip()
         if not to:
             return self._err("Your account has no email address to send the test to.", 400)
-        sender = _appr_email_sender("claims")
-        rows = [("Type", "Test message"), ("Requester", u.get("name") or "Admin"),
-                ("Reference", "TEST-0001"), ("Current status", "Submitted")]
-        html = _appr_email_html("Approval email — connection test", "Submitted",
-                                "This confirms the Humiley approval-email system can send from " + sender +
-                                ". If it arrived, the Microsoft 365 Mail.Send permission is consented and working.",
-                                rows, "Open the portal", _portal_base() + "/?inbox=1")
-        _graph_send_mail(sender, [to], "[Humiley] Approval email — connection test", html)
-        time.sleep(2.5)   # let the async send (incl. a possible token-refresh + retry) finish so health reflects THIS attempt
-        h = _APPR_EMAIL_HEALTH
-        ok = bool(h.get("ok")) and not h.get("lastError")
-        return self._json({"ok": ok, "sentFrom": sender, "sentTo": to, "lastError": h.get("lastError", ""),
-                           "message": ("Sent from %s to %s — check your inbox." % (sender, to)) if ok
-                           else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented for the app, and does the sender mailbox exist?"))})
+        # EVERY sending mailbox, not just Finance's. Mail.Send consent is tenant-wide, but an
+        # Exchange application access policy is a per-mailbox whitelist — so one mailbox succeeding
+        # proves nothing about the others, and a test that only ever exercised one would report the
+        # system healthy while a department's mail was refused.
+        senders = [m for m in _mail_senders() if "send" in m["access"]]
+        results = []
+        for mb in senders:
+            addr = mb["address"]
+            html = _appr_email_html(
+                "Approval email — connection test", "Submitted",
+                "This confirms the Humiley portal can send from " + addr + " (" + mb["purpose"] +
+                "). If it arrived, both the Mail.Send consent and this mailbox's own permission are "
+                "working.",
+                [("Type", "Test message"), ("Mailbox", addr), ("Requester", u.get("name") or "Admin"),
+                 ("Reference", "TEST-0001")],
+                "Open the portal", _portal_base() + "/?inbox=1")
+            # _graph_send_now, not the fire-and-forget sender: the old test queued the mail, slept
+            # 2.5s and then read a CUMULATIVE counter, so on a long-running server a send still in
+            # flight was reported as success on the strength of some earlier one. This returns what
+            # Graph actually said about THIS attempt.
+            sent, err = _graph_send_now(addr, [to], "[Humiley] Connection test — " + addr, html)
+            results.append({"mailbox": addr, "purpose": mb["purpose"], "ok": bool(sent),
+                            "error": err or ""})
+
+        good = [r for r in results if r["ok"]]
+        bad = [r for r in results if not r["ok"]]
+        if not bad:
+            msg = ("Sent from all %d mailboxes to %s — check your inbox for %d messages."
+                   % (len(good), to, len(good)))
+        elif not good:
+            msg = ("No mailbox could send. " + (bad[0]["error"] or "")
+                   + " — is Mail.Send consented for the app, and do these mailboxes exist?")
+        else:
+            # The partial case is the one worth spelling out: it is what an access policy missing a
+            # mailbox looks like, and it is invisible in any single-mailbox test.
+            msg = ("Sent from %s, REFUSED from %s. A partial result usually means an Exchange "
+                   "application access policy whose scope leaves a mailbox out."
+                   % (", ".join(r["mailbox"] for r in good),
+                      ", ".join(r["mailbox"] for r in bad)))
+        return self._json({"ok": not bad, "sentTo": to, "results": results,
+                           "lastError": (bad[0]["error"] if bad else ""), "message": msg})
 
     def _appr_remind_ep(self, u):
         """Admin: run the overdue-approval reminder sweep now (it otherwise runs every 6 h)."""
