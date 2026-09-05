@@ -190,7 +190,25 @@ def test_the_day_returns_this_contractors_own_setup_and_nothing_else(base_url):
     assert len(b["setup"]["safetyChecks"]) == 11        # the shipped default
     blob = json.dumps(b)
     assert "Newtecons" not in blob, "another contractor leaked into the response"
-    assert "Mega Lifesciences" not in blob, "the project leaked into the response"
+
+    # The project's NAME, client and location are now here on purpose: the form carries the same
+    # masthead the printed report does, so somebody filing can see which project they are filing
+    # for. That is not a leak — the contractor is standing on the site, works for that client, and
+    # the report they produce prints all three at the top.
+    #
+    # What must NOT be here is the rest of the project record. The earlier version of this test said
+    # "no project data at all", which was true when the payload had none and became wrong the moment
+    # the masthead was asked for; a blanket assertion like that either blocks a legitimate change or
+    # gets deleted wholesale when it fires. So it is now a list of the fields that would actually be
+    # somebody else's business.
+    assert b["project"]["name"] == "Mega Lifesciences"
+    for field in ("manager", "budget", "startPlanned", "endPlanned", "percentComplete",
+                  "phase", "code", "owner", "createdById", "status"):
+        assert field not in b["project"], \
+            "%s is not the site's business and is now in the payload" % field
+    assert set(b["project"]) == {"name", "client", "location", "investor", "hasLogo"}, \
+        "the masthead grew fields nobody reviewed: %s" % sorted(b["project"])
+    assert "Dept Manager" not in blob, "the project manager's name reached the site"
 
 
 # ── what a signed-in site may write ──────────────────────────────────────────────────────────────

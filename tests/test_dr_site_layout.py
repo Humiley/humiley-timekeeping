@@ -31,7 +31,7 @@ def test_the_responsive_rules_come_after_the_rules_they_override(css):
     well and did nothing: `.sections` is `display:flex` in a base rule further down, and a media
     query of the SAME specificity appearing EARLIER loses the cascade. The iPad stayed one column,
     every source-level check passed, and only opening it at 768px showed it."""
-    for override in (".sections", ".bar", ".g2", ".mark"):
+    for override in (".sections", ".bar", ".g2", ".doc .mk"):
         base = css.index(override + "{") if (override + "{") in css else css.index(override)
         for width in ("min-width:700px", "min-width:1024px"):
             mq = css.index("@media (" + width + ")")
@@ -78,14 +78,20 @@ def test_the_page_fetches_nothing(page):
     assert "<link" not in page.lower(), "an external stylesheet or font would block first paint"
 
 
-def test_the_contractor_mark_is_drawn_on_a_plate(css):
-    """Most contractor artwork is dark on transparent. Dropped straight onto the navy header, half
-    of it disappears — and nobody tells you, because it looks like the logo simply was not set."""
-    m = re.search(r"\.mark\{([^}]*)\}", css, re.S)
-    assert m, "no .mark rule"
-    assert "background:#fff" in m.group(1).replace(" ", ""), \
-        "the mark has no white plate: %r" % m.group(1)
-    assert "display:none" in m.group(1), "the mark must be hidden until there is a logo to show"
+def test_the_three_marks_are_drawn_on_a_white_ground(css):
+    """Owner, Humiley and contractor. Most of this artwork is dark on transparent, so on any
+    coloured ground about half of it disappears — looking exactly like a logo nobody set."""
+    row = re.search(r"\.doc \.marks\{([^}]*)\}", css, re.S)
+    assert row, "no .doc .marks rule"
+    assert "background:#fff" in row.group(1).replace(" ", ""), \
+        "the masthead marks have no white ground: %r" % row.group(1)
+
+    mk = re.search(r"\.doc \.mk\{([^}]*)\}", css, re.S)
+    assert mk, "no .doc .mk rule"
+    assert "display:none" in mk.group(1), \
+        "a mark must be hidden until there is a logo to show, or it reserves an empty box"
+    assert ".doc .mk.on{display:flex}" in css.replace("\n", " "), \
+        "nothing turns a mark on"
 
 
 def test_the_platform_palette_is_the_platforms(css):
