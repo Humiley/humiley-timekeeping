@@ -6554,6 +6554,10 @@ window._VI = {
   'Use the same lists as': 'Dùng chung danh sách với',
   'Copy the links': 'Sao chép liên kết',
   '{0} link(s) copied from {1}. Press Save setup to keep them.': 'Đã sao chép {0} liên kết từ {1}. Bấm Lưu thiết lập để giữ lại.',
+  'Nobody can open this link yet.': 'Hiện chưa ai mở được liên kết này.',
+  'No address is saved for this contractor, so every attempt to sign in is refused — and the form still says a code is on its way, because it must not reveal who is on the list. Add an address above and press Save setup.': 'Chưa có địa chỉ nào được lưu cho nhà thầu này, nên mọi lần đăng nhập đều bị từ chối — mà biểu mẫu vẫn báo là mã đang được gửi, vì nó không được phép tiết lộ ai có trong danh sách. Hãy thêm địa chỉ ở trên rồi bấm Lưu thiết lập.',
+  'Saved and in force': 'Đã lưu và đang có hiệu lực',
+  'Typing above changes nothing until Save setup is pressed.': 'Gõ ở trên không thay đổi gì cho tới khi bấm Lưu thiết lập.',
   /* ── Daily Report ── the construction daily report to the client: its ten sections, the
      SharePoint lists behind them, and the eleven shipped safety checks. The people who
      fill these forms in work on the site, so the screen has to be readable there. */

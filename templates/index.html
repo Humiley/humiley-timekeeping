@@ -51432,6 +51432,7 @@ function _drAccessCard(c) {
       _tkEscA(_t('One address per line')) + '">' +
       _crmEsc((Array.isArray(c.emails) ? c.emails : String(c.emails || '').split(/[,;\n]/))
               .map(x => String(x).trim()).filter(Boolean).join('\n')) + '</textarea></label>' +
+    _drInForce(c) +
     '<div style="font-size:11.5px;color:var(--text-light);margin-top:5px;line-height:1.5">' +
       _t('Only these addresses can open the form. Removing one takes effect immediately, even on a phone that was already signed in.') + '</div>' +
     '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
@@ -51441,6 +51442,39 @@ function _drAccessCard(c) {
       '<button class="btn btn-outline btn-sm" onclick="tkDrNewLink()">' + _t('Issue a new link') + '</button>' +
     '</div>' +
     '<div id="dr-link-out" style="margin-top:12px">' + _drLinkOut() + '</div></div>';
+}
+
+
+/* ── what is actually saved, as opposed to what is typed ─────────────────────────────────────────
+   The box above is an editor: it holds whatever somebody last typed. The LIST is what the server
+   enforces, and until this line existed the two were indistinguishable on screen. An address typed
+   and not saved looked exactly like an address in force — and the form then answered every sign-in
+   attempt with "a six-digit code is on its way", because that sentence is deliberately the same
+   whether or not an address is listed. The result was a contractor nobody could sign in as, a
+   screen that showed the address, and a form that sounded like it was working.
+
+   A contractor with NO saved addresses cannot be signed into by anybody, ever. That is not a
+   subtle state and it should not be a quiet one. */
+function _drSavedEmails(c) {
+  return (Array.isArray(c.emails) ? c.emails : String(c.emails || '').split(/[,;\n]/))
+    .map(x => String(x).trim()).filter(Boolean);
+}
+
+function _drInForce(c) {
+  const saved = _drSavedEmails(c);
+  if (!saved.length) {
+    return '<div style="margin-top:8px;padding:10px 12px;border-radius:8px;' +
+      'background:rgba(192,0,0,.06);border:1px solid rgba(192,0,0,.25);' +
+      'font-size:12px;color:var(--danger);line-height:1.6">' +
+      '<b>' + _t('Nobody can open this link yet.') + '</b> ' +
+      _t('No address is saved for this contractor, so every attempt to sign in is refused — and the form still says a code is on its way, because it must not reveal who is on the list. Add an address above and press Save setup.') +
+      '</div>';
+  }
+  return '<div style="margin-top:8px;font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _t('Saved and in force') + ': <b style="color:var(--navy)">' +
+    _crmEsc(saved.join(', ')) + '</b>' +
+    '<div style="margin-top:2px">' + _t('Typing above changes nothing until Save setup is pressed.') + '</div>' +
+    '</div>';
 }
 
 function _drLinkOut() {
