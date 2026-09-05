@@ -11112,9 +11112,21 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── the emails ───────────────────────────────────────────────────────────────────────────────
     def _dr_mail_sender(self):
-        return (db.get_setting("portal_apprSenderProc", "") or
-                db.get_setting("portal_apprEmail", "") or
-                (os.environ.get("TK_ADMIN_EMAIL") or ""))
+        """The mailbox the site form's code and link are sent FROM.
+
+        NOT `portal_apprEmail`, which this used to fall back through: that key is the "Approval
+        emails — branded, sent per department" CHECKBOX and stores "1" or "0". Both are non-empty
+        strings, so the fallback could never be falsy — it made the sender literally "1", left
+        `TK_ADMIN_EMAIL` unreachable, and killed `_dr_send_code`'s own "no sender address
+        configured" guard, turning a missing setting into an opaque Graph error about a mailbox
+        named 1. See the same shape in `_flag`/settings-round-trip: a boolean read as a value.
+
+        The literal default matches `_appr_email_sender`, which has always had one; this function
+        was the only sender resolver in the file relying on a setting being present.
+        """
+        return ((db.get_setting("portal_apprSenderProc", "") or "").strip()
+                or (os.environ.get("TK_ADMIN_EMAIL") or "").strip()
+                or "procurement@humiley.com")
 
     def _dr_send_code(self, con, email, code):
         """(sent, error). SYNCHRONOUS on purpose — the caller has to know.
