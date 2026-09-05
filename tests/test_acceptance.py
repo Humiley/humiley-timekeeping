@@ -969,3 +969,189 @@ def test_an_unknown_register_key_counts_zero_rather_than_raising():
     assert X._count("acc:nonsense", {"accepted": [{"accType": "work"}]}) == 0
     assert X._count("", {}) == 0
     assert X._count("something-else", {}) == 0
+
+
+# ══ the invitation ═══════════════════════════════════════════════════════════════════════════════
+#
+# The failure this guards against is an invitation that reports "sent" and reached nobody. That is
+# silence dressed as success, and the project finds out when the consultant does not turn up.
+
+def _plan_row(**kw):
+    r = {"arfNo": "SLPXA-ARF-ELE-001", "title": "Lắp đặt thang máng cáp",
+         "titleEn": "Cable tray installation", "acceptDate": "2026-09-24",
+         "timeFrom": "9h00", "timeTo": "9h30", "location": "Tầng 1 - Xưởng A3",
+         "discipline": "ELE", "formCode": "ELE-202"}
+    r.update(kw)
+    return r
+
+
+FULL = {"contractor": "a@humiley.com",
+        "supervisor": "Trần Văn B <b@ricons.vn>; c@ricons.vn",
+        "client": [{"name": "Phạm C", "email": "c@slp.vn"}]}
+
+
+# ── reading whatever the settings screen stored ─────────────────────────────────────────────────
+
+def test_contacts_are_read_from_all_three_shapes_people_actually_produce():
+    """A list of objects, a list of addresses, and one pasted string. Losing somebody's addresses to
+    a shape mismatch is not a lesson anybody should have to learn."""
+    a = A.parse_contacts([{"name": "B", "email": "b@x.vn"}])
+    b = A.parse_contacts(["b@x.vn"])
+    c = A.parse_contacts("b@x.vn")
+    for r in (a, b, c):
+        assert [x["email"] for x in r] == ["b@x.vn"]
+    assert a[0]["name"] == "B"
+
+
+def test_the_outlook_paste_shape_is_understood():
+    r = A.parse_contacts("Trần Văn B <b@ricons.vn>, c@ricons.vn")
+    assert [x["email"] for x in r] == ["b@ricons.vn", "c@ricons.vn"]
+    assert r[0]["name"] == "Trần Văn B"
+
+
+def test_separators_people_actually_type_all_work():
+    assert len(A.parse_contacts("a@x.vn; b@x.vn\nc@x.vn, d@x.vn")) == 4
+
+
+def test_a_repeated_address_is_kept_once():
+    """Somebody pasted the consultant into both the supervisor and the client box. Sending twice is
+    not wrong, exactly — it just looks careless to the person receiving it."""
+    r = A.parse_contacts("b@x.vn, B@X.VN , b@x.vn")
+    assert len(r) == 1
+
+
+def test_an_obvious_non_address_is_kept_but_flagged_rather_than_dropped():
+    """Dropping it silently leaves somebody staring at a contact list that looks complete."""
+    r = A.parse_contacts("Trần Văn B, b@ricons.vn")
+    assert len(r) == 2
+    assert [x["valid"] for x in r] == [False, True]
+
+
+def test_empty_input_yields_no_contacts_rather_than_a_blank_one():
+    for v in ("", None, [], "   ,  ;  "):
+        assert A.parse_contacts(v) == []
+
+
+# ── who gets invited ────────────────────────────────────────────────────────────────────────────
+
+def test_the_invitation_goes_to_exactly_the_parties_who_must_sign():
+    """Read off the acceptance TYPE, so the people invited and the people who have to sign can
+    never drift apart."""
+    for key in ("work", "handover_all"):
+        keys = [p["key"] for p in A.notice_recipients(key, FULL)]
+        assert keys == A.required_parties(key)
+
+
+def test_the_contractor_is_copied_not_addressed():
+    """We are the contractor. The invitation is TO the people we are inviting."""
+    p = A.notice_plan(_plan_row(), "work", FULL, sender="site@humiley.com")
+    assert p["to"] == ["b@ricons.vn", "c@ricons.vn"]
+    assert p["cc"] == ["a@humiley.com"]
+
+
+def test_a_missing_external_contact_blocks_and_names_the_party():
+    p = A.notice_plan(_plan_row(), "work", {"contractor": "a@humiley.com"}, sender="s@x.vn")
+    codes = [b["code"] for b in p["blocked"]]
+    assert codes == ["no_contact_supervisor"]
+    assert "supervision" in p["blocked"][0]["en"].lower()
+
+
+def test_an_invalid_external_contact_blocks_and_quotes_the_address():
+    p = A.notice_plan(_plan_row(), "work", dict(FULL, supervisor="Trần Văn B"), sender="s@x.vn")
+    b = [x for x in p["blocked"] if x["code"] == "bad_contact_supervisor"]
+    assert b and "Trần Văn B" in b[0]["vi"]
+
+
+def test_a_missing_CONTRACTOR_contact_does_not_stop_the_invitation():
+    """An invitation that cannot reach our own site engineer is a nuisance. Leaving the consultant
+    uninvited over it would be the app refusing the thing it exists to do."""
+    p = A.notice_plan(_plan_row(), "work", {k: v for k, v in FULL.items() if k != "contractor"},
+                      sender="s@x.vn")
+    assert p["blocked"] == [] and p["cc"] == []
+
+
+def test_every_particular_an_invitation_must_state_is_required():
+    """A consultant cannot attend an inspection whose day, time or place the email does not say."""
+    for field, code in (("acceptDate", "no_date"), ("timeFrom", "no_time"),
+                        ("location", "no_place"), ("title", "no_work")):
+        p = A.notice_plan(_plan_row(**{field: ""}), "work", FULL, sender="s@x.vn")
+        assert code in [b["code"] for b in p["blocked"]], field
+
+
+def test_no_configured_mailbox_blocks_rather_than_sending_from_nowhere():
+    p = A.notice_plan(_plan_row(), "work", FULL, sender="")
+    assert "no_sender" in [b["code"] for b in p["blocked"]]
+
+
+def test_a_caller_that_does_not_care_about_the_sender_can_say_so():
+    """The preview does not need a mailbox to show what would go out."""
+    p = A.notice_plan(_plan_row(), "work", FULL, sender=None)
+    assert "no_sender" not in [b["code"] for b in p["blocked"]]
+
+
+def test_a_completion_invitation_also_needs_the_client():
+    p = A.notice_plan(_plan_row(), "handover_all",
+                      {k: v for k, v in FULL.items() if k != "client"}, sender="s@x.vn")
+    codes = [b["code"] for b in p["blocked"]]
+    assert "no_contact_client" in codes and "no_contact_designer" in codes
+
+
+def test_every_blocking_reason_is_written_in_both_languages():
+    p = A.notice_plan(_plan_row(acceptDate="", location=""), "handover_all", {}, sender="")
+    assert len(p["blocked"]) >= 5
+    for b in p["blocked"]:
+        assert b["vi"].strip() and b["en"].strip() and b["vi"] != b["en"], b["code"]
+        assert b["blocks"] is True
+
+
+# ── what the invitation says ────────────────────────────────────────────────────────────────────
+
+def test_the_particulars_are_bilingual_and_cite_the_article():
+    rows = A.notice_rows(_plan_row(stage="mep_rough"), "work", {"name": "SLP Park Xuyên Á"})
+    keys = [k for k, _ in rows]
+    assert all("/" in k or k == "" for k in keys), "every label carries both languages"
+    joined = " ".join(v for _, v in rows)
+    assert "Điều 21" in joined, "the invitation says what it is being called under"
+    assert "SLP Park Xuyên Á" in joined
+
+
+def test_empty_particulars_are_left_out_rather_than_printed_blank():
+    """A row reading "Trục / Axis – Zone:" with nothing after it makes the reader look for
+    something that was never there."""
+    rows = A.notice_rows(_plan_row(axis="", standardRef=""), "work")
+    assert not [k for k, _ in rows if k.startswith("Trục")]
+    assert not [k for k, _ in rows if k.startswith("Tiêu chuẩn")]
+
+
+def test_the_english_work_title_rides_under_the_vietnamese_one():
+    rows = A.notice_rows(_plan_row(), "work")
+    vals = [v for _, v in rows]
+    assert "Lắp đặt thang máng cáp" in vals and "Cable tray installation" in vals
+
+
+def test_the_paste_shape_that_survives_the_settings_sanitiser_is_understood():
+    """`Trần Văn B <b@ricons.vn>` is what Outlook copies; the settings sanitiser strips the angle
+    brackets because they could be markup, leaving `Trần Văn B b@ricons.vn`. Found by saving a real
+    pasted list: the address failed validation and the invitation went out without that person."""
+    r = A.parse_contacts("Trần Quốc Bảo bao@ricons.vn, giamsat@ricons.vn")
+    assert [x["email"] for x in r] == ["bao@ricons.vn", "giamsat@ricons.vn"]
+    assert r[0]["name"] == "Trần Quốc Bảo"
+    assert all(x["valid"] for x in r)
+
+
+def test_a_name_with_no_address_at_all_is_still_invalid_rather_than_guessed():
+    r = A.parse_contacts("Trần Quốc Bảo")
+    assert len(r) == 1 and r[0]["valid"] is False
+
+
+def test_one_unreadable_address_blocks_even_when_another_on_the_same_party_is_fine():
+    """The weaker rule — "is there at least one good address" — let an invitation go to one of the
+    consultant's two people with nothing said about the other. Whoever typed the list believes both
+    were invited, and the one who was not is the one who complains."""
+    p = A.notice_plan(_plan_row(), "work",
+                      dict(FULL, supervisor="Trần Quốc Bảo, giamsat@ricons.example"),
+                      sender="s@x.vn")
+    b = [x for x in p["blocked"] if x["code"] == "bad_contact_supervisor"]
+    assert b, "a party with a broken address must not count as reachable"
+    assert "Trần Quốc Bảo" in b[0]["vi"]
+    assert "not invited" in b[0]["en"]

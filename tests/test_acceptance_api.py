@@ -746,3 +746,163 @@ def test_the_index_does_not_count_another_projects_records(base_url, proj):
             if r.get("projectId") == other["id"]:
                 db.delete_collection_item("pm_acc", r["id"])
         db.delete_collection_item("pm_projects", other["id"])
+
+
+# ── the invitation at the boundary ──────────────────────────────────────────────────────────────
+#
+# This is the only thing in the module that leaves the building. Everything below is about the two
+# ways an outward-facing action lies: by sending when it should not, and by reporting success when
+# nothing arrived.
+
+CONTACTS = {"contractor": "site@humiley.com",
+            "supervisor": "Trần Văn B <b@ricons.example>",
+            "client": [{"name": "Phạm C", "email": "c@slp.example"}]}
+
+
+@pytest.fixture
+def mail(monkeypatch):
+    """Capture every send instead of making one. No test in this file may put a message on the
+    wire — the addresses above are .example domains for the same reason."""
+    box = {"sent": [], "ok": True, "err": ""}
+
+    def fake(sender, to, subject, html, cc=None):
+        box["sent"].append({"sender": sender, "to": list(to or []), "cc": list(cc or []),
+                            "subject": subject, "html": html})
+        return (box["ok"], box["err"])
+
+    monkeypatch.setattr(app, "_graph_send_now", fake)
+    return box
+
+
+def _plan(pid, **kw):
+    r = {"projectId": pid, "arfNo": "ZZ-ARF-ELE-001", "title": "Lắp đặt thang máng cáp",
+         "titleEn": "Cable tray installation", "acceptDate": "2026-09-24", "timeFrom": "9h00",
+         "timeTo": "9h30", "location": "Tầng 1 - Xưởng A3", "discipline": "ELE",
+         "formCode": "ELE-202"}
+    r.update(kw)
+    return db.put_collection_item("pm_acc_plans", r)
+
+
+def _contacts(pid, c=None):
+    db.put_collection_item("pm_settings", {"id": pid, "projectId": pid,
+                                           "accContacts": CONTACTS if c is None else c})
+
+
+def test_the_preview_shows_what_would_go_out_and_sends_nothing(base_url, proj, mail):
+    """Nobody should have to press a button that emails a customer in order to find out what the
+    customer will read."""
+    p = _plan(proj["id"]); _contacts(proj["id"])
+    kind, _, out = _H()._acc_notice_preview_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    assert kind == "json"
+    assert mail["sent"] == [], "the preview sent a message"
+    assert out["plan"]["to"] == ["b@ricons.example"]
+    # Exactly the contractor's address, not "one of two things I could not be bothered to check".
+    assert out["plan"]["cc"] == ["site@humiley.com"]
+    assert "Thư mời nghiệm thu" in out["subject"] and "Inspection invitation" in out["subject"]
+    assert "ZZ-ARF-ELE-001" in out["subject"]
+
+
+def test_the_invitation_is_bilingual_and_cites_the_article(base_url, proj, mail):
+    p = _plan(proj["id"]); _contacts(proj["id"])
+    _, _, out = _H()._acc_notice_preview_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    h = out["html"]
+    assert "Thư mời nghiệm thu" in h and "Invitation to an acceptance inspection" in h
+    assert "Điều 21" in h, "the invitation says what it is being called under"
+    assert "Tầng 1 - Xưởng A3" in h and "9h00" in h
+    assert "signed in person on site" in h, "the consultant is told the minute is signed there"
+
+
+def test_sending_records_who_what_and_when(base_url, proj, mail):
+    p = _plan(proj["id"]); _contacts(proj["id"])
+    kind, _, out = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    assert kind == "json", out
+    assert len(mail["sent"]) == 1
+    assert mail["sent"][0]["to"] == ["b@ricons.example"]
+    row = db.get_collection_item("pm_acc_plans", p["id"])
+    assert row["noticeSentBy"] == PM["name"] and row["noticeSentAt"]
+    assert len(row["noticeLog"]) == 1 and row["noticeLog"][0]["ok"] is True
+
+
+def test_a_failed_send_is_reported_as_a_failure_and_never_as_sent(base_url, proj, mail):
+    """The whole reason this uses the BLOCKING sender. "I invited the consultant" is a claim a
+    project relies on weeks later, in front of somebody disputing it."""
+    p = _plan(proj["id"]); _contacts(proj["id"])
+    mail["ok"] = False; mail["err"] = "Mail.Send is not consented"
+    kind, status, msg = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    assert kind == "err" and status == 502
+    assert "Mail.Send" in msg
+    row = db.get_collection_item("pm_acc_plans", p["id"])
+    assert not row.get("noticeSentAt"), "a failed send must not stamp the row as sent"
+    assert row["noticeLog"][-1]["ok"] is False and row["noticeLog"][-1]["error"]
+
+
+def test_every_attempt_is_logged_including_the_failures(base_url, proj, mail):
+    """A log keeping only the last send cannot answer "when did you first invite us", which is the
+    only question it will ever be asked — and one that dropped failures would show a clean history
+    of a message nobody received."""
+    p = _plan(proj["id"]); _contacts(proj["id"])
+    mail["ok"] = False
+    _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    mail["ok"] = True
+    _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    log = db.get_collection_item("pm_acc_plans", p["id"])["noticeLog"]
+    assert [x["ok"] for x in log] == [False, True]
+
+
+def test_no_recipient_refuses_rather_than_sending_to_nobody(base_url, proj, mail):
+    """An invitation with an empty recipient list is silence that looks like success. The project
+    finds out when the consultant does not turn up."""
+    p = _plan(proj["id"]); _contacts(proj["id"], {"contractor": "site@humiley.com"})
+    kind, status, msg = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    assert kind == "err" and status == 409
+    assert "No email address recorded" in msg
+    assert mail["sent"] == []
+    assert not db.get_collection_item("pm_acc_plans", p["id"]).get("noticeLog")
+
+
+def test_a_missing_particular_refuses_and_names_every_one(base_url, proj, mail):
+    p = _plan(proj["id"], acceptDate="", location=""); _contacts(proj["id"])
+    kind, status, msg = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": p["id"]})
+    assert kind == "err" and status == 409
+    assert "acceptance date" in msg and "location" in msg
+    assert mail["sent"] == []
+
+
+def test_an_invitation_can_be_sent_from_a_dossier_too(base_url, proj, mail):
+    """A project invites from whichever register it happens to be looking at."""
+    _contacts(proj["id"])
+    d = _dossier(proj["id"], acceptDate="2026-09-24", timeFrom="9h00",
+                 location="Tầng 1", title="Lắp đặt thang máng cáp")
+    kind, _, _ = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "dossierId": d["id"]})
+    assert kind == "json"
+    assert db.get_collection_item("pm_acc", d["id"])["noticeSentAt"]
+
+
+def test_a_completion_invitation_needs_the_client_recorded(base_url, proj, mail):
+    _contacts(proj["id"], {"contractor": "site@humiley.com", "supervisor": "b@ricons.example"})
+    d = _dossier(proj["id"], accType="handover_part", acceptDate="2026-09-24", timeFrom="9h00",
+                 location="Xưởng A3", title="Nghiệm thu hoàn thành")
+    kind, status, msg = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "dossierId": d["id"]})
+    assert kind == "err" and status == 409 and "client" in msg
+    assert mail["sent"] == []
+
+
+def test_neither_endpoint_serves_a_project_you_are_not_on(base_url, proj, mail):
+    p = _plan(proj["id"]); _contacts(proj["id"])
+    stranger = {"id": "U-NOBODY", "name": "Ai Đó", "role": "staff", "level": "viewer"}
+    for fn in (_H()._acc_notice_preview_ep, _H()._acc_notice_send_ep):
+        kind, status, _ = fn(stranger, {"projectId": proj["id"], "planId": p["id"]})
+        assert kind == "err" and status == 403
+    assert mail["sent"] == []
+
+
+def test_an_unknown_inspection_is_a_404_not_an_empty_invitation(base_url, proj, mail):
+    kind, status, _ = _H()._acc_notice_send_ep(PM, {"projectId": proj["id"], "planId": "nope"})
+    assert kind == "err" and status == 404
+    assert mail["sent"] == []
+
+
+def test_the_sender_is_one_the_health_panel_watches(base_url):
+    """A mailbox the app sends from and the panel does not know about breaks silently — and this is
+    the one message a CUSTOMER reads, so its failure is noticed outside the company first."""
+    assert app._acc_sender() in [r["address"] for r in app._mail_senders()]

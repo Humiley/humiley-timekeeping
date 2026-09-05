@@ -440,6 +440,12 @@ def _mail_senders():
         {"address": fin, "access": "send", "purpose": "Claims, travel, payments, payroll, month-end"},
         {"address": proc, "access": "send", "purpose": "Procurement"},
         {"address": _dr_sender(), "access": "send", "purpose": "The daily report's links and codes"},
+        # The acceptance invitation goes OUT OF THE COMPANY — to the supervision consultant and the
+        # client — so it is the one mailbox on this list whose failure a third party notices before
+        # we do. It belongs here for exactly the reason the docstring above gives: a mailbox the app
+        # uses and the health panel does not know about breaks silently.
+        {"address": _acc_sender(), "access": "send",
+         "purpose": "Acceptance inspection invitations to the consultant and client"},
         {"address": INVTRACK["mailbox"], "access": "read", "purpose": "Invoice inbox sync"},
     ]
     # Two departments pointed at one mailbox is a legitimate configuration, and the panel should say
@@ -535,6 +541,24 @@ def _dr_sender():
     falsy — the sender became literally "1".
     """
     return ((db.get_setting("portal_apprSenderProc", "") or "").strip()
+            or (os.environ.get("TK_ADMIN_EMAIL") or "").strip()
+            or "procurement@humiley.com")
+
+
+def _acc_sender():
+    """The mailbox an acceptance invitation is sent FROM.
+
+    Its own setting, and its own default, because this is the one message the portal sends that a
+    CUSTOMER reads. An invitation to a site inspection arriving from finance@ or hr@ is the kind of
+    small wrongness a consultant notices and a project manager then has to explain.
+
+    Same shape as `_dr_sender` and for the same reason: ONE definition, so the sender and
+    `_mail_senders` — which the health panel draws and an Exchange scope group would be built from —
+    cannot disagree about which mailbox is in use. Falls back to the procurement address rather than
+    to a made-up one, so an install that never sets it still sends from a mailbox that exists.
+    """
+    return ((db.get_setting("portal_accSender", "") or "").strip()
+            or (db.get_setting("portal_apprSenderProc", "") or "").strip()
             or (os.environ.get("TK_ADMIN_EMAIL") or "").strip()
             or "procurement@humiley.com")
 
@@ -4979,6 +5003,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._acc_link_ep(u, body))
         if path == "/api/pm/acceptance/index/declare":
             return self._guard(lambda u: self._acc_index_declare_ep(u, body))
+        if path == "/api/pm/acceptance/notice/preview":
+            return self._guard(lambda u: self._acc_notice_preview_ep(u, body))
+        if path == "/api/pm/acceptance/notice/send":
+            return self._guard(lambda u: self._acc_notice_send_ep(u, body))
         if path == "/api/appr/digesttest":
             return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/tk/nudgetest":
@@ -5891,6 +5919,173 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         return None
+
+    # ── Thư mời nghiệm thu ───────────────────────────────────────────────────────────────────
+    def _acc_notice_ctx(self, u, body):
+        """Resolve the row an invitation is about, and everything needed to address it.
+
+        A called inspection (pm_acc_plans) or a compiled dossier (pm_acc) — both carry the same
+        particulars, and a project invites from whichever it happens to be looking at."""
+        pid = str((body or {}).get("projectId") or "").strip()
+        kind = "plan" if (body or {}).get("planId") else "dossier"
+        rid = str((body or {}).get("planId") or (body or {}).get("dossierId") or "").strip()
+        coll = "pm_acc_plans" if kind == "plan" else "pm_acc"
+        row = db.get_collection_item(coll, rid) if rid else None
+        if not row:
+            return None, self._err("That inspection could not be found.", 404)
+        pid = pid or str(row.get("projectId") or "")
+        vis = self._pm_visible_projects(u)
+        if vis is not None and pid and pid not in vis:
+            return None, self._err("That project is not one of yours.", 403)
+        st = db.get_collection_item("pm_settings", pid) or {}
+        # A plan row carries no acceptance type of its own — it is an invitation to inspect a work,
+        # which is Điều 21 unless the dossier it belongs to says otherwise.
+        acc_type = str(row.get("accType") or "").strip().lower()
+        if not acc_type and row.get("dossierId"):
+            acc_type = str((db.get_collection_item("pm_acc", row.get("dossierId")) or {})
+                           .get("accType") or "").strip().lower()
+        return {"coll": coll, "row": row, "pid": pid, "settings": st,
+                "accType": acc_type or "work",
+                "project": db.get_collection_item("pm_projects", pid) or {}}, None
+
+    def _acc_notice_preview_ep(self, u, body):
+        """What would be sent, to whom — WITHOUT sending it.
+
+        This exists because the send is outward-facing and irreversible. Nobody should have to
+        press a button that emails a customer in order to find out what the customer will read.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        ctx, err = self._acc_notice_ctx(u, body)
+        if err:
+            return err
+        plan = acceptance.notice_plan(
+            ctx["row"], ctx["accType"], (ctx["settings"] or {}).get("accContacts") or {},
+            sender=_acc_sender())
+        return self._json({
+            "ok": True, "plan": plan, "sender": _acc_sender(),
+            "subject": self._acc_notice_subject(ctx),
+            "html": self._acc_notice_html(ctx),
+            "rows": acceptance.notice_rows(ctx["row"], ctx["accType"], ctx["project"], ctx["settings"]),
+            "sent": (ctx["row"].get("noticeLog") or []),
+        })
+
+    def _acc_notice_subject(self, ctx):
+        r, p = ctx["row"], ctx["project"]
+        t = acceptance.acceptance_type(ctx["accType"]) or {}
+        no = r.get("arfNo") or r.get("refNo") or ""
+        return ("Thư mời nghiệm thu / Inspection invitation — %s — %s%s"
+                % (p.get("name") or "", no, (" — " + str(r.get("acceptDate") or ""))
+                   if r.get("acceptDate") else "")) if no else \
+               ("Thư mời nghiệm thu / Inspection invitation — %s" % (p.get("name") or t.get("en") or ""))
+
+    def _acc_notice_html(self, ctx):
+        """The invitation itself. Bilingual throughout: it is read by a Vietnamese site engineer and
+        very often forwarded to a client's foreign technical adviser, and picking one language for a
+        reader we have never met is how an invitation gets ignored."""
+        r = ctx["row"]
+        t = acceptance.acceptance_type(ctx["accType"]) or {}
+        rows = acceptance.notice_rows(r, ctx["accType"], ctx["project"], ctx["settings"])
+        NAVY, INK, MUT, LINE = "#205090", "#1F2937", "#5C6470", "#e3e8f0"
+
+        def esc(v):
+            return _hesc("" if v is None else str(v))
+        tr = "".join(
+            "<tr><td style='padding:7px 0;color:%s;font-size:13px;width:190px;vertical-align:top'>%s</td>"
+            "<td style='padding:7px 0;color:%s;font-size:13px;font-weight:600'>%s</td></tr>"
+            % (MUT, esc(k), INK, esc(v)) for k, v in rows)
+        who = "".join(
+            "<li style='margin:3px 0'>%s <span style='color:%s'>/ %s</span></li>"
+            % (esc(p["vi"]), MUT, esc(p["en"]))
+            for p in acceptance.notice_recipients(ctx["accType"], {}))
+        ev = (t.get("evidence_vi") or [])
+        ev_en = (t.get("evidence_en") or [])
+        docs = "".join("<li style='margin:3px 0'>%s <span style='color:%s'>/ %s</span></li>"
+                       % (esc(a), MUT, esc(b)) for a, b in zip(ev, ev_en))
+        return _email_shell(
+            "<div style='padding:24px'>"
+            "<h1 style='font-size:19px;color:%s;margin:0 0 4px'>Thư mời nghiệm thu</h1>"
+            "<div style='font-size:14px;color:%s;font-style:italic;margin:0 0 16px'>"
+            "Invitation to an acceptance inspection</div>"
+            "<p style='font-size:14px;color:%s;line-height:1.65;margin:0 0 6px'>"
+            "Kính gửi Quý đơn vị, chúng tôi trân trọng kính mời đại diện Quý đơn vị tham dự nghiệm "
+            "thu công việc dưới đây theo %s.</p>"
+            "<p style='font-size:13px;color:%s;line-height:1.65;margin:0 0 18px;font-style:italic'>"
+            "We respectfully invite your representative to attend the acceptance inspection set out "
+            "below, under %s.</p>"
+            "<table style='width:100%%;border-collapse:collapse;border-top:1px solid %s;"
+            "border-bottom:1px solid %s;margin:0 0 20px'>%s</table>"
+            "<div style='font-size:13px;color:%s;font-weight:700;margin:0 0 6px'>"
+            "Thành phần tham dự / Who should attend</div>"
+            "<ul style='font-size:13px;color:%s;margin:0 0 18px;padding-left:20px'>%s</ul>"
+            "%s"
+            "<p style='font-size:12px;color:%s;margin:18px 0 0;line-height:1.65'>"
+            "Biên bản nghiệm thu được ký trực tiếp tại hiện trường. Nếu thời gian trên không phù "
+            "hợp, xin phản hồi lại thư này để thống nhất lại.<br>"
+            "<i>The acceptance minute is signed in person on site. If the time above does not suit, "
+            "please reply to this message and we will agree another.</i></p>"
+            "</div>"
+            % (INK, MUT, INK, esc(t.get("law") or ""), MUT, esc(t.get("law") or ""),
+               LINE, LINE, tr, INK, INK, who,
+               ("<div style='font-size:13px;color:%s;font-weight:700;margin:0 0 6px'>"
+                "Hồ sơ kèm theo / Documents that accompany the minute</div>"
+                "<ul style='font-size:13px;color:%s;margin:0;padding-left:20px'>%s</ul>"
+                % (INK, INK, docs)) if docs else "",
+               MUT))
+
+    def _acc_notice_send_ep(self, u, body):
+        """Send the invitation, and record that it went — to whom, by whom, when.
+
+        BLOCKING (`_graph_send_now`), not the fire-and-forget sender the approval mail uses. That
+        one answers True before it has tried, which is right for a notification somebody can chase
+        in the app and wrong here: "I invited the consultant" is a claim a project relies on weeks
+        later, in front of somebody disputing it. If the send failed, the person pressing the button
+        has to learn that now.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        ctx, err = self._acc_notice_ctx(u, body)
+        if err:
+            return err
+        refusal = self._pm_write_refusal(u, ctx["pid"])
+        if refusal:
+            return self._err(refusal, 403)
+        sender = _acc_sender()
+        plan = acceptance.notice_plan(
+            ctx["row"], ctx["accType"], (ctx["settings"] or {}).get("accContacts") or {},
+            sender=sender)
+        if plan["blocked"]:
+            return self._err(
+                "This invitation cannot be sent yet:\n• "
+                + "\n• ".join(b["en"] + "  /  " + b["vi"] for b in plan["blocked"]), 409)
+
+        ok, why = _graph_send_now(sender, plan["to"], self._acc_notice_subject(ctx),
+                                  self._acc_notice_html(ctx), cc=plan["cc"])
+        stamp = {"at": self._utc_now(), "by": u.get("name") or "", "byId": u.get("id") or "",
+                 "to": plan["to"], "cc": plan["cc"], "from": sender,
+                 "ok": bool(ok), "error": "" if ok else str(why or "")[:300]}
+        row = dict(ctx["row"])
+        # EVERY attempt, including the failures. A log that kept only the last send cannot answer
+        # "when did you first invite us", which is the only question it will ever be asked — and one
+        # that quietly dropped failures would show a clean history of a message nobody received.
+        row["noticeLog"] = (list(row.get("noticeLog") or []) + [stamp])[-40:]
+        if ok:
+            row["noticeSentAt"] = stamp["at"]
+            row["noticeSentBy"] = stamp["by"]
+        db.put_collection_item(ctx["coll"], row)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "", "actorId": u.get("id"),
+            "action": "Acceptance invitation " + ("sent" if ok else "FAILED"),
+            "target": ctx["coll"] + "/" + str(row.get("id") or ""),
+            "detail": "to %s%s%s" % (", ".join(plan["to"]),
+                                     (" cc " + ", ".join(plan["cc"])) if plan["cc"] else "",
+                                     "" if ok else " — " + str(why or "")[:200]),
+            "ts": self._utc_now()})
+        if not ok:
+            return self._err("The invitation was not sent: %s" % (why or "unknown error"), 502)
+        return self._json({"ok": True, "sent": stamp, "item": row})
 
     def _acc_index_ep(self, u, qs):
         """Danh mục hồ sơ hoàn thành — the completion dossier's table of contents, assembled.

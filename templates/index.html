@@ -24715,6 +24715,20 @@ function _accPlanTab(pid) {
           (r.titleEn ? '<div style="font-size:10.5px;color:var(--text-light);font-style:italic">' + _accE(r.titleEn) + '</div>' : '') },
       { label: _t('Location'), k: 'location' },
       { label: _t('Result'), sk: 'result', render: r => _accResBadge(_accRes(r.result)) },
+      { label: _t('Invited'), sk: 'noticeSentAt', nowrap: true, render: r => {
+        const log = r.noticeLog || [];
+        const okd = log.filter(x => x.ok);
+        return (okd.length
+          ? '<span style="font-size:11px;color:var(--emerald)" title="' +
+            _tkEscA(okd.map(x => x.at + ' → ' + (x.to || []).join(', ')).join('\n')) + '">✓ ' +
+            _pmFmt(String(r.noticeSentAt || '').slice(0, 10)) +
+            (okd.length > 1 ? ' ·' + okd.length : '') + '</span>'
+          : (log.length
+            ? '<span style="font-size:11px;color:#C00000" title="' + _tkEscA(log[log.length - 1].error || '') + '">✕ ' + _t('failed') + '</span>'
+            : '<span style="color:var(--text-light)">—</span>')) +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px;color:var(--navy)" ' +
+          'onclick="accNoticeOpen(\'plan\',\'' + r.id + '\')" title="' +
+          _tkEscA(_t('Preview and send the invitation')) + '">✉</button>'; } },
       { label: _t('Dossier'), sk: 'dossierId', render: r => {
         if (!r.dossierId) return '<span style="color:#F59E0B;font-size:11px">' + _t('not compiled') + '</span>';
         const d = (_HR.pm_acc || []).find(x => x.id === r.dossierId);
@@ -24983,7 +24997,7 @@ function _accSetupTab(pid) {
           _accE(_t('Filled once and printed on every minute. Who signs for each party on a given inspection is named on the dossier itself — that is the check that catches a form issued with an empty signature block.')) + '</div>' +
         parties +
         '<button class="btn btn-primary btn-sm" style="margin-top:13px" onclick="accSaveSetup()">' + _t('Save') + '</button>' +
-      '</div></div></div>';
+      '</div></div>' + _accContactsCard() + '</div>';
 }
 
 function _accRenderNo(tpl, o) {
@@ -25014,12 +25028,20 @@ async function accSaveSetup() {
   (_accCat().parties || []).forEach(p => {
     parties[p.key] = ((document.getElementById('acc-party-' + p.key) || {}).value || '').trim();
   });
+  /* Stored as the raw string the person typed. parse_contacts on the server understands the
+     three shapes people actually produce — a pasted Outlook line, a comma list, a single address —
+     so re-shaping it here would only add a fourth place for it to be misread. */
+  const contacts = {};
+  (_accCat().parties || []).forEach(p => {
+    const el = document.getElementById('acc-ct-' + p.key);
+    if (el) contacts[p.key] = String(el.value || '').trim();
+  });
   const cur = (_HR.pm_settings || []).find(x => x.id === pid) || { id: pid };
   /* pm_settings is a whole-document PATCH, so the existing row is spread first — sending only the
      acceptance keys would erase every other setting on the project. */
   const body = Object.assign({}, cur, { id: pid, projectId: pid,
     accPrefix: g('prefix').trim(), accArfTpl: g('arf').trim(), accRefTpl: g('ref').trim(),
-    accParties: parties });
+    accParties: parties, accContacts: contacts });
   try {
     await tkApi('/api/coll/pm_settings/' + encodeURIComponent(pid), { method: 'PATCH', body: body });
   } catch (e) {
@@ -25256,6 +25278,8 @@ function _accHeaderCard(v) {
       '<div style="flex:0 0 100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
         '<button class="btn btn-primary btn-sm" onclick="accPrint()">🖨 ' + _t('Print / Save the A4 set') + '</button>' +
         (_accFrozen(d) ? '' : '<button class="btn btn-outline btn-sm" onclick="accSaveHeader()">' + _t('Save changes') + '</button>') +
+        '<button class="btn btn-outline btn-sm" onclick="accNoticeOpen(\'dossier\',\'' + d.id + '\')">✉ ' +
+          _accE(d.noticeSentAt ? _t('Invitation sent') + ' · ' + _pmFmt(String(d.noticeSentAt).slice(0, 10)) : _t('Send the invitation')) + '</button>' +
         '<button class="btn btn-outline btn-sm" onclick="accExportDossier()">↓ ' + _t('Export') + '</button>' +
       '</div>' +
     '</div>' +
@@ -27684,6 +27708,166 @@ function _accIdxSigBlocks() {
       '<div style="height:22mm"></div>' +
       '<div style="border-top:1px dotted #666;padding-top:3px;font-size:.84em;color:#555">Ký, ghi rõ họ tên</div>' +
       '</td>').join('') + '</tr></table>';
+}
+
+/* ═══════════════ 19 · Thư mời nghiệm thu — sending the invitation ══════════════════════════
+
+   Điều 21 requires the client's supervisor to be present when a work is accepted; Điều 24 adds the
+   client for a completion. Neither says how you invite them, and in practice it is an email typed
+   by hand the evening before — the step that gets forgotten, and the one a consultant points at
+   when they say they were never told.
+
+   THIS IS THE ONLY THING IN THE MODULE THAT LEAVES THE BUILDING, so it is built to be seen before
+   it is done: the button opens a PREVIEW showing the exact recipients and the exact message, and
+   sending is a second, deliberate press. Nobody should have to email a customer to find out what
+   the customer will read.
+
+   Every attempt is recorded on the row — including the failures, because a log that kept only the
+   successes would show a clean history of a message nobody received.                             */
+
+let _accNotice = null;      // the preview currently open
+
+async function accNoticeOpen(kind, id) {
+  const body = { projectId: _pmPid() };
+  body[kind === 'plan' ? 'planId' : 'dossierId'] = id;
+  let r;
+  try { r = await tkApi('/api/pm/acceptance/notice/preview', { method: 'POST', body: body }); }
+  catch (e) { toast(_errMsg(e), 'error', 7000); return; }
+  _accNotice = Object.assign({}, r, { _kind: kind, _id: id });
+  _accNoticePaint();
+}
+
+function _accNoticePaint() {
+  const n = _accNotice; if (!n) return;
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const blocked = (n.plan || {}).blocked || [];
+  const to = (n.plan || {}).to || [], cc = (n.plan || {}).cc || [];
+
+  const stop = blocked.length
+    ? '<div style="border-left:3px solid #DC2626;background:#FEF2F2;border-radius:8px;padding:11px 13px;margin-bottom:13px">' +
+      '<div style="font-size:12.5px;font-weight:700;color:#B91C1C;margin-bottom:5px">' +
+      _t('This invitation cannot be sent yet') + '</div>' +
+      blocked.map(b => '<div style="font-size:12px;color:var(--text);line-height:1.55;padding:2px 0">• ' +
+        _accE(vi ? b.vi : b.en) + '</div>').join('') + '</div>'
+    : '';
+
+  const chips = (list, label, hex) => list.length
+    ? '<div style="margin-bottom:7px"><span style="font-size:10.5px;font-weight:700;color:var(--text-light);' +
+      'letter-spacing:.4px;margin-right:7px">' + _accE(label) + '</span>' +
+      list.map(a => '<span style="display:inline-block;background:' + hex + '1a;color:' + hex +
+        ';border-radius:6px;padding:2px 8px;margin:0 5px 4px 0;font-size:11.5px">' + _accE(a) + '</span>').join('') +
+      '</div>'
+    : '';
+
+  /* The recipients are shown as ADDRESSES, not as party names. "The supervision consultant" is not
+     something anybody can check; b@ricons.vn is. A wrong address discovered after the send is a
+     message that went to a stranger. */
+  const who = '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px;margin-bottom:13px">' +
+    chips(to, _t('TO'), '#205090') + chips(cc, _t('CC'), '#5C6470') +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' +
+    _accE(_t('Sent from')) + ' <b>' + _accE(n.sender || '') + '</b></div></div>';
+
+  const log = (n.sent || []).slice().reverse();
+  const history = log.length
+    ? '<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;color:var(--text-light);' +
+      'letter-spacing:.4px;margin-bottom:5px">' + _accE(_t('ALREADY SENT')) + '</div>' +
+      log.map(x => '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;padding:3px 0;' +
+        'border-bottom:1px solid var(--soft-bg)">' +
+        (x.ok ? '<span style="color:var(--emerald)">✓</span> ' : '<span style="color:#C00000">✕</span> ') +
+        _accE(x.at || '') + ' — ' + _accE(x.by || '') +
+        '<div style="font-size:10.5px">' + _accE((x.to || []).join(', ')) +
+        (x.error ? ' · <span style="color:#C00000">' + _accE(x.error) + '</span>' : '') + '</div></div>').join('') +
+      '</div>'
+    : '';
+
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open'; ov.id = 'accNoticeOverlay';
+  ov.style.display = 'flex'; ov.style.zIndex = '2000';
+  ov.innerHTML = '<div class="modal" style="width:760px;max-width:96vw;max-height:92vh;overflow:auto">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Invitation to an acceptance inspection') + '</div>' +
+    '<button class="modal-close" onclick="accNoticeClose()">✕</button></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' +
+      _accE(_t('This goes outside the company, to the consultant and the client. Check the addresses and the message below — nothing is sent until you press Send.')) + '</div>' +
+    stop + who +
+    '<div style="font-size:11px;font-weight:700;color:var(--text-light);letter-spacing:.4px;margin-bottom:5px">' +
+      _accE(_t('SUBJECT')) + '</div>' +
+    '<div style="font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:11px">' + _accE(n.subject || '') + '</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text-light);letter-spacing:.4px;margin-bottom:5px">' +
+      _accE(_t('MESSAGE')) + '</div>' +
+    /* The real HTML, in a sandboxed frame. A rendered approximation would be the one thing on this
+       screen somebody could not check — and checking is the whole point of a preview. */
+    '<iframe id="acc-notice-frame" sandbox="" style="width:100%;height:380px;border:1px solid var(--line);' +
+      'border-radius:9px;background:#fff"></iframe>' +
+    history +
+    '<div class="modal-footer" style="margin-top:15px;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button class="btn btn-ghost" onclick="accNoticeClose()">' + _t('Cancel') + '</button>' +
+      (blocked.length
+        ? '<button class="btn btn-sm" disabled style="background:var(--soft-bg);color:var(--text-light);cursor:not-allowed">' +
+          _t('Send the invitation') + '</button>'
+        : '<button class="btn btn-primary" id="acc-notice-go" onclick="accNoticeSend()">✉ ' +
+          _accE(_t('Send to') + ' ' + to.length + ' ' + _t('recipient(s)')) + '</button>') +
+    '</div></div>';
+  document.getElementById('accNoticeOverlay')?.remove();
+  document.body.appendChild(ov);
+  /* srcdoc, not innerHTML: the message is written by this app, but it is about to be rendered as
+     markup, and a sandboxed frame is the difference between showing a document and executing one. */
+  const f = document.getElementById('acc-notice-frame');
+  if (f) f.srcdoc = n.html || '';
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(ov); } catch (e) { }
+}
+
+function accNoticeClose() { document.getElementById('accNoticeOverlay')?.remove(); _accNotice = null; }
+
+async function accNoticeSend() {
+  const n = _accNotice; if (!n) return;
+  const btn = document.getElementById('acc-notice-go');
+  if (btn) { btn.disabled = true; btn.textContent = _t('Sending…'); }
+  const body = { projectId: _pmPid() };
+  body[n._kind === 'plan' ? 'planId' : 'dossierId'] = n._id;
+  try {
+    await tkApi('/api/pm/acceptance/notice/send', { method: 'POST', body: body });
+  } catch (e) {
+    /* The server refuses with the whole list of reasons, and a 502 when the mailbox itself failed.
+       Both belong in front of the person who just pressed Send, not in a toast that fades. */
+    toast(_errMsg(e), 'error', 12000);
+    if (btn) { btn.disabled = false; btn.textContent = '✉ ' + _t('Send the invitation'); }
+    return;
+  }
+  accNoticeClose();
+  await _accReload(['pm_acc_plans', 'pm_acc']);
+  toast(_t('Invitation sent'), 'success');
+  _accRepaint();
+}
+
+/* ---- the contacts, on the Numbering & parties tab -------------------------------------------- */
+/* The consultant and the client have no account here — they are the other side of the contract. So
+   their addresses are project configuration, and a party with none recorded is why an invitation
+   refuses to go rather than something the send quietly skips. */
+function _accContactsCard() {
+  const pid = _pmPid();
+  const s = (_HR.pm_settings || []).find(x => x.id === pid) || {};
+  const c = s.accContacts || {};
+  const rows = (_accCat().parties || []).map(p => {
+    const cur = c[p.key];
+    const txt = Array.isArray(cur)
+      ? cur.map(x => (x && x.name ? x.name + ' <' + x.email + '>' : (x && x.email) || x)).join(', ')
+      : String(cur || '');
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--soft-bg)">' +
+      '<div style="font-size:12.5px;font-weight:700;color:var(--text)">' + _accE(_accLbl(p)) +
+        (p.key === 'contractor'
+          ? ' <span style="font-size:10.5px;font-weight:400;color:var(--text-light)">' + _accE(_t('(copied, not addressed — this is us)')) + '</span>'
+          : '') + '</div>' +
+      '<input id="acc-ct-' + p.key + '" class="form-control" style="font-size:12.5px;margin-top:5px" ' +
+        'value="' + _tkEscA(txt) + '" placeholder="' + _tkEscA(_t('name <email>, or just email — separate several with commas')) + '"></div>';
+  }).join('');
+  return '<div class="card" style="flex:1;min-width:330px;padding:0;overflow:hidden">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Who the invitation goes to') + '</div></div>' +
+    '<div style="padding:6px 16px 14px">' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.65;padding:8px 0">' +
+      _accE(_t('The consultant and the client have no account here — they are the other side of the contract, so their addresses live with the project. A party with none recorded is why an invitation refuses to send, rather than something the send quietly skips.')) + '</div>' +
+      rows +
+      '<button class="btn btn-primary btn-sm" style="margin-top:13px" onclick="accSaveSetup()">' + _t('Save') + '</button>' +
+    '</div></div>';
 }
 
 const _PM_TABS = [
@@ -32738,6 +32922,7 @@ const _PM_FILT_Q = {
   pm_acc: ['refNo', 'title', 'titleEn', 'location', 'axis', 'component', 'formCode', 'discipline', 'accType', 'status', 'standardRef'],
   pm_acc_plans: ['arfNo', 'title', 'titleEn', 'location', 'formCode', 'discipline', 'result', 'note'],
   pm_acc_drawings: ['name', 'caption'],
+  pm_acc_index: ['no', 'ref', 'declaredBy', 'note'],
   pm_comms: ['subject', 'type', 'audience', 'status', 'note'],
   pm_issues: ['issueNo', 'title', 'owner', 'priority', 'status', 'description'],
 };

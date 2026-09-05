@@ -438,5 +438,44 @@ console.log('\nThe index shows what the register holds and what somebody merely 
      'did not assemble');
 }
 
+
+// ══ 12 · the invitation: the only thing here that leaves the building ══════════════════════════
+console.log('\nThe invitation is seen before it is sent, and never claims to have sent nothing\n');
+{
+  const open = take('async function accNoticeOpen(', 'accNoticeOpen');
+  ok('the button opens a PREVIEW, not a send',
+     /notice\/preview/.test(open) && open.indexOf('notice/send') < 0,
+     'nobody should have to email a customer to find out what the customer will read');
+
+  const paint = take('function _accNoticePaint(', '_accNoticePaint');
+  ok('the recipients are shown as ADDRESSES, not as party names',
+     /chips\(to, _t\('TO'\)/.test(paint) && /chips\(cc, _t\('CC'\)/.test(paint),
+     '"the supervision consultant" is not something anybody can check; b@ricons.vn is');
+  ok('the sending mailbox is named too',
+     /_t\('Sent from'\)/.test(paint));
+  ok('the message is rendered in a SANDBOXED frame, from srcdoc',
+     /sandbox=""/.test(paint) && /f\.srcdoc = n\.html/.test(paint),
+     'a rendered approximation would be the one thing on the screen nobody could check');
+  ok('a blocked invitation disables Send and lists every reason',
+     /blocked\.length/.test(paint) && /cursor:not-allowed/.test(paint));
+  ok('previous sends are shown, failures included',
+     /ALREADY SENT/.test(paint) && /x\.error/.test(paint),
+     'a history that hid the failures would show a clean record of a message nobody received');
+
+  const send = take('async function accNoticeSend(', 'accNoticeSend');
+  ok('a refusal is shown long enough to read',
+     /toast\(_errMsg\(e\), 'error', 12000\)/.test(send),
+     'the server answers with the whole list of reasons; a 3-second toast loses it');
+  ok('and the button comes back rather than staying dead',
+     /btn\.disabled = false/.test(send));
+
+  const card = take('function _accContactsCard(', '_accContactsCard');
+  ok('the contacts screen says why a missing one blocks',
+     /refuses to send/.test(card),
+     'otherwise it reads as an optional field');
+  ok('and marks the contractor as copied rather than invited',
+     /copied, not addressed/.test(card));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

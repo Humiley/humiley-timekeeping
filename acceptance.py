@@ -1428,3 +1428,190 @@ def suggest_links(itps=(), dossiers=(), limit=60):
         if len(out) >= limit:
             break
     return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#  Thư mời nghiệm thu — the invitation, and who it goes to
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#
+#  Điều 21 requires the client's supervisor to be present when a work is accepted, and Điều 24 adds
+#  the client for a completion. Neither says how you invite them, and in practice it is an email
+#  sent by hand the evening before — which is exactly the step that gets forgotten, and the one a
+#  consultant points at when they say they were never told.
+#
+#  Two things this module is careful about.
+#
+#  FIRST, it never reports sending to nobody. An invitation with an empty recipient list is not a
+#  sent invitation; it is silence that looks like success, and the project only finds out when the
+#  consultant does not turn up. So `notice_plan` returns the reasons it CANNOT send, the same shape
+#  `readiness` uses, and the caller refuses on them.
+#
+#  SECOND, the addresses are not people's portal accounts. The supervision consultant and the
+#  client are external — they have no login here — so their contacts are project configuration, and
+#  a party with no contact recorded is a blocker with a name rather than a silently skipped row.
+
+EMAIL_RE = None   # compiled lazily; see _valid_email
+
+
+def _valid_email(a):
+    """Good enough to catch a typo and a pasted name, not an RFC implementation.
+
+    Deliberately permissive: an over-strict pattern rejects addresses that work, and the cost of a
+    false reject here is somebody being unable to invite the consultant at all."""
+    global EMAIL_RE
+    if EMAIL_RE is None:
+        import re as _re
+        EMAIL_RE = _re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[A-Za-z]{2,}$")
+    return bool(EMAIL_RE.match(str(a or "").strip()))
+
+
+def parse_contacts(raw):
+    """A party's contacts, from whatever the settings screen stored.
+
+    Accepts a list of {name, email}, a list of plain addresses, or one comma/semicolon/newline
+    separated string — because all three are what a person pasting from Outlook actually produces,
+    and losing their addresses to a shape mismatch is not a lesson anybody should have to learn."""
+    out, seen = [], set()
+
+    def add(name, email):
+        e = str(email or "").strip().strip("<>")
+        if not e or e.lower() in seen:
+            return
+        seen.add(e.lower())
+        out.append({"name": str(name or "").strip(), "email": e, "valid": _valid_email(e)})
+
+    if isinstance(raw, dict):
+        raw = [raw]
+    if isinstance(raw, (list, tuple)):
+        for c in raw:
+            if isinstance(c, dict):
+                add(c.get("name"), c.get("email"))
+            else:
+                add("", c)
+        return out
+    for chunk in str(raw or "").replace(";", ",").replace("\n", ",").split(","):
+        c = chunk.strip()
+        if not c:
+            continue
+        # "Trần Văn B <b@ricons.vn>" — the shape Outlook copies out.
+        if "<" in c and ">" in c:
+            add(c[:c.index("<")], c[c.index("<") + 1:c.index(">")])
+            continue
+        # "Trần Văn B b@ricons.vn" — the SAME paste after the settings sanitiser has stripped the
+        # angle brackets, which it does because they could be markup. Found by saving a real pasted
+        # contact list: the address was left glued to the name, failed validation, and the party
+        # still counted as reachable because a second address on the line was fine. The invitation
+        # would have gone out with a named recipient silently missing.
+        bits = c.split()
+        if len(bits) > 1 and _valid_email(bits[-1]):
+            add(" ".join(bits[:-1]), bits[-1])
+            continue
+        add("", c)
+    return out
+
+
+def notice_recipients(acc_type, contacts):
+    """Who an invitation for this kind of acceptance goes to, party by party.
+
+    The parties come from the acceptance TYPE — the same list that decides whose signature the
+    minute must carry — so the people invited and the people who have to sign can never drift
+    apart. The contractor is included: on a real site the person who called the inspection is not
+    always the person who has to be at it.
+    """
+    out = []
+    for pk in required_parties(acc_type):
+        meta = party(pk) or {}
+        people = parse_contacts((contacts or {}).get(pk))
+        out.append({"key": pk, "vi": meta.get("vi", pk), "en": meta.get("en", pk),
+                    "people": people,
+                    "ok": bool([p for p in people if p["valid"]])})
+    return out
+
+
+def notice_plan(row, acc_type, contacts, sender=""):
+    """Everything the caller needs to decide whether this invitation can go out.
+
+    Returns {to, cc, parties, blocked} where `blocked` is the familiar
+    {code, blocks, vi, en} shape. Nothing here sends anything or reads a clock.
+    """
+    row = row or {}
+    parties = notice_recipients(acc_type, contacts)
+    blocked = []
+
+    def stop(code, vi, en):
+        blocked.append({"code": code, "blocks": True, "vi": vi, "en": en})
+
+    # The contractor is invited but is US — an invitation that cannot reach our own site engineer
+    # is a nuisance, not a reason to leave the consultant uninvited.
+    externals = [p for p in parties if p["key"] != PARTY_CONTRACTOR]
+    for p in externals:
+        if not p["people"]:
+            stop("no_contact_" + p["key"],
+                 "Chưa khai báo địa chỉ email của %s — vào tab Đánh số & các bên để bổ sung."
+                 % p["vi"],
+                 "No email address recorded for the %s — add one on the Numbering & parties tab."
+                 % p["en"].lower())
+        else:
+            # ANY unreadable entry stops the send, not only a party with none readable. The weaker
+            # rule ("is there at least one good address") let an invitation go out to one of the
+            # consultant's two people with nothing said about the other — whoever typed the list
+            # believes both were invited, and the one who was not is the one who complains.
+            bad = [x["email"] for x in p["people"] if not x["valid"]]
+            if bad:
+                stop("bad_contact_" + p["key"],
+                     "Địa chỉ email của %s không đọc được: %s. Sửa hoặc xóa dòng này — nếu để "
+                     "nguyên, người đó sẽ không nhận được thư mời." % (p["vi"], ", ".join(bad)),
+                     "This %s address cannot be read: %s. Fix or remove it — left as it is, that "
+                     "person is not invited." % (p["en"].lower(), ", ".join(bad)))
+
+    if not str(row.get("acceptDate") or "").strip():
+        stop("no_date", "Chưa có ngày nghiệm thu — thư mời phải nêu rõ ngày.",
+             "No acceptance date — an invitation has to state the day.")
+    if not str(row.get("timeFrom") or "").strip():
+        stop("no_time", "Chưa có giờ bắt đầu.", "No start time.")
+    if not str(row.get("location") or "").strip():
+        stop("no_place", "Chưa có vị trí nghiệm thu — thư mời phải nêu rõ địa điểm.",
+             "No location — an invitation has to state where.")
+    if not str(row.get("title") or "").strip():
+        stop("no_work", "Chưa có tên công việc nghiệm thu.", "The work to be inspected is not named.")
+    if sender is not None and not str(sender or "").strip():
+        stop("no_sender",
+             "Chưa cấu hình hộp thư gửi thư mời — quản trị viên đặt trong phần Cài đặt duyệt.",
+             "No mailbox is configured to send from — an administrator sets one in the approval settings.")
+
+    to = [x["email"] for p in externals for x in p["people"] if x["valid"]]
+    cc = [x["email"] for p in parties if p["key"] == PARTY_CONTRACTOR
+          for x in p["people"] if x["valid"]]
+    return {"to": to, "cc": cc, "parties": parties, "blocked": blocked}
+
+
+def notice_rows(row, acc_type, project=None, settings=None):
+    """The invitation's particulars, in the order a consultant reads them.
+
+    Bilingual pairs, so the email says everything twice rather than picking a language for a reader
+    the app has never met."""
+    row, project, settings = row or {}, project or {}, settings or {}
+    t = acceptance_type(acc_type) or {}
+    d = discipline(row.get("discipline")) or {}
+    st = stage(row.get("stage")) or {}
+    when = str(row.get("acceptDate") or "")
+    hours = " – ".join([x for x in (row.get("timeFrom"), row.get("timeTo")) if x])
+    out = [
+        ("Dự án / Project", project.get("name") or ""),
+        ("Gói thầu / Package", project.get("package") or project.get("scope") or ""),
+        ("Số phiếu mời / Invitation No.", row.get("arfNo") or row.get("refNo") or ""),
+        ("Loại nghiệm thu / Kind", "%s / %s" % (t.get("vi") or "", t.get("en") or "")),
+        ("Căn cứ / Legal basis", t.get("law") or ""),
+        ("Bộ môn / Discipline", "%s — %s" % (d.get("code") or "", d.get("vi") or "")),
+        ("Hạng mục / Work", row.get("title") or ""),
+        ("", row.get("titleEn") or ""),
+        ("Ngày / Date", when),
+        ("Giờ / Time", hours),
+        ("Vị trí / Location", row.get("location") or ""),
+        ("Trục / Axis – Zone", row.get("axis") or ""),
+        ("Tiêu chuẩn / Standard", row.get("standardRef") or ""),
+        ("Biểu mẫu / Checklist form", row.get("formCode") or ""),
+    ]
+    if st:
+        out.append(("Giai đoạn / Stage", "%s / %s" % (st.get("vi") or "", st.get("en") or "")))
+    return [(k, v) for k, v in out if str(v or "").strip()]
