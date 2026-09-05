@@ -103,6 +103,7 @@ import datespan          # one month-count, shared by contracts / settlement / c
 import daily_report      # the construction Daily Report: its ten pages and every number on them (pure)
 import dr_sharepoint     # reading that report out of the SharePoint forms the site fills in (pure)
 import dr_forms          # the SharePoint lists and Microsoft Forms that report is filled in WITH (pure)
+import dr_access         # the contractor's own permanent form link: token, code, lockout, session (pure)
 import hashlib
 import bi
 import zipfile
@@ -531,6 +532,91 @@ def _graph_send_mail(sender, to, subject, html, cc=None):
     except Exception:
         pass
     return True
+
+
+def _graph_send_now(sender, to, subject, html, cc=None):
+    """The same send, but BLOCKING, returning (ok, error).
+
+    `_graph_send_mail` above answers True before it has tried, which is right for a notification and
+    wrong for a credential. A sign-in code that reports "sent" when Mail.Send is not consented
+    leaves somebody watching an inbox with no way to tell that from a slow mail server — the same
+    false-green the digest health rows were fixed for. Callers that need the truth use this.
+    """
+    to = [a for a in (to or []) if a]
+    if not sender:
+        return False, "no sender address is configured"
+    if not to:
+        return False, "no recipient"
+    message = {"subject": subject, "body": {"contentType": "HTML", "content": html},
+               "toRecipients": [{"emailAddress": {"address": a}} for a in to],
+               "ccRecipients": [{"emailAddress": {"address": a}} for a in (cc or [])]}
+    body = json.dumps({"message": message, "saveToSentItems": True}).encode("utf-8")
+    url = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(sender) + "/sendMail"
+
+    def _post(tok):
+        req = urllib.request.Request(url, data=body,
+                                     headers={"Authorization": "Bearer " + tok,
+                                              "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=20).read()
+
+    try:
+        try:
+            _post(_graph_app_token())
+        except urllib.error.HTTPError as he:
+            # A just-granted Mail.Send consent is not in the cached token. One retry with a fresh
+            # one, exactly as the async path does, so a new consent works without a restart.
+            if he.code in (401, 403):
+                _post(_graph_app_token(force=True))
+            else:
+                raise
+    except Exception as e:
+        _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "failed": _APPR_EMAIL_HEALTH["failed"] + 1,
+                                   "lastError": _graph_err_text(e)})
+        return False, _graph_err_text(e)[:200]
+    _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "ok": _APPR_EMAIL_HEALTH["ok"] + 1, "lastError": ""})
+    return True, ""
+
+
+# The two mails the site form sends. Plain, because they are read on a phone on a building site and
+# the only thing that matters is that the code or the link is findable in two seconds.
+def _dr_mail_frame(title, lead, box, foot):
+    NAVY, INK, MUT, LINE = "#205090", "#1F2937", "#5C6470", "#e3e8f0"
+    return ("<div style=\"font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f8;padding:24px\">"
+            "<div style='max-width:520px;margin:0 auto;background:#fff;border:1px solid " + LINE +
+            ";border-radius:10px;padding:26px 28px'>"
+            "<div style='font-weight:700;font-size:17px;color:" + NAVY + ";margin-bottom:10px'>"
+            + _hesc(title) + "</div>"
+            "<div style='font-size:14px;color:" + INK + ";line-height:1.6'>" + lead + "</div>"
+            + box +
+            "<div style='font-size:12px;color:" + MUT + ";line-height:1.6;margin-top:18px;"
+            "border-top:1px solid " + LINE + ";padding-top:14px'>" + foot + "</div>"
+            "</div></div>")
+
+
+def _dr_code_email_html(contractor, code):
+    return _dr_mail_frame(
+        "Your daily report code",
+        "Enter this code to open <b>" + _hesc(contractor) + "</b>'s daily report form.",
+        "<div style='font-size:34px;font-weight:700;letter-spacing:.18em;color:#205090;"
+        "text-align:center;margin:20px 0;font-family:Consolas,monospace'>" + _hesc(code) + "</div>",
+        "The code is good for 15 minutes and can be used once. If you did not ask for it, somebody "
+        "has your form link — tell your Humiley contact and ignore this email.")
+
+
+def _dr_link_email_html(contractor, url):
+    return _dr_mail_frame(
+        "Your daily report form",
+        "This is <b>" + _hesc(contractor) + "</b>'s link for filing the daily site report. "
+        "It does not change — save it to your phone's home screen.",
+        "<div style='margin:20px 0;text-align:center'>"
+        "<a href='" + _hesc(url) + "' style='display:inline-block;background:#205090;color:#fff;"
+        "text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px'>"
+        "Open the daily report form</a></div>"
+        "<div style='font-size:12px;color:#5C6470;text-align:center;word-break:break-all'>"
+        + _hesc(url) + "</div>",
+        "You will be asked for your email address the first time, and sent a six-digit code to "
+        "confirm it. Only the addresses Humiley has listed for this company can open the form, so "
+        "the link on its own is not enough for anyone else to file a report as you.")
 
 
 def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
@@ -4048,6 +4134,12 @@ class Handler(BaseHTTPRequestHandler):
         if cache or etag:
             self.send_header("Cache-Control", cache or self.JSON_CACHE)
         self._emit_sec_headers(ctype)
+        # Queued by _dr_set_cookie. A list rather than a dict because Set-Cookie legitimately
+        # repeats, and cleared as it is emitted so a keep-alive connection cannot carry one
+        # response's cookie onto the next request handled by the same handler instance.
+        for _hk, _hv in getattr(self, "_extra_headers", []) or []:
+            self.send_header(_hk, _hv)
+        self._extra_headers = []
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -4571,6 +4663,10 @@ class Handler(BaseHTTPRequestHandler):
             seg = path[len("/api/invtrack/file/"):]
             fid, _dot, ext = seg.partition(".")
             return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
+        if path.startswith("/dr/"):
+            return self._dr_site_page(urllib.parse.unquote(path[len("/dr/"):]).strip("/"))
+        if path == "/api/dr/site/day":
+            return self._dr_site_day(qs)
         if path == "/api/dr/report":
             return self._guard(lambda u: self._dr_report_ep(u, qs))
         if path.startswith("/api/dr/photo/"):
@@ -4644,6 +4740,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._dr_detect_ep(u, body), manager=True)
         if path == "/api/dr/sync":
             return self._guard(lambda u: self._dr_sync_ep(u, body), manager=True)
+        if path == "/api/dr/site/code":
+            return self._dr_site_code(body)
+        if path == "/api/dr/site/verify":
+            return self._dr_site_verify(body)
+        if path == "/api/dr/site/signout":
+            return self._dr_site_signout()
+        if path == "/api/dr/site/save":
+            return self._dr_site_save(body)
+        if path == "/api/dr/site/photo":
+            return self._dr_site_photo(body)
+        if path == "/api/dr/link":
+            return self._guard(lambda u: self._dr_link_ep(u, body), manager=True)
+        if path == "/api/dr/revoke":
+            return self._guard(lambda u: self._dr_revoke_ep(u, body), manager=True)
         if path == "/api/dr/formspec":
             return self._guard(lambda u: self._dr_formspec_ep(u, body), manager=True)
         if path == "/api/dr/provision":
@@ -10579,6 +10689,509 @@ class Handler(BaseHTTPRequestHandler):
         cats = [c for c in (con.get("categories") or []) if str(c).strip()]
         return str(cats[0]) if cats else ""
 
+    # ── the site's own form: /dr/<token> ─────────────────────────────────────────────────────────
+    # A contractor with no Microsoft account files its daily report here. dr_access.py holds the
+    # policy — the link is not a credential, the emailed code is — and these are the doors it guards.
+    #
+    # EVERY ROUTE BELOW IS PUBLIC. No portal session reaches them and none of them can read portal
+    # data: a request carries a contractor id inside a signed cookie, and every read and write is
+    # scoped to that contractor and to one date. The blast radius of a stolen cookie is one
+    # contractor's own daily report, which is the report that cookie's owner writes anyway.
+    DR_SITE_MAX_PHOTO = 12 * 1024 * 1024
+    DR_SITE_MAX_ROWS = 400          # per section per day — a real day is tens, not hundreds
+    DR_SITE_MAX_TEXT = 2000         # per field
+
+    def _dr_secret(self):
+        """The key contractor sessions are signed with, derived from a secret the server already has.
+
+        Prefers the e-signature pepper because a portal without one cannot sign anything anyway, so
+        there is no configuration in which this silently falls back to something weak. Raises rather
+        than defaulting: an empty secret produces a cookie anybody can forge.
+        """
+        pepper = (os.environ.get("TK_ESIGN_PEPPER") or os.environ.get("TK_AUDIT_PEPPER")
+                  or os.environ.get("TK_SSO_SECRET") or "")
+        return dr_access.derive_secret(pepper)
+
+    def _dr_cookie(self):
+        """The site session cookie off the request, or ''. Parsed by hand rather than with
+        http.cookies: this is attacker-controlled input on a public route, and SimpleCookie raises
+        on malformed input, which would turn a bad cookie into a 500 anybody can trigger."""
+        raw = self.headers.get("Cookie") or ""
+        for part in raw.split(";"):
+            k, _eq, v = part.strip().partition("=")
+            if k == dr_access.COOKIE:
+                return v.strip()
+        return ""
+
+    def _dr_site_user(self):
+        """{"contractorId", "email", "renew"} for a confirmed device, or None."""
+        try:
+            return dr_access.verify_session(self._dr_secret(), self._dr_cookie())
+        except Exception:
+            return None
+
+    def _dr_site_auth(self, token):
+        """(contractor, session) for a request that may write, or (None, None).
+
+        Both halves have to agree: the cookie says WHO you are, the link in the address bar says
+        WHICH form you are on. A cookie for contractor A presented on contractor B's link is
+        refused — otherwise one contractor's confirmed device could file another's report simply by
+        opening their link.
+        """
+        con = self._dr_contractor_by_token(token)
+        if not con:
+            return None, None
+        sess = self._dr_site_user()
+        if not sess or str(sess.get("contractorId")) != str(con.get("id")):
+            return None, None
+        if not dr_access.email_allowed(con, sess.get("email")):
+            return None, None   # removed from the list since the cookie was issued
+        return con, sess
+
+    @staticmethod
+    def _dr_contractor_by_token(token):
+        if not dr_access.valid_token(token):
+            return None
+        for c in db.list_collection("dr_contractors"):
+            if c.get("token") and hmac.compare_digest(str(c["token"]), str(token)):
+                return c
+        return None
+
+    def _dr_set_cookie(self, value, max_age):
+        """Queue a Set-Cookie for the response `_send` is about to write.
+
+        HttpOnly so no script can read it; SameSite=Lax so it survives the click from the email but
+        is not sent on a cross-site POST; Secure whenever the request arrived over TLS — not
+        unconditionally, or the cookie never sticks on a plain-HTTP dev server and nobody can test
+        the flow.
+        """
+        parts = ["%s=%s" % (dr_access.COOKIE, value), "Path=/", "HttpOnly", "SameSite=Lax",
+                 "Max-Age=%d" % int(max_age)]
+        if self._request_is_tls():
+            parts.append("Secure")
+        self._extra_headers = list(getattr(self, "_extra_headers", []))
+        self._extra_headers.append(("Set-Cookie", "; ".join(parts)))
+
+    def _request_is_tls(self):
+        if (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower() == "https":
+            return True
+        return str(self._request_origin() or "").startswith("https://")
+
+    # ── the page ─────────────────────────────────────────────────────────────────────────────────
+    def _dr_site_page(self, token):
+        """Serve the form shell. Deliberately says nothing about whether the token is real.
+
+        A 404 for an unknown token and a form for a real one is an oracle: try tokens, see which
+        render. Both render the same shell, and every ACTION behind it fails the same way.
+        """
+        if not dr_access.valid_token(token):
+            return self._html("Not a valid link",
+                              "Check the link in your email, or ask Humiley to send it again.",
+                              "#C00000")
+        try:
+            with open(os.path.join(TEMPLATE_DIR, "dr_site.html"), "rb") as fh:
+                page = fh.read()
+        except OSError:
+            return self._err("The daily report form is not available.", 500)
+        return self._send(page, "text/html; charset=utf-8", 200, cache="no-store")
+
+    # ── asking for a code ────────────────────────────────────────────────────────────────────────
+    def _dr_site_code(self, body):
+        """Send a sign-in code to an address on this contractor's list.
+
+        The reply is the same sentence whether or not the address is authorised — see
+        dr_access.SENT_MESSAGE. Everything that could distinguish the two cases (the rate-limit
+        message, the mail failure) is therefore either shared or deliberately generic.
+        """
+        token = str(body.get("token") or "")
+        email = dr_access.norm_email(body.get("email"))
+        # Per-IP first, so an attacker cannot walk the address space by rotating addresses.
+        if not self._rate_check("drcode", 12, 300):
+            return
+        con = self._dr_contractor_by_token(token)
+        if not (con and dr_access.looks_like_email(email)):
+            return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
+        if not dr_access.email_allowed(con, email):
+            return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
+        acc_id = self._dr_access_id(con["id"], email)
+        access = db.get_collection_item("dr_access", acc_id) or {"id": acc_id,
+                                                                 "contractorId": con["id"],
+                                                                 "email": email}
+        allowed, wait = dr_access.send_allowed(access)
+        if not allowed:
+            # A real answer, because this one is about the person's own recent requests and telling
+            # them to wait is more use than pretending another mail is on its way.
+            return self._json({"ok": True, "throttled": True, "message":
+                               "A code was already sent. Wait about %d minute(s) before asking for "
+                               "another, and check your junk folder." % max(1, int(wait / 60 + 0.5))})
+        code = dr_access.new_code()
+        sent, err = self._dr_send_code(con, email, code)
+        if not sent:
+            # NOT a false green. The code IS the credential, so "sent" when nothing left the server
+            # leaves somebody staring at an inbox — the same failure the digest emails were fixed
+            # for. The row is not updated either, so the throttle does not count a mail that never
+            # went and the next attempt is not held against them.
+            return self._json({"ok": False, "message":
+                               "The code could not be sent just now. Tell your Humiley contact — "
+                               "the portal's email is not working."}, 502)
+        db.put_collection_item("dr_access", dr_access.issue_code(access, code))
+        return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
+
+    @staticmethod
+    def _dr_access_id(contractor_id, email):
+        """One row per (contractor, address). Hashed so an address is not sitting in a collection
+        key, and stable so the throttle and the lockout find the same row every time."""
+        return "DRA-" + hashlib.sha256(("%s|%s" % (contractor_id, email)).encode("utf-8")).hexdigest()[:32]
+
+    def _dr_site_verify(self, body):
+        """Check a code and remember the device."""
+        if not self._rate_check("drverify", 20, 300):
+            return
+        token = str(body.get("token") or "")
+        email = dr_access.norm_email(body.get("email"))
+        code = re.sub(r"\D", "", str(body.get("code") or ""))[:8]
+        con = self._dr_contractor_by_token(token)
+        if not (con and email and code):
+            return self._err("Enter the six-digit code from your email.", 400)
+        acc_id = self._dr_access_id(con["id"], email)
+        access = db.get_collection_item("dr_access", acc_id)
+        if not access:
+            return self._err(dr_access.code_failure_message("none"), 400)
+        ok, reason, updated = dr_access.check_code(access, code)
+        db.put_collection_item("dr_access", updated)
+        if not ok:
+            db.put_collection_item("audit", {
+                "actor": email, "actorId": "", "action": "Daily report sign-in refused",
+                "target": "dr_contractors/" + str(con.get("id")),
+                "detail": "%s · %s" % (con.get("name") or "?", reason), "ts": self._utc_now()})
+            return self._err(dr_access.code_failure_message(
+                reason, dr_access.locked_for(updated)), 429 if reason == "locked" else 400)
+        self._dr_set_cookie(dr_access.sign_session(self._dr_secret(), con["id"], email),
+                            dr_access.SESSION_TTL)
+        db.put_collection_item("audit", {
+            "actor": email, "actorId": "", "action": "Daily report sign-in",
+            "target": "dr_contractors/" + str(con.get("id")),
+            "detail": con.get("name") or "?", "ts": self._utc_now()})
+        return self._json({"ok": True, "contractor": con.get("name") or "",
+                           "email": email})
+
+    def _dr_site_signout(self):
+        self._dr_set_cookie("", 0)
+        return self._json({"ok": True})
+
+    # ── the day ──────────────────────────────────────────────────────────────────────────────────
+    def _dr_site_day(self, qs):
+        """What this contractor has filed for one date, plus what the form needs to draw itself.
+
+        Returns the contractor's OWN configuration only — its roles, trades, categories and safety
+        checks. Nothing about the project, the other contractor, or the portal.
+        """
+        con, sess = self._dr_site_auth(self._dr_q(qs, "token"))
+        if not con:
+            return self._err("Please sign in again.", 401)
+        day = daily_report.iso(self._dr_q(qs, "date")) or self._vn_day()
+        rep = db.get_collection_item("dr_reports", self._dr_site_report_id(con, day)) or {}
+        photos = [p for p in db.list_collection("dr_photos")
+                  if str(p.get("contractorId") or "") == str(con["id"])
+                  and daily_report.iso(p.get("date")) == day]
+        if sess.get("renew"):
+            self._dr_set_cookie(dr_access.sign_session(self._dr_secret(), con["id"], sess["email"]),
+                                dr_access.SESSION_TTL)
+        return self._json({
+            "ok": True, "date": day, "today": self._vn_day(),
+            "contractor": {"name": con.get("name") or "", "email": sess.get("email")},
+            "setup": {"mgmtRoles": list(con.get("mgmtRoles") or []),
+                      "workerTrades": list(con.get("workerTrades") or []),
+                      "categories": list(con.get("categories") or []),
+                      "safetyChecks": [str(c) for c in (con.get("safetyChecklist") or
+                                                        daily_report.SAFETY_DEFAULTS)],
+                      "weather": list(daily_report.WEATHER_ICONS.keys())},
+            "report": {k: rep.get(k) for k in
+                       ("weather", "mgmt", "workers", "equipment", "materials", "progress", "plan",
+                        "documents", "defects", "inspections", "inspectionPlan", "safety",
+                        "recommendations", "notes", "submittedAt")},
+            "photos": [{"id": p.get("id"), "category": p.get("category") or "",
+                        "caption": p.get("caption") or "", "fileName": p.get("fileName") or ""}
+                       for p in photos],
+            "dates": sorted({daily_report.iso(r.get("date")) for r in db.list_collection("dr_reports")
+                             if str(r.get("contractorId") or "") == str(con["id"])
+                             and daily_report.iso(r.get("date"))}, reverse=True)[:30],
+        })
+
+    @staticmethod
+    def _dr_site_report_id(con, day):
+        return "DR-%s-%s" % (con["id"], day)
+
+    def _dr_site_save(self, body):
+        """Save one section of one day. Section at a time, not the whole report.
+
+        A site engineer fills this in on a phone, on a plant-room connection, standing up. Saving
+        the whole report in one request means one dropped connection loses the lot; saving a section
+        at a time means it loses the section they were on.
+        """
+        con, sess = self._dr_site_auth(str(body.get("token") or ""))
+        if not con:
+            return self._err("Please sign in again.", 401)
+        day = daily_report.iso(body.get("date"))
+        if not day:
+            return self._err("Pick the date this report is for.", 400)
+        if day > self._vn_day():
+            # Tomorrow's report cannot be filed today. It is not an arithmetic problem — a report
+            # dated ahead sits at the top of the date list and reads as the latest day on site.
+            return self._err("You cannot file a report for a future date.", 400)
+        field = str(body.get("field") or "")
+        clean, err = self._dr_site_clean(field, body.get("value"), con)
+        if err:
+            return self._err(err, 400)
+        rid = self._dr_site_report_id(con, day)
+        rep = db.get_collection_item("dr_reports", rid) or {
+            "id": rid, "contractorId": con["id"], "projectId": con.get("projectId") or "",
+            "contractor": con.get("name") or "", "date": day, "status": "submitted",
+        }
+        # `source` marks who authored the day. A SharePoint sync must not silently overwrite what the
+        # site typed here — see _dr_store, which refuses a day this owns.
+        rep["source"] = "site"
+        rep[field] = clean
+        rep["submittedAt"] = self._utc_now()
+        rep["submittedBy"] = sess.get("email") or ""
+        rep.setdefault("createdById", "")
+        rep.setdefault("owner", con.get("name") or "")
+        db.put_collection_item("dr_reports", rep)
+        return self._json({"ok": True, "field": field,
+                           "count": len(clean) if isinstance(clean, list) else 1})
+
+    # What the site may write, and the shape each one has to be in. A field not on this map cannot
+    # be written at all — the request body names the field, so without a whitelist a crafted request
+    # could set `id`, `projectId` or `source` and move the row to another project.
+    DR_SITE_FIELDS = {
+        "weather": "obj", "mgmt": "counts", "workers": "counts", "safety": "safety",
+        "equipment": ["item", "qty", "unit", "notes"],
+        "materials": ["item", "docCode", "notes"],
+        "progress": ["category", "item", "daily", "accum", "start", "finish"],
+        "plan": ["category", "item", "location", "notes"],
+        "documents": ["group", "item", "docCode", "category", "notes"],
+        "defects": ["desc", "action", "identified", "due"],
+        "inspections": ["item", "location", "docCode", "status", "notes"],
+        "inspectionPlan": ["item", "location", "time", "notes"],
+        "recommendations": ["item", "location", "notes"],
+    }
+
+    def _dr_site_clean(self, field, value, con):
+        """(clean_value, error). Every string capped, every key whitelisted, nothing else kept.
+
+        The browser sending this is outside the tenant, so the shape is rebuilt from the whitelist
+        rather than filtered — a filter keeps whatever it did not think to remove.
+        """
+        spec = self.DR_SITE_FIELDS.get(field)
+        if spec is None:
+            return None, "That is not part of the daily report."
+        s = lambda v: str(v if v is not None else "")[:self.DR_SITE_MAX_TEXT].strip()
+        if spec == "obj":
+            v = value if isinstance(value, dict) else {}
+            return {k: s(v.get(k)) for k in
+                    ("morning", "afternoon", "evening", "avgTemp", "rainHours")}, None
+        if spec == "counts":
+            v = value if isinstance(value, dict) else {}
+            names = (con.get("mgmtRoles") if field == "mgmt" else con.get("workerTrades")) or []
+            out = {}
+            for name in names:
+                raw = v.get(str(name))
+                if raw is None or str(raw).strip() == "":
+                    continue
+                try:
+                    n = int(float(str(raw).replace(",", "").strip()))
+                except (TypeError, ValueError):
+                    return None, "%s must be a number." % name
+                if n < 0 or n > 100000:
+                    return None, "%s is not a sensible headcount." % name
+                out[str(name)] = n
+            return out, None
+        if spec == "safety":
+            v = value if isinstance(value, dict) else {}
+            checks = [str(c) for c in (con.get("safetyChecklist") or daily_report.SAFETY_DEFAULTS)]
+            out = {}
+            for c in checks:
+                item = v.get(c)
+                if isinstance(item, dict) and str(item.get("status") or "").strip():
+                    out[c] = {"status": s(item.get("status")), "notes": s(item.get("notes"))}
+            return out, None
+        rows = value if isinstance(value, list) else []
+        if len(rows) > self.DR_SITE_MAX_ROWS:
+            return None, "That is more than %d rows for one day." % self.DR_SITE_MAX_ROWS
+        out = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            row = {k: s(r.get(k)) for k in spec}
+            if any(row.values()):
+                out.append(row)
+        return out, None
+
+    # ── photos ───────────────────────────────────────────────────────────────────────────────────
+    def _dr_site_photo(self, body):
+        """One photo, straight into the project's SharePoint folder where it is configured.
+
+        Stored inline only as a fallback, because a year of site photos in the blob store is a
+        database nobody can back up — and the project folder is where the rest of the job's files
+        already live.
+        """
+        con, sess = self._dr_site_auth(str(body.get("token") or ""))
+        if not con:
+            return self._err("Please sign in again.", 401)
+        if not self._rate_check("drphoto", 120, 3600):
+            return
+        day = daily_report.iso(body.get("date"))
+        if not day or day > self._vn_day():
+            return self._err("Pick the date this photo is for.", 400)
+        raw = str(body.get("dataUrl") or "")
+        m = re.match(r"^data:(image/(?:jpeg|jpg|png|webp|heic|heif));base64,(.+)$", raw, re.S)
+        if not m:
+            return self._err("That file is not a photo the report can carry (JPEG, PNG or WEBP).", 400)
+        try:
+            data = base64.b64decode(m.group(2), validate=True)
+        except Exception:
+            return self._err("That photo could not be read. Try taking it again.", 400)
+        if len(data) > self.DR_SITE_MAX_PHOTO:
+            return self._err("That photo is larger than 12 MB. Your phone can send a smaller one.", 400)
+        cats = [str(c) for c in (con.get("categories") or [])]
+        cat = str(body.get("category") or "").strip()
+        if cats and cat not in cats:
+            cat = cats[0]
+        seq = 1 + len([p for p in db.list_collection("dr_photos")
+                       if str(p.get("contractorId") or "") == str(con["id"])
+                       and daily_report.iso(p.get("date")) == day])
+        pid = "DRP-%s-%s-%03d" % (con["id"], day, min(seq, 999))
+        row = {"id": pid, "contractorId": con["id"], "projectId": con.get("projectId") or "",
+               "date": day, "kind": "daily", "category": cat,
+               "caption": str(body.get("caption") or "").strip()[:200],
+               "seq": seq, "src": "upload", "uploadedBy": sess.get("email") or "",
+               "fileName": str(body.get("name") or "")[:120],
+               "owner": con.get("name") or "", "createdById": ""}
+        placed = self._dr_site_photo_to_sharepoint(con, day, row, data, m.group(1))
+        if not placed:
+            row["dataUrl"] = raw
+        db.put_collection_item("dr_photos", row)
+        return self._json({"ok": True, "id": pid, "stored": "sharepoint" if placed else "portal"})
+
+    def _dr_site_photo_to_sharepoint(self, con, day, row, data, ctype):
+        """True when the photo really landed in the project folder. False means keep it locally.
+
+        Returns the OUTCOME rather than raising, because a SharePoint that is misconfigured or down
+        must not stop the site filing its report — the photo is kept in the portal and the sync can
+        move it later.
+        """
+        folder = self._dr_folder(con)
+        if not folder or not folder.get("drive"):
+            return False
+        rel = dr_sharepoint.folder_for(con.get("name"), day)
+        if not rel:
+            return False
+        path = "/".join(p for p in [folder.get("rel") or "", rel] if p)
+        ext = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp",
+               "image/heic": "heic", "image/heif": "heif"}.get(ctype, "jpg")
+        name = "%s - %03d.%s" % (row.get("category") or "Photo", row.get("seq") or 1, ext)
+        try:
+            token = _graph_app_token()
+            _invtrack_sp_ensure_dir(folder["drive"], path, token)
+            url = ("https://graph.microsoft.com/v1.0/drives/" + folder["drive"] + "/root:/"
+                   + "/".join(urllib.parse.quote(p) for p in (path + "/" + name).split("/") if p)
+                   + ":/content")
+            made = _graph_put_bytes(url, token, data, ctype)
+            row["src"] = "sharepoint"
+            row["spKind"] = "drive"
+            row["spDriveId"] = folder["drive"]
+            row["spItemId"] = (made or {}).get("id") or ""
+            row["fileName"] = name
+            return bool(row["spItemId"])
+        except Exception:
+            return False
+
+    # ── the emails ───────────────────────────────────────────────────────────────────────────────
+    def _dr_mail_sender(self):
+        return (db.get_setting("portal_apprSenderProc", "") or
+                db.get_setting("portal_apprEmail", "") or
+                (os.environ.get("TK_ADMIN_EMAIL") or ""))
+
+    def _dr_send_code(self, con, email, code):
+        """(sent, error). SYNCHRONOUS on purpose — the caller has to know.
+
+        Every other mail in this portal is fire-and-forget, which is right for a notification and
+        wrong for a credential: "a code is on its way" when nothing left the server leaves somebody
+        watching an inbox with no way to tell that from a slow mail server.
+        """
+        sender = self._dr_mail_sender()
+        if not sender:
+            return False, "no sender address configured"
+        html = _dr_code_email_html(con.get("name") or "", code)
+        return _graph_send_now(sender, [email], "Your daily report code: %s" % code, html)
+
+    def _dr_send_link(self, con, to=None):
+        """Send the permanent form link. Used on contractor creation and from Report Setup."""
+        sender = self._dr_mail_sender()
+        addrs = [dr_access.norm_email(a) for a in (to or dr_access.parse_emails(con.get("emails")))]
+        addrs = [a for a in addrs if a]
+        if not (sender and addrs and con.get("token")):
+            return False, "no sender, no address, or no link yet"
+        url = dr_access.form_url(self._request_origin(), con["token"])
+        html = _dr_link_email_html(con.get("name") or "", url)
+        ok, err = _graph_send_now(sender, addrs, "Your Humiley daily report link", html)
+        if ok:
+            db.put_collection_item("dr_contractors", dict(
+                con, linkSentAt=self._utc_now(), linkSentTo=", ".join(addrs)))
+        return ok, err
+
+    def _dr_link_ep(self, u, body):
+        """Report Setup's "Send the link" / "Show the link"."""
+        con, err = self._dr_contractor_for(u, body)
+        if err:
+            return err
+        if not con.get("token"):
+            con = dict(con, token=dr_access.new_token())
+            db.put_collection_item("dr_contractors", con)
+        url = dr_access.form_url(self._request_origin(), con["token"])
+        if not body.get("send"):
+            return self._json({"ok": True, "url": url,
+                               "emails": dr_access.parse_emails(con.get("emails")),
+                               "sentAt": con.get("linkSentAt") or "",
+                               "sentTo": con.get("linkSentTo") or ""})
+        sent, err2 = self._dr_send_link(con)
+        if not sent:
+            return self._err("The link could not be emailed: %s. The address is above — send it by "
+                             "hand if you need to." % (err2 or "unknown reason"), 502)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Daily report link sent", "target": "dr_contractors/" + str(con["id"]),
+            "detail": "%s → %s" % (con.get("name") or "?",
+                                   ", ".join(dr_access.parse_emails(con.get("emails")))),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "url": url, "sent": True})
+
+    def _dr_revoke_ep(self, u, body):
+        """Cut every confirmed device for one contractor, and optionally re-mint the link.
+
+        Two different needs: somebody left the site (drop the confirmations, keep the link), or the
+        link itself leaked (mint a new one, which invalidates every old bookmark).
+        """
+        con, err = self._dr_contractor_for(u, body)
+        if err:
+            return err
+        gone = 0
+        for a in db.list_collection("dr_access"):
+            if str(a.get("contractorId") or "") == str(con["id"]):
+                db.delete_collection_item("dr_access", a.get("id"))
+                gone += 1
+        detail = "%s · %d confirmed device(s) cut" % (con.get("name") or "?", gone)
+        if body.get("newLink"):
+            con = dict(con, token=dr_access.new_token(), linkSentAt="", linkSentTo="")
+            db.put_collection_item("dr_contractors", con)
+            detail += " · link re-issued"
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Daily report access revoked",
+            "target": "dr_contractors/" + str(con["id"]), "detail": detail, "ts": self._utc_now()})
+        return self._json({"ok": True, "revoked": gone,
+                           "url": dr_access.form_url(self._request_origin(), con["token"])})
+
     def _dr_formspec_ep(self, u, body):
         """The build package for one contractor: its twelve forms, their questions, the SharePoint
         columns each writes into, and the Power Automate mapping between them.
@@ -10834,6 +11447,13 @@ class Handler(BaseHTTPRequestHandler):
         cid = str(con.get("id") or "")
         rid = "DR-%s-%s" % (cid, day)
         prev = db.get_collection_item("dr_reports", rid) or {}
+        # A day the SITE filed through its own form is not overwritten by a SharePoint sync. Both
+        # routes can be live at once during a changeover, and a sync that ran afterwards would
+        # replace a report somebody typed with whatever the lists happened to hold — silently, and
+        # with no way to get the typed one back.
+        if str(prev.get("source") or "") == "site":
+            return {"date": day, "reportId": rid, "photos": 0, "replacedPhotos": 0,
+                    "skipped": "filed on the contractor's own form"}
         rep = dict(rep)
         rep["id"] = rid
         rep["projectId"] = con.get("projectId") or prev.get("projectId") or ""
@@ -10862,7 +11482,7 @@ class Handler(BaseHTTPRequestHandler):
                 "replacedPhotos": len(stale)}
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -11024,6 +11644,10 @@ class Handler(BaseHTTPRequestHandler):
                 # form has to be able to read back what they submitted, and the foreman has to be
                 # able to read yesterday's. Stated at "staff" rather than omitted — an omission here
                 # reads as default-allow, which is the same answer arrived at by nobody deciding it.
+                # dr_access holds the sign-in state of people who are NOT employees — hashed codes, failure
+                # counts, lockouts. Nobody reads it through the generic API: the site form reaches its
+                # own row by token, and there is nothing in it a portal user needs to see.
+                "dr_access": "admin",
                 "dr_settings": "staff", "dr_contractors": "staff",
                 "dr_reports": "staff", "dr_photos": "staff",
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
@@ -13271,6 +13895,13 @@ class Handler(BaseHTTPRequestHandler):
                 item.get("id") if name == "dr_settings" else item.get("projectId") or ""))
             if _refuse:
                 return self._err(_refuse, 403)
+        # A contractor gets its permanent form link the moment it exists, so the link is never a
+        # separate step somebody has to remember. Minted here rather than in the browser: it is the
+        # thing the whole access boundary hangs off, and a client-chosen one would be a client-chosen
+        # secret. Emailing it is deliberately NOT automatic — the addresses are usually typed after
+        # the contractor is created, so Report Setup has a Send button that reports what happened.
+        if name == "dr_contractors" and not item.get("token"):
+            item["token"] = dr_access.new_token()
         if name == "ahu_units":
             _err_fam = self._ahu_check_family(item)
             if _err_fam:
