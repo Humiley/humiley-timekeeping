@@ -350,8 +350,15 @@
   @media (min-width:1024px){
     .sections{grid-template-columns:repeat(3,1fr);column-gap:26px}
     .sections li:nth-child(3){border-top:0}
-    /* A form field 900px wide is harder to read, not easier. The inputs keep a sane measure and
-       the width goes to the layout instead. */
+    /* A form field 900px wide is harder to read, not easier — so the width goes to the LAYOUT.
+       A repeating row has up to six fields; stacked in one column inside a 1400px card they made a
+       tall thin strip with two-thirds of the card empty, which is the "full page" complaint in its
+       real form. They flow into columns instead, and only the free-text ones span the whole width
+       because a note wants a line to run along. */
+    .item{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 18px}
+    .item .top{grid-column:1/-1}
+    .item .row:has(textarea){grid-column:1/-1}
+    .item .row textarea{max-width:none}
     .row input,.row select,.row textarea{max-width:520px}
     .g2 input,.g2 select,.g3 input,.g3 select{max-width:none}
     /* Sticky-to-the-bottom is a phone idiom. On a desktop the actions belong with the form. */
@@ -574,7 +581,10 @@ async function load(date){
     S.email = (r.contractor || {}).email || S.email;
     S.project = r.project || S.project || {};
     S.hasLogo = !!(r.contractor || {}).hasLogo;
-    el('hWho').textContent = S.contractor + (S.email ? ' · ' + S.email : '');
+    /* The contractor only. The address was truncating to "site@n…" on a phone, which identifies
+       nobody — and it is already stated in full on the masthead below, under "Filed by", where
+       there is room for it. */
+    el('hWho').textContent = S.contractor;
     viewMenu();
   } catch(e){
     if (e.status === 401) { viewEmail(''); return; }
