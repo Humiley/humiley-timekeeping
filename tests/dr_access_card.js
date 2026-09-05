@@ -100,5 +100,32 @@ mustNot(str, 'Nobody can open', 'a string list does not warn');
 const blank = inForce({ id: 'C-4', name: 'W', emails: '  ,  ; \n ' });
 w2(blank, 'Nobody can open this link yet.', 'whitespace does not count as a saved address');
 
+/* ── who the link came from ──────────────────────────────────────────────────────────────────────
+ * The sender is no longer a fixed department mailbox: the link goes out from whoever pressed the
+ * button, and the CODES then go out from that same address for the life of the contractor.  So this
+ * line is the only place anybody can read which mailbox has to sit in the Exchange application
+ * access policy — and a wrong answer there means the first code fails and nothing says why.
+ */
+const linkOut = new Function('_t', '_tp', '_crmEsc', '_tkEscA', '_drCodeLog', 'tkFmtDate', '_DRL',
+  src.slice(src.indexOf('function _drLinkOut()'),
+            src.indexOf('\n/* \u2500\u2500 what happened the last few times')) +
+  '\nreturn _drLinkOut;');
+
+function out(d) {
+  return linkOut(_t, _tp, _crmEsc, _tkEscA, () => '', x => x, d)();
+}
+
+const sent = out({ url: 'https://portal.humiley.com/dr/tok', sentAt: '2026-09-05T02:00:00Z',
+                   sentTo: 'site@newtecons.example', sentFrom: 'tony.nguyen@humiley.com' });
+w2(sent, 'site@newtecons.example', 'the card says who it went to');
+w2(sent, 'tony.nguyen@humiley.com', 'and which mailbox it went FROM');
+
+// A contractor set up before this, or whose link was handed over by hand, has no issuer. The line
+// must not print "from" followed by nothing — an empty From reads as a bug in the mail path.
+const older = out({ url: 'https://portal.humiley.com/dr/tok', sentAt: '2026-08-01T02:00:00Z',
+                    sentTo: 'site@old.example' });
+w2(older, 'site@old.example', 'an older record still shows the recipient');
+mustNot(older, 'from ', 'and says nothing about a sender it does not know');
+
 if (n2) { console.log('\nFAIL ' + n2); process.exit(1); }
-console.log('\nOK (in-force)');
+console.log('\nOK (in-force, sender)');
