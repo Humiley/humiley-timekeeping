@@ -10918,9 +10918,26 @@ class Handler(BaseHTTPRequestHandler):
     def _dr_site_code(self, body):
         """Send a sign-in code to an address on this contractor's list.
 
-        The reply is the same sentence whether or not the address is authorised — see
-        dr_access.SENT_MESSAGE. Everything that could distinguish the two cases (the rate-limit
-        message, the mail failure) is therefore either shared or deliberately generic.
+        In the ordinary case the reply is the same sentence whether or not the address is
+        authorised — see dr_access.SENT_MESSAGE — so the form cannot be used to discover who is on
+        a contractor's list.
+
+        TWO STATES BREAK THAT, both deliberately, and an earlier version of this docstring claimed
+        they did not:
+
+          * the throttle answers "a code was already sent, wait about N minutes";
+          * a mail that could not be sent answers "the portal's email is not working".
+
+        Neither fires for an address that is not on the list, so somebody who can reach one of those
+        states can tell a listed address from an unlisted one. That was accepted rather than
+        overlooked. The alternative is a site whose mail is broken being told a code is on its way,
+        every time, forever — the false green the synchronous sender exists to prevent — and a crew
+        being told to keep waiting when they have already asked three times. Both need an abnormal
+        state to reach, and both are worth more to the people using this than the leak costs.
+
+        The REFUSALS are audited instead. The caller still learns nothing; the owner can tell "no
+        mail was ever attempted" from "a mail was attempted and did not arrive", which is the first
+        question anybody asks when a code does not turn up and was previously unanswerable.
         """
         token = str(body.get("token") or "")
         email = dr_access.norm_email(body.get("email"))
@@ -10928,9 +10945,30 @@ class Handler(BaseHTTPRequestHandler):
         if not self._rate_check("drcode", 12, 300):
             return
         con = self._dr_contractor_by_token(token)
+        # The CALLER is told nothing — same sentence either way, or the form becomes a way to
+        # discover which addresses are on which contractor's list. The OWNER is told, in the audit
+        # log, because the two silences are not the same thing and somebody has to be able to tell
+        # them apart: "no code arrived" has completely different causes depending on whether a mail
+        # was ever attempted, and until this was recorded there was no way to find out. It cost a
+        # round of chasing Gmail deliverability for a code that had never been sent.
         if not (con and dr_access.looks_like_email(email)):
+            db.put_collection_item("audit", {
+                "actor": email or "(no address)", "actorId": "",
+                "action": "Daily report code not sent",
+                "target": "dr/" + (token or "")[:8] + "…",
+                "detail": "No contractor matches this link, or the address is malformed. "
+                          "Nothing was emailed.", "ts": self._utc_now()})
             return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
         if not dr_access.email_allowed(con, email):
+            db.put_collection_item("audit", {
+                "actor": email, "actorId": "",
+                "action": "Daily report code not sent",
+                "target": "dr_contractors/" + str(con.get("id")),
+                "detail": ("%s · that address is not on this contractor's list, so nothing was "
+                           "emailed. The list holds: %s"
+                           % (con.get("name") or "?",
+                              ", ".join(dr_access.parse_emails(con.get("emails"))) or "(nobody)")),
+                "ts": self._utc_now()})
             return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
         acc_id = self._dr_access_id(con["id"], email)
         access = db.get_collection_item("dr_access", acc_id) or {"id": acc_id,
