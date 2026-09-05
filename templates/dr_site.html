@@ -218,6 +218,8 @@ var VI = {
   "Could not save. Check your connection and try again.":
     "Không lưu được. Kiểm tra kết nối và thử lại.",
   "Sign out":"Đăng xuất","Uploading…":"Đang tải lên…","Saving…":"Đang lưu…",
+  "Send it again":"Gửi lại mã","Sending…":"Đang gửi…","Sent.":"Đã gửi.",
+  "The email usually arrives within a minute. If it has not, look in your spam or junk folder — the first message from a new sender often lands there.":"Email thường tới trong vòng một phút. Nếu chưa thấy, hãy kiểm tra thư mục spam hoặc thư rác — thư đầu tiên từ một người gửi mới thường rơi vào đó.",
   "A check nobody answers shows as NOT ANSWERED on the report — never as passed.":
     "Mục không ai trả lời sẽ hiển thị CHƯA TRẢ LỜI trên báo cáo — không bao giờ là đạt.",
   "Filed":"Đã gửi"
@@ -239,7 +241,14 @@ async function api(path, body){
   var r, j;
   try { r = await fetch(path, opt); } catch(e){ throw new Error('offline'); }
   try { j = await r.json(); } catch(e){ j = {}; }
-  if (!r.ok) { var err = new Error(j.error || ('HTTP ' + r.status)); err.status = r.status; throw err; }
+  /* `message` as well as `error`. A refused request answers with {"error": …}, but a request that
+     was understood and could not be COMPLETED answers {"ok": false, "message": …} — which is what
+     a failed code send returns, carrying the one sentence that explains it ("the portal's email is
+     not working. Tell your Humiley contact"). Reading only `error` threw that away and showed
+     "HTTP 502" instead: the site got a status code where the server had gone to some trouble to
+     provide a reason, on the exact path the synchronous sender exists to report honestly. */
+  if (!r.ok) { var err = new Error(j.error || j.message || ('HTTP ' + r.status));
+               err.status = r.status; throw err; }
   return j;
 }
 function el(id){ return document.getElementById(id); }
@@ -265,12 +274,32 @@ function viewEmail(note){
     this.disabled = true; this.textContent = '…';
     try {
       var r = await api('/api/dr/site/code', { token: TOKEN, email: v });
+      _resendAt = Date.now() + 45000;   // the wait starts when the mail was asked for,
+                                       // not when the next screen happens to render
       viewCode(msg(r.ok ? 'info' : 'err', r.message || ''));
     } catch(e){
       viewEmail(msg('err', e.message === 'offline'
         ? t('Could not save. Check your connection and try again.') : e.message));
     }
   };
+}
+
+/* The mail leaves this server in under a second; what follows is Exchange handing off to whatever
+   the site uses, and Gmail in particular will sometimes hold a first message from a new sender for
+   a minute or two, or put it straight in Spam. None of that is ours to speed up. What WAS ours, and
+   was missing, is everything a person needs while waiting: somewhere to look, something to press,
+   and a straight answer about how long. Before this the only control on the screen was "use another
+   address", so a slow mail meant starting the whole thing again — and a second request that then
+   also felt slow, because the throttle is per address and the clock had already been running. */
+var _resendAt = 0;          // epoch ms when "send it again" becomes pressable
+var _resendTimer = null;
+
+function _resendTick(){
+  var b = el('resend'); if (!b) { clearInterval(_resendTimer); _resendTimer = null; return; }
+  var left = Math.max(0, Math.ceil((_resendAt - Date.now()) / 1000));
+  if (left > 0) { b.disabled = true; b.textContent = t('Send it again') + ' (' + left + 's)'; }
+  else { b.disabled = false; b.textContent = t('Send it again');
+         clearInterval(_resendTimer); _resendTimer = null; }
 }
 
 function viewCode(note){
@@ -281,10 +310,40 @@ function viewCode(note){
     + '<input id="cd" type="text" inputmode="numeric" autocomplete="one-time-code" '
     + 'pattern="[0-9]*" maxlength="6"></div>'
     + '<button class="primary wide" id="ok">' + t('Confirm') + '</button>'
-    + '<button class="link" id="again">' + t('Use another address') + '</button>'
+    + '<div class="msg info" style="margin-top:12px">'
+    +   t('The email usually arrives within a minute. If it has not, look in your spam or junk folder — the first message from a new sender often lands there.')
+    + '</div>'
+    + '<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">'
+    +   '<button id="resend">' + t('Send it again') + '</button>'
+    +   '<button class="link" id="again">' + t('Use another address') + '</button>'
+    + '</div>'
+    + '<div id="resendMsg"></div>'
     + (note || '') + '</div>');
   el('cd').focus();
   el('again').onclick = function(){ viewEmail(''); };
+
+  /* Starts counting from when the code was actually requested, not from when this screen was
+     drawn — otherwise a failed code entry redraws the screen and silently restarts the wait. */
+  if (!_resendAt) _resendAt = Date.now() + 45000;
+  _resendTick();
+  if (!_resendTimer) _resendTimer = setInterval(_resendTick, 1000);
+
+  el('resend').onclick = async function(){
+    this.disabled = true;
+    el('resendMsg').innerHTML = msg('info', t('Sending…'));
+    try {
+      var r = await api('/api/dr/site/code', { token: TOKEN, email: S.email });
+      /* The server owns the throttle — three per fifteen minutes per address. When it says wait,
+         it says how long, and that answer is shown rather than a guess made here. */
+      el('resendMsg').innerHTML = msg(r.throttled ? 'info' : 'ok', r.message || t('Sent.'));
+      _resendAt = Date.now() + (r.throttled ? 60000 : 45000);
+    } catch(e){
+      el('resendMsg').innerHTML = msg('err', e.message);
+      _resendAt = Date.now() + 15000;   // a failure is worth retrying sooner than a success
+    }
+    _resendTick();
+    if (!_resendTimer) _resendTimer = setInterval(_resendTick, 1000);
+  };
   el('ok').onclick = async function(){
     var c = (el('cd').value || '').replace(/\D/g, '');
     if (c.length < 4) { el('cd').focus(); return; }
