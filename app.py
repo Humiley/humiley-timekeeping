@@ -10988,10 +10988,29 @@ class Handler(BaseHTTPRequestHandler):
             # leaves somebody staring at an inbox — the same failure the digest emails were fixed
             # for. The row is not updated either, so the throttle does not count a mail that never
             # went and the next attempt is not held against them.
+            # An attempt that failed is still an attempt. Recording only the successes and the
+            # refusals would leave the one case where mail really IS broken looking identical to
+            # "nobody asked" on the setup screen — which is the ambiguity this log exists to end.
+            db.put_collection_item("audit", {
+                "actor": email, "actorId": "", "action": "Daily report code not sent",
+                "target": "dr_contractors/" + str(con.get("id")),
+                "detail": "%s · the address is on the list, but the email could not be sent: %s"
+                          % (con.get("name") or "?", (err or "unknown")[:120]),
+                "ts": self._utc_now()})
             return self._json({"ok": False, "message":
                                "The code could not be sent just now. Tell your Humiley contact — "
                                "the portal's email is not working."}, 502)
         db.put_collection_item("dr_access", dr_access.issue_code(access, code))
+        # Recorded as well as the refusals, or "no entries" would mean both "nobody has ever asked"
+        # and "every request worked" — and the panel that reads these would be ambiguous in exactly
+        # the situation it exists to resolve. The CODE is never written here: it is the credential,
+        # and the audit log is read and exported.
+        db.put_collection_item("audit", {
+            "actor": email, "actorId": "", "action": "Daily report code sent",
+            "target": "dr_contractors/" + str(con.get("id")),
+            "detail": "%s · a code was emailed from %s." % (con.get("name") or "?",
+                                                            self._dr_mail_sender()),
+            "ts": self._utc_now()})
         return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
 
     @staticmethod
@@ -11303,6 +11322,39 @@ class Handler(BaseHTTPRequestHandler):
                 con, linkSentAt=self._utc_now(), linkSentTo=", ".join(addrs)))
         return ok, err
 
+    @staticmethod
+    def _dr_recent_codes(con, limit=5):
+        """What happened the last few times somebody asked this contractor's form for a code.
+
+        The form CANNOT say — the same sentence goes back whether or not an address is listed, or
+        the link becomes a way of discovering who is on it. So the person configuring the contractor
+        was the one left guessing, on the screen where the answer actually lives. Reading the audit
+        log here puts "a mail was attempted" and "nothing was ever sent, that address is not on the
+        list" side by side with the address list itself.
+        """
+        cid = str(con.get("id") or "")
+        want = ("Daily report code sent", "Daily report code not sent",
+                "Daily report sign-in refused")
+        out = []
+        for row in db.list_collection("audit"):
+            action = str(row.get("action") or "")
+            if action not in want:
+                continue
+            if ("dr_contractors/" + cid) not in str(row.get("target") or ""):
+                continue
+            out.append({"_seq": row.get("seq") or 0, "ts": row.get("ts") or "", "action": action,
+                        "who": row.get("actor") or "", "detail": str(row.get("detail") or "")[:220]})
+        # Ordered by the audit chain's own SEQUENCE, not by the timestamp. `ts` has one-second
+        # resolution and somebody pressing "send it again" produces several rows inside one second —
+        # exactly when this list is being read. Sorting on ts alone then returned them in whatever
+        # order the store happened to yield, which made "the most recent attempt" a coin toss. Row
+        # ids are uuid4 and carry no order at all; `seq` is the append-only chain's counter and is
+        # the only monotonic thing here.
+        out.sort(key=lambda r: (int(r.get("_seq") or 0), str(r.get("ts") or "")), reverse=True)
+        for r in out:
+            r.pop("_seq", None)
+        return out[:limit]
+
     def _dr_link_ep(self, u, body):
         """Report Setup's "Send the link" / "Show the link"."""
         con, err = self._dr_contractor_for(u, body)
@@ -11316,7 +11368,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "url": url,
                                "emails": dr_access.parse_emails(con.get("emails")),
                                "sentAt": con.get("linkSentAt") or "",
-                               "sentTo": con.get("linkSentTo") or ""})
+                               "sentTo": con.get("linkSentTo") or "",
+                               "codes": self._dr_recent_codes(con)})
         sent, err2 = self._dr_send_link(con)
         if not sent:
             return self._err("The link could not be emailed: %s. The address is above — send it by "

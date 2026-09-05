@@ -51481,7 +51481,7 @@ function _drLinkOut() {
   const d = _DRL; if (!d) return '';
   if (d.error) return '<div style="font-size:12px;color:var(--danger,#B42318);line-height:1.6">' +
     _crmEsc(d.error) + '</div>';
-  return (d.url ? '<label style="display:flex;flex-direction:column;gap:4px;font-size:12px">' +
+  return _drCodeLog(d) + (d.url ? '<label style="display:flex;flex-direction:column;gap:4px;font-size:12px">' +
       '<span style="color:var(--text-light);font-weight:600">' + _t('The link') + '</span>' +
       '<input class="form-control" readonly onclick="this.select()" value="' + _tkEscA(d.url) + '">' +
       '</label>' : '') +
@@ -51490,6 +51490,32 @@ function _drLinkOut() {
       '</div>' : '') +
     (d.note ? '<div style="font-size:12px;color:var(--success,#0E9F5B);margin-top:8px">' +
       _crmEsc(d.note) + '</div>' : '');
+}
+
+
+/* ── what happened the last few times somebody asked for a code ──────────────────────────────────
+   The form cannot say: the same sentence goes back whether or not an address is listed, or the link
+   becomes a way of finding out who is on it. That left the person configuring the contractor
+   guessing, on the one screen where the answer belongs. These rows come from the audit log, so
+   "a mail was attempted" and "nothing was sent, that address is not on the list" sit right beside
+   the address list they are about. */
+function _drCodeLog(d) {
+  const rows = (d && d.codes) || [];
+  if (!rows.length) return '';
+  return '<div style="margin-bottom:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden">' +
+    '<div style="padding:8px 12px;background:var(--soft-bg);font-size:11.5px;font-weight:700;' +
+    'color:var(--text-light);letter-spacing:.04em;text-transform:uppercase">' +
+      _t('Recent sign-in attempts') + '</div>' +
+    rows.map(r => {
+      const sent = r.action === 'Daily report code sent';
+      return '<div style="padding:9px 12px;border-top:1px solid var(--line);font-size:12px;line-height:1.5">' +
+        '<span style="color:' + (sent ? 'var(--success)' : 'var(--danger)') + ';font-weight:700">' +
+          (sent ? '\u2713 ' : '\u2717 ') + '</span>' +
+        '<b>' + _crmEsc(r.who || '') + '</b> · ' +
+        '<span style="color:var(--text-light)">' + _crmEsc(String(r.ts || '').slice(0, 16).replace('T', ' ')) + '</span>' +
+        '<div style="color:var(--text-light);margin-top:2px">' + _crmEsc(r.detail || '') + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
 }
 
 async function _drLinkCall(body, note) {
