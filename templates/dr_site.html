@@ -131,7 +131,10 @@
   /* The middle mark is also the spacer that pushes the contractor's to the right edge, so it must
      be free to grow — `max-width` on .mk would otherwise cap it and leave all three bunched to the
      left, which is what the tablet showed. The IMG inside stays capped; the BOX does not. */
-  .doc .mk.mid{flex:1 1 auto;justify-content:center;max-width:none}
+  /* The middle slot is also the spacer that holds the outer two apart, so it grows whether or not
+     it has a logo to show — `display:none` on it would collapse the header's whole geometry. */
+  .doc .mk.mid{flex:1 1 auto;justify-content:center;max-width:none;display:flex}
+  .doc .mk.mid:not(.on) img{display:none}
   .doc .mk.end{justify-content:flex-end}
   .doc .title{padding:15px 18px 4px;text-align:center}
   .doc .title h1{margin:0;font-size:17px;font-weight:700;color:var(--navy-deep);
@@ -217,12 +220,18 @@
   /* A part heading — 2 Manpower, 5 Work progress, 9 Inspection — for the three numbers the report
      splits into sub-sections. Without them the index read 1, 2.1, 2.2, 3, 4, 5.1, 5.3 as one flat
      run, and the gaps looked like mistakes rather than structure. */
-  .sections .parthead{display:flex;align-items:baseline;gap:12px;padding:13px 8px 5px}
+  /* A MAIN item and a PART heading are the same level of the document and now look it: navy
+     number, the title at full weight. Before, "1 Weather" was a bold clickable row and "2 Manpower"
+     a small grey label, so two things at the same level of the report looked like two different
+     kinds of thing — which is what made the list read as arbitrary.
+     SUB items sit under a rule, indented from their parent's number. */
+  .sections .parthead{display:flex;align-items:center;gap:12px;padding:14px 8px 8px}
   .sections .parthead .no{flex:0 0 2.7em;font-weight:700;color:var(--navy);font-size:13px;
                           font-variant-numeric:tabular-nums}
-  .sections .parthead .nm{font-size:11px;font-weight:700;letter-spacing:.14em;
-                          text-transform:uppercase;color:var(--faint)}
-  .sections button.sub .no{color:var(--emerald-deep);font-size:12.5px}
+  .sections .parthead .nm{font-size:14.5px;font-weight:700;color:var(--ink)}
+  .sections .subs{margin:0 0 6px 2.7em;padding-left:12px;border-left:2px solid var(--line)}
+  .sections .subs button{padding-top:10px;padding-bottom:10px;font-weight:600}
+  .sections button.sub .no{flex:0 0 2.4em;color:var(--emerald-deep);font-size:12.5px}
   .sections button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;
     border:0;background:none;padding:14px 8px;font-weight:600;font-size:14.5px;
     border-radius:var(--r-sm);box-shadow:none}
@@ -253,11 +262,38 @@
   .photos figcaption{font-size:10.5px;color:var(--mut);padding:4px 5px;text-align:center;
                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-  .bar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
-       padding:10px 14px calc(10px + env(safe-area-inset-bottom));margin:16px -14px -40px;
-       display:flex;gap:10px}
+  /* It was a full-bleed white strip with square corners welded to the bottom of the window —
+     the last surface on the page that was not a rounded card on the light ground. Now it is one,
+     and it still sticks, because on a fourteen-section form the Save button has to stay reachable
+     without scrolling back. */
+  .bar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom));
+       background:var(--card);border-radius:var(--r-lg);
+       padding:10px;margin:14px 0 0;display:flex;gap:10px;
+       box-shadow:var(--ring),var(--shadow-card)}
   .bar button{flex:1}
   .foot{font-size:11.5px;color:var(--faint);text-align:center;margin-top:18px;line-height:1.6}
+  /* A closing panel rather than a line of grey text. It says who issued the form, for which
+     project, and what happens to what is typed into it — which is the question somebody filing a
+     document for the first time actually has. */
+  footer.doc-foot{margin:16px 0 0;border-radius:var(--r-panel);overflow:hidden;position:relative;
+    background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
+    color:rgba(255,255,255,.82);box-shadow:var(--shadow-card);padding:20px}
+  footer.doc-foot::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.4;
+    background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);
+    background-size:56px 56px}
+  footer.doc-foot > *{position:relative}
+  footer.doc-foot img{height:22px;width:auto;display:block;margin-bottom:10px}
+  footer.doc-foot .fline{font-size:12.5px;line-height:1.65}
+  footer.doc-foot .fline b{color:#fff;font-weight:700}
+  footer.doc-foot .fmeta{margin-top:12px;padding-top:12px;font-size:11.5px;
+    border-top:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.6);
+    display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  footer.doc-foot .corner{position:absolute;right:0;bottom:0;width:52px;height:52px;
+    background:var(--emerald);clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
+  footer.doc-foot .signout{background:transparent;border:1px solid rgba(255,255,255,.28);
+    color:#fff;font-size:12px;font-weight:700;padding:8px 14px;border-radius:var(--r-pill);
+    box-shadow:none;min-height:0}
   .hide{display:none !important}
   /* HML-BG-002 p.28. Motion is information: it says the page has finished arriving. One pass, no
      stagger — a fourteen-row list that animates in sequence is a list somebody waits for. */
@@ -341,6 +377,8 @@ var VI = {
   "Report date":"Ngày báo cáo","Today":"Hôm nay","Yesterday":"Hôm qua",
   "Section":"Mục",
   "Manpower":"Nhân lực","Work progress":"Tiến độ thi công","Inspection":"Nghiệm thu",
+  "This daily report is issued by Humiley as project management consultant for":"Báo cáo hằng ngày này do Humiley phát hành với vai trò tư vấn quản lý dự án cho",
+  "What you save here goes straight onto the report the client receives, so file the day as it happened — a section left empty is reported as not answered, never as nothing to report.":"Những gì bạn lưu ở đây sẽ đi thẳng vào báo cáo gửi khách hàng, nên hãy ghi đúng thực tế trong ngày — mục bỏ trống sẽ được báo là chưa trả lời, không phải là không có gì để báo.",
   "Client":"Chủ đầu tư","Contractor":"Nhà thầu","Filed by":"Người lập",
   "Reporting for":"Báo cáo cho ngày",
   "Weather":"Thời tiết","Morning":"Buổi sáng","Afternoon":"Buổi chiều","Evening":"Buổi tối",
@@ -583,10 +621,15 @@ function mastheadHtml(){
   var p = S.project || {};
   var yday = shiftDay(S.today || S.date, -1);
   return '<div class="doc">'
+    /* Humiley left, the OWNER centre, the contractor right. The owner's project is the subject of
+       the document, so their mark takes the middle; we issue it, so ours opens; the contractor
+       files it, so theirs closes. The centre slot keeps its width whether or not a logo is set —
+       otherwise a project with no owner artwork slides the other two together and the header
+       silently changes shape between contractors. */
     + '<div class="marks">'
-    +   '<span class="mk' + (p.hasLogo ? ' on' : '') + '" id="mkOwner">'
+    +   '<span class="mk on"><img src="/static/brand/portal-logo-login.png" alt="Humiley"></span>'
+    +   '<span class="mk mid' + (p.hasLogo ? ' on' : '') + '" id="mkOwner">'
     +     '<img id="mkOwnerImg" alt=""></span>'
-    +   '<span class="mk mid on"><img src="/static/brand/portal-logo-login.png" alt="Humiley"></span>'
     +   '<span class="mk end' + (S.hasLogo ? ' on' : '') + '" id="mkCon">'
     +     '<img id="mkConImg" alt=""></span>'
     + '</div>'
@@ -649,11 +692,26 @@ function viewMenu(){
     var grouped = b.rows.length > 1;
     html += '<li>'
       + (grouped ? '<div class="parthead"><span class="no">' + esc(b.major) + '</span>'
-                   + '<span class="nm">' + t(partOf[b.major] || '') + '</span></div>' : '')
-      + b.rows.map(function(r){ return rowHtml(r, grouped); }).join('')
+                   + '<span class="nm">' + t(partOf[b.major] || '') + '</span></div>'
+                   + '<div class="subs">'
+                     + b.rows.map(function(r){ return rowHtml(r, true); }).join('')
+                   + '</div>'
+                 : rowHtml(b.rows[0], false))
       + '</li>';
   });
-  html += '</ul></div><button class="link" id="out">' + t('Sign out') + '</button></div>';
+  var p = S.project || {};
+  html += '</ul></div>'
+    + '<footer class="doc-foot">'
+    +   '<img src="/static/brand/Humiley_Logo_White.png" alt="Humiley">'
+    +   '<div class="fline">'
+    +     t('This daily report is issued by Humiley as project management consultant for') + ' <b>'
+    +     esc(p.name || '') + '</b>. '
+    +     t('What you save here goes straight onto the report the client receives, so file the day as it happened — a section left empty is reported as not answered, never as nothing to report.')
+    +   '</div>'
+    +   '<div class="fmeta"><span>' + esc(S.contractor || '') + ' · ' + esc(S.email || '') + '</span>'
+    +     '<button class="signout" id="out">' + t('Sign out') + '</button></div>'
+    +   '<span class="corner"></span>'
+    + '</footer></div>';
   show(html);
   el('dt').onchange = function(){ if (this.value) load(this.value); };
   /* The two days anybody actually files. A site fills in today's report at the end of today, or
