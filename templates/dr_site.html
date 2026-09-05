@@ -31,9 +31,17 @@
     --danger:#C00000; --warn:#F59E0B;
     --ink:#1F2937; --mut:#5C6470; --faint:#8A93A5;
     --bg:#f0f2f8; --card:#FFFFFF; --line:#dde2ee; --soft:#e8edf6;
-    --r-sm:8px; --r-md:12px; --r-btn:14px; --r-lg:24px; --r-pill:999px;
-    --shadow-sm:0 1px 2px rgba(32,80,144,.06);
-    --shadow-card:0 14px 34px rgba(32,80,144,.09);
+    /* Radii and elevation from the AeroSano system (globals.css → HML-BG-002 Rev 07.0):
+       card 1.25rem, panel 1.75rem, and elevation that is FLAT AND ENGINEERED — a hairline ring
+       plus a barely-there lift, not the soft 34px drop this page had. On a phone in daylight the
+       heavy shadow read as a smudge under every card; the ring reads as a drawn edge, which is what
+       a document wants. */
+    --r-sm:8px; --r-md:12px; --r-btn:999px; --r-lg:20px; --r-panel:28px; --r-pill:999px;
+    --shadow-sm:0 1px 2px rgba(15,38,71,.04);
+    --shadow-card:0 1px 2px rgba(15,38,71,.04),0 8px 24px rgba(15,38,71,.06);
+    --ring:inset 0 0 0 1px var(--line);
+    /* HML-BG-002 p.28: ease-out in, ease-in out, no bounce. */
+    --ease:cubic-bezier(.16,.84,.44,1);
   }
   *,*::before,*::after{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -42,7 +50,16 @@
     font:16px/1.55 Calibri,'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
     padding-bottom:env(safe-area-inset-bottom);
     -webkit-text-size-adjust:100%;
+    text-rendering:optimizeLegibility;
+    -webkit-font-smoothing:antialiased;
+    font-synthesis-weight:none;   /* never let the browser fake a weight the face does not have */
   }
+  h1,h2,h3{color:var(--navy);font-weight:700;letter-spacing:-.018em;text-wrap:balance}
+  p{text-wrap:pretty}
+  ::selection{background:var(--emerald);color:#fff}
+  /* Emerald is the accent, and the focus ring is where an accent earns its keep — it has to be the
+     one thing on the page that is unmistakably not part of the form. */
+  :focus-visible{outline:2px solid var(--emerald);outline-offset:3px;border-radius:4px}
   .wrap{max-width:680px;margin:0 auto;padding:0 14px 40px}
 
 
@@ -51,7 +68,11 @@
   header{background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
          color:#fff;padding:calc(14px + env(safe-area-inset-top)) 0 16px}
   header .wrap{display:flex;align-items:center;gap:12px}
-  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25;min-width:0}
+  /* `color:#fff` explicitly, not inherited. The base h1 rule sets headings navy — correct on every
+     white card and catastrophic here, where it painted the title navy on the navy bar and left it
+     just about readable. A colour that arrives by inheritance is a colour one later rule can take
+     away without touching this one. */
+  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25;min-width:0;color:#fff}
   header .who{font-size:11.5px;opacity:.85;font-weight:400;display:block;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* The three marks moved onto the document masthead below, where they belong: this bar is the
@@ -61,8 +82,8 @@
   .lang{background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12px;padding:7px 11px;
         border-radius:var(--r-pill);cursor:pointer;font-weight:600;flex:0 0 auto}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
-        padding:18px;margin-top:12px;box-shadow:var(--shadow-card)}
+  .card{background:var(--card);border:0;border-radius:var(--r-lg);
+        padding:18px;margin-top:12px;box-shadow:var(--ring),var(--shadow-card)}
 
   /* ── the masthead ───────────────────────────────────────────────────────────────────────────
      THREE marks, in the order the printed report uses them: the OWNER's on the left because it is
@@ -70,8 +91,8 @@
      and the CONTRACTOR's on the right because they are the ones filing it. Somebody who signs this
      should be able to see at a glance whose report it is; the form used to say only "Daily Report"
      and the contractor's own name, which is the one party that never needed telling. */
-  .doc{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
-       margin-top:12px;overflow:hidden;box-shadow:var(--shadow-card)}
+  .doc{background:var(--card);border:0;border-radius:var(--r-panel);
+       margin-top:12px;overflow:hidden;box-shadow:var(--ring),var(--shadow-card)}
   .doc .marks{display:flex;align-items:center;gap:12px;padding:14px 18px;
               border-bottom:1px solid var(--line);background:#fff}
   .doc .mk{flex:0 0 auto;display:none;align-items:center;justify-content:center;
@@ -99,8 +120,12 @@
      words so a mis-tapped month is visible rather than merely present, and offers the two days
      anybody actually files. */
   .dt{padding:14px 18px;border-top:1px solid var(--line);background:var(--soft)}
-  .dt .lab{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);
-           font-weight:700;margin-bottom:6px}
+  /* The eyebrow is the system's own device: uppercase, tracked out, an emerald dot holding the
+     line. It marks the one control on this page that decides which day everything else belongs to. */
+  .dt .lab{display:inline-flex;align-items:flex-start;gap:8px;font-size:11px;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--emerald-deep);font-weight:700;margin-bottom:8px}
+  .dt .lab::before{content:"";width:8px;height:8px;margin-top:.42em;border-radius:999px;
+                   background:var(--emerald);flex:none}
   .dt .pick{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .dt input[type=date]{flex:1 1 190px;min-width:0;font-weight:600;background:#fff}
   .dt .quick{display:flex;gap:6px}
@@ -111,7 +136,7 @@
   .filed{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;
          color:var(--emerald-deep);background:rgba(0,176,96,.12);border:1px solid rgba(0,176,96,.3);
          border-radius:var(--r-pill);padding:3px 10px}
-  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep);font-weight:700}
+  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep);font-weight:700;letter-spacing:-.012em}
   p.hint{font-size:13px;color:var(--mut);margin:0 0 12px;line-height:1.5}
 
   label{display:block;font-size:12.5px;color:var(--mut);font-weight:600;margin:0 0 4px}
@@ -121,16 +146,24 @@
   }
   /* 16px is not a style choice: anything smaller makes iOS Safari zoom the whole page on focus. */
   textarea{min-height:64px;resize:vertical}
-  input:focus,select:focus,textarea:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy)}
+  /* ONE focus language. `input:focus` (0,1,1) outranks the `:focus-visible` rule above (0,1,0), so
+     fields were quietly keeping a navy ring while every button got the emerald one — two focus
+     colours on one page, by accident rather than decision. The ring is emerald everywhere; the
+     navy BORDER stays, because that is the field saying it is the active one. */
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--emerald);outline-offset:3px;
+                                          border-color:var(--navy)}
   .row{margin-bottom:12px}
   .grid{display:grid;gap:10px}
   .g2{grid-template-columns:1fr 1fr}
   .g3{grid-template-columns:repeat(3,1fr)}
 
-  button{font:15px/1 inherit;font-weight:600;border-radius:var(--r-btn);border:1px solid var(--line);
-         background:var(--card);color:var(--ink);padding:13px 16px;cursor:pointer;
-         box-shadow:var(--shadow-sm)}
-  button:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
+  button{font:15px/1 inherit;font-weight:700;border-radius:var(--r-btn);border:1px solid var(--line);
+         background:var(--card);color:var(--ink);padding:13px 18px;cursor:pointer;
+         box-shadow:var(--shadow-sm);
+         transition:background-color .18s var(--ease),color .18s var(--ease),
+                    border-color .18s var(--ease),transform .18s var(--ease),
+                    box-shadow .18s var(--ease)}
+  button:active{transform:translateY(1px)}
   .primary{background:var(--navy);border-color:var(--navy);color:#fff}
   .wide{width:100%}
   .link{background:none;border:0;color:var(--navy);text-decoration:underline;padding:6px 2px;font-size:13.5px}
@@ -146,7 +179,10 @@
   .sections li{border-top:1px solid var(--line)}
   .sections li:first-child{border-top:0}
   .sections button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;
-    border:0;background:none;padding:14px 2px;font-weight:600;font-size:14.5px}
+    border:0;background:none;padding:14px 8px;font-weight:600;font-size:14.5px;
+    border-radius:var(--r-sm);box-shadow:none}
+  .sections button:hover{background:var(--soft)}
+  .sections button:active{transform:none}
   .sections .n{flex:1}
   .count{font-size:12px;font-weight:600;color:var(--faint);font-variant-numeric:tabular-nums}
   .count.has{color:var(--emerald)}
