@@ -91,8 +91,13 @@
      and the CONTRACTOR's on the right because they are the ones filing it. Somebody who signs this
      should be able to see at a glance whose report it is; the form used to say only "Daily Report"
      and the contractor's own name, which is the one party that never needed telling. */
-  .doc{background:var(--card);border:0;border-radius:var(--r-panel);
+  .doc{background:var(--card);border:0;border-radius:var(--r-panel);position:relative;
        margin-top:12px;overflow:hidden;box-shadow:var(--ring),var(--shadow-card)}
+  /* The Humiley signature graphic: ONE emerald corner triangle per surface. It goes on the document
+     panel and nowhere else — repeated on every card it stops being a signature and becomes a
+     pattern. Sized so it sits under the date line rather than beside anything readable. */
+  .doc .corner{position:absolute;right:0;bottom:0;width:52px;height:52px;background:var(--emerald);
+               clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
   .doc .marks{display:flex;align-items:center;gap:12px;padding:14px 18px;
               border-bottom:1px solid var(--line);background:#fff}
   .doc .mk{flex:0 0 auto;display:none;align-items:center;justify-content:center;
@@ -137,6 +142,13 @@
          color:var(--emerald-deep);background:rgba(0,176,96,.12);border:1px solid rgba(0,176,96,.3);
          border-radius:var(--r-pill);padding:3px 10px}
   h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep);font-weight:700;letter-spacing:-.012em}
+  /* Section eyebrow: the same device as the date's, so an open section announces which part of the
+     report it becomes before it asks for anything. */
+  .eyebrow{display:inline-flex;align-items:flex-start;gap:8px;font-size:11px;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--emerald-deep);font-weight:700;margin:0 0 6px}
+  .eyebrow::before{content:"";width:8px;height:8px;margin-top:.42em;border-radius:999px;
+                   background:var(--emerald);flex:none}
+  .card > h2:first-of-type{margin-top:0}
   p.hint{font-size:13px;color:var(--mut);margin:0 0 12px;line-height:1.5}
 
   label{display:block;font-size:12.5px;color:var(--mut);font-weight:600;margin:0 0 4px}
@@ -184,6 +196,12 @@
   .sections button:hover{background:var(--soft)}
   .sections button:active{transform:none}
   .sections .n{flex:1}
+  /* The section's number in the PRINTED report, in the accent colour. This is the two-tone heading
+     the system asks for — one navy line, one emerald phrase — with the emerald carrying something
+     true rather than a word picked for emphasis. It also turns the menu into an index: a person can
+     see that 5.2 is missing and know why (the Gantt is drawn by the portal, not filed by the site). */
+  .sections .no{flex:0 0 2.7em;font-weight:700;color:var(--emerald-deep);
+                font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:.01em}
   .count{font-size:12px;font-weight:600;color:var(--faint);font-variant-numeric:tabular-nums}
   .count.has{color:var(--emerald)}
   .chev{color:var(--faint);font-size:13px}
@@ -208,6 +226,10 @@
   .bar button{flex:1}
   .foot{font-size:11.5px;color:var(--faint);text-align:center;margin-top:18px;line-height:1.6}
   .hide{display:none !important}
+  /* HML-BG-002 p.28. Motion is information: it says the page has finished arriving. One pass, no
+     stagger — a fourteen-row list that animates in sequence is a list somebody waits for. */
+  @keyframes reveal{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .reveal{animation:reveal .4s var(--ease) both}
   /* ── narrow phones ──────────────────────────────────────────────────────────────────────────
      Two number fields side by side stop being usable somewhere around a 360px screen — the label
      wraps to three lines and the input is too small to hit. Below that they stack. */
@@ -281,6 +303,7 @@ var VI = {
   "Only the addresses Humiley has listed for your company can open this form.":
     "Chỉ những địa chỉ Humiley đã đăng ký cho công ty bạn mới mở được biểu mẫu này.",
   "Report date":"Ngày báo cáo","Today":"Hôm nay","Yesterday":"Hôm qua",
+  "Section":"Mục",
   "Client":"Chủ đầu tư","Contractor":"Nhà thầu","Filed by":"Người lập",
   "Reporting for":"Báo cáo cho ngày",
   "Weather":"Thời tiết","Morning":"Buổi sáng","Afternoon":"Buổi chiều","Evening":"Buổi tối",
@@ -465,15 +488,24 @@ async function load(date){
 /* Which sections exist, in the order the printed report prints them, and how many rows each holds.
    The count is the whole navigation: a person coming back after lunch needs to see what is still
    empty without opening eleven screens. */
+/* The fourth entry is the section's number in the PRINTED report — read off the exporter's own
+   headings in index.html (`_drpHead`), not invented here, so the form and the document cannot
+   disagree about what 5.1 is. 5.2 is deliberately absent: the Work Progress Gantt is DRAWN by the
+   portal from the progress figures, not filed by the site, so there is nothing to collect for it. */
 var SECTIONS = [
-  ['weather','Weather','obj'], ['mgmt','Management staff','counts'], ['workers','Workers','counts'],
-  ['equipment','Equipment & machinery','rows'], ['materials','Material delivery','rows'],
-  ['progress','Work completed today','rows'], ['plan','Next day work plan','rows'],
-  ['photos','Progress photos','photos'], ['documents','Documents','rows'],
-  ['defects','Defects','rows'], ['inspections','Inspection today','rows'],
-  ['inspectionPlan','Next day inspection','rows'], ['safety','Safety checks','safety'],
-  ['recommendations','Requests & recommendations','rows']
+  ['weather','Weather','obj','1'], ['mgmt','Management staff','counts','2.1'],
+  ['workers','Workers','counts','2.2'],
+  ['equipment','Equipment & machinery','rows','3'], ['materials','Material delivery','rows','4'],
+  ['progress','Work completed today','rows','5.1'], ['plan','Next day work plan','rows','5.3'],
+  ['photos','Progress photos','photos','6'], ['documents','Documents','rows','7'],
+  ['defects','Defects','rows','8'], ['inspections','Inspection today','rows','9.1'],
+  ['inspectionPlan','Next day inspection','rows','9.2'], ['safety','Safety checks','safety','10'],
+  ['recommendations','Requests & recommendations','rows','11']
 ];
+function sectionNo(key){
+  for (var i = 0; i < SECTIONS.length; i++) if (SECTIONS[i][0] === key) return SECTIONS[i][3] || '';
+  return '';
+}
 function sectionCount(key, kind){
   if (kind === 'photos') return S.photos.length;
   var v = S.report[key];
@@ -540,18 +572,19 @@ function mastheadHtml(){
     +   '</div>'
     +   '<div class="said">' + t('Reporting for') + ' <b>' + esc(saidDate(S.date)) + '</b></div>'
     +   (S.report.submittedAt ? '<span class="filed">' + t('Filed') + '</span>' : '')
-    + '</div></div>';
+    + '</div><span class="corner"></span></div>';
 }
 
 function viewMenu(){
-  var html = mastheadHtml() + '<div class="card"><ul class="sections">';
+  var html = '<div class="reveal">' + mastheadHtml() + '<div class="card"><ul class="sections">';
   SECTIONS.forEach(function(sec){
     var n = sectionCount(sec[0], sec[2]);
-    html += '<li><button data-sec="' + sec[0] + '"><span class="n">' + t(sec[1]) + '</span>'
+    html += '<li><button data-sec="' + sec[0] + '"><span class="no">' + esc(sec[3] || '') + '</span>'
+      + '<span class="n">' + t(sec[1]) + '</span>'
       + '<span class="count' + (n ? ' has' : '') + '">' + (n || '—') + '</span>'
       + '<span class="chev">›</span></button></li>';
   });
-  html += '</ul></div><button class="link" id="out">' + t('Sign out') + '</button>';
+  html += '</ul></div><button class="link" id="out">' + t('Sign out') + '</button></div>';
   show(html);
   el('dt').onchange = function(){ if (this.value) load(this.value); };
   /* The two days anybody actually files. A site fills in today's report at the end of today, or
@@ -605,7 +638,12 @@ function renderSection(note){
            : kind === 'safety' ? renderSafety()
            : kind === 'photos' ? renderPhotos()
            : renderRows(key);
-  show('<div class="card"><h2>' + t(S.section[1]) + '</h2>' + body + (note || '') + '</div>'
+  /* Eyebrow first: the number this becomes in the report the client reads. Somebody filling in a
+     column of headcounts should be able to see, without asking, that it is table 2.1. */
+  var no = S.section[3] || '';
+  show('<div class="card reveal">'
+     + (no ? '<div class="eyebrow">' + t('Section') + ' ' + esc(no) + '</div>' : '')
+     + '<h2>' + t(S.section[1]) + '</h2>' + body + (note || '') + '</div>'
      + (kind === 'photos' ? '' :
         '<div class="bar"><button id="back">' + t('Back') + '</button>'
         + '<button class="primary" id="save">' + t('Save') + '</button></div>'));
