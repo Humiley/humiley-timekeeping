@@ -319,7 +319,14 @@
      four-character column, the meta printed over it, and the panel grew to 281px — the exact
      opposite of matching the header. It stacks on a phone, as the header's own content does, and
      becomes a single bar the moment there is room for one. */
-  footer.doc-foot .frow{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+  /* `flex:1 1 auto;width:100%` is load-bearing, not belt-and-braces. `footer.doc-foot` is itself a
+     flex container, so .frow is a flex ITEM: without being told to grow it is sized to its content
+     and stops wherever the text happens to end. Measured at a 1331px viewport, the row came out
+     907px inside a 1299px bar — Sign out floating 372px short of the edge, reading as centred
+     rather than as the end of the bar. .fline's own `flex:1 1 auto` could not fix it: there was no
+     free space inside .frow to distribute, because .frow had none. */
+  footer.doc-foot .frow{display:flex;flex-direction:column;align-items:flex-start;gap:12px;
+                        flex:1 1 auto;width:100%;min-width:0}
   footer.doc-foot .fmeta{flex-wrap:wrap}
   @media (min-width:700px){
     footer.doc-foot .frow{flex-direction:row;align-items:center;gap:16px;
