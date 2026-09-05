@@ -5940,7 +5940,7 @@ async function tkPinSave() {
 }
 async function tkPinRemove() {
   const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
-  const cur = demo ? '' : prompt(_t('Enter your current PIN to remove it:'));
+  const cur = demo ? '' : await tkPrompt(_t('Enter your current PIN to remove it:'));
   if (!demo && !cur) return;
   try {
     const body = { action: 'remove' };
@@ -10342,7 +10342,7 @@ async function tkStartPip(empId, name, dept) {
   let e = empId ? _hrEmp(empId) : null;
   if (!empId) {
     const opts = (_DEMO_EMPLOYEES || []).filter(x => (x.status || 'Active').toLowerCase() !== 'inactive');
-    const pick = prompt('Employee name for the PIP:'); if (!pick) return;
+    const pick = await tkPrompt('Employee name for the PIP:'); if (!pick) return;
     e = opts.find(x => (x.name || '').toLowerCase().includes(pick.toLowerCase())); if (!e) { toast('Employee not found', 'warn'); return; }
     empId = e.id; name = e.name; dept = e.dept;
   }
@@ -51695,7 +51695,7 @@ async function tkDrClientLogo(input) {
 }
 
 async function tkDrAddContractor() {
-  const name = prompt(_t('Contractor name'));
+  const name = await tkPrompt(_t('Contractor name'));
   if (!name || !name.trim()) return;
   const id = 'DRC-' + Date.now().toString(36).toUpperCase();
   try {
