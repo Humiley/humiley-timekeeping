@@ -6544,6 +6544,7 @@ window._VI = {
   'The link': 'Liên kết',
   'Sent.': 'Đã gửi.',
   'Last emailed {0} to {1}': 'Gửi lần cuối ngày {0} tới {1}',
+  'from {0}': 'từ {0}',
   'Sign every device out of this contractor’s form?\n\nThe link still works. Anyone still on the list can sign in again with a new code.': 'Đăng xuất mọi thiết bị khỏi biểu mẫu của nhà thầu này?\n\nLiên kết vẫn hoạt động. Ai còn trong danh sách vẫn đăng nhập lại được bằng mã mới.',
   'Every device has been signed out. The link still works.': 'Mọi thiết bị đã được đăng xuất. Liên kết vẫn hoạt động.',
   'Could not sign devices out': 'Không đăng xuất được các thiết bị',

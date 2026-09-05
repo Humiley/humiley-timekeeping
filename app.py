@@ -448,6 +448,18 @@ def _mail_senders():
          "purpose": "Acceptance inspection invitations to the consultant and client"},
         {"address": INVTRACK["mailbox"], "access": "read", "purpose": "Invoice inbox sync"},
     ]
+    # Link and code emails go out from the person who ISSUED the link, so the set of mailboxes in
+    # use is data rather than a constant. The panel has to watch what is actually being sent from —
+    # and an Exchange application access policy scoped from this list has to include them, or the
+    # first code from a newly-added colleague fails and nothing on any screen says why.
+    try:
+        for c in db.list_collection("dr_contractors"):
+            who = str(c.get("issuedBy") or "").strip().lower()
+            if who:
+                out.append({"address": who, "access": "send",
+                            "purpose": "Issued the link for %s" % (c.get("name") or "a contractor")})
+    except Exception:
+        pass
     # Two departments pointed at one mailbox is a legitimate configuration, and the panel should say
     # so once rather than draw the same row twice with different purposes.
     merged = {}
@@ -11761,7 +11773,7 @@ class Handler(BaseHTTPRequestHandler):
             "actor": email, "actorId": "", "action": "Daily report code sent",
             "target": "dr_contractors/" + str(con.get("id")),
             "detail": "%s · a code was emailed from %s." % (con.get("name") or "?",
-                                                            self._dr_mail_sender()),
+                                                            self._dr_mail_sender(con)),
             "ts": self._utc_now()})
         return self._json({"ok": True, "message": dr_access.SENT_MESSAGE})
 
@@ -12108,10 +12120,19 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     # ── the emails ───────────────────────────────────────────────────────────────────────────────
-    def _dr_mail_sender(self):
-        """See `_dr_sender` — one definition, so the health panel watches the address this actually
-        returns rather than the one it would have guessed."""
-        return _dr_sender()
+    def _dr_mail_sender(self, con=None):
+        """The mailbox a daily-report email goes out from.
+
+        When a contractor was set up by somebody, that somebody sends its codes: nobody is signed in
+        at the moment a code is requested — the site is anonymous, that is the whole point of the
+        link — so "the current user" does not exist there. `issuedBy`, recorded when the link was
+        emailed, is the nearest true answer and is the person the site already corresponds with.
+
+        Falls back to the department mailbox for a contractor whose link was never emailed from the
+        portal (set up before this, or the link handed over by hand).
+        """
+        who = dr_access.norm_email((con or {}).get("issuedBy"))
+        return who or _dr_sender()
 
     def _dr_send_code(self, con, email, code):
         """(sent, error). SYNCHRONOUS on purpose — the caller has to know.
@@ -12120,15 +12141,24 @@ class Handler(BaseHTTPRequestHandler):
         wrong for a credential: "a code is on its way" when nothing left the server leaves somebody
         watching an inbox with no way to tell that from a slow mail server.
         """
-        sender = self._dr_mail_sender()
+        sender = self._dr_mail_sender(con)
         if not sender:
             return False, "no sender address configured"
         html = _dr_code_email_html(con.get("name") or "", code)
         return _graph_send_now(sender, [email], "Your daily report code: %s" % code, html)
 
-    def _dr_send_link(self, con, to=None):
-        """Send the permanent form link. Used on contractor creation and from Report Setup."""
-        sender = self._dr_mail_sender()
+    def _dr_send_link(self, con, to=None, u=None):
+        """Send the permanent form link, FROM the person sending it.
+
+        A site being handed a permanent sign-in link should be able to see who handed it to them and
+        reply to that person — "procurement@" is a department, and the contractor's question is
+        always for an individual. The caller has already proved write access to the project (see
+        `_dr_contractor_for`), so their own mailbox is the honest From.
+
+        Falls back to the department mailbox when the account has no address on it, because a link
+        that cannot be emailed at all is worse than one from a shared box.
+        """
+        sender = dr_access.norm_email((u or {}).get("email")) or self._dr_mail_sender()
         addrs = [dr_access.norm_email(a) for a in (to or dr_access.parse_emails(con.get("emails")))]
         addrs = [a for a in addrs if a]
         if not (sender and addrs and con.get("token")):
@@ -12137,8 +12167,13 @@ class Handler(BaseHTTPRequestHandler):
         html = _dr_link_email_html(con.get("name") or "", url)
         ok, err = _graph_send_now(sender, addrs, "Your Humiley daily report link", html)
         if ok:
+            # `issuedBy` is what the CODE emails will be sent from afterwards. The person who set a
+            # site up is the person that site already knows, and a six-digit code arriving from a
+            # name they recognise is the difference between entering it and forwarding it to
+            # somebody to ask whether it is real.
             db.put_collection_item("dr_contractors", dict(
-                con, linkSentAt=self._utc_now(), linkSentTo=", ".join(addrs)))
+                con, linkSentAt=self._utc_now(), linkSentTo=", ".join(addrs),
+                issuedBy=sender))
         return ok, err
 
     @staticmethod
@@ -12188,18 +12223,24 @@ class Handler(BaseHTTPRequestHandler):
                                "emails": dr_access.parse_emails(con.get("emails")),
                                "sentAt": con.get("linkSentAt") or "",
                                "sentTo": con.get("linkSentTo") or "",
+                               "sentFrom": con.get("issuedBy") or "",
                                "codes": self._dr_recent_codes(con)})
-        sent, err2 = self._dr_send_link(con)
+        sent, err2 = self._dr_send_link(con, u=u)
         if not sent:
             return self._err("The link could not be emailed: %s. The address is above — send it by "
                              "hand if you need to." % (err2 or "unknown reason"), 502)
+        # Re-read rather than recompute: `_dr_send_link` decides the sender and records it, and a
+        # second copy of that decision here is a second thing to keep in step.
+        fresh = db.get_collection_item("dr_contractors", con["id"]) or con
         db.put_collection_item("audit", {
             "actor": u.get("name") or "System", "actorId": u.get("id") or "",
             "action": "Daily report link sent", "target": "dr_contractors/" + str(con["id"]),
-            "detail": "%s → %s" % (con.get("name") or "?",
-                                   ", ".join(dr_access.parse_emails(con.get("emails")))),
+            "detail": "%s → %s (from %s)" % (con.get("name") or "?",
+                                             ", ".join(dr_access.parse_emails(con.get("emails"))),
+                                             fresh.get("issuedBy") or _dr_sender()),
             "ts": self._utc_now()})
-        return self._json({"ok": True, "url": url, "sent": True})
+        return self._json({"ok": True, "url": url, "sent": True,
+                           "sentFrom": fresh.get("issuedBy") or ""})
 
     def _dr_revoke_ep(self, u, body):
         """Sign every device out of one contractor's form, and optionally re-mint the link.

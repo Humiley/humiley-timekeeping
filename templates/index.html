@@ -55032,6 +55032,10 @@ function _drLinkOut() {
       '</label>' : '') +
     (d.sentAt ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:6px">' +
       _tp('Last emailed {0} to {1}', tkFmtDate(String(d.sentAt).slice(0, 10)), d.sentTo || '—') +
+      /* Who it came from is not decoration: the codes go out from this same mailbox afterwards, so
+         this line is also the answer to "which address should the contractor whitelist, and which
+         one has to be in the Exchange access policy". */
+      (d.sentFrom ? ' · ' + _tp('from {0}', _crmEsc(d.sentFrom)) : '') +
       '</div>' : '') +
     (d.note ? '<div style="font-size:12px;color:var(--success,#0E9F5B);margin-top:8px">' +
       _crmEsc(d.note) + '</div>' : '');
