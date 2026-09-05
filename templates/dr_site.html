@@ -335,7 +335,10 @@ function viewCode(note){
       var r = await api('/api/dr/site/code', { token: TOKEN, email: S.email });
       /* The server owns the throttle — three per fifteen minutes per address. When it says wait,
          it says how long, and that answer is shown rather than a guess made here. */
-      el('resendMsg').innerHTML = msg(r.throttled ? 'info' : 'ok', r.message || t('Sent.'));
+      /* NEVER 'ok' green. The reply here is the same sentence whether or not the address is on
+         the list, so it confirms nothing — and a green tick on a message designed to say nothing
+         is a false green of exactly the kind this feature keeps producing. Neutral, always. */
+      el('resendMsg').innerHTML = msg('info', r.message || t('Sent.'));
       _resendAt = Date.now() + (r.throttled ? 60000 : 45000);
     } catch(e){
       el('resendMsg').innerHTML = msg('err', e.message);

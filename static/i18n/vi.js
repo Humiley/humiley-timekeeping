@@ -6558,6 +6558,7 @@ window._VI = {
   'No address is saved for this contractor, so every attempt to sign in is refused — and the form still says a code is on its way, because it must not reveal who is on the list. Add an address above and press Save setup.': 'Chưa có địa chỉ nào được lưu cho nhà thầu này, nên mọi lần đăng nhập đều bị từ chối — mà biểu mẫu vẫn báo là mã đang được gửi, vì nó không được phép tiết lộ ai có trong danh sách. Hãy thêm địa chỉ ở trên rồi bấm Lưu thiết lập.',
   'Saved and in force': 'Đã lưu và đang có hiệu lực',
   'Typing above changes nothing until Save setup is pressed.': 'Gõ ở trên không thay đổi gì cho tới khi bấm Lưu thiết lập.',
+  'Recent sign-in attempts': 'Các lần đăng nhập gần đây',
   /* ── Daily Report ── the construction daily report to the client: its ten sections, the
      SharePoint lists behind them, and the eleven shipped safety checks. The people who
      fill these forms in work on the site, so the screen has to be readable there. */
