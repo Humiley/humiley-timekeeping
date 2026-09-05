@@ -560,7 +560,7 @@ ELE = [
     F("ELE-303", "ELE", "Tủ trung thế", "MV switchgear", C_MFR,
       ("Thông số tủ đúng thiết kế và đơn vị điện lực chấp thuận", "Ratings as designed and accepted by the utility", M_D, C_DWG),
       ("Vận chuyển, lắp đặt không va đập, tủ cân bằng", "Delivered and installed without impact, panel level", M_V),
-      ("Liên động cơ khí, khoá liên động hoạt động đúng", "Mechanical interlocks operate correctly", M_F, C_MFR),
+      ("Liên động cơ khí, khóa liên động hoạt động đúng", "Mechanical interlocks operate correctly", M_F, C_MFR),
       ("Đo cách điện và thử cao áp theo quy trình", "Insulation and high-voltage withstand tests to procedure", M_T, C_MFR),
       ("Thử tác động rơ le bảo vệ theo cài đặt được duyệt", "Protection relays tested to the approved settings", M_T, C_SPEC),
       ("Nối đất tủ và hệ thống tiếp địa liên tục", "Panel earthing continuous with the earthing system", M_T, "TCVN 9358:2012"),
@@ -614,7 +614,7 @@ ELE = [
     F("ELE-401", "ELE", "Hệ thống nối đất", "Earthing system", "TCVN 9358:2012",
       ("Sơ đồ nối đất đúng thiết kế (TN-S, TT…)", "Earthing arrangement as designed (TN-S, TT…)", M_C, C_DWG),
       ("Cọc tiếp địa đủ số lượng, đủ độ sâu, đúng khoảng cách", "Electrodes to the required number, depth and spacing", M_M, C_DWG),
-      ("Mối nối hàn hoá nhiệt hoặc ép đạt yêu cầu", "Exothermic or compression joints sound", M_V, C_MFR),
+      ("Mối nối hàn hóa nhiệt hoặc ép đạt yêu cầu", "Exothermic or compression joints sound", M_V, C_MFR),
       ("Mối nối ngầm được bảo vệ chống ăn mòn", "Buried joints protected against corrosion", M_V),
       ("Điện trở nối đất đo được đạt giá trị thiết kế", "Measured earth resistance meets the design value", M_T, C_DWG),
       ("Hộp kiểm tra tiếp địa lắp đặt, tiếp cận được", "Test boxes installed and accessible", M_V, "TCVN 9358:2012"),
@@ -660,8 +660,8 @@ LTN = [
 
     F("LTN-103", "LTN", "Hệ tiếp địa chống sét và đo kiểm", "Lightning earth system and testing", "TCVN 9385:2012",
       ("Cọc, băng tiếp địa đủ số lượng, đủ độ sâu", "Rods and tapes to the required number and depth", M_M, C_DWG),
-      ("Mối nối hàn hoá nhiệt đạt yêu cầu", "Exothermic joints sound", M_V),
-      ("Hoá chất giảm điện trở sử dụng đúng quy trình (nếu có)", "Resistance-reducing compound used to procedure where applied", M_V, C_MFR),
+      ("Mối nối hàn hóa nhiệt đạt yêu cầu", "Exothermic joints sound", M_V),
+      ("Hóa chất giảm điện trở sử dụng đúng quy trình (nếu có)", "Resistance-reducing compound used to procedure where applied", M_V, C_MFR),
       ("Điện trở nối đất đo được đạt giá trị thiết kế", "Measured earth resistance meets the design value", M_T, C_DWG),
       ("Đo trong điều kiện thời tiết ghi nhận được", "Measurement taken with the weather conditions recorded", M_T),
       ("Thiết bị đo còn hạn hiệu chuẩn", "Test instrument within calibration", M_D),
@@ -700,7 +700,7 @@ ELV = [
       ("Khoảng cách thao tác trước và sau rack đạt yêu cầu", "Front and rear working clearances adequate", M_M, "TCVN 9250:2021"),
       ("Nguồn cấp kép, PDU đúng thiết kế", "Dual supply and PDUs as designed", M_C, C_DWG),
       ("Quản lý cáp gọn gàng, không chắn luồng khí", "Cable management tidy and not blocking airflow", M_V),
-      ("Điều hoà, thông gió phòng thiết bị hoạt động", "Room cooling and ventilation operating", M_F, C_DWG),
+      ("Điều hòa, thông gió phòng thiết bị hoạt động", "Room cooling and ventilation operating", M_F, C_DWG),
       ("Chữa cháy phòng thiết bị đúng hồ sơ thẩm duyệt", "Room fire protection as appraised", M_C, "Hồ sơ thẩm duyệt PCCC"),
       ("Kiểm soát vào ra phòng thiết bị hoạt động", "Room access control operating", M_F)),
 
@@ -716,8 +716,8 @@ ELV = [
       ("Camera phục vụ thoát nạn, PCCC theo hồ sơ thẩm duyệt", "Cameras serving escape and fire duties as appraised", M_C, "Hồ sơ thẩm duyệt PCCC")),
 
     F("ELV-104", "ELV", "Kiểm soát ra vào", "Access control", C_SPEC,
-      ("Vị trí đầu đọc, khoá từ đúng bản vẽ", "Reader and lock positions as per drawing", M_M, C_DWG),
-      ("Khoá cửa thoát nạn tự nhả khi báo cháy và khi mất điện", "Escape door locks release on fire alarm and on power failure", M_F, "QCVN 06:2022/BXD"),
+      ("Vị trí đầu đọc, khóa từ đúng bản vẽ", "Reader and lock positions as per drawing", M_M, C_DWG),
+      ("Khóa cửa thoát nạn tự nhả khi báo cháy và khi mất điện", "Escape door locks release on fire alarm and on power failure", M_F, "QCVN 06:2022/BXD"),
       ("Nút thoát khẩn cấp lắp đúng vị trí, hoạt động", "Emergency release button correctly located and operating", M_F, "QCVN 06:2022/BXD"),
       ("Đấu nối liên động với hệ báo cháy đúng thiết kế", "Interface to the fire alarm as designed", M_F, C_DWG),
       ("Phân quyền theo nhóm hoạt động đúng", "Group permissions operate correctly", M_F),
@@ -734,7 +734,7 @@ ELV = [
       ("Giám sát đứt/chập tuyến loa hoạt động", "Loudspeaker line fault monitoring operating", M_F),
       ("Nguồn dự phòng đủ thời gian quy định", "Standby power sustains the required duration", M_T, "TCVN 3890:2023")),
 
-    F("ELV-106", "ELV", "Hệ thống quản lý toà nhà (BMS)", "Building management system", C_SPEC,
+    F("ELV-106", "ELV", "Hệ thống quản lý tòa nhà (BMS)", "Building management system", C_SPEC,
       ("Danh mục điểm (I/O) đúng bảng điểm được duyệt", "Point schedule matches the approved I/O list", M_C, C_DWG),
       ("Tủ điều khiển, bộ điều khiển lắp đúng vị trí, tiếp cận được", "Controllers and panels correctly located and accessible", M_V, C_DWG),
       ("Cảm biến lắp đúng vị trí đo, không bị ảnh hưởng cục bộ", "Sensors correctly located and free of local influence", M_V, C_MFR),
@@ -769,7 +769,7 @@ FF = [
       ("Khoảng cách đầu phun tới trần, tới tường và giữa các đầu", "Head clearance to ceiling, to walls and between heads", M_M, "TCVN 7336:2021"),
       ("Không có vật cản dưới đầu phun trong vùng quy định", "No obstructions below heads within the specified zone", M_V, "TCVN 7336:2021"),
       ("Đầu phun đúng hướng, không bị sơn, không hư hỏng", "Heads correctly oriented, unpainted and undamaged", M_V),
-      ("Van chặn có khoá và giám sát trạng thái", "Control valves locked and monitored", M_F, "TCVN 7336:2021"),
+      ("Van chặn có khóa và giám sát trạng thái", "Control valves locked and monitored", M_F, "TCVN 7336:2021"),
       ("Van báo động, công tắc dòng chảy lắp đúng và tác động", "Alarm valve and flow switch installed and operating", M_T, "TCVN 7336:2021"),
       ("Thử dòng chảy tại điểm thử cuối tuyến", "Flow test at the end-of-line test point", M_T, "TCVN 7336:2021"),
       ("Đầu phun dự phòng và dụng cụ thay thế để tại chỗ", "Spare heads and wrench kept on site", M_V, "TCVN 7336:2021"),
@@ -781,7 +781,7 @@ FF = [
       ("Tủ, cuộn vòi, lăng phun đầy đủ, đúng chủng loại kiểm định", "Cabinet, hose and nozzle complete and of the certified type", M_V, "TCVN 3890:2023"),
       ("Cao độ lắp đặt đúng quy định", "Mounting height as required", M_M, "TCVN 3890:2023"),
       ("Áp lực và lưu lượng tại họng bất lợi nhất đạt yêu cầu", "Pressure and flow at the most remote hydrant meet the requirement", M_T, "TCVN 3890:2023"),
-      ("Van khoá đóng mở nhẹ nhàng, không rò rỉ", "Valves operate freely with no leakage", M_F),
+      ("Van khóa đóng mở nhẹ nhàng, không rò rỉ", "Valves operate freely with no leakage", M_F),
       ("Họng tiếp nước cho xe chữa cháy đúng vị trí, có biển báo", "Fire brigade inlet correctly located and signed", M_V, "TCVN 3890:2023"),
       ("Đường tiếp cận cho xe chữa cháy thông thoáng", "Fire appliance access route clear", M_V, "QCVN 06:2022/BXD")),
 
@@ -816,7 +816,7 @@ FF = [
       ("Độ kín phòng đạt yêu cầu (thử cửa quạt nếu quy định)", "Room integrity acceptable — door-fan test where required", M_T, C_SPEC),
       ("Van xả áp phòng lắp đúng kích thước và vị trí", "Room pressure-relief vent of the correct size and position", M_M, C_DWG),
       ("Còi, đèn cảnh báo trước khi xả khí hoạt động", "Pre-discharge alarms and beacons operate", M_F),
-      ("Nút xả bằng tay và nút huỷ xả lắp đúng, hoạt động", "Manual release and abort stations installed and operating", M_F),
+      ("Nút xả bằng tay và nút hủy xả lắp đúng, hoạt động", "Manual release and abort stations installed and operating", M_F),
       ("Thử liên động không xả khí, ghi nhận đầy đủ", "Interlock tested without discharge and fully recorded", M_T),
       ("Biển cảnh báo, hướng dẫn thoát nạn dán tại cửa phòng", "Warning and escape signage at the room entrance", M_V)),
 
@@ -855,7 +855,7 @@ FF = [
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
-#  HVAC · Thông gió và điều hoà không khí
+#  HVAC · Thông gió và điều hòa không khí
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 HVAC = [
@@ -905,7 +905,7 @@ HVAC = [
       ("Van chặn, van cân bằng, van một chiều lắp đúng vị trí", "Isolating, balancing and check valves correctly located", M_C, C_DWG),
       ("Điểm xả khí đặt tại vị trí cao, điểm xả cặn tại vị trí thấp", "Air vents at high points and drains at low points", M_V, C_DWG),
       ("Thử áp lực đạt yêu cầu, giữ áp đủ thời gian", "Pressure test passed and held for the required duration", M_T, C_SPEC),
-      ("Súc rửa, xử lý hoá chất đường ống trước khi chạy", "Pipework flushed and chemically treated before operation", M_W, C_SPEC),
+      ("Súc rửa, xử lý hóa chất đường ống trước khi chạy", "Pipework flushed and chemically treated before operation", M_W, C_SPEC),
       ("Bảo ôn đúng chiều dày, kín mạch hơi", "Insulation of the correct thickness with a continuous vapour barrier", M_M, "QCVN 09:2017/BXD")),
 
     F("HVAC-202", "HVAC", "Đường ống gas lạnh", "Refrigerant pipework", C_MFR,
@@ -972,7 +972,7 @@ HVAC = [
       ("Lưu lượng từng miệng gió trong dung sai cho phép", "Airflow at each terminal within tolerance", M_M, C_SPEC),
       ("Chênh áp qua lọc, qua dàn trong giới hạn", "Pressure drop across filters and coils within limits", M_M, C_MFR),
       ("Cân bằng áp suất giữa các khu vực theo thiết kế", "Pressure relationships between areas as designed", M_M, C_DWG),
-      ("Van gió được khoá vị trí sau khi cân chỉnh", "Dampers locked in position after balancing", M_V),
+      ("Van gió được khóa vị trí sau khi cân chỉnh", "Dampers locked in position after balancing", M_V),
       ("Báo cáo TAB đầy đủ, có sơ đồ và bảng số liệu", "TAB report complete with schematics and data tables", M_D)),
 
     F("HVAC-402", "HVAC", "Cân chỉnh lưu lượng nước", "Water balancing", C_SPEC,
@@ -981,7 +981,7 @@ HVAC = [
       ("Lưu lượng qua từng nhánh, từng dàn đạt thiết kế", "Flow through each branch and coil meets the design", M_M, C_DWG),
       ("Chênh áp qua van cân bằng đạt giá trị tính toán", "Differential across balancing valves at the calculated value", M_M, C_SPEC),
       ("Bơm làm việc tại điểm trên đường đặc tính thiết kế", "Pumps operating at the design point on the curve", M_T, C_MFR),
-      ("Van cân bằng được khoá và ghi vị trí cài đặt", "Balancing valves locked and settings recorded", M_V),
+      ("Van cân bằng được khóa và ghi vị trí cài đặt", "Balancing valves locked and settings recorded", M_V),
       ("Báo cáo cân chỉnh đầy đủ, có sơ đồ hệ thống", "Balancing report complete with a system schematic", M_D)),
 
     F("HVAC-403", "HVAC", "Chạy thử và nghiệm thu hệ thống HVAC", "HVAC commissioning and acceptance",
@@ -1090,7 +1090,7 @@ GEN = [
       "", ("", "", "", "")),
 
     F("GEN-101", "GEN", "Nghiệm thu giai đoạn thi công", "Stage acceptance", "NĐ 06/2021 Điều 23",
-      ("Phạm vi giai đoạn được xác định và thoả thuận bằng văn bản", "Stage scope defined and agreed in writing", M_D, "NĐ 06/2021 Điều 23"),
+      ("Phạm vi giai đoạn được xác định và thỏa thuận bằng văn bản", "Stage scope defined and agreed in writing", M_D, "NĐ 06/2021 Điều 23"),
       ("Toàn bộ công việc trong giai đoạn đã có biên bản nghiệm thu", "Every work in the stage has an acceptance minute", M_C, "NĐ 06/2021 Điều 21"),
       ("Kết quả thí nghiệm của giai đoạn đầy đủ và đạt", "Stage test results complete and compliant", M_D),
       ("Sai lệch so với thiết kế đã được xử lý hoặc chấp thuận", "Deviations from design resolved or approved", M_D),
@@ -1119,7 +1119,7 @@ GEN = [
       ("Quy trình vận hành, bảo trì và định mức bảo trì bàn giao", "Operation, maintenance procedures and schedules handed over", M_D, "NĐ 06/2021 Điều 27"),
       ("Đào tạo vận hành cho chủ quản lý sử dụng đã thực hiện", "Operator training delivered to the operating owner", M_D),
       ("Danh mục vật tư dự phòng, dụng cụ chuyên dụng bàn giao", "Spare parts and special tools handed over", M_D),
-      ("Chìa khoá, mật khẩu, quyền quản trị hệ thống bàn giao", "Keys, passwords and system administrator rights handed over", M_D),
+      ("Chìa khóa, mật khẩu, quyền quản trị hệ thống bàn giao", "Keys, passwords and system administrator rights handed over", M_D),
       ("Chỉ số công tơ điện, đồng hồ nước tại thời điểm bàn giao", "Electricity and water meter readings at handover", M_M),
       ("Thời hạn và điều kiện bảo hành được thống nhất", "Warranty period and conditions agreed", M_D, "NĐ 06/2021 Điều 28"),
       ("Biên bản bàn giao có chữ ký của các bên liên quan", "Handover minute signed by all parties", M_D, "Luật Xây dựng Điều 124")),

@@ -324,7 +324,7 @@ ACCEPTANCE_TYPES = [
         "law": "Nghị định 06/2021/NĐ-CP, Điều 28",
         "pmbok": "Close Project or Phase (§4.7) — the last obligation to close",
         "proves_vi": "Hết thời hạn bảo hành, các tồn tại phát sinh đã được khắc phục và các bên "
-                     "xác nhận để giải toả bảo đảm bảo hành.",
+                     "xác nhận để giải tỏa bảo đảm bảo hành.",
         "proves_en": "The warranty period has expired, defects arising have been rectified, and the "
                      "parties confirm so the warranty security can be released.",
         "evidence_vi": ["Biên bản bàn giao công trình", "Danh mục lỗi phát sinh trong thời gian bảo hành",
@@ -462,7 +462,7 @@ STAGES = [
     {"key": "warranty", "no": 14, "covered": False,
      "vi": "Bảo hành và hết hạn bảo hành", "en": "Warranty and end of warranty",
      "disc": ["GEN"], "types": ["warranty_end"], "after": "handover",
-     "note_vi": "Nghị định 06/2021 Điều 28. Hết thời hạn, các bên xác nhận và giải toả bảo lãnh.",
+     "note_vi": "Nghị định 06/2021 Điều 28. Hết thời hạn, các bên xác nhận và giải tỏa bảo lãnh.",
      "note_en": "Decree 06/2021 Art. 28. At the end of the period the parties confirm and the "
                 "warranty security is released."},
 ]
