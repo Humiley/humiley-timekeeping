@@ -799,3 +799,173 @@ def test_suggestions_are_bounded():
     dos = [_dos("d%d" % i, jobDescription="theo ITP-%03d" % i) for i in range(200)]
     assert len(A.suggest_links(itps=itps, dossiers=dos)) == 60
     assert len(A.suggest_links(itps=itps, dossiers=dos, limit=5)) == 5
+
+
+# ══ the completion dossier index — Phụ lục VIb ═══════════════════════════════════════════════════
+#
+# The failure this section exists to prevent is subtle and expensive: an index that renders "the
+# register contains 47 of these" and "somebody ticked a box" identically. Both belong in the
+# dossier; only one is something the portal can produce on demand, and a handover meeting works
+# through this sheet line by line.
+
+import acceptance_index as X
+
+
+def test_the_four_parts_of_the_list_are_all_present_and_every_row_belongs_to_one():
+    assert [p["key"] for p in X.PARTS] == ["I", "II", "III", "IV"]
+    for it in X.ITEMS:
+        assert X.part(it["part"]), "%s is in unknown part %r" % (it["no"], it["part"])
+        assert X.holder(it["holder"]), "%s names unknown holder %r" % (it["no"], it["holder"])
+
+
+def test_item_numbers_are_unique_and_ordered_within_their_part():
+    nos = [i["no"] for i in X.ITEMS]
+    assert len(nos) == len(set(nos)), "duplicate item numbers"
+    for p in X.PARTS:
+        seq = [int(i["no"].split(".")[1]) for i in X.ITEMS if i["part"] == p["key"]]
+        assert seq == sorted(seq) == list(range(1, len(seq) + 1)), \
+            "part %s is not numbered 1..n in order: %s" % (p["key"], seq)
+
+
+def test_every_row_is_written_in_both_languages():
+    """A handover meeting reads the Vietnamese; a foreign client's adviser reads the English. A row
+    in one language is a row one of them cannot check off."""
+    for it in X.ITEMS:
+        assert it["vi"].strip() and it["en"].strip(), it["no"]
+        assert it["vi"] != it["en"], it["no"]
+
+
+def test_a_register_backed_row_names_a_register_this_module_can_actually_count():
+    """A `reg` key nothing understands silently counts zero, and a zero renders exactly like a
+    genuinely empty register — the row would read "missing" forever with nothing to fix."""
+    ctx = {"accepted": [{"accType": t["key"]} for t in A.ACCEPTANCE_TYPES],
+           "itps": [{}], "openDefects": [{}], "clearances": [{"key": c["key"]} for c in A.CLEARANCES]}
+    for it in X.ITEMS:
+        if it["source"] != X.SRC_REGISTER:
+            assert not it["reg"], "%s is declared but names a register" % it["no"]
+            continue
+        assert it["reg"], "%s is register-backed but names no register" % it["no"]
+        assert X._count(it["reg"], ctx) > 0, \
+            "%s names %r, which counts zero even when every register is full" % (it["no"], it["reg"])
+
+
+def test_every_acceptance_type_reaches_the_index_somewhere():
+    """A type of minute the completion dossier never asks for is a type nobody would file."""
+    regs = " ".join(i["reg"] for i in X.ITEMS if i["reg"].startswith("acc:"))
+    for t in A.ACCEPTANCE_TYPES:
+        if t["key"] == "warranty_end":
+            continue          # closes the warranty, after the dossier is handed over
+        assert t["key"] in regs, "%s appears in no index row" % t["key"]
+
+
+def test_counted_and_declared_are_reported_separately():
+    """THE property. A tick meaning "the register contains this" and a tick meaning "somebody said
+    so" are not the same evidence and must never be added into one number."""
+    r = X.build_index(accepted=[{"accType": "work"}],
+                      items_state=[{"no": "I.1", "declared": True, "declaredBy": "Trần Văn B",
+                                    "ref": "QĐ 123/QĐ-UBND"}])
+    s = r["summary"]
+    assert s["counted"] == 1 and s["declared"] == 1
+    assert s["held"] == 2
+    assert "counted directly" in r["verdict"]["en"] or "counted" in r["verdict"]["en"]
+
+
+def test_a_declaration_with_no_name_against_it_is_not_a_declaration():
+    """A reference typed into a box is a note. Counting it would be the app inventing an
+    attestation nobody made."""
+    r = X.build_index(items_state=[{"no": "I.1", "declared": True, "ref": "QĐ 123"}])
+    row = next(x for x in r["rows"] if x["no"] == "I.1")
+    assert row["state"] == X.ST_MISSING
+    assert r["summary"]["declared"] == 0
+
+
+def test_a_register_row_is_held_only_when_the_register_actually_has_something():
+    r = X.build_index(accepted=[])
+    row = next(x for x in r["rows"] if x["no"] == "III.7")
+    assert row["state"] == X.ST_MISSING and row["count"] == 0
+    r2 = X.build_index(accepted=[{"accType": "work"}, {"accType": "work"}])
+    row2 = next(x for x in r2["rows"] if x["no"] == "III.7")
+    assert row2["state"] == X.ST_HELD and row2["count"] == 2
+
+
+def test_a_register_row_cannot_be_satisfied_by_declaring_it():
+    """The whole point of a counted row. If somebody could tick "yes we have the work acceptance
+    minutes" the index would report a dossier the register cannot produce."""
+    r = X.build_index(accepted=[], items_state=[
+        {"no": "III.7", "declared": True, "declaredBy": "Ai Đó", "ref": "ở đâu đó"}])
+    row = next(x for x in r["rows"] if x["no"] == "III.7")
+    assert row["state"] == X.ST_MISSING
+
+
+def test_an_optional_row_with_nothing_behind_it_is_not_chased():
+    """Điều 23 stage acceptance and the Điều 24(3) punch-list annex only exist on some projects.
+    Reporting them as gaps would put work on a list that cannot be cleared."""
+    r = X.build_index()
+    for no in ("III.8", "III.11", "III.13"):
+        assert next(x for x in r["rows"] if x["no"] == no)["state"] == X.ST_OPTIONAL
+    assert "III.8" not in r["verdict"]["missing"]
+
+
+def test_a_row_can_be_marked_not_applicable_and_stops_being_a_gap():
+    r = X.build_index(items_state=[{"no": "I.3", "applies": False,
+                                    "naReason": "Công trình không thuộc đối tượng cấp phép."}])
+    row = next(x for x in r["rows"] if x["no"] == "I.3")
+    assert row["state"] == X.ST_NA and row["naReason"]
+    assert r["summary"]["na"] == 1
+
+
+def test_marking_a_REQUIRED_row_not_applicable_removes_it_from_the_required_count():
+    """Otherwise the denominator lies: a project legitimately without a construction permit would
+    read as permanently incomplete."""
+    base = X.build_index()["summary"]["required"]
+    off = X.build_index(items_state=[{"no": "I.1", "applies": False, "naReason": "x"}])
+    assert off["summary"]["required"] == base - 1
+
+
+def test_the_verdict_names_the_missing_rows_rather_than_only_counting_them():
+    """"22 items missing" sends somebody back to the table. Naming them is the difference between a
+    number and a next action."""
+    r = X.build_index()
+    assert r["verdict"]["level"] == "incomplete"
+    assert "I.1" in r["verdict"]["vi"] and "I.1" in r["verdict"]["en"]
+    assert r["verdict"]["missing"], "the caller gets the list, not just the sentence"
+
+
+def test_a_complete_index_still_says_how_much_of_it_is_only_somebody_s_word():
+    """The dangerous moment: everything ticked, about to be printed and signed."""
+    state = [{"no": i["no"], "declared": True, "declaredBy": "Nguyễn Văn A", "ref": "REF"}
+             for i in X.ITEMS if i["source"] == X.SRC_DECLARED]
+    r = X.build_index(
+        items_state=state,
+        accepted=[{"accType": t} for t in ("material", "work", "commission", "stage",
+                                           "handover_part", "handover_all", "handover_deed")],
+        itps=[{}], open_defects=[{}], clearances=[{"key": "fire"}, {"key": "authority_check"}])
+    assert r["verdict"]["level"] == "complete"
+    assert r["summary"]["missing"] == 0
+    assert r["summary"]["declared"] > r["summary"]["counted"], \
+        "most of a completion dossier is documents the portal never held — say so"
+    assert "attestation" in r["verdict"]["en"]
+    assert "xác nhận" in r["verdict"]["vi"]
+
+
+def test_the_as_built_row_refuses_to_count_marked_up_acceptance_drawings():
+    """They are different documents. An index that counted inspection mark-ups as as-builts would
+    report a deliverable the project has not produced — and III.2 is one of the first things a
+    client's handover team asks for."""
+    row = next(i for i in X.ITEMS if i["no"] == "III.2")
+    assert row["source"] == X.SRC_DECLARED and not row["reg"]
+    assert "not the marked-up drawings" in row["note_en"]
+
+
+def test_rows_come_back_in_phu_luc_order():
+    """It is a table of contents. Sorting it any other way makes it a different document."""
+    r = X.build_index()
+    assert [x["no"] for x in r["rows"]] == [i["no"] for i in X.ITEMS]
+
+
+def test_an_unknown_register_key_counts_zero_rather_than_raising():
+    """A row added with a typo must not take the whole index down — it should read as missing, which
+    is visible, rather than as a 500."""
+    assert X._count("acc:nonsense", {"accepted": [{"accType": "work"}]}) == 0
+    assert X._count("", {}) == 0
+    assert X._count("something-else", {}) == 0

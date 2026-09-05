@@ -622,3 +622,127 @@ def test_composing_refuses_a_stage_this_app_does_not_know(base_url, proj):
     kind, status, msg = _H()._acc_compose_ep(PM, {
         "projectId": proj["id"], "accType": "work", "stage": "phase-4b"})
     assert kind == "err" and status == 400 and "stage" in msg
+
+
+# ── the completion dossier index at the boundary ────────────────────────────────────────────────
+
+import acceptance_index as X
+
+
+def _idx_row(pid, no):
+    return next((r for r in db.list_collection("pm_acc_index")
+                 if r.get("projectId") == pid and str(r.get("no")).upper() == no), None)
+
+
+def test_the_index_counts_the_registers_and_reports_the_split(base_url, proj):
+    d = _dossier(proj["id"], status=A.STATUS_ACCEPTED, accType="work")
+    kind, _, out = _H()._acc_index_ep(PM, {"projectId": [proj["id"]]})
+    assert kind == "json"
+    ix = out["index"]
+    row = next(r for r in ix["rows"] if r["no"] == "III.7")
+    assert row["state"] == X.ST_HELD and row["count"] == 1
+    assert ix["summary"]["counted"] >= 1 and ix["summary"]["declared"] == 0
+
+
+def test_a_declaration_takes_its_name_and_date_from_the_session_not_the_body(base_url, proj):
+    """The whole reason this is not a generic PATCH. A body-supplied signer would let an index row
+    carry an attestation nobody gave — on the sheet a handover meeting signs off from."""
+    kind, _, out = _H()._acc_index_declare_ep(PM, {
+        "projectId": proj["id"], "no": "I.1", "declared": True, "ref": "QĐ 123/QĐ-UBND",
+        "declaredBy": "Somebody Else", "declaredById": "U-FAKE", "declaredOn": "1999-01-01"})
+    assert kind == "json", out
+    row = _idx_row(proj["id"], "I.1")
+    assert row["declaredBy"] == PM["name"] and row["declaredById"] == PM["id"]
+    assert row["declaredOn"] != "1999-01-01"
+
+
+def test_withdrawing_a_declaration_clears_the_name_with_it(base_url, proj):
+    """A name left behind on a withdrawn declaration reads as an attestation that still stands."""
+    _H()._acc_index_declare_ep(PM, {"projectId": proj["id"], "no": "I.1", "declared": True})
+    _H()._acc_index_declare_ep(PM, {"projectId": proj["id"], "no": "I.1", "declared": False})
+    row = _idx_row(proj["id"], "I.1")
+    assert row["declared"] is False and row["declaredBy"] == "" and row["declaredOn"] == ""
+
+
+def test_a_counted_row_cannot_be_satisfied_by_declaring_it(base_url, proj):
+    """Refused at the endpoint as well as in the module. Otherwise the index would report a dossier
+    the register cannot produce, which is the one claim this whole screen exists to prevent."""
+    kind, status, msg = _H()._acc_index_declare_ep(PM, {
+        "projectId": proj["id"], "no": "III.7", "declared": True})
+    assert kind == "err" and status == 409
+    assert "counted from the register" in msg
+
+
+def test_striking_an_item_off_needs_a_reason(base_url, proj):
+    kind, status, msg = _H()._acc_index_declare_ep(PM, {
+        "projectId": proj["id"], "no": "I.3", "applies": False, "naReason": ""})
+    assert kind == "err" and status == 400 and "why" in msg
+    kind2, _, _ = _H()._acc_index_declare_ep(PM, {
+        "projectId": proj["id"], "no": "I.3", "applies": False,
+        "naReason": "Công trình không thuộc đối tượng phải cấp phép xây dựng."})
+    assert kind2 == "json"
+    assert _idx_row(proj["id"], "I.3")["applies"] is False
+
+
+def test_an_unknown_item_number_is_refused(base_url, proj):
+    kind, status, _ = _H()._acc_index_declare_ep(PM, {
+        "projectId": proj["id"], "no": "IX.99", "declared": True})
+    assert kind == "err" and status == 400
+
+
+def test_the_index_refuses_a_project_you_are_not_on(base_url, proj):
+    stranger = {"id": "U-NOBODY", "name": "Ai Đó", "role": "staff", "level": "viewer"}
+    kind, status, _ = _H()._acc_index_ep(stranger, {"projectId": [proj["id"]]})
+    assert kind == "err" and status == 403
+    kind2, status2, _ = _H()._acc_index_declare_ep(stranger, {
+        "projectId": proj["id"], "no": "I.1", "declared": True})
+    assert kind2 == "err" and status2 == 403
+
+
+def test_a_clearance_with_no_document_number_does_not_tick_its_own_row(base_url, proj):
+    """An applicable clearance with nothing behind it is exactly the gap this index exists to
+    surface. Counting it would hide the thing being looked for."""
+    _dossier(proj["id"], status=A.STATUS_ACCEPTED, accType="handover_all",
+             clearances=[{"key": "fire", "applies": True, "ref": ""}])
+    _, _, out = _H()._acc_index_ep(PM, {"projectId": [proj["id"]]})
+    assert next(r for r in out["index"]["rows"] if r["no"] == "III.12")["count"] == 0
+    _dossier(proj["id"], refNo="ZZ-ELE-777", status=A.STATUS_ACCEPTED, accType="handover_all",
+             clearances=[{"key": "fire", "applies": True, "ref": "Số 123/NT-PCCC"}])
+    _, _, out2 = _H()._acc_index_ep(PM, {"projectId": [proj["id"]]})
+    assert next(r for r in out2["index"]["rows"] if r["no"] == "III.12")["count"] == 1
+
+
+def test_the_punch_list_row_counts_across_the_whole_project(base_url, proj):
+    """Điều 24(3)'s annex is ONE list bound into the completion dossier, however many minutes
+    contributed to it."""
+    a = _dossier(proj["id"], status=A.STATUS_ACCEPTED)
+    b = _dossier(proj["id"], refNo="ZZ-ELE-778", status=A.STATUS_ACCEPTED)
+    for did in (a["id"], b["id"]):
+        db.put_collection_item("pm_acc_defects", {
+            "projectId": proj["id"], "dossierId": did, "description": "x",
+            "impact": "cosmetic", "status": "Open"})
+    _, _, out = _H()._acc_index_ep(PM, {"projectId": [proj["id"]]})
+    assert next(r for r in out["index"]["rows"] if r["no"] == "III.11")["count"] == 2
+
+
+def test_a_closed_defect_leaves_the_annex(base_url, proj):
+    d = _dossier(proj["id"], status=A.STATUS_ACCEPTED)
+    db.put_collection_item("pm_acc_defects", {
+        "projectId": proj["id"], "dossierId": d["id"], "description": "x",
+        "impact": "cosmetic", "status": "Closed"})
+    _, _, out = _H()._acc_index_ep(PM, {"projectId": [proj["id"]]})
+    assert next(r for r in out["index"]["rows"] if r["no"] == "III.11")["count"] == 0
+
+
+def test_the_index_does_not_count_another_projects_records(base_url, proj):
+    other = db.put_collection_item("pm_projects", {"name": "ZZ Other 3", "manager": "Nobody"})
+    try:
+        db.put_collection_item("pm_acc", {"projectId": other["id"], "accType": "work",
+                                          "status": A.STATUS_ACCEPTED})
+        _, _, out = _H()._acc_index_ep(BOSS, {"projectId": [proj["id"]]})
+        assert next(r for r in out["index"]["rows"] if r["no"] == "III.7")["count"] == 0
+    finally:
+        for r in list(db.list_collection("pm_acc")):
+            if r.get("projectId") == other["id"]:
+                db.delete_collection_item("pm_acc", r["id"])
+        db.delete_collection_item("pm_projects", other["id"])

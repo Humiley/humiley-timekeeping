@@ -24452,7 +24452,8 @@ const _ACC_TABS = [
   { k: 'plan', label: 'Acceptance plan', fn: '_accPlanTab' },
   { k: 'reg', label: 'Dossier register', fn: '_accRegTab' },
   { k: 'forms', label: 'Checklist library', fn: '_accFormsTab' },
-  { k: 'setup', label: 'Numbering & parties', fn: '_accSetupTab' }
+  { k: 'setup', label: 'Numbering & parties', fn: '_accSetupTab' },
+  { k: 'index', label: 'Completion dossier', fn: '_accIndexTab' }
 ];
 
 /* ---- small shared helpers ------------------------------------------------------------------ */
@@ -24552,6 +24553,11 @@ async function accTab(k) {
     body.innerHTML = tkSkeleton();
     await _accCovLoad(!_ACCCOV || _ACCCOV._pid !== _pmPid());
     if (_accTabK !== k) return;                 // the user moved on while we waited
+  }
+  if (k === 'index') {
+    body.innerHTML = tkSkeleton();
+    await _accIdxLoad(!_ACCIDX || _ACCIDX._pid !== _pmPid());
+    if (_accTabK !== k) return;
   }
   try { body.innerHTML = (window[t.fn] || (() => ''))(_pmPid()) || ''; }
   catch (e) { body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error rendering ' + _accE(t.label) + ': ' + _accE(e.message) + '</div>'; }
@@ -27382,6 +27388,302 @@ function accCovExport() {
   out.push(['NOTE', (c.trust || {}).en || '']);
   out.push(['GHI CHÚ', (c.trust || {}).vi || '']);
   _accDownload('do-phu-nghiem-thu.csv', _accCsv(out));
+}
+
+/* ═══════════════ 18 · Hồ sơ hoàn thành — the completion dossier index ══════════════════════
+
+   Nghị định 06/2021 Điều 26 requires the completed-works dossier to be assembled and kept, and its
+   Phụ lục VIb lists what goes in it. That list is what a client's handover meeting works through
+   line by line, and what the construction authority asks for under Điều 25.
+
+   THE ONE THING THIS SCREEN MUST NEVER DO is render "the register contains 47 of these" and
+   "somebody ticked a box" the same way. Both belong in the dossier; only one is evidence the app
+   can produce on demand, and the difference is everything at an audit. So a counted row shows its
+   COUNT and is not tickable, a declared row shows WHO said so and WHEN, the summary keeps the two
+   apart, and the printed sheet prints the distinction.                                          */
+
+let _ACCIDX = null;
+let _accIdxErr = '';
+let _accIdxPart = '';        // '' = every part
+
+async function _accIdxLoad(force) {
+  const pid = _pmPid(); if (!pid) return null;
+  if (_ACCIDX && _ACCIDX._pid === pid && !force) return _ACCIDX;
+  try {
+    const r = await tkApi('/api/pm/acceptance/index?projectId=' + encodeURIComponent(pid));
+    _ACCIDX = Object.assign({}, r.index, { _pid: pid, _project: r.project || {} });
+    _accIdxErr = '';
+  } catch (e) { _ACCIDX = null; _accIdxErr = _errMsg(e); }
+  return _ACCIDX;
+}
+
+const _ACC_IDX_STATE = {
+  held: { hex: '#00B060', vi: 'Đã có', en: 'Held' },
+  missing: { hex: '#DC2626', vi: 'Còn thiếu', en: 'Missing' },
+  optional: { hex: '#94a3b8', vi: 'Không bắt buộc', en: 'Not required' },
+  na: { hex: '#64748B', vi: 'Không áp dụng', en: 'Not applicable' }
+};
+function _accIdxBadge(k) {
+  const m = _ACC_IDX_STATE[k] || _ACC_IDX_STATE.optional;
+  return _pmBadge((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? m.vi : m.en, m.hex);
+}
+
+function _accIndexTab(pid) {
+  if (_accIdxErr) {
+    return '<div class="card" style="padding:18px">' +
+      '<div style="font-weight:700;color:#C00000;margin-bottom:6px">' + _t('Could not assemble the completion dossier') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' + _accE(_accIdxErr) + '</div>' +
+      '<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="accIdxRefresh()">' + _t('Retry') + '</button></div>';
+  }
+  const ix = _ACCIDX; if (!ix) return tkSkeleton();
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const s = ix.summary || {}, v = ix.verdict || {};
+
+  const banner = '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:3px solid ' +
+    (v.level === 'complete' ? 'var(--emerald)' : '#DC2626') + '">' +
+    '<div style="font-size:12.5px;color:var(--text);line-height:1.65">' +
+    '<b style="color:' + (v.level === 'complete' ? 'var(--emerald)' : '#DC2626') + '">' +
+      (v.level === 'complete' ? _t('Every listed item is accounted for') : _t('The dossier is not ready to hand over')) +
+    '</b> — ' + _accE(vi ? v.vi : v.en) + '</div></div>';
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Items on the list'), s.total),
+    _hrKpi(_t('Counted from the registers'), s.counted, s.counted ? 'var(--emerald)' : 'var(--text-light)'),
+    _hrKpi(_t('Declared by a person'), s.declared, s.declared ? '#3168A8' : 'var(--text-light)'),
+    _hrKpi(_t('Still missing'), s.missing, s.missing ? '#DC2626' : 'var(--emerald)'),
+    _hrKpi(_t('Not applicable'), s.na, 'var(--text-light)')
+  ]);
+
+  const parts = [['', _t('All parts'), (ix.rows || []).length]].concat(
+    (ix.parts || []).map(p => [p.key, p.key + '. ' + _accLbl(p),
+                              (ix.rows || []).filter(r => r.part === p.key).length]))
+    .map(t => '<button class="tab" onclick="accIdxPart(\'' + t[0] + '\')" style="border:none;background:' +
+      (_accIdxPart === t[0] ? 'var(--navy)' : 'transparent') + ';color:' + (_accIdxPart === t[0] ? '#fff' : 'var(--text-light)') +
+      ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' +
+      _accE(t[1]) + ' <span style="opacity:.7">' + t[2] + '</span></button>').join('');
+
+  const rows = (ix.rows || []).filter(r => !_accIdxPart || r.part === _accIdxPart);
+  let lastPart = '';
+  const body = rows.map(r => {
+    let head = '';
+    if (r.part !== lastPart) {
+      lastPart = r.part;
+      const p = (ix.parts || []).find(x => x.key === r.part) || {};
+      head = '<tr><td colspan="6" style="background:var(--soft-bg);font-weight:800;font-size:11.5px;' +
+        'color:var(--navy);letter-spacing:.3px;padding:8px 10px">' +
+        _accE(r.part + '. ' + _accLbl(p)) + '</td></tr>';
+    }
+    const isReg = r.source === 'register';
+    /* The evidence column is the point of the whole screen. A counted row shows HOW MANY records
+       stand behind it; a declared row shows WHOSE word it is. Neither ever renders as a bare tick. */
+    const evidence = isReg
+      ? (r.count
+        ? '<span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--emerald)">' + r.count + '</span> ' +
+          '<span style="font-size:10.5px;color:var(--text-light)">' + _accE(_t('record(s) in the register')) + '</span>'
+        : '<span style="font-size:11px;color:var(--text-light)">' + _accE(_t('nothing in the register yet')) + '</span>')
+      : (r.declaredBy
+        ? '<span style="font-size:11.5px">✍ ' + _accE(r.declaredBy) +
+          (r.declaredOn ? ' <span style="color:var(--text-light)">· ' + _pmFmt(r.declaredOn) + '</span>' : '') + '</span>' +
+          (r.ref ? '<div style="font-family:monospace;font-size:10.5px;color:var(--text-light)">' + _accE(r.ref) + '</div>' : '')
+        : (r.state === 'na'
+          ? '<span style="font-size:11px;color:var(--text-light)">' + _accE(r.naReason) + '</span>'
+          : '<span style="font-size:11px;color:var(--text-light)">' + _accE(_t('nobody has confirmed this')) + '</span>'));
+
+    const act = isReg
+      ? '<span title="' + _tkEscA(_t('Counted from the register — it cannot be ticked by hand')) +
+        '" style="font-size:10.5px;color:var(--text-light)">' + _accE(_t('automatic')) + '</span>'
+      : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:' +
+        (r.declaredBy ? '#C00000' : 'var(--navy)') + '" onclick="accIdxDeclare(\'' + r.no + '\')">' +
+        _accE(r.declaredBy ? _t('Withdraw') : _t('Confirm held')) + '</button>' +
+        (r.state === 'na'
+          ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accIdxApplies(\'' + r.no + '\',true)">' + _t('Applies') + '</button>'
+          : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accIdxApplies(\'' + r.no + '\',false)">' + _t('Not applicable') + '</button>');
+
+    const h = (ix.holders || []).find(x => x.key === r.holder) || {};
+    return head + '<tr>' +
+      '<td style="width:52px;font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy);font-weight:700;vertical-align:top">' + _accE(r.no) + '</td>' +
+      '<td style="vertical-align:top"><div style="font-size:12.5px;color:var(--text);line-height:1.5">' + _accE(r.vi) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);font-style:italic;line-height:1.45">' + _accE(r.en) + '</div>' +
+        ((vi ? r.note_vi : r.note_en) ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:3px">' + _accE(vi ? r.note_vi : r.note_en) + '</div>' : '') +
+        (!r.required ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _accE(_t('only where it applies')) + '</div>' : '') + '</td>' +
+      '<td style="width:120px;font-size:11.5px;vertical-align:top">' + _accE(_accLbl(h)) + '</td>' +
+      '<td style="width:200px;vertical-align:top">' + evidence + '</td>' +
+      '<td style="width:110px;vertical-align:top">' + _accIdxBadge(r.state) + '</td>' +
+      '<td style="width:1%;white-space:nowrap;vertical-align:top">' + act + '</td></tr>';
+  }).join('');
+
+  const tbl = '<div class="table-wrap"><table style="min-width:1020px"><thead><tr>' +
+    '<th style="width:52px">' + _t('No.') + '</th><th>' + _t('Document') + '</th>' +
+    '<th>' + _t('Held by') + '</th><th>' + _t('Evidence') + '</th>' +
+    '<th>' + _t('Status') + '</th><th></th></tr></thead><tbody>' + body + '</tbody></table></div>';
+
+  return banner + kpis +
+    '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">' + parts +
+      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="accIdxRefresh()">↻ ' + _t('Refresh') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="accIdxExport()">↓ ' + _t('Export') + '</button>' +
+      '<button class="btn btn-primary btn-sm" onclick="accIdxPrint()">🖨 ' + _t('Print the index') + '</button></div>' +
+    _pmCard(_t('Danh mục hồ sơ hoàn thành công trình'), null, null,
+      '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);line-height:1.65;border-bottom:1px solid var(--line)">' +
+      _accE(_t('Nghị định 06/2021/NĐ-CP Điều 26, Phụ lục VIb. Rows marked “automatic” are counted from the registers in this app and cannot be ticked by hand — they show as held once the records exist. The rest are documents the portal has never seen, so they carry somebody\'s name and the date they confirmed it. Which rows a given works actually needs is a judgement for the project: strike off what does not apply, with a reason.')) +
+      '</div>' + tbl);
+}
+
+function accIdxPart(k) { _accIdxPart = k; _accRepaint(); }
+async function accIdxRefresh() { await _accIdxLoad(true); _accRepaint(); }
+
+async function accIdxDeclare(no) {
+  const ix = _ACCIDX; if (!ix) return;
+  const row = (ix.rows || []).find(r => r.no === no); if (!row) return;
+  if (row.declaredBy) {
+    if (!await tkConfirm({ body: _t('Withdraw the confirmation on') + ' ' + no + '? ' +
+        _t('Your name comes off it and the item goes back to missing.'), danger: true })) return;
+    await _accIdxPost({ no: no, declared: false });
+    return;
+  }
+  const ref = await tkPrompt({
+    title: no + ' — ' + row.vi,
+    body: _t('Confirm this document exists and say where it is filed. Your name and today\'s date are recorded against it — this is an attestation, not a tick.'),
+    placeholder: _t('Document number, or where it is filed'), value: row.ref || '' });
+  if (ref === null) return;
+  await _accIdxPost({ no: no, declared: true, ref: ref });
+}
+
+async function accIdxApplies(no, applies) {
+  if (applies) { await _accIdxPost({ no: no, applies: true }); return; }
+  const why = await tkPrompt({
+    title: no,
+    body: _t('Why does this item not apply to these works? An item struck off the completion dossier with no reason is the one an auditor asks about.'),
+    placeholder: _t('Reason') });
+  if (!why) return;
+  await _accIdxPost({ no: no, applies: false, naReason: why });
+}
+
+async function _accIdxPost(patch) {
+  try {
+    const r = await tkApi('/api/pm/acceptance/index/declare',
+      { method: 'POST', body: Object.assign({ projectId: _pmPid() }, patch) });
+    if (r && r.index) _ACCIDX = Object.assign({}, r.index, { _pid: _pmPid(), _project: (_ACCIDX || {})._project || {} });
+  } catch (e) { toast(_errMsg(e), 'error', 7000); return; }
+  toast(_t('Saved'), 'success');
+  _accRepaint();
+}
+
+function accIdxExport() {
+  const ix = _ACCIDX; if (!ix) return;
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const out = [['No', 'Part', 'Document (VI)', 'Document (EN)', 'Held by', 'Source', 'Count',
+                'Declared by', 'Declared on', 'Reference', 'Status', 'Reason if N/A']];
+  (ix.rows || []).forEach(r => {
+    const h = (ix.holders || []).find(x => x.key === r.holder) || {};
+    out.push([r.no, r.part, r.vi, r.en, h.en || r.holder,
+      r.source === 'register' ? 'counted' : 'declared', r.source === 'register' ? r.count : '',
+      r.declaredBy, r.declaredOn, r.ref, r.state, r.naReason]);
+  });
+  out.push([]);
+  /* The verdict travels with the file, in both languages, for the same reason coverage's does: a
+     list of ticks pasted into a report has lost the sentence that says which half is evidence. */
+  out.push(['NOTE', (ix.verdict || {}).en || '']);
+  out.push(['GHI CHÚ', (ix.verdict || {}).vi || '']);
+  _accDownload('danh-muc-ho-so-hoan-thanh.csv', _accCsv(out));
+}
+
+/* ---- the printed sheet ---------------------------------------------------------------------- */
+/* Bound at the front of the dossier, which is what it is for. It reuses the same A4 furniture as
+   the acceptance minutes so the whole set prints as one document. */
+function accIdxPrint() {
+  const ix = _ACCIDX; if (!ix) return;
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const v = ix.verdict || {}, s = ix.summary || {};
+  let lastPart = '';
+  const rows = (ix.rows || []).map((r, i) => {
+    let head = '';
+    if (r.part !== lastPart) {
+      lastPart = r.part;
+      const p = (ix.parts || []).find(x => x.key === r.part) || {};
+      head = '<tr><td colspan="5" style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;' +
+        'font-weight:700">' + _accE(r.part + '. ' + (p.vi || '')) +
+        '<div style="font-style:italic;font-weight:400;font-size:.86em">' + _accE(p.en || '') + '</div></td></tr>';
+    }
+    const h = (ix.holders || []).find(x => x.key === r.holder) || {};
+    const mark = r.state === 'held' ? '✔' : (r.state === 'na' ? '—' : '');
+    const eviden = r.source === 'register'
+      ? (r.count ? r.count + ' bộ / sets' : '')
+      : (r.declaredBy ? (r.ref || '') : '');
+    return head + '<tr style="page-break-inside:avoid">' +
+      '<td style="border:1px solid #000;padding:3px 5px;width:8%;text-align:center">' + _accE(r.no) + '</td>' +
+      '<td style="border:1px solid #000;padding:3px 6px">' + _accE(r.vi) +
+        '<div style="font-style:italic;font-size:.86em">' + _accE(r.en) + '</div></td>' +
+      '<td style="border:1px solid #000;padding:3px 6px;width:16%">' + _accE(h.vi || '') + '</td>' +
+      '<td style="border:1px solid #000;padding:3px 6px;width:20%">' + _accE(eviden) +
+        (r.state === 'na' && r.naReason ? '<div style="font-size:.84em;color:#444">' + _accE(r.naReason) + '</div>' : '') + '</td>' +
+      '<td style="border:1px solid #000;padding:3px 5px;width:7%;text-align:center;font-weight:700">' + mark + '</td></tr>';
+  }).join('');
+
+  const p = ix._project || {};
+  const head = '<div style="display:flex;justify-content:space-between;font-size:.82em;color:#555;letter-spacing:.4px">' +
+      '<span>CLIENT\'S LOGO</span><span>CONTRACTOR\'S LOGO</span></div>' +
+    '<div style="text-align:center;margin:6px 0 12px">' +
+      '<div style="font-size:1.45em;font-weight:700;text-transform:uppercase">Danh mục hồ sơ hoàn thành công trình</div>' +
+      '<div style="font-size:1.02em;font-style:italic">Index of the completed-works dossier</div>' +
+      '<div style="font-size:.86em;margin-top:3px">Nghị định 06/2021/NĐ-CP, Điều 26 — Phụ lục VIb</div></div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:.97em">' +
+      '<tr><td style="border:1px solid #000;padding:3px 6px;width:20%"><b>Dự án:</b><div style="font-style:italic;font-size:.86em">Project:</div></td>' +
+      '<td style="border:1px solid #000;padding:3px 6px">' + _accE(p.name || '') + '</td>' +
+      '<td style="border:1px solid #000;padding:3px 6px;width:16%"><b>Ngày lập:</b><div style="font-style:italic;font-size:.86em">Date:</div></td>' +
+      '<td style="border:1px solid #000;padding:3px 6px;width:18%">' + _accE(_accVnDate(_pmToday())) + '</td></tr></table>';
+
+  const legend = '<div style="margin-top:9px;font-size:.84em;line-height:1.5;color:#333">' +
+    '<b>Ghi chú / Note:</b> ' + _accE(vi ? v.vi : v.en) +
+    '<div style="margin-top:3px">' + _accE(
+      'Số bộ ghi ở cột "Số lượng" là số bản ghi phần mềm đếm được trong sổ đăng ký. ' +
+      'Các mục còn lại do người phụ trách xác nhận — xem cột Số hiệu / nơi lưu.') + '</div>' +
+    '<div style="font-style:italic;font-size:.94em">' + _accE(
+      'Quantities are counted from the registers in the portal; the remaining items are attested by ' +
+      'the named person and are not verified by the system.') + '</div></div>';
+
+  const sheet = _accSheet(head +
+    '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:.93em"><thead><tr>' +
+      '<th style="border:1px solid #000;padding:3px 5px;background:#EFEFEF">TT<div style="font-style:italic;font-weight:400;font-size:.86em">No.</div></th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Tên tài liệu<div style="font-style:italic;font-weight:400;font-size:.86em">Document</div></th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Đơn vị lưu<div style="font-style:italic;font-weight:400;font-size:.86em">Held by</div></th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Số lượng / Số hiệu<div style="font-style:italic;font-weight:400;font-size:.86em">Quantity / reference</div></th>' +
+      '<th style="border:1px solid #000;padding:3px 5px;background:#EFEFEF">Có<div style="font-style:italic;font-weight:400;font-size:.86em">Held</div></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>' + legend + _accIdxSigBlocks());
+
+  let ov = document.getElementById('accPrintOverlay');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'accPrintOverlay'; document.body.appendChild(ov); }
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;overflow:auto;padding:22px';
+  ov.innerHTML =
+    '<div class="acc-print-ctl" style="max-width:860px;margin:0 auto 16px;background:#fff;border-radius:10px;padding:16px 18px;' +
+      'display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<div><div style="font-size:15px;font-weight:800;color:var(--navy)">' + _t('Index of the completed-works dossier') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _accE(p.name || '') + ' · ' +
+        s.counted + ' ' + _t('counted') + ' · ' + s.declared + ' ' + _t('declared') +
+        (s.missing ? ' · <b style="color:#C00000">' + s.missing + ' ' + _t('missing') + '</b>' : '') + '</div></div>' +
+      '<div style="display:flex;gap:7px">' +
+        '<button class="btn btn-primary btn-sm" onclick="window.print()">🖨 ' + _t('Print / Save as PDF') + '</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="accPrintClose()">' + _t('Close') + '</button></div></div>' +
+    '<div id="acc-print-sheets">' + sheet + '</div>';
+  ov.style.display = 'block';
+  _accPrintSize(9.4);
+}
+
+/* The index is signed by the parties that hand the dossier over, which is not the same list as an
+   acceptance minute's — the designer and the supervision consultant do not certify the contents of
+   a bound set they did not assemble. */
+function _accIdxSigBlocks() {
+  const st = (_HR.pm_settings || []).find(x => x.id === _pmPid()) || {};
+  const cols = [['contractor', 'ĐƠN VỊ LẬP HỒ SƠ', 'Compiled by'],
+                ['supervisor', 'TƯ VẤN QLXD & GIÁM SÁT', 'Supervision consultant'],
+                ['client', 'CHỦ ĐẦU TƯ', 'Client']];
+  return '<table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:.95em"><tr>' +
+    cols.map(c => '<td style="border:1px solid #000;padding:5px 6px;width:33%;vertical-align:top;text-align:center">' +
+      '<div style="font-weight:700;font-size:.92em">' + _accE(c[1]) + '</div>' +
+      '<div style="font-style:italic;font-size:.82em">' + _accE(c[2]) + '</div>' +
+      ((st.accParties || {})[c[0]] ? '<div style="font-size:.85em;margin-top:2px">' + _accE(st.accParties[c[0]]) + '</div>' : '') +
+      '<div style="height:22mm"></div>' +
+      '<div style="border-top:1px dotted #666;padding-top:3px;font-size:.84em;color:#555">Ký, ghi rõ họ tên</div>' +
+      '</td>').join('') + '</tr></table>';
 }
 
 const _PM_TABS = [

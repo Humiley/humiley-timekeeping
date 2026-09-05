@@ -100,6 +100,7 @@ import workforce         # headcount and turnover over time, from dated facts (p
 import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
 import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
+import acceptance_index  # Phụ lục VIb: the completion dossier's table of contents (pure)
 import acceptance        # hồ sơ nghiệm thu: NĐ 06/2021 Đ21/23/24 acceptance chain + TCVN/QCVN (pure)
 import daily_report      # the construction Daily Report: its ten pages and every number on them (pure)
 import dr_sharepoint     # reading that report out of the SharePoint forms the site fills in (pure)
@@ -4625,6 +4626,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._acc_drawing_image_ep(u, qs))
         if path == "/api/pm/acceptance/coverage":
             return self._guard(lambda u: self._acc_coverage_ep(u, qs))
+        if path == "/api/pm/acceptance/index":
+            return self._guard(lambda u: self._acc_index_ep(u, qs))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
@@ -4974,6 +4977,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._acc_compose_ep(u, body))
         if path == "/api/pm/acceptance/link":
             return self._guard(lambda u: self._acc_link_ep(u, body))
+        if path == "/api/pm/acceptance/index/declare":
+            return self._guard(lambda u: self._acc_index_declare_ep(u, body))
         if path == "/api/appr/digesttest":
             return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/tk/nudgetest":
@@ -5886,6 +5891,116 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         return None
+
+    def _acc_index_ep(self, u, qs):
+        """Danh mục hồ sơ hoàn thành — the completion dossier's table of contents, assembled.
+
+        Half of it is COUNTED from registers this module governs; the other half is what somebody
+        has declared. The split is computed here and reported separately all the way to the printed
+        sheet, because a tick meaning "the register contains 47 of these" and a tick meaning
+        "somebody said so" are not the same evidence.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        pid = str((qs.get("projectId") or [""])[0] or "").strip()
+        if not pid:
+            return self._err("Open the completion dossier from a project.", 400)
+        vis = self._pm_visible_projects(u)
+        if vis is not None and pid not in vis:
+            return self._err("That project is not one of yours. Ask its project manager, or have "
+                             "yourself added to the Team.", 403)
+        return self._json({"ok": True, "index": self._acc_index_build(pid),
+                           "project": db.get_collection_item("pm_projects", pid) or {}})
+
+    def _acc_index_build(self, pid):
+        mine = lambda coll: [r for r in db.list_collection(coll)
+                             if str(r.get("projectId") or "") == pid]
+        dossiers = mine("pm_acc")
+        accepted = [d for d in dossiers
+                    if str(d.get("status") or "").strip().lower() == "accepted"]
+        acc_ids = {str(d.get("id")) for d in dossiers}
+        # Outstanding items across the whole project, not per dossier — Điều 24(3)'s annex is one
+        # list bound into the completion dossier, however many minutes contributed to it.
+        open_defects = [d for d in mine("pm_acc_defects")
+                        if str(d.get("dossierId") or "") in acc_ids
+                        and str(d.get("status") or "Open").strip().lower() != "closed"]
+        # Clearances count only where they are EVIDENCED. An applicable clearance with no document
+        # number is the gap the index exists to surface, so it must not tick its own row.
+        clearances = []
+        for d in accepted:
+            for c in (d.get("clearances") or []):
+                if c.get("applies") and str(c.get("ref") or "").strip():
+                    clearances.append({"key": c.get("key"), "ref": c.get("ref"),
+                                       "date": c.get("date"), "from": d.get("refNo")})
+        return acceptance_index.build_index(
+            items_state=mine("pm_acc_index"), accepted=accepted, itps=mine("pm_quality_itp"),
+            open_defects=open_defects, clearances=clearances)
+
+    def _acc_index_declare_ep(self, u, body):
+        """Record — or withdraw — a declaration that one listed document exists.
+
+        Its own endpoint rather than a generic PATCH, and deliberately narrow: a declaration is an
+        ATTESTATION, and the only things a caller may set are the ones it attests to. The name and
+        the date come from the session and the server clock, never from the body, so an index row
+        can never carry a signature nobody gave.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        pid = str((body or {}).get("projectId") or "").strip()
+        no = str((body or {}).get("no") or "").strip().upper()
+        if not pid or not acceptance_index.item(no):
+            return self._err("Unknown completion-dossier item.", 400)
+        refusal = self._pm_write_refusal(u, pid)
+        if refusal:
+            return self._err(refusal, 403)
+        meta = acceptance_index.item(no)
+        if meta["source"] == acceptance_index.SRC_REGISTER:
+            return self._err(
+                "That row is counted from the register, not declared. It shows as held once the "
+                "records behind it exist — declaring it would report a dossier the register cannot "
+                "produce.", 409)
+
+        rows = [r for r in db.list_collection("pm_acc_index")
+                if str(r.get("projectId") or "") == pid
+                and str(r.get("no") or "").strip().upper() == no]
+        row = dict(rows[0]) if rows else {"projectId": pid, "no": no}
+
+        if "applies" in (body or {}):
+            applies = bool(body.get("applies"))
+            reason = str(body.get("naReason") or "").strip()
+            if not applies and len(reason) < 4:
+                return self._err("Say why this item does not apply to these works — an item struck "
+                                 "off the completion dossier with no reason is the one an auditor "
+                                 "asks about.", 400)
+            row["applies"] = applies
+            row["naReason"] = "" if applies else reason[:400]
+
+        if "declared" in (body or {}):
+            said = bool(body.get("declared"))
+            row["declared"] = said
+            # Cleared together with the flag: a name left behind on a withdrawn declaration reads
+            # as an attestation that still stands.
+            row["declaredBy"] = (u.get("name") or "") if said else ""
+            row["declaredById"] = (u.get("id") or "") if said else ""
+            row["declaredOn"] = time.strftime("%Y-%m-%d") if said else ""
+
+        if "ref" in (body or {}):
+            row["ref"] = str(body.get("ref") or "").strip()[:200]
+        if "note" in (body or {}):
+            row["note"] = str(body.get("note") or "").strip()[:600]
+
+        saved = db.put_collection_item("pm_acc_index", row)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "", "actorId": u.get("id"),
+            "action": "Completion dossier item declared",
+            "target": "pm_acc_index/" + str(saved.get("id") or no),
+            "detail": "%s · %s · ref=%s" % (no, "held" if row.get("declared") else
+                                            ("n/a" if row.get("applies") is False else "cleared"),
+                                            row.get("ref") or "-"),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "item": saved, "index": self._acc_index_build(pid)})
 
     def _acc_coverage_ep(self, u, qs):
         """What is left to accept, on one project.
@@ -12215,9 +12330,9 @@ class Handler(BaseHTTPRequestHandler):
                 "replacedPhotos": len(stale)}
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_acc_drawings", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_acc_drawings", "pm_acc_index", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_acc_drawings", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_acc_drawings", "pm_acc_index", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in

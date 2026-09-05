@@ -90,6 +90,12 @@ SHARED = {
     # document and shares its answer. The one thing it adds is BYTES — a dozen A3 rasters — and
     # that is a size question, answered by _strip_file_bytes on the list read, not a scope one.
     "pm_acc_drawings",
+    # pm_acc_index is the completion dossier's table of contents — the document the client and the
+    # construction authority work through at handover. Everyone on the project needs to see what is
+    # still missing from it; that is the entire purpose of the list. It holds no personal data: a
+    # declaration carries the declarer's NAME, which is the point of an attestation and is printed
+    # on the sheet anyway.
+    "pm_acc_index",
     #
     # pm_execNotes, pm_portfolioSnapshots and pm_quality_itp_items used to be listed here. They
     # were registered and reached by nothing — no endpoint, no screen, no test — and are now

@@ -383,5 +383,60 @@ console.log('\nCoverage draws a percentage only when the percentage is true\n');
      /_t\('concealed'\)/.test(stages));
 }
 
+
+// ══ 11 · the completion dossier index: counted and declared must not look the same ═════════════
+console.log('\nThe index shows what the register holds and what somebody merely said\n');
+{
+  const tab = take('function _accIndexTab(', '_accIndexTab');
+  ok('a counted row shows HOW MANY records stand behind it',
+     /record\(s\) in the register/.test(tab),
+     'a bare tick would make "the register contains 47 of these" and "somebody said so" identical');
+  ok('a declared row shows WHOSE word it is, and when',
+     /r\.declaredBy/.test(tab) && /r\.declaredOn/.test(tab));
+  ok('a counted row offers no way to tick it by hand',
+     /cannot be ticked by hand/.test(tab) && /_t\('automatic'\)/.test(tab),
+     'if it could be ticked, the index would report a dossier the register cannot produce');
+  ok('the two totals are reported separately, never added',
+     /_t\('Counted from the registers'\)/.test(tab) && /_t\('Declared by a person'\)/.test(tab));
+  ok('an empty register says so rather than rendering blank',
+     /nothing in the register yet/.test(tab) && /nobody has confirmed this/.test(tab),
+     'a blank cell reads as "not applicable" — the two states must be distinguishable');
+  ok('optional rows say they are optional',
+     /_t\('only where it applies'\)/.test(tab),
+     'reporting Điều 23 stage acceptance as a gap puts work on a list nobody can clear');
+
+  const dec = take('async function accIdxDeclare(', 'accIdxDeclare');
+  ok('confirming a row says out loud that it is an attestation',
+     /this is an attestation, not a tick/.test(dec));
+  ok('withdrawing warns that the name comes off',
+     /Your name comes off it/.test(dec));
+
+  const na = take('async function accIdxApplies(', 'accIdxApplies');
+  ok('striking a row off asks why, and abandons if nothing is given',
+     /if \(!why\) return;/.test(na),
+     'an item struck off the completion dossier with no reason is the one an auditor asks about');
+
+  const exp = take('function accIdxExport(', 'accIdxExport');
+  ok('the export marks each row counted or declared',
+     /'counted' : 'declared'/.test(exp),
+     'a list of ticks pasted into a report has lost the half that says which is evidence');
+  ok('and carries the verdict in both languages',
+     /\(ix\.verdict \|\| \{\}\)\.en/.test(exp) && /\(ix\.verdict \|\| \{\}\)\.vi/.test(exp));
+
+  const pr = take('function accIdxPrint(', 'accIdxPrint');
+  ok('the printed sheet quotes the article it comes from',
+     /Phụ lục VIb/.test(pr) && /Điều 26/.test(pr));
+  ok('…and prints the counted-vs-declared distinction rather than a column of ticks',
+     /counted from the registers/.test(pr) && /not verified by the system/.test(pr));
+  ok('a quantity is printed for counted rows and a reference for declared ones',
+     /r\.count \? r\.count \+ ' bộ \/ sets'/.test(pr));
+
+  const sig = take('function _accIdxSigBlocks(', '_accIdxSigBlocks');
+  ok('the index is signed by the three parties that hand the dossier over',
+     /Compiled by/.test(sig) && /Supervision consultant/.test(sig) && /Client/.test(sig),
+     'not the same list as an acceptance minute — the designer does not certify a bound set they ' +
+     'did not assemble');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
