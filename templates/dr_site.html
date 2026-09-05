@@ -279,9 +279,12 @@
      the last surface on the page that was not a rounded card on the light ground. Now it is one,
      and it still sticks, because on a fourteen-section form the Save button has to stay reachable
      without scrolling back. */
+  /* The bar's padding matches the CARD's, so Back begins exactly where the card's content begins
+     — inset by 10 against the card's 18 it looked like a near-miss, which is worse than a wide gap
+     because the eye reads it as an error rather than a margin. */
   .bar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom));
        background:var(--card);border-radius:var(--r-lg);
-       padding:10px;margin:14px 0 0;display:flex;gap:10px;
+       padding:12px 18px;margin:14px 0 0;display:flex;gap:10px;
        box-shadow:var(--ring),var(--shadow-card)}
   .bar button{flex:1}
   .foot{font-size:11.5px;color:var(--faint);text-align:center;margin-top:18px;line-height:1.6}
@@ -290,18 +293,25 @@
      document for the first time actually has. */
   footer.doc-foot{margin:16px 0 0;border-radius:var(--r-panel);overflow:hidden;position:relative;
     background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
-    color:rgba(255,255,255,.82);box-shadow:var(--shadow-card);padding:20px}
+    color:rgba(255,255,255,.82);box-shadow:var(--shadow-card);
+    /* Right and bottom clear the 52px corner triangle. Measured rather than eyeballed: the Sign out
+       button sat 20px from each edge, which put it inside the mark — the triangle is behind it and
+       pointer-events:none, so nothing broke and nothing looked obviously wrong, which is precisely
+       how it would have shipped. */
+    padding:20px 64px 20px 20px}
   footer.doc-foot::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.4;
     background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),
                      linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);
     background-size:56px 56px}
   footer.doc-foot > *{position:relative}
-  footer.doc-foot img{height:22px;width:auto;display:block;margin-bottom:10px}
+  footer.doc-foot img{height:34px;width:auto;display:block;margin-bottom:14px}
   footer.doc-foot .fline{font-size:12.5px;line-height:1.65}
   footer.doc-foot .fline b{color:#fff;font-weight:700}
-  footer.doc-foot .fmeta{margin-top:12px;padding-top:12px;font-size:11.5px;
-    border-top:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.6);
-    display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  /* Who filed it sits WITH the button that ends their session, not stranded at the opposite edge
+     of a 1400px panel where the two read as unrelated. */
+  footer.doc-foot .fmeta{margin-top:14px;padding-top:14px;font-size:12px;
+    border-top:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.66);
+    display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
   footer.doc-foot .corner{position:absolute;right:0;bottom:0;width:52px;height:52px;
     background:var(--emerald);clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
   footer.doc-foot .signout{background:transparent;border:1px solid rgba(255,255,255,.28);
@@ -332,6 +342,7 @@
   @media (min-width:700px){
     .wrap{padding:0 20px 48px}
     .card{padding:22px 24px}
+    .bar{padding:14px 24px}
     header h1{font-size:19px}
     header .who{font-size:12.5px}
     .doc .mk{height:46px;max-width:150px}
@@ -362,9 +373,11 @@
     .row input,.row select,.row textarea{max-width:520px}
     .g2 input,.g2 select,.g3 input,.g3 select{max-width:none}
     /* Sticky-to-the-bottom is a phone idiom. On a desktop the actions belong with the form. */
-    .bar{position:static;margin:18px 0 0;padding:14px 0 0;border-top:1px solid var(--line);
-         box-shadow:none;justify-content:flex-start}
-    .bar button{flex:0 0 auto;min-width:150px}
+    /* Back opens the row, Save closes it. Both crowded at the left of a 1400px bar read as
+       unplaced; at the two ends they read as the two ends of the same action. */
+    .bar{position:static;margin:14px 0 0;padding:14px 24px;
+         justify-content:space-between}
+    .bar button{flex:0 0 auto;min-width:160px}
   }
 
   /* A pointer is not a finger. Touch targets stay at 44px where there is no hover to help. */
