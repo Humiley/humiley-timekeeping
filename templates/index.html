@@ -51398,6 +51398,102 @@ function _drPrintSafety(s) {
 }
 
 /* ── sync ────────────────────────────────────────────────────────────────────────────────────── */
+
+/* ── the contractor's own form link ──────────────────────────────────────────────────────────────
+   Where a contractor with no Microsoft account is let in. Two things live here and they are
+   deliberately separate controls, because they answer different problems:
+
+     "somebody left the site"  -> Sign everyone out. The link is unchanged, the crew that remains
+                                  keeps working, the person who left has to be on the list to get
+                                  back — and they are not.
+     "the link itself leaked"  -> Issue a new link. Every bookmark and forwarded copy of the old one
+                                  stops resolving, and the new one has to be sent out again.
+
+   Collapsing them into one "revoke" button would mean re-sending the link to a whole site crew
+   every time one person leaves, which is the kind of friction that ends with somebody sharing a
+   login. */
+let _DRL = null;      // the last /api/dr/link payload for the contractor on screen
+
+function _drAccessCard(c) {
+  const emails = _t('Who may open the form');
+  return '<div class="card" style="padding:18px 20px;margin-bottom:14px">' +
+    '<div style="font-weight:800;font-size:14px;color:var(--navy);margin-bottom:4px">' +
+      _t('The site’s own form link') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' +
+      _t('This contractor fills the daily report in through its own permanent link — no Microsoft account needed. The link never changes. It is not a password: opening it asks for one of the email addresses below, and sends a six-digit code there.') +
+    '</div>' +
+    '<label style="display:flex;flex-direction:column;gap:4px;font-size:12px">' +
+      '<span style="color:var(--text-light);font-weight:600">' + _crmEsc(emails) + '</span>' +
+      '<textarea class="form-control" rows="2" data-drlistfield="emails" placeholder="' +
+      _tkEscA(_t('One address per line')) + '">' +
+      _crmEsc((Array.isArray(c.emails) ? c.emails : String(c.emails || '').split(/[,;\n]/))
+              .map(x => String(x).trim()).filter(Boolean).join('\n')) + '</textarea></label>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:5px;line-height:1.5">' +
+      _t('Only these addresses can open the form. Removing one takes effect immediately, even on a phone that was already signed in.') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
+      '<button class="btn btn-primary btn-sm" onclick="tkDrShowLink()">' + _t('Show the link') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="tkDrSendLink()">' + _t('Email the link') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="tkDrSignOutAll()">' + _t('Sign everyone out') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="tkDrNewLink()">' + _t('Issue a new link') + '</button>' +
+    '</div>' +
+    '<div id="dr-link-out" style="margin-top:12px">' + _drLinkOut() + '</div></div>';
+}
+
+function _drLinkOut() {
+  const d = _DRL; if (!d) return '';
+  if (d.error) return '<div style="font-size:12px;color:var(--danger,#B42318);line-height:1.6">' +
+    _crmEsc(d.error) + '</div>';
+  return (d.url ? '<label style="display:flex;flex-direction:column;gap:4px;font-size:12px">' +
+      '<span style="color:var(--text-light);font-weight:600">' + _t('The link') + '</span>' +
+      '<input class="form-control" readonly onclick="this.select()" value="' + _tkEscA(d.url) + '">' +
+      '</label>' : '') +
+    (d.sentAt ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:6px">' +
+      _tp('Last emailed {0} to {1}', tkFmtDate(String(d.sentAt).slice(0, 10)), d.sentTo || '—') +
+      '</div>' : '') +
+    (d.note ? '<div style="font-size:12px;color:var(--success,#0E9F5B);margin-top:8px">' +
+      _crmEsc(d.note) + '</div>' : '');
+}
+
+async function _drLinkCall(body, note) {
+  const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId); if (!cur) return;
+  try {
+    await tkDrSaveContractor();          // the addresses on screen are the ones that count
+    _DRL = await tkApi('/api/dr/link', { method: 'POST', body:
+      Object.assign({ contractorId: cur.id, projectId: _DR.pid }, body) });
+    if (note) _DRL.note = note;
+  } catch (e) { _DRL = { error: _errMsg(e) }; }
+  const out = document.getElementById('dr-link-out');
+  if (out) out.innerHTML = _drLinkOut();
+}
+
+function tkDrShowLink() { _drLinkCall({}, ''); }
+function tkDrSendLink() { _drLinkCall({ send: true }, _t('Sent.')); }
+
+async function tkDrSignOutAll() {
+  if (!await tkConfirm(_t('Sign every device out of this contractor’s form?\n\nThe link still works. Anyone still on the list can sign in again with a new code.'))) return;
+  const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId); if (!cur) return;
+  try {
+    await tkApi('/api/dr/revoke', { method: 'POST', body: {
+      contractorId: cur.id, projectId: _DR.pid } });
+    // Not "N devices signed out": the server never held a device list to count. It raised the
+    // generation every cookie is stamped with, so every device is out — including ones nobody
+    // knew about, which is the whole point.
+    toast(_t('Every device has been signed out. The link still works.'));
+  } catch (e) { toast(_t('Could not sign devices out') + ': ' + _errMsg(e), 'error', 6000); }
+}
+
+async function tkDrNewLink() {
+  if (!await tkConfirm(_t('Issue a new link for this contractor?\n\nEvery copy of the old link stops working, including any the site has bookmarked — so it has to be emailed out again.'))) return;
+  const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId); if (!cur) return;
+  try {
+    _DRL = await tkApi('/api/dr/revoke', { method: 'POST', body: {
+      contractorId: cur.id, projectId: _DR.pid, newLink: true } });
+    _DRL.note = _t('A new link has been issued. Email it to the site — the old one no longer works.');
+    await tkLoadColl('dr_contractors', { force: true });
+    _drPaint();
+  } catch (e) { toast(_t('Could not issue a new link') + ': ' + _errMsg(e), 'error', 6000); }
+}
+
 async function tkDrSync() {
   const cid = _DR.sel.contractorId;
   if (!cid) { toast(_t('Choose a contractor first.'), 'warn'); return; }
@@ -51508,6 +51604,7 @@ function _drSetupContractor(cons, c) {
           _t('Upload contractor logo') + '</button>' +
         (c.logo ? '<button class="btn btn-outline btn-sm" onclick="tkDrLogoClear()">' + _t('Remove') + '</button>' : '') +
       '</div></div>' +
+    _drAccessCard(c) +
     '<div class="card" style="padding:18px 20px;margin-bottom:14px">' +
       '<div style="font-weight:800;font-size:14px;color:var(--navy);margin-bottom:4px">' +
         _t('The columns this contractor’s tables count') + '</div>' +

@@ -54,6 +54,45 @@ investor, the two consultant lines, the client's logo, and the project's SharePo
 4. **Safety checklist** — leave empty for the eleven standard checks.
 5. **The SharePoint lists**, then press **Check the lists**.
 
+## The contractor's own link
+
+This is the route to prefer. Adding a contractor mints a **permanent link** —
+`https://portal.humiley.com/dr/<token>` — and Report Setup's *The site's own form link* card shows
+it, emails it, and takes it back. The site opens it on a phone, fills the day in, and never touches
+a Microsoft account. The link does not change when people come and go, so it can be printed in a
+site induction pack.
+
+**The link is not a password.** Opening it asks for an email address, and only an address on that
+contractor's list gets anywhere: a six-digit code is sent there, and the code is what signs the
+device in for thirty days. Somebody who forwards the link to a friend has forwarded a page that
+will ask the friend for an address they do not have. The page says the same thing whether or not
+the address was on the list, so the link cannot be used to find out who is on it.
+
+There are two ways to take access back, and they are separate controls because they answer
+different problems:
+
+| | what it does | when |
+| --- | --- | --- |
+| **Sign everyone out** | every signed-in device has to enter a fresh code; the link is unchanged | somebody left the site — take them off the address list first, and they cannot get a code |
+| **Issue a new link** | the old link stops resolving everywhere, including bookmarks; the new one must be emailed out | the link itself leaked |
+
+Removing an address takes effect immediately, on a phone that was already signed in — the session
+is re-checked against the list on every request, not only at sign-in.
+
+There is no session table: the cookie is self-contained and signed, so a crew is not logged out
+every time the portal restarts. What makes *Sign everyone out* mean anything is a generation number
+kept on the contractor and stamped into every cookie it issues. Pressing the button raises it, and
+a cookie carrying the previous generation stops being accepted — including on devices nobody knew
+about, which is the point.
+
+### Ops: this needs `Mail.Send`
+
+The code is emailed with the portal's own app-only Graph token. **Without `Mail.Send` consented on
+the app registration, no code is ever delivered and nobody can sign in at all** — the link is inert.
+The send is synchronous and the screen reports the actual Graph error, so a missing consent shows up
+as a message rather than as a code that never arrives. Grant it alongside the `Sites.*` permissions
+the sync already uses.
+
 ## The SharePoint side, for contractors with no Microsoft account
 
 This is the constraint that shapes the whole setup: **the contractors do not have accounts in the
@@ -210,8 +249,10 @@ report over is a report nobody trusts again. `daily_report.INCLUSIVE_ELAPSED` na
 | `daily_report.py` | every number on the report, the ten-page structure, and the PM-project merge — pure, no I/O |
 | `dr_sharepoint.py` | reading the lists and the folder: URL parsing, column matching, row mapping, assembly — pure, the HTTP getter is injected |
 | `dr_forms.py` | the lists and forms the report is filled in WITH — one table generating the form questions, the SharePoint columns and the flow mapping, so the three cannot drift |
-| `app.py` | `/api/dr/report`, `/api/dr/photo/<id>`, `/api/dr/detect`, `/api/dr/sync`, and the `dr_*` project scoping |
-| `templates/index.html` | the `pmRenderDailyReport` tab, Report Setup, and the letterhead exporter |
+| `dr_access.py` | who may open a contractor's link: the token, the six-digit code, the rate limits and the signed session — pure, the clock is passed in |
+| `app.py` | `/api/dr/report`, `/api/dr/photo/<id>`, `/api/dr/detect`, `/api/dr/sync`, the `/dr/<token>` site form and its `/api/dr/site/*` endpoints, `/api/dr/link` and `/api/dr/revoke`, and the `dr_*` project scoping |
+| `templates/dr_site.html` | the page the site itself sees — standalone, no portal framework, EN/VN, one section at a time |
+| `templates/index.html` | the `pmRenderDailyReport` tab, Report Setup (including the link card), and the letterhead exporter |
 | `tools/seed_daily_report.py` | seeds both source reports into a dev database, for comparing against the originals |
 
 Collections: `dr_settings` (one per project, keyed by its id), `dr_contractors`, `dr_reports`,

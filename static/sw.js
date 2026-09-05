@@ -13,7 +13,7 @@
    Re-read main immediately before merging and bump again if someone got there first. And verify a
    deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
    against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
-const CACHE = 'hml-pwa-v840';
+const CACHE = 'hml-pwa-v848';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
   '/static/vendor/msal-browser.min.js',   // self-hosted, and needed to sign in — precache for offline
   // Chart.js is NOT here, for the same reason Leaflet is not (see below): it is fetched when

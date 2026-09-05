@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Daily Report</title>
+<!--
+  The site's own daily report form.
+
+  A SEPARATE PAGE, not part of the portal shell. The portal's index.html is 4 MB and assumes a
+  signed-in employee; the people using this are on a phone, on a plant-room connection, standing up,
+  and are not employees at all. So this is one small self-contained file with no framework, no
+  fonts to fetch and no build step — it has to open on a bad connection or it does not get used,
+  and a report that does not get used is a report somebody emails as a photo of a notebook instead.
+
+  It knows nothing about the portal. Every request goes to /api/dr/site/*, carries the token from
+  the address bar, and gets back only this contractor's own configuration and its own day.
+
+  SAVED A SECTION AT A TIME. One dropped connection then loses the section being worked on rather
+  than the whole day, which is the difference between an annoyance and starting again.
+-->
+<style>
+  :root{
+    --navy:#205090; --navy-deep:#163866; --emerald:#00925B; --danger:#C0392B; --warn:#8F5512;
+    --ink:#1C2430; --mut:#5C6470; --faint:#8A93A5;
+    --bg:#F2F5FA; --card:#FFFFFF; --line:#DBE2EE; --soft:#F1F5FA;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink); font:16px/1.55 'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
+    padding-bottom:env(safe-area-inset-bottom);
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:680px;margin:0 auto;padding:0 14px 40px}
+
+  header{background:var(--navy);color:#fff;padding:calc(14px + env(safe-area-inset-top)) 0 14px}
+  header .wrap{display:flex;align-items:center;gap:12px}
+  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25}
+  header .who{font-size:11.5px;opacity:.85;font-weight:400;display:block}
+  .lang{background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12px;padding:6px 10px;
+        border-radius:6px;cursor:pointer}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
+  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep)}
+  p.hint{font-size:13px;color:var(--mut);margin:0 0 12px;line-height:1.5}
+
+  label{display:block;font-size:12.5px;color:var(--mut);font-weight:600;margin:0 0 4px}
+  input,select,textarea{
+    width:100%;font:16px/1.4 inherit;color:var(--ink);background:var(--card);
+    border:1px solid var(--line);border-radius:8px;padding:11px 12px;
+  }
+  /* 16px is not a style choice: anything smaller makes iOS Safari zoom the whole page on focus. */
+  textarea{min-height:64px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy)}
+  .row{margin-bottom:12px}
+  .grid{display:grid;gap:10px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+
+  button{font:15px/1 inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);
+         background:var(--card);color:var(--ink);padding:12px 16px;cursor:pointer}
+  button:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
+  .primary{background:var(--navy);border-color:var(--navy);color:#fff}
+  .wide{width:100%}
+  .link{background:none;border:0;color:var(--navy);text-decoration:underline;padding:6px 2px;font-size:13.5px}
+  button[disabled]{opacity:.55;cursor:default}
+
+  .msg{font-size:13.5px;border-radius:8px;padding:10px 12px;margin-top:10px;line-height:1.5}
+  .msg.err{background:#FDECEA;color:#8A2118;border:1px solid #F3C4BE}
+  .msg.ok{background:#E9F7F0;color:#0A6B45;border:1px solid #BFE6D4}
+  .msg.info{background:var(--soft);color:var(--mut);border:1px solid var(--line)}
+
+  /* the section menu */
+  .sections{display:flex;flex-direction:column;gap:0;margin:0;padding:0;list-style:none}
+  .sections li{border-top:1px solid var(--line)}
+  .sections li:first-child{border-top:0}
+  .sections button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;
+    border:0;background:none;padding:14px 2px;font-weight:600;font-size:14.5px}
+  .sections .n{flex:1}
+  .count{font-size:12px;font-weight:600;color:var(--faint);font-variant-numeric:tabular-nums}
+  .count.has{color:var(--emerald)}
+  .chev{color:var(--faint);font-size:13px}
+
+  /* repeating rows */
+  .item{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--soft)}
+  .item .top{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .item .top b{flex:1;font-size:13px;color:var(--navy-deep)}
+  .del{background:none;border:0;color:var(--danger);font-size:12.5px;padding:2px 4px;text-decoration:underline}
+
+  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+  .photos figure{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--soft)}
+  .photos img{width:100%;height:78px;object-fit:cover;display:block}
+  .photos figcaption{font-size:10.5px;color:var(--mut);padding:4px 5px;text-align:center;
+                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .bar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
+       padding:10px 14px calc(10px + env(safe-area-inset-bottom));margin:16px -14px -40px;
+       display:flex;gap:10px}
+  .bar button{flex:1}
+  .foot{font-size:11.5px;color:var(--faint);text-align:center;margin-top:18px;line-height:1.6}
+  .hide{display:none !important}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1 id="hTitle">Daily Report<span class="who" id="hWho"></span></h1>
+  <button class="lang" id="langBtn" type="button">VN</button>
+</div></header>
+
+<div class="wrap">
+  <div id="app"><div class="card"><p class="hint" id="boot">Loading…</p></div></div>
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+/* ── the two languages, inline ────────────────────────────────────────────────────────────────
+   The people filling this in work on a site in Dong Nai. The dictionary is inline rather than
+   fetched because a second request on a bad connection is a second chance to fail, and a form that
+   renders in English for a Vietnamese crew is a form that gets filled in wrongly. */
+var VI = {
+  "Daily Report":"Báo cáo hằng ngày",
+  "Sign in":"Đăng nhập","Your email address":"Địa chỉ email của bạn",
+  "Send me a code":"Gửi mã cho tôi","Enter the code":"Nhập mã",
+  "Six-digit code":"Mã sáu chữ số","Confirm":"Xác nhận","Use another address":"Dùng địa chỉ khác",
+  "Only the addresses Humiley has listed for your company can open this form.":
+    "Chỉ những địa chỉ Humiley đã đăng ký cho công ty bạn mới mở được biểu mẫu này.",
+  "Report date":"Ngày báo cáo","Today":"Hôm nay",
+  "Weather":"Thời tiết","Morning":"Buổi sáng","Afternoon":"Buổi chiều","Evening":"Buổi tối",
+  "Average temperature (°C)":"Nhiệt độ trung bình (°C)","Rainfall (hours)":"Thời gian mưa (giờ)",
+  "Management staff":"Nhân sự quản lý","Workers":"Công nhân",
+  "Equipment & machinery":"Thiết bị & máy móc","Material delivery":"Vật tư nhập về",
+  "Work completed today":"Công việc hoàn thành hôm nay","Next day work plan":"Kế hoạch ngày mai",
+  "Progress photos":"Hình ảnh tiến độ","Documents":"Hồ sơ","Defects":"Lỗi",
+  "Inspection today":"Nghiệm thu hôm nay","Next day inspection":"Nghiệm thu ngày mai",
+  "Safety checks":"Kiểm tra an toàn","Requests & recommendations":"Yêu cầu & kiến nghị",
+  "Add":"Thêm","Remove":"Xóa","Save":"Lưu","Saved":"Đã lưu","Back":"Quay lại","Done":"Xong",
+  "Item":"Nội dung","Quantity":"Số lượng","Unit":"Đơn vị","Notes":"Ghi chú","Location":"Vị trí",
+  "Category":"Hạng mục","Document code":"Mã hồ sơ","Today (%)":"Hôm nay (%)","Overall (%)":"Lũy kế (%)",
+  "Start":"Bắt đầu","Finish":"Hoàn thành","Description":"Mô tả","Corrective action":"Biện pháp khắc phục",
+  "Identified":"Ngày phát hiện","Due":"Ngày dự kiến xong","Status":"Trạng thái","Time":"Thời gian",
+  "Group":"Nhóm","Recommendation":"Kiến nghị","Caption":"Chú thích","Add photos":"Thêm ảnh",
+  "Yes":"Có","No":"Không","N/A":"Không áp dụng","Not answered":"Chưa trả lời",
+  "Nothing added yet.":"Chưa thêm mục nào.",
+  "Could not save. Check your connection and try again.":
+    "Không lưu được. Kiểm tra kết nối và thử lại.",
+  "Sign out":"Đăng xuất","Uploading…":"Đang tải lên…","Saving…":"Đang lưu…",
+  "A check nobody answers shows as NOT ANSWERED on the report — never as passed.":
+    "Mục không ai trả lời sẽ hiển thị CHƯA TRẢ LỜI trên báo cáo — không bao giờ là đạt.",
+  "Filed":"Đã gửi"
+};
+var lang = (localStorage.getItem('drlang') || 'en');
+function t(s){ return (lang === 'vi' && VI[s]) ? VI[s] : s; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g,
+  function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+var TOKEN = decodeURIComponent(location.pathname.replace(/^\/dr\//, '').replace(/\/$/, ''));
+var S = { date:'', setup:null, report:{}, photos:[], dates:[], view:'menu', section:null,
+          email:'', contractor:'' };
+
+/* ── talking to the server ─────────────────────────────────────────────────────────────────── */
+async function api(path, body){
+  var opt = { method: body ? 'POST' : 'GET', credentials:'same-origin',
+              headers:{'Content-Type':'application/json'} };
+  if (body) opt.body = JSON.stringify(body);
+  var r, j;
+  try { r = await fetch(path, opt); } catch(e){ throw new Error('offline'); }
+  try { j = await r.json(); } catch(e){ j = {}; }
+  if (!r.ok) { var err = new Error(j.error || ('HTTP ' + r.status)); err.status = r.status; throw err; }
+  return j;
+}
+function el(id){ return document.getElementById(id); }
+function show(html){ el('app').innerHTML = html; }
+function msg(kind, text){
+  return '<div class="msg ' + kind + '">' + esc(text) + '</div>';
+}
+
+/* ── sign in ───────────────────────────────────────────────────────────────────────────────── */
+function viewEmail(note){
+  show('<div class="card">'
+    + '<h2>' + t('Sign in') + '</h2>'
+    + '<p class="hint">' + t('Only the addresses Humiley has listed for your company can open this form.') + '</p>'
+    + '<div class="row"><label for="em">' + t('Your email address') + '</label>'
+    + '<input id="em" type="email" inputmode="email" autocomplete="email" autocapitalize="off" '
+    + 'spellcheck="false" value="' + esc(S.email) + '"></div>'
+    + '<button class="primary wide" id="go">' + t('Send me a code') + '</button>'
+    + (note || '') + '</div>');
+  el('go').onclick = async function(){
+    var v = (el('em').value || '').trim();
+    if (!v) { el('em').focus(); return; }
+    S.email = v;
+    this.disabled = true; this.textContent = '…';
+    try {
+      var r = await api('/api/dr/site/code', { token: TOKEN, email: v });
+      viewCode(msg(r.ok ? 'info' : 'err', r.message || ''));
+    } catch(e){
+      viewEmail(msg('err', e.message === 'offline'
+        ? t('Could not save. Check your connection and try again.') : e.message));
+    }
+  };
+}
+
+function viewCode(note){
+  show('<div class="card">'
+    + '<h2>' + t('Enter the code') + '</h2>'
+    + '<p class="hint">' + esc(S.email) + '</p>'
+    + '<div class="row"><label for="cd">' + t('Six-digit code') + '</label>'
+    + '<input id="cd" type="text" inputmode="numeric" autocomplete="one-time-code" '
+    + 'pattern="[0-9]*" maxlength="6"></div>'
+    + '<button class="primary wide" id="ok">' + t('Confirm') + '</button>'
+    + '<button class="link" id="again">' + t('Use another address') + '</button>'
+    + (note || '') + '</div>');
+  el('cd').focus();
+  el('again').onclick = function(){ viewEmail(''); };
+  el('ok').onclick = async function(){
+    var c = (el('cd').value || '').replace(/\D/g, '');
+    if (c.length < 4) { el('cd').focus(); return; }
+    this.disabled = true; this.textContent = '…';
+    try {
+      var r = await api('/api/dr/site/verify', { token: TOKEN, email: S.email, code: c });
+      S.contractor = r.contractor || '';
+      await load();
+    } catch(e){ viewCode(msg('err', e.message)); }
+  };
+}
+
+/* ── the day ───────────────────────────────────────────────────────────────────────────────── */
+async function load(date){
+  try {
+    var r = await api('/api/dr/site/day?token=' + encodeURIComponent(TOKEN)
+                      + (date ? '&date=' + encodeURIComponent(date) : ''));
+    S.date = r.date; S.setup = r.setup; S.report = r.report || {}; S.photos = r.photos || [];
+    S.dates = r.dates || []; S.contractor = (r.contractor || {}).name || S.contractor;
+    S.today = r.today || r.date;   // the SERVER's today, in the site's timezone — a phone's clock is not authority
+    S.email = (r.contractor || {}).email || S.email;
+    el('hWho').textContent = S.contractor + (S.email ? ' · ' + S.email : '');
+    viewMenu();
+  } catch(e){
+    if (e.status === 401) { viewEmail(''); return; }
+    show('<div class="card">' + msg('err', e.message) + '</div>');
+  }
+}
+
+/* Which sections exist, in the order the printed report prints them, and how many rows each holds.
+   The count is the whole navigation: a person coming back after lunch needs to see what is still
+   empty without opening eleven screens. */
+var SECTIONS = [
+  ['weather','Weather','obj'], ['mgmt','Management staff','counts'], ['workers','Workers','counts'],
+  ['equipment','Equipment & machinery','rows'], ['materials','Material delivery','rows'],
+  ['progress','Work completed today','rows'], ['plan','Next day work plan','rows'],
+  ['photos','Progress photos','photos'], ['documents','Documents','rows'],
+  ['defects','Defects','rows'], ['inspections','Inspection today','rows'],
+  ['inspectionPlan','Next day inspection','rows'], ['safety','Safety checks','safety'],
+  ['recommendations','Requests & recommendations','rows']
+];
+function sectionCount(key, kind){
+  if (kind === 'photos') return S.photos.length;
+  var v = S.report[key];
+  if (kind === 'rows') return (v || []).length;
+  if (kind === 'counts' || kind === 'safety' || kind === 'obj') {
+    var n = 0; for (var k in (v || {})) { if (String((v[k] && v[k].status) || v[k] || '') !== '') n++; }
+    return n;
+  }
+  return 0;
+}
+
+function viewMenu(){
+  var html = '<div class="card">'
+    + '<div class="row"><label for="dt">' + t('Report date') + '</label>'
+    + '<input id="dt" type="date" value="' + esc(S.date) + '" max="' + esc(S.today || S.date) + '"></div>'
+    + (S.report.submittedAt ? '<div class="count has">' + t('Filed') + '</div>' : '')
+    + '</div><div class="card"><ul class="sections">';
+  SECTIONS.forEach(function(sec){
+    var n = sectionCount(sec[0], sec[2]);
+    html += '<li><button data-sec="' + sec[0] + '"><span class="n">' + t(sec[1]) + '</span>'
+      + '<span class="count' + (n ? ' has' : '') + '">' + (n || '—') + '</span>'
+      + '<span class="chev">›</span></button></li>';
+  });
+  html += '</ul></div><button class="link" id="out">' + t('Sign out') + '</button>';
+  show(html);
+  el('dt').onchange = function(){ if (this.value) load(this.value); };
+  el('out').onclick = async function(){ try { await api('/api/dr/site/signout', {}); } catch(e){} viewEmail(''); };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-sec]'), function(b){
+    b.onclick = function(){ openSection(b.getAttribute('data-sec')); };
+  });
+}
+
+/* ── one section ───────────────────────────────────────────────────────────────────────────── */
+var FIELDS = {
+  equipment:[['item','Item','text'],['qty','Quantity','number'],['unit','Unit','text'],['notes','Notes','area']],
+  materials:[['item','Item','text'],['docCode','Document code','text'],['notes','Notes','area']],
+  progress:[['category','Category','cat'],['item','Item','text'],['daily','Today (%)','number'],
+            ['accum','Overall (%)','number'],['start','Start','date'],['finish','Finish','date']],
+  plan:[['category','Category','cat'],['item','Item','text'],['location','Location','text'],['notes','Notes','area']],
+  documents:[['group','Group','group'],['item','Item','text'],['docCode','Document code','text'],
+             ['category','Category','cat'],['notes','Notes','area']],
+  defects:[['desc','Description','area'],['action','Corrective action','area'],
+           ['identified','Identified','date'],['due','Due','date']],
+  inspections:[['item','Item','text'],['location','Location','text'],['docCode','Document code','text'],
+               ['status','Status','text'],['notes','Notes','area']],
+  inspectionPlan:[['item','Item','text'],['location','Location','text'],['time','Time','text'],['notes','Notes','area']],
+  recommendations:[['item','Recommendation','area'],['location','Location','text'],['notes','Notes','area']]
+};
+var DOC_GROUPS = ['7.1- Construction Shop Drawings','7.2- Method Statements',
+                  '7.3- Material Submission','7.4- Other Submissions'];
+
+function openSection(key){
+  var sec = SECTIONS.filter(function(x){ return x[0] === key; })[0];
+  S.section = sec; S.draft = JSON.parse(JSON.stringify(S.report[key] || (sec[2] === 'rows' ? [] : {})));
+  renderSection('');
+}
+
+function renderSection(note){
+  var key = S.section[0], kind = S.section[2];
+  var body = kind === 'obj' ? renderWeather()
+           : kind === 'counts' ? renderCounts(key)
+           : kind === 'safety' ? renderSafety()
+           : kind === 'photos' ? renderPhotos()
+           : renderRows(key);
+  show('<div class="card"><h2>' + t(S.section[1]) + '</h2>' + body + (note || '') + '</div>'
+     + (kind === 'photos' ? '' :
+        '<div class="bar"><button id="back">' + t('Back') + '</button>'
+        + '<button class="primary" id="save">' + t('Save') + '</button></div>'));
+  if (el('back')) el('back').onclick = viewMenu;
+  if (el('save')) el('save').onclick = saveSection;
+  wire();
+}
+
+function renderWeather(){
+  var w = S.draft || {}, opts = (S.setup.weather || []);
+  function sel(k, label){
+    return '<div class="row"><label>' + t(label) + '</label><select data-w="' + k + '">'
+      + '<option value=""></option>'
+      + opts.map(function(o){
+          var v = o.charAt(0).toUpperCase() + o.slice(1);
+          return '<option' + (String(w[k]||'').toLowerCase() === o ? ' selected' : '') + '>' + esc(v) + '</option>';
+        }).join('') + '</select></div>';
+  }
+  return sel('morning','Morning') + sel('afternoon','Afternoon') + sel('evening','Evening')
+    + '<div class="grid g2"><div class="row"><label>' + t('Average temperature (°C)') + '</label>'
+    + '<input data-w="avgTemp" type="number" inputmode="decimal" value="' + esc(w.avgTemp||'') + '"></div>'
+    + '<div class="row"><label>' + t('Rainfall (hours)') + '</label>'
+    + '<input data-w="rainHours" type="number" inputmode="decimal" value="' + esc(w.rainHours||'') + '"></div></div>';
+}
+
+function renderCounts(key){
+  var names = key === 'mgmt' ? (S.setup.mgmtRoles||[]) : (S.setup.workerTrades||[]);
+  var v = S.draft || {};
+  if (!names.length) return msg('info', 'Humiley has not set up this list yet.');
+  return '<div class="grid g2">' + names.map(function(n){
+    return '<div class="row"><label>' + esc(n) + '</label>'
+      + '<input data-c="' + esc(n) + '" type="number" inputmode="numeric" min="0" value="'
+      + esc(v[n] === 0 || v[n] ? v[n] : '') + '"></div>';
+  }).join('') + '</div>';
+}
+
+function renderSafety(){
+  var v = S.draft || {};
+  return '<p class="hint">' + t('A check nobody answers shows as NOT ANSWERED on the report — never as passed.') + '</p>'
+    + (S.setup.safetyChecks||[]).map(function(c){
+        var cur = (v[c] && v[c].status) || '';
+        return '<div class="row"><label>' + esc(c) + '</label><select data-s="' + esc(c) + '">'
+          + '<option value=""></option>'
+          + ['Yes','No','N/A'].map(function(o){
+              return '<option value="' + o + '"' + (cur === o ? ' selected' : '') + '>' + t(o) + '</option>';
+            }).join('') + '</select></div>';
+      }).join('');
+}
+
+function renderRows(key){
+  var spec = FIELDS[key] || [], rows = S.draft || [];
+  var html = rows.length ? '' : msg('info', t('Nothing added yet.'));
+  rows.forEach(function(r, i){
+    html += '<div class="item"><div class="top"><b>' + (i+1) + '</b>'
+      + '<button class="del" data-del="' + i + '">' + t('Remove') + '</button></div>';
+    spec.forEach(function(f){
+      html += '<div class="row"><label>' + t(f[1]) + '</label>' + field(f, r[f[0]] || '', i) + '</div>';
+    });
+    html += '</div>';
+  });
+  return html + '<button class="wide" id="add">+ ' + t('Add') + '</button>';
+}
+
+function field(f, val, i){
+  var attr = 'data-r="' + i + '" data-f="' + f[0] + '"';
+  if (f[2] === 'area') return '<textarea ' + attr + '>' + esc(val) + '</textarea>';
+  if (f[2] === 'date') return '<input ' + attr + ' type="date" value="' + esc(val) + '">';
+  if (f[2] === 'number') return '<input ' + attr + ' type="number" inputmode="decimal" value="' + esc(val) + '">';
+  if (f[2] === 'cat' || f[2] === 'group') {
+    var opts = f[2] === 'cat' ? (S.setup.categories || []) : DOC_GROUPS;
+    return '<select ' + attr + '><option value=""></option>' + opts.map(function(o){
+      return '<option' + (val === o ? ' selected' : '') + '>' + esc(o) + '</option>';
+    }).join('') + '</select>';
+  }
+  return '<input ' + attr + ' type="text" value="' + esc(val) + '">';
+}
+
+function wire(){
+  if (el('add')) el('add').onclick = function(){ S.draft.push({}); renderSection(''); };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function(b){
+    b.onclick = function(){ S.draft.splice(+b.getAttribute('data-del'), 1); renderSection(''); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-r]'), function(inp){
+    inp.oninput = function(){ S.draft[+inp.getAttribute('data-r')][inp.getAttribute('data-f')] = inp.value; };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-w]'), function(inp){
+    inp.oninput = inp.onchange = function(){ S.draft[inp.getAttribute('data-w')] = inp.value; };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-c]'), function(inp){
+    inp.oninput = function(){ S.draft[inp.getAttribute('data-c')] = inp.value; };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-s]'), function(sl){
+    sl.onchange = function(){
+      var k = sl.getAttribute('data-s');
+      if (sl.value) S.draft[k] = { status: sl.value, notes: (S.draft[k]||{}).notes || '' };
+      else delete S.draft[k];
+    };
+  });
+  if (el('pick')) el('pick').onchange = uploadPhotos;
+}
+
+async function saveSection(){
+  var b = el('save'); b.disabled = true; b.textContent = t('Saving…');
+  try {
+    await api('/api/dr/site/save', { token: TOKEN, date: S.date,
+                                     field: S.section[0], value: S.draft });
+    S.report[S.section[0]] = S.draft;
+    viewMenu();
+  } catch(e){
+    b.disabled = false; b.textContent = t('Save');
+    renderSection(msg('err', e.status === 401 ? e.message
+      : (e.message === 'offline' ? t('Could not save. Check your connection and try again.') : e.message)));
+  }
+}
+
+/* ── photos ────────────────────────────────────────────────────────────────────────────────── */
+function renderPhotos(){
+  var cats = S.setup.categories || [];
+  return '<div class="row"><label>' + t('Category') + '</label><select id="pcat">'
+    + cats.map(function(c){ return '<option>' + esc(c) + '</option>'; }).join('') + '</select></div>'
+    + '<div class="row"><label for="pick">' + t('Add photos') + '</label>'
+    + '<input id="pick" type="file" accept="image/*" multiple></div>'
+    + '<div id="pstat"></div>'
+    + '<div class="photos">' + S.photos.map(function(p){
+        return '<figure><img src="/api/dr/photo/' + encodeURIComponent(p.id) + '" alt="" loading="lazy">'
+          + '<figcaption>' + esc(p.category || '') + '</figcaption></figure>';
+      }).join('') + '</div>'
+    + '<div class="bar"><button id="back2">' + t('Done') + '</button></div>';
+}
+
+/* Downscaled in the browser BEFORE upload. A modern phone photo is 4-6 MB and a site connection is
+   not; 1600px is more than the report ever draws, and it turns a minute of waiting into a second. */
+function shrink(file){
+  return new Promise(function(res, rej){
+    var fr = new FileReader();
+    fr.onerror = function(){ rej(new Error('unreadable')); };
+    fr.onload = function(){
+      var im = new Image();
+      im.onerror = function(){ rej(new Error('not an image')); };
+      im.onload = function(){
+        try {
+          var k = Math.min(1, 1600 / Math.max(im.width, im.height));
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(im.width * k));
+          c.height = Math.max(1, Math.round(im.height * k));
+          c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+          res(c.toDataURL('image/jpeg', 0.82));
+        } catch(e){ res(fr.result); }   // a canvas that refuses (HEIC on an old browser) sends as-is
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+async function uploadPhotos(){
+  var files = Array.prototype.slice.call(el('pick').files || []);
+  if (!files.length) return;
+  var cat = el('pcat') ? el('pcat').value : '';
+  var stat = el('pstat'), done = 0;
+  for (var i = 0; i < files.length; i++) {
+    stat.innerHTML = msg('info', t('Uploading…') + ' ' + (i + 1) + '/' + files.length);
+    try {
+      var data = await shrink(files[i]);
+      var r = await api('/api/dr/site/photo', { token: TOKEN, date: S.date, category: cat,
+                                                name: files[i].name, dataUrl: data });
+      S.photos.push({ id: r.id, category: cat, caption: '', fileName: files[i].name });
+      done++;
+    } catch(e){
+      stat.innerHTML = msg('err', e.message);
+      break;
+    }
+  }
+  if (done) { el('pick').value = ''; renderSection(msg('ok', t('Saved'))); wirePhotoBack(); }
+}
+function wirePhotoBack(){ if (el('back2')) el('back2').onclick = viewMenu; }
+
+/* ── boot ──────────────────────────────────────────────────────────────────────────────────── */
+el('langBtn').onclick = function(){
+  lang = (lang === 'vi') ? 'en' : 'vi';
+  try { localStorage.setItem('drlang', lang); } catch(e){}
+  el('langBtn').textContent = (lang === 'vi') ? 'EN' : 'VN';
+  el('hTitle').firstChild.nodeValue = t('Daily Report');
+  if (S.setup) { S.view === 'menu' ? viewMenu() : renderSection(''); } else { viewEmail(''); }
+};
+el('langBtn').textContent = (lang === 'vi') ? 'EN' : 'VN';
+el('hTitle').firstChild.nodeValue = t('Daily Report');
+var _origRender = renderSection;
+renderSection = function(n){ S.view = 'section'; _origRender(n); if (el('back2')) el('back2').onclick = viewMenu; };
+var _origMenu = viewMenu;
+viewMenu = function(){ S.view = 'menu'; _origMenu(); };
+load();
+</script>
+</body>
+</html>
