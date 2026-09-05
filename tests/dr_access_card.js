@@ -56,5 +56,49 @@ const empty = card({ id: 'DRC-3', name: 'New' });
 want(empty, 'tkDrShowLink()', 'a contractor with no addresses still gets the controls');
 want(empty, 'data-drlistfield="emails"', 'a contractor with no addresses still gets the box');
 
-console.log(bad ? '\nFAIL ' + bad : '\nOK');
-process.exit(bad ? 1 : 0);
+if (bad) { console.log('\nFAIL ' + bad); process.exit(1); }
+console.log('  ok    (card)');
+
+
+/* ── the state that cost a morning ───────────────────────────────────────────────────────────────
+ * A contractor with no SAVED addresses cannot be signed into by anybody. The form still answers
+ * "a six-digit code is on its way" — it must, or it would reveal who is on the list — so the state
+ * is invisible from the site's end AND, until this, from Report Setup's. The box shows whatever was
+ * last typed, which looks identical to an address already in force.
+ */
+const inForce = new Function('_t', '_crmEsc',
+  src.slice(src.indexOf('function _drSavedEmails('),
+            src.indexOf('\nfunction _drLinkOut()')) + '\nreturn _drInForce;')(_t, _crmEsc);
+
+let n2 = 0;
+function w2(html, needle, why) {
+  const ok = html.indexOf(needle) >= 0;
+  if (!ok) n2++;
+  console.log((ok ? '  ok    ' : '  MISS  ') + why);
+}
+function mustNot(html, needle, why) {
+  if (html.indexOf(needle) >= 0) { n2++; console.log('  MISS  ' + why); }
+  else console.log('  ok    ' + why);
+}
+
+const none = inForce({ id: 'C-1', name: 'X' });
+w2(none, 'Nobody can open this link yet.', 'an empty list says so, loudly');
+w2(none, 'Save setup', 'and says what to do about it');
+
+const one = inForce({ id: 'C-2', name: 'Y', emails: ['a@b.com', 'c@d.com'] });
+w2(one, 'Saved and in force', 'a saved list is labelled as saved');
+w2(one, 'a@b.com, c@d.com', 'and lists what is actually in force');
+w2(one, 'until Save setup is pressed', 'and warns that typing alone changes nothing');
+mustNot(one, 'Nobody can open', 'a saved list does not warn');
+
+// A record edited by hand, or imported, holds a string rather than an array.
+const str = inForce({ id: 'C-3', name: 'Z', emails: 'a@b.com; c@d.com' });
+w2(str, 'Saved and in force', 'a string of addresses counts as saved');
+mustNot(str, 'Nobody can open', 'a string list does not warn');
+
+// Whitespace and separators are not an address.
+const blank = inForce({ id: 'C-4', name: 'W', emails: '  ,  ; \n ' });
+w2(blank, 'Nobody can open this link yet.', 'whitespace does not count as a saved address');
+
+if (n2) { console.log('\nFAIL ' + n2); process.exit(1); }
+console.log('\nOK (in-force)');
