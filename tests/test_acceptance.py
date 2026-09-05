@@ -613,3 +613,189 @@ def test_the_warranty_type_closes_the_last_obligation():
     assert t and "Điều 28" in t["law"]
     assert t["requires"] == ["handover_deed"]
     assert A.stage("warranty")["types"] == ["warranty_end"]
+
+
+# ══ coverage — what is left to accept ════════════════════════════════════════════════════════════
+#
+# The failure this whole section guards against is a confident wrong number. A coverage screen is
+# read by somebody deciding whether a package is finished, and a percentage computed from a fuzzy
+# name match is worse than no screen at all: it is wrong in the direction of "everything is fine".
+
+def _itp(i, no, title="Lắp đặt thang máng cáp", disc="ELE", due=""):
+    return {"id": i, "itpNo": no, "title": title, "discipline": disc, "plannedFinish": due}
+
+
+def _dos(i, **kw):
+    d = {"id": i, "refNo": "REF-" + i, "status": "Draft", "title": "Lắp đặt thang máng cáp",
+         "discipline": "ELE"}
+    d.update(kw)
+    return d
+
+
+def test_coverage_counts_only_what_was_explicitly_linked():
+    """A dossier covers an ITP when somebody SAID it does. Matching by name would silently pair the
+    tray acceptance on level 2 with the ITP for level 5, report 80%, and be discovered when the
+    consultant asks for the missing minutes."""
+    c = A.coverage(itps=[_itp("t1", "ITP-001"), _itp("t2", "ITP-002")],
+                   dossiers=[_dos("d1", status="Accepted", itpId="t1"),
+                             _dos("d2", status="Accepted")])          # same title, NOT linked
+    assert c["itp"]["accepted"] == 1, "a look-alike title must not count as coverage"
+    assert c["itp"]["none"] == 1
+    assert c["unlinkedDossiers"] == 1
+
+
+def test_the_unlinked_count_is_returned_beside_every_figure():
+    """It is the figure's own error bar, not a footnote."""
+    c = A.coverage(itps=[_itp("t1", "ITP-001")],
+                   dossiers=[_dos("d%d" % i) for i in range(9)] + [_dos("x", itpId="t1")])
+    assert c["unlinkedDossiers"] == 9
+    assert c["trust"]["linkedPct"] == 10
+    assert c["trust"]["level"] == "low"
+    assert "10%" in c["trust"]["en"] and "10%" in c["trust"]["vi"]
+
+
+def test_trust_says_coverage_is_UNDERSTATED_not_overstated():
+    """The direction matters. Unlinked dossiers are excluded from the numerator, so real coverage is
+    HIGHER than shown — telling somebody it might be lower would send them looking for work that is
+    already done."""
+    c = A.coverage(itps=[_itp("t1", "ITP-001")], dossiers=[_dos("d1"), _dos("d2", itpId="t1")])
+    assert "higher than the figure shown" in c["trust"]["en"]
+    assert "cao hơn con số hiển thị" in c["trust"]["vi"]
+
+
+def test_trust_reports_full_confidence_only_when_everything_is_linked():
+    c = A.coverage(itps=[_itp("t1", "ITP-001")], dossiers=[_dos("d1", itpId="t1")])
+    assert c["trust"]["level"] == "full" and c["trust"]["linkedPct"] == 100
+
+
+def test_an_empty_register_says_so_rather_than_reporting_zero_per_cent():
+    """0% coverage and "nothing has been planned yet" look identical as a number and mean opposite
+    things — one is a project behind schedule, the other is a project that has not started."""
+    assert A.coverage()["trust"]["level"] == "none"
+    assert A.coverage(itps=[_itp("t1", "ITP-001")])["trust"]["level"] == "empty"
+
+
+def test_the_four_states_an_itp_can_be_in():
+    itps = [_itp("t1", "ITP-001"), _itp("t2", "ITP-002"), _itp("t3", "ITP-003"), _itp("t4", "ITP-004")]
+    c = A.coverage(
+        itps=itps,
+        dossiers=[_dos("d1", status="Accepted", itpId="t1"), _dos("d2", status="Draft", itpId="t2")],
+        plans=[{"id": "p1", "itpId": "t3"}])
+    st = {r["no"]: r["state"] for r in c["itp"]["rows"]}
+    assert st["ITP-001"] == A.COV_ACCEPTED
+    assert st["ITP-002"] == A.COV_OPEN, "a dossier exists but nobody has signed it"
+    assert st["ITP-003"] == A.COV_CALLED, "an inspection was called, no dossier compiled"
+    assert st["ITP-004"] == A.COV_NONE
+
+
+def test_lateness_is_only_judged_when_the_caller_says_what_day_it_is():
+    """A missing date is not a reason to call something on time, and not a reason to call it late.
+    The module has no clock, so it does not guess one."""
+    itps = [_itp("t1", "ITP-001", due="2026-01-01")]
+    assert A.coverage(itps=itps)["itp"]["overdue"] == 0
+    assert A.coverage(itps=itps, today="2026-09-05")["itp"]["overdue"] == 1
+
+
+def test_an_accepted_itp_is_never_overdue_however_late_it_was():
+    """It is done. Reporting it as outstanding puts work on a list that nobody can take off."""
+    c = A.coverage(itps=[_itp("t1", "ITP-001", due="2026-01-01")],
+                   dossiers=[_dos("d1", status="Accepted", itpId="t1")], today="2026-09-05")
+    assert c["itp"]["overdue"] == 0
+
+
+def test_an_itp_with_no_planned_date_is_not_silently_called_late():
+    c = A.coverage(itps=[_itp("t1", "ITP-001")], today="2026-09-05")
+    assert c["itp"]["overdue"] == 0 and c["itp"]["rows"][0]["state"] == A.COV_NONE
+
+
+def test_wbs_packages_are_measured_the_same_way():
+    c = A.coverage(deliverables=[{"id": "w1", "wbs": "1.2", "name": "Hệ thống điện tầng 1"},
+                                 {"id": "w2", "wbs": "1.3", "name": "Cấp thoát nước"}],
+                   dossiers=[_dos("d1", status="Accepted", deliverableId="w1")])
+    assert c["wbs"]["total"] == 2 and c["wbs"]["accepted"] == 1 and c["wbs"]["pct"] == 50
+
+
+def test_a_dossier_can_cover_an_itp_and_a_wbs_package_at_once():
+    """It usually does — the ITP says how it is inspected, the WBS says what it is part of — and it
+    must not be counted as unlinked because it was reached from the other side."""
+    c = A.coverage(itps=[_itp("t1", "ITP-001")],
+                   deliverables=[{"id": "w1", "wbs": "1.2", "name": "Điện"}],
+                   dossiers=[_dos("d1", status="Accepted", itpId="t1", deliverableId="w1")])
+    assert c["itp"]["accepted"] == 1 and c["wbs"]["accepted"] == 1
+    assert c["unlinkedDossiers"] == 0
+
+
+def test_stage_coverage_lists_every_stage_even_the_empty_ones():
+    """A stage missing from the list reads as a stage with no work in it. An empty row reads as a
+    stage nothing has been accepted in yet, which is the true statement."""
+    c = A.coverage(dossiers=[_dos("d1", status="Accepted", stage="mep_rough"),
+                             _dos("d2", stage="mep_rough")])
+    assert len(c["stages"]) == len(A.STAGES)
+    row = next(s for s in c["stages"] if s["key"] == "mep_rough")
+    assert row["dossiers"] == 2 and row["accepted"] == 1
+    assert next(s for s in c["stages"] if s["key"] == "handover")["dossiers"] == 0
+
+
+def test_a_dossier_on_an_unknown_stage_is_counted_rather_than_dropped():
+    """An import, or a stage somebody renamed. A row that vanishes from a coverage screen is the
+    worst kind of missing."""
+    c = A.coverage(dossiers=[_dos("d1", stage="phase-4b"), _dos("d2", stage="")])
+    assert c["stageUnknown"] == 1
+    assert c["stageNotStated"] == 1
+
+
+# ── suggestions: offered, never applied ─────────────────────────────────────────────────────────
+
+def test_a_dossier_quoting_the_itp_number_is_suggested_for_it():
+    s = A.suggest_links(itps=[_itp("t1", "ITP-047")],
+                        dossiers=[_dos("d1", refNo="SLPXA-ELE-009",
+                                       jobDescription="Theo ITP-047, lắp đặt thang máng")])
+    assert len(s) == 1 and s[0]["itpId"] == "t1" and s[0]["why"] == "number"
+
+
+def test_a_title_match_is_suggested_only_when_exactly_one_itp_could_be_meant():
+    """Two floors of the same tray run carry identical titles. Suggesting one of them at random is
+    how a wrong link gets confirmed by somebody clicking through."""
+    one = A.suggest_links(itps=[_itp("t1", "ITP-001")], dossiers=[_dos("d1")])
+    assert len(one) == 1 and one[0]["why"] == "title"
+    two = A.suggest_links(itps=[_itp("t1", "ITP-001"), _itp("t2", "ITP-002")],
+                          dossiers=[_dos("d1")])
+    assert two == [], "an ambiguous title must produce no suggestion at all"
+
+
+def test_the_title_match_is_accent_insensitive_and_discipline_scoped():
+    s = A.suggest_links(itps=[_itp("t1", "ITP-001", title="LẮP ĐẶT THANG MÁNG CÁP")],
+                        dossiers=[_dos("d1", title="lắp đặt thang máng cáp")])
+    assert len(s) == 1
+    none = A.suggest_links(itps=[_itp("t1", "ITP-001", disc="HVAC")], dossiers=[_dos("d1")])
+    assert none == [], "an electrical dossier must not be offered an HVAC plan"
+
+
+def test_a_one_or_two_character_itp_number_never_matches_by_number():
+    """A register numbered 1, 2, 3 would otherwise match "1" inside every reference and date on the
+    dossier — the single most likely way this feature produces nonsense at scale."""
+    s = A.suggest_links(itps=[_itp("t1", "1", title="Khác hẳn", disc="ELE")],
+                        dossiers=[_dos("d1", refNo="SLPXA-ELE-001", title="Không liên quan")])
+    assert s == []
+
+
+def test_a_dossier_that_is_already_linked_is_never_suggested_again():
+    s = A.suggest_links(itps=[_itp("t1", "ITP-047")],
+                        dossiers=[_dos("d1", itpId="t1", jobDescription="ITP-047")])
+    assert s == []
+
+
+def test_a_suggestion_says_when_the_itp_already_has_a_dossier_on_it():
+    """Legitimate — an ITP re-inspected after a failure has two — but the person confirming should
+    see it rather than discover it."""
+    s = A.suggest_links(itps=[_itp("t1", "ITP-047")],
+                        dossiers=[_dos("d0", itpId="t1"),
+                                  _dos("d1", jobDescription="ITP-047")])
+    assert len(s) == 1 and s[0]["alreadyLinkedElsewhere"] is True
+
+
+def test_suggestions_are_bounded():
+    itps = [_itp("t%d" % i, "ITP-%03d" % i, title="Công tác %d" % i) for i in range(200)]
+    dos = [_dos("d%d" % i, jobDescription="theo ITP-%03d" % i) for i in range(200)]
+    assert len(A.suggest_links(itps=itps, dossiers=dos)) == 60
+    assert len(A.suggest_links(itps=itps, dossiers=dos, limit=5)) == 5

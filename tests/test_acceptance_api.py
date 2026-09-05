@@ -515,3 +515,110 @@ def test_the_catalogue_endpoint_serves_the_law_rather_than_the_browser_holding_a
     assert kind == "json"
     keys = {t["key"] for t in out["catalogue"]["types"]}
     assert {"work", "stage", "handover_part", "handover_all"} <= keys
+
+
+# ── coverage at the boundary ────────────────────────────────────────────────────────────────────
+
+def _itp_row(pid, no, **kw):
+    r = {"projectId": pid, "itpNo": no, "title": "Lắp đặt thang máng cáp", "discipline": "ELE"}
+    r.update(kw)
+    return db.put_collection_item("pm_quality_itp", r)
+
+
+def test_coverage_is_computed_on_the_server_from_the_projects_own_rows(base_url, proj):
+    """This figure ends up in a progress report. Two implementations of it — one here, one in the
+    browser — would eventually disagree with nobody able to say which was right, which is the same
+    argument that put the readiness verdict on this side."""
+    t = _itp_row(proj["id"], "ITP-001")
+    d = _dossier(proj["id"], status=A.STATUS_ACCEPTED, itpId=t["id"])
+    kind, _, out = _H()._acc_coverage_ep(PM, {"projectId": [proj["id"]]})
+    assert kind == "json"
+    c = out["coverage"]
+    assert c["itp"]["total"] == 1 and c["itp"]["accepted"] == 1
+    assert c["trust"]["level"] == "full"
+
+
+def test_coverage_does_not_leak_another_projects_registers(base_url, proj):
+    other = db.put_collection_item("pm_projects", {"name": "ZZ Other", "manager": "Nobody"})
+    try:
+        _itp_row(other["id"], "OTHER-001")
+        _itp_row(proj["id"], "ITP-001")
+        _, _, out = _H()._acc_coverage_ep(BOSS, {"projectId": [proj["id"]]})
+        nos = [r["no"] for r in out["coverage"]["itp"]["rows"]]
+        assert nos == ["ITP-001"]
+    finally:
+        for r in list(db.list_collection("pm_quality_itp")):
+            if r.get("projectId") == other["id"]:
+                db.delete_collection_item("pm_quality_itp", r["id"])
+        db.delete_collection_item("pm_projects", other["id"])
+
+
+def test_coverage_refuses_a_project_you_are_not_on(base_url, proj):
+    stranger = {"id": "U-NOBODY", "name": "Ai Đó", "role": "staff", "level": "viewer"}
+    kind, status, _ = _H()._acc_coverage_ep(stranger, {"projectId": [proj["id"]]})
+    assert kind == "err" and status == 403
+
+
+def test_linking_a_dossier_to_an_itp_and_back_off_again(base_url, proj):
+    t = _itp_row(proj["id"], "ITP-001")
+    d = _dossier(proj["id"])
+    kind, _, out = _H()._acc_link_ep(PM, {"dossierId": d["id"], "itpId": t["id"]})
+    assert kind == "json", out
+    assert db.get_collection_item("pm_acc", d["id"])["itpId"] == t["id"]
+    _H()._acc_link_ep(PM, {"dossierId": d["id"], "itpId": ""})
+    assert db.get_collection_item("pm_acc", d["id"])["itpId"] == ""
+
+
+def test_a_link_can_never_point_at_another_projects_itp(base_url, proj):
+    """The one way a coverage figure could be corrupted from outside the project it belongs to."""
+    other = db.put_collection_item("pm_projects", {"name": "ZZ Other 2", "manager": "Nobody"})
+    try:
+        foreign = _itp_row(other["id"], "OTHER-001")
+        d = _dossier(proj["id"])
+        kind, status, msg = _H()._acc_link_ep(PM, {"dossierId": d["id"], "itpId": foreign["id"]})
+        assert kind == "err" and status == 400 and "different project" in msg
+        assert not db.get_collection_item("pm_acc", d["id"]).get("itpId")
+    finally:
+        for r in list(db.list_collection("pm_quality_itp")):
+            if r.get("projectId") == other["id"]:
+                db.delete_collection_item("pm_quality_itp", r["id"])
+        db.delete_collection_item("pm_projects", other["id"])
+
+
+def test_a_signed_minutes_LINKS_can_still_be_corrected(base_url, proj):
+    """What the minute says about the inspection is frozen. Which ITP it answers is bookkeeping, and
+    a dossier filed against the wrong plan is something somebody should be able to put right rather
+    than work around."""
+    t = _itp_row(proj["id"], "ITP-001")
+    d = _dossier(proj["id"], status=A.STATUS_ACCEPTED)
+    kind, _, _ = _H()._acc_link_ep(PM, {"dossierId": d["id"], "itpId": t["id"]})
+    assert kind == "json"
+    assert db.get_collection_item("pm_acc", d["id"])["itpId"] == t["id"]
+    # …and the freeze on what it SAYS is untouched by that
+    ln = _line(proj["id"], d["id"], result="Không đạt")
+    kind2, _, _ = _update(PM, "pm_acc_items", ln["id"], dict(ln, result="Đạt"))
+    assert kind2 == "err"
+
+
+def test_linking_refuses_a_project_you_are_not_on(base_url, proj):
+    t = _itp_row(proj["id"], "ITP-001")
+    d = _dossier(proj["id"])
+    stranger = {"id": "U-NOBODY", "name": "Ai Đó", "role": "staff", "level": "viewer"}
+    kind, status, _ = _H()._acc_link_ep(stranger, {"dossierId": d["id"], "itpId": t["id"]})
+    assert kind == "err" and status == 403
+
+
+def test_composing_can_link_at_birth(base_url, proj):
+    """The cheapest moment to link is while the person is looking at the ITP anyway."""
+    t = _itp_row(proj["id"], "ITP-001")
+    kind, _, out = _H()._acc_compose_ep(PM, {
+        "projectId": proj["id"], "accType": "work", "itpId": t["id"], "stage": "mep_rough"})
+    assert kind == "json", out
+    assert out["dossier"]["itpId"] == t["id"]
+    assert out["dossier"]["stage"] == "mep_rough"
+
+
+def test_composing_refuses_a_stage_this_app_does_not_know(base_url, proj):
+    kind, status, msg = _H()._acc_compose_ep(PM, {
+        "projectId": proj["id"], "accType": "work", "stage": "phase-4b"})
+    assert kind == "err" and status == 400 and "stage" in msg

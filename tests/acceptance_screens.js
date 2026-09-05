@@ -327,5 +327,61 @@ console.log('\nWhere in the build it sits, and what has to be with it\n');
      /stage: g\('stage'\)/.test(src) && /'standardRef', 'stage', 'jobDescription'/.test(src));
 }
 
+
+// ══ 10 · the coverage screen: a number is only drawn when it means something ═══════════════════
+console.log('\nCoverage draws a percentage only when the percentage is true\n');
+{
+  const tab = take('function _accCoverTab(', '_accCoverTab');
+  ok('every figure comes from the server, none is recomputed here',
+     /_ACCCOV/.test(tab) && tab.indexOf('.filter(') < 0,
+     'this number ends up in a progress report; a second implementation would eventually disagree ' +
+     'with the server and nobody could say which was right');
+  ok('the trust banner decides whether bars are drawn at all',
+     /const showBars = tr\.level === 'full' \|\| tr\.level === 'partial';/.test(tab),
+     'a coverage bar over a register where nothing is linked is a picture of an assumption');
+  ok('and the banner is rendered before anything else on the screen',
+     tab.indexOf('const banner') < tab.indexOf('const kpis'));
+
+  const reg = take('function _accCovRegister(', '_accCovRegister');
+  ok('with bars suppressed, the screen SAYS why rather than showing nothing',
+     /the most confident thing on this screen and the least true/.test(reg));
+  ok('outstanding rows sort above finished ones, overdue above those',
+     /const rank = r => \(r\.overdue \? 0/.test(reg),
+     'sorting by number makes somebody scroll past everything finished to find what is not');
+
+  const load = take('async function _accCovLoad(', '_accCovLoad');
+  ok('coverage is refetched when the project changes',
+     /_ACCCOV\._pid === pid/.test(load),
+     'a cached figure from another project is the worst kind of wrong number');
+
+  const exp = take('function accCovExport(', 'accCovExport');
+  ok('the trust line travels with the CSV export',
+     /\(c\.trust \|\| \{\}\)\.en/.test(exp) && /\(c\.trust \|\| \{\}\)\.vi/.test(exp),
+     'a CSV of coverage without its error bar, in the format most likely to be pasted into a report');
+
+  const links = take('function _accCovLinks(', '_accCovLinks');
+  ok('the link screen says suggestions are never applied on their own',
+     /nothing is linked until you say so/.test(links));
+  ok('…and when it can suggest nothing it says to link by hand rather than guessing',
+     /refuses to do/.test(links));
+  ok('a suggestion shows the REASON it is offered',
+     /the dossier quotes this ITP number/.test(links) &&
+     /only one ITP has this title/.test(links));
+  ok('and flags an ITP that already carries a dossier',
+     /alreadyLinkedElsewhere/.test(links),
+     'legitimate after a re-inspection, but the person confirming should see it rather than ' +
+     'discover it');
+
+  const stages = take('function _accCovStages(', '_accCovStages');
+  ok('every stage is listed, including the empty ones',
+     /\(c\.stages \|\| \[\]\)\.map/.test(stages),
+     'a stage missing from the list reads as a stage with no work in it');
+  ok('dossiers naming no stage, or an unknown one, are reported rather than dropped',
+     /c\.stageNotStated/.test(stages) && /c\.stageUnknown/.test(stages),
+     'a row that vanishes from a coverage screen is the worst kind of missing');
+  ok('concealed stages are marked on this screen too',
+     /_t\('concealed'\)/.test(stages));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

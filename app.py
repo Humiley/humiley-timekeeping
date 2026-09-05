@@ -4623,6 +4623,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._acc_dossier_ep(u, qs))
         if path == "/api/pm/acceptance/drawing":
             return self._guard(lambda u: self._acc_drawing_image_ep(u, qs))
+        if path == "/api/pm/acceptance/coverage":
+            return self._guard(lambda u: self._acc_coverage_ep(u, qs))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
@@ -4970,6 +4972,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_read(u, body))
         if path == "/api/pm/acceptance/compose":
             return self._guard(lambda u: self._acc_compose_ep(u, body))
+        if path == "/api/pm/acceptance/link":
+            return self._guard(lambda u: self._acc_link_ep(u, body))
         if path == "/api/appr/digesttest":
             return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/tk/nudgetest":
@@ -5883,6 +5887,77 @@ class Handler(BaseHTTPRequestHandler):
             pass
         return None
 
+    def _acc_coverage_ep(self, u, qs):
+        """What is left to accept, on one project.
+
+        Computed on the SERVER for the same reason the readiness verdict is: this number ends up in
+        a progress report, and two implementations of it would eventually disagree — with nobody
+        able to say which was right. The browser draws what this returns and calculates nothing.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        pid = str((qs.get("projectId") or [""])[0] or "").strip()
+        if not pid:
+            return self._err("Open coverage from a project.", 400)
+        vis = self._pm_visible_projects(u)
+        if vis is not None and pid not in vis:
+            return self._err("That project is not one of yours. Ask its project manager, or have "
+                             "yourself added to the Team.", 403)
+        mine = lambda coll: [r for r in db.list_collection(coll)
+                             if str(r.get("projectId") or "") == pid]
+        itps = mine("pm_quality_itp")
+        dossiers = mine("pm_acc")
+        cov = acceptance.coverage(
+            itps=itps,
+            deliverables=mine("pm_deliverables"),
+            dossiers=dossiers,
+            plans=mine("pm_acc_plans"),
+            today=time.strftime("%Y-%m-%d"))
+        cov["suggestions"] = acceptance.suggest_links(itps=itps, dossiers=dossiers)
+        return self._json({"ok": True, "coverage": cov})
+
+    def _acc_link_ep(self, u, body):
+        """Link a dossier to the ITP and/or WBS package it covers — or unlink it.
+
+        A separate endpoint rather than a field on the generic PATCH, because the generic path is a
+        blind whole-document replace: linking from the coverage screen, where the row in hand is a
+        summary and not the record, would blank everything the summary does not carry.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        did = str((body or {}).get("dossierId") or "").strip()
+        dos = db.get_collection_item("pm_acc", did) if did else None
+        if not dos:
+            return self._err("Acceptance dossier not found.", 404)
+        pid = str(dos.get("projectId") or "")
+        refusal = self._pm_write_refusal(u, pid)
+        if refusal:
+            return self._err(refusal, 403)
+        # A signed minute's LINKS may still be corrected. What it says about the inspection is
+        # frozen; which ITP it answers is bookkeeping, and a dossier filed against the wrong plan is
+        # a thing somebody should be able to put right rather than work around.
+        out = dict(dos)
+        for key, coll in (("itpId", "pm_quality_itp"), ("deliverableId", "pm_deliverables")):
+            if key not in (body or {}):
+                continue
+            val = str(body.get(key) or "").strip()
+            if val:
+                row = db.get_collection_item(coll, val)
+                if not row or str(row.get("projectId") or "") != pid:
+                    return self._err("That %s belongs to a different project."
+                                     % ("ITP" if key == "itpId" else "WBS package"), 400)
+            out[key] = val
+        db.put_collection_item("pm_acc", out)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "", "actorId": u.get("id"),
+            "action": "Acceptance dossier linked",
+            "target": "pm_acc/" + did,
+            "detail": "itp=%s wbs=%s" % (out.get("itpId") or "-", out.get("deliverableId") or "-"),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "item": out})
+
     def _acc_dossier_ep(self, u, qs):
         """One dossier, assembled the way it prints — and what is standing between it and a
         signature.
@@ -5983,7 +6058,22 @@ class Handler(BaseHTTPRequestHandler):
                    (acceptance.acceptance_type(acc_type) or {}).get("stage") or "").strip().lower()
         if _stg and not acceptance.stage(_stg):
             return self._err("Unknown construction stage %r." % _stg, 400)
+        # What this dossier covers. Linked at birth where the person compiling it knows — which is
+        # the cheapest moment, and the one where they are looking at the ITP anyway. Validated
+        # against the project so a link can never point off it.
+        _links = {}
+        for _k, _c in (("itpId", "pm_quality_itp"), ("deliverableId", "pm_deliverables")):
+            _v = str((body or {}).get(_k) or "").strip()
+            if not _v:
+                continue
+            _row = db.get_collection_item(_c, _v)
+            if not _row or str(_row.get("projectId") or "") != pid:
+                return self._err("That %s belongs to a different project."
+                                 % ("ITP" if _k == "itpId" else "WBS package"), 400)
+            _links[_k] = _v
         dos = {
+            "itpId": _links.get("itpId", ""),
+            "deliverableId": _links.get("deliverableId", ""),
             "stage": _stg,
             "id": uuid.uuid4().hex[:12],
             "projectId": pid,

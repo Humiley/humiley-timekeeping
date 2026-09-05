@@ -24448,6 +24448,7 @@ const _ACC_COLLS = ['pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'p
 
 const _ACC_TABS = [
   { k: 'board', label: 'Overview', fn: '_accBoard' },
+  { k: 'cover', label: 'Coverage', fn: '_accCoverTab' },
   { k: 'plan', label: 'Acceptance plan', fn: '_accPlanTab' },
   { k: 'reg', label: 'Dossier register', fn: '_accRegTab' },
   { k: 'forms', label: 'Checklist library', fn: '_accFormsTab' },
@@ -24540,11 +24541,18 @@ function _accTabRow() {
     (t.k === _accTabK && !_accOpenId ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _accTabK && !_accOpenId ? '#fff' : 'var(--text-light)') +
     ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + _accE(_t(t.label)) + '</button>').join('');
 }
-function accTab(k) {
+async function accTab(k) {
   const t = _ACC_TABS.find(x => x.k === k); if (!t) return;
   _accTabK = k; _accOpenId = ''; _accView = null;
   const bar = document.getElementById('acc-subbar'); if (bar) bar.innerHTML = _accTabRow();
   const body = document.getElementById('acc-body'); if (!body) return;
+  /* Coverage is the one sub-tab whose figures come from the server. Fetch first and draw the
+     skeleton meanwhile, rather than making every other tab's renderer async to accommodate it. */
+  if (k === 'cover') {
+    body.innerHTML = tkSkeleton();
+    await _accCovLoad(!_ACCCOV || _ACCCOV._pid !== _pmPid());
+    if (_accTabK !== k) return;                 // the user moved on while we waited
+  }
   try { body.innerHTML = (window[t.fn] || (() => ''))(_pmPid()) || ''; }
   catch (e) { body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error rendering ' + _accE(t.label) + ': ' + _accE(e.message) + '</div>'; }
 }
@@ -27129,6 +27137,253 @@ function _accSheetDrawing(v, row, n) {
   return _accSheet(body);
 }
 
+/* ═══════════════ 17 · Độ phủ nghiệm thu — what is left to accept ═══════════════════════════
+
+   The question a project manager asks weekly and has been answering by counting: of everything the
+   ITP said would be inspected and everything the WBS says will be delivered, how much is actually
+   accepted?
+
+   Every figure on this screen comes from /api/pm/acceptance/coverage. Nothing is recomputed here —
+   this number ends up in a progress report, and a second implementation in the browser would
+   eventually disagree with the server with nobody able to say which was right. The same reasoning
+   that put the readiness verdict on the server.
+
+   THE TRUST BANNER IS NOT DECORATION. Coverage counts explicit links only, so unlinked dossiers
+   drag the percentage down and the real figure is higher than the one shown. Drawing a bar over
+   that without saying so would be a picture of an assumption, so the banner decides what the
+   screen is allowed to claim.                                                                    */
+
+let _ACCCOV = null;        // the server's answer for the open project
+let _accCovErr = '';
+let _accCovTab = 'itp';    // itp | wbs | stage | link
+
+async function _accCovLoad(force) {
+  const pid = _pmPid(); if (!pid) return null;
+  if (_ACCCOV && _ACCCOV._pid === pid && !force) return _ACCCOV;
+  try {
+    const r = await tkApi('/api/pm/acceptance/coverage?projectId=' + encodeURIComponent(pid));
+    _ACCCOV = Object.assign({}, r.coverage, { _pid: pid }); _accCovErr = '';
+  } catch (e) { _ACCCOV = null; _accCovErr = _errMsg(e); }
+  return _ACCCOV;
+}
+
+/* The sub-tab renders synchronously like the others, so the fetch happens in the tab dispatcher
+   and this draws whatever arrived. A screen that returned a promise would need accTab to know
+   which of its five bodies is async, which is the kind of special case that rots. */
+function _accCoverTab(pid) {
+  if (_accCovErr) {
+    return '<div class="card" style="padding:18px">' +
+      '<div style="font-weight:700;color:#C00000;margin-bottom:6px">' + _t('Could not work out coverage') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' + _accE(_accCovErr) + '</div>' +
+      '<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="accCovRefresh()">' + _t('Retry') + '</button></div>';
+  }
+  const c = _ACCCOV;
+  if (!c) return tkSkeleton();
+
+  const tr = c.trust || {};
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const trustHex = { full: '#00B060', partial: '#F59E0B', low: '#DC2626',
+                     none: '#94a3b8', empty: '#94a3b8' }[tr.level] || '#94a3b8';
+  /* A percentage is only drawn when it means something. At `low` and below the bar would be the
+     most confident thing on the screen and the least true, so the banner replaces it. */
+  const showBars = tr.level === 'full' || tr.level === 'partial';
+
+  const banner = '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:3px solid ' + trustHex + '">' +
+    '<div style="font-size:12.5px;color:var(--text);line-height:1.65">' +
+    '<b style="color:' + trustHex + '">' +
+      (tr.level === 'full' ? _t('These figures can be reported as they stand')
+        : tr.level === 'empty' ? _t('Nothing to measure yet')
+        : tr.level === 'none' ? _t('Nothing to measure against')
+        : _t('Read these figures as a floor, not a total')) + '</b> — ' +
+    _accE(vi ? tr.vi : tr.en) + '</div>' +
+    (c.unlinkedDossiers ? '<button class="btn btn-outline btn-sm" style="margin-top:9px" onclick="accCovTab(\'link\')">' +
+      _accE(_t('Link') + ' ' + c.unlinkedDossiers + ' ' + _t('unlinked dossier(s)')) + ' →</button>' : '') +
+    '</div>';
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('ITP planned'), c.itp.total),
+    _hrKpi(_t('ITP accepted'), c.itp.accepted, c.itp.accepted ? 'var(--emerald)' : 'var(--text-light)'),
+    _hrKpi(_t('ITP overdue'), c.itp.overdue, c.itp.overdue ? '#DC2626' : 'var(--text-light)'),
+    _hrKpi(_t('WBS packages'), c.wbs.total),
+    _hrKpi(_t('WBS accepted'), c.wbs.accepted, c.wbs.accepted ? 'var(--emerald)' : 'var(--text-light)'),
+    _hrKpi(_t('Dossiers not linked'), c.unlinkedDossiers, c.unlinkedDossiers ? '#F59E0B' : 'var(--text-light)')
+  ]);
+
+  const tabs = [['itp', _t('Against the ITP'), c.itp.total],
+                ['wbs', _t('Against the WBS'), c.wbs.total],
+                ['stage', _t('By stage'), (c.stages || []).length],
+                ['link', _t('Link up'), (c.suggestions || []).length + c.unlinkedDossiers]]
+    .map(t => '<button class="tab" onclick="accCovTab(\'' + t[0] + '\')" style="border:none;background:' +
+      (_accCovTab === t[0] ? 'var(--navy)' : 'transparent') + ';color:' + (_accCovTab === t[0] ? '#fff' : 'var(--text-light)') +
+      ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' +
+      _accE(t[1]) + (t[2] ? ' <span style="opacity:.7">' + t[2] + '</span>' : '') + '</button>').join('');
+
+  let body = '';
+  if (_accCovTab === 'itp') body = _accCovRegister(c.itp, _t('Inspection & Test Plans'), _t('ITP No.'), showBars);
+  else if (_accCovTab === 'wbs') body = _accCovRegister(c.wbs, _t('Work packages (WBS)'), _t('WBS'), showBars);
+  else if (_accCovTab === 'stage') body = _accCovStages(c);
+  else body = _accCovLinks(c);
+
+  return banner + kpis +
+    '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">' + tabs +
+      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="accCovRefresh()">↻ ' + _t('Refresh') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="accCovExport()">↓ ' + _t('Export') + '</button></div>' +
+    body;
+}
+
+const _ACC_COV_STATE = {
+  accepted: { hex: '#00B060', vi: 'Đã nghiệm thu', en: 'Accepted' },
+  open: { hex: '#3168A8', vi: 'Đang lập hồ sơ', en: 'Dossier open' },
+  called: { hex: '#F59E0B', vi: 'Đã mời, chưa lập hồ sơ', en: 'Called, no dossier' },
+  none: { hex: '#94a3b8', vi: 'Chưa có gì', en: 'Nothing yet' }
+};
+function _accCovBadge(k) {
+  const m = _ACC_COV_STATE[k] || _ACC_COV_STATE.none;
+  return _pmBadge((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? m.vi : m.en, m.hex);
+}
+
+function _accCovRegister(side, title, noLabel, showBars) {
+  const rows = (side.rows || []).slice().sort((a, b) => {
+    /* Outstanding first, and overdue above that. A coverage screen sorted by number makes somebody
+       scroll past everything that is finished to find the work that is not. */
+    const rank = r => (r.overdue ? 0 : r.state === 'none' ? 1 : r.state === 'called' ? 2 :
+                       r.state === 'open' ? 3 : 4);
+    return rank(a) - rank(b) || String(a.no).localeCompare(String(b.no));
+  });
+  const bar = showBars
+    ? '<div style="padding:11px 16px;border-bottom:1px solid var(--line)">' +
+      '<div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--soft-bg)">' +
+      ['accepted', 'open', 'called', 'none'].map(k => {
+        const n = side[k === 'none' ? 'none' : k] || 0;
+        const pct = side.total ? (n * 100 / side.total) : 0;
+        return pct ? '<div title="' + _tkEscA(_ACC_COV_STATE[k].en + ': ' + n) + '" style="width:' + pct +
+          '%;background:' + _ACC_COV_STATE[k].hex + '"></div>' : '';
+      }).join('') + '</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:11px;color:var(--text-light)">' +
+      ['accepted', 'open', 'called', 'none'].map(k =>
+        '<span><span style="display:inline-block;width:9px;height:8px;border-radius:2px;background:' +
+        _ACC_COV_STATE[k].hex + ';margin-right:4px"></span>' +
+        _accE((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? _ACC_COV_STATE[k].vi : _ACC_COV_STATE[k].en) +
+        ' ' + (side[k] || 0) + '</span>').join('') + '</div></div>'
+    : '<div style="padding:10px 16px;border-bottom:1px solid var(--line);font-size:11.5px;color:#B45309;line-height:1.6">' +
+      _accE(_t('No percentage is drawn while most dossiers are unlinked — it would be the most confident thing on this screen and the least true. The table below is still exact: it says what is linked.')) + '</div>';
+
+  const tbl = _pmTable('acc_cov', [
+    { label: noLabel, sk: 'no', nowrap: true,
+      render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _accE(r.no || '—') + '</span>' },
+    { label: _t('Title'), sk: 'title', render: r => '<span style="font-weight:600">' + _accE(r.title || '') + '</span>' },
+    { label: _t('Discipline'), sk: 'discipline', render: r => r.discipline ? _pmBadge(r.discipline, '#3168A8') : '—' },
+    { label: _t('Planned'), sk: 'due', nowrap: true,
+      render: r => r.due ? '<span style="color:' + (r.overdue ? '#C00000' : 'var(--text-light)') + '">' +
+        _pmFmt(r.due) + (r.overdue ? ' · ' + _t('overdue') : '') + '</span>' : '—' },
+    { label: _t('Called'), sk: 'called', align: 'right',
+      render: r => r.called ? '<span style="font-variant-numeric:tabular-nums">' + r.called + '</span>' : '—' },
+    { label: _t('Dossiers'), sk: 'dossiers', align: 'right',
+      render: r => r.dossiers
+        ? '<span style="font-variant-numeric:tabular-nums">' + r.accepted + '/' + r.dossiers + '</span>' : '—' },
+    { label: _t('Reference'), render: r => (r.refs || []).length
+        ? (r.refs || []).map(x => '<span style="font-family:monospace;font-size:10.5px;background:var(--soft-bg);' +
+            'border-radius:5px;padding:1px 5px;margin-right:4px">' + _accE(x) + '</span>').join('')
+        : '<span style="color:var(--text-light)">—</span>' },
+    { label: _t('Status'), sk: 'state', render: r => _accCovBadge(r.state) }
+  ], rows, { minw: 980, noActions: true,
+             empty: _t('Nothing planned here yet — this register is empty.') });
+
+  return _pmCard(title, null, null, bar + tbl);
+}
+
+function _accCovStages(c) {
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const rows = (c.stages || []).map(s => {
+    const pct = s.dossiers ? Math.round(s.accepted * 100 / s.dossiers) : 0;
+    const hex = !s.dossiers ? '#CBD5E1' : (s.accepted === s.dossiers ? '#00B060' : '#F59E0B');
+    return '<div style="display:flex;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--soft-bg)">' +
+      '<div style="flex:0 0 26px;height:26px;border-radius:50%;background:' + hex + '1f;color:' + hex +
+        ';display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + s.no + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:12.5px;font-weight:700;color:var(--text)">' + _accE(vi ? s.vi : s.en) +
+          (s.covered ? ' <span title="' + _tkEscA(_t('Work in this stage gets covered up')) +
+            '" style="font-size:10px;color:#B45309;font-weight:600">⚠ ' + _t('concealed') + '</span>' : '') + '</div>' +
+        '<div style="height:5px;border-radius:3px;background:var(--soft-bg);margin-top:5px;overflow:hidden;max-width:320px">' +
+          '<div style="height:100%;width:' + pct + '%;background:' + hex + '"></div></div>' +
+      '</div>' +
+      '<div style="flex:0 0 auto;text-align:right;font-size:11px;color:var(--text-light);white-space:nowrap">' +
+        '<span style="font-size:15px;font-weight:800;color:' + hex + ';font-variant-numeric:tabular-nums">' +
+        s.accepted + '</span> / ' + s.dossiers + '<div style="font-size:10px">' + _t('accepted') + '</div></div>' +
+    '</div>';
+  }).join('');
+
+  const odd = (c.stageNotStated || c.stageUnknown)
+    ? '<div style="padding:10px 16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+      (c.stageNotStated ? _accE(c.stageNotStated + ' ' + _t('dossier(s) name no stage, so they appear in none of the rows above.')) : '') +
+      (c.stageUnknown ? ' ' + _accE(c.stageUnknown + ' ' + _t('name a stage this app does not know — probably imported, or renamed.')) : '') +
+      '</div>' : '';
+
+  return _pmCard(_t('By construction stage'), null, null,
+    '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);line-height:1.6;border-bottom:1px solid var(--line)">' +
+    _accE(_t('Counted from the stage each dossier names, not from the ITP — so this half of the screen works even before anything is linked.')) +
+    '</div><div style="padding:4px 16px 12px">' + rows + '</div>' + odd);
+}
+
+/* The link-up screen. Suggestions on the left with the reason each is offered; the dossiers nothing
+   could be suggested for below, so they are not invisible. */
+function _accCovLinks(c) {
+  const sug = c.suggestions || [];
+  const why = w => w === 'number'
+    ? _t('the dossier quotes this ITP number')
+    : _t('same discipline, and only one ITP has this title');
+
+  const list = sug.length ? sug.map(s =>
+    '<div style="display:flex;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--soft-bg);flex-wrap:wrap">' +
+    '<div style="flex:1;min-width:200px">' +
+      '<div style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _accE(s.dossierRef || '—') + '</div>' +
+      '<div style="font-size:12px;color:var(--text)">' + _accE(s.dossierTitle || '') + '</div></div>' +
+    '<div style="flex:0 0 auto;color:var(--text-light)">→</div>' +
+    '<div style="flex:1;min-width:200px">' +
+      '<div style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _accE(s.itpNo || '—') + '</div>' +
+      '<div style="font-size:12px;color:var(--text)">' + _accE(s.itpTitle || '') + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">' + _accE(why(s.why)) +
+        (s.alreadyLinkedElsewhere ? ' · <span style="color:#B45309">' +
+          _accE(_t('this ITP already has a dossier — legitimate after a re-inspection')) + '</span>' : '') + '</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="flex:0 0 auto" onclick="accCovLink(\'' + s.dossierId + '\',\'' + s.itpId + '\')">' +
+      _t('Link') + '</button></div>').join('')
+    : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:12.5px">' +
+      _accE(c.unlinkedDossiers
+        ? _t('Nothing could be suggested. Open each dossier and set its ITP by hand — a guess offered here would be confirmed by somebody clicking through, which is exactly what this screen refuses to do.')
+        : _t('Every dossier is linked.')) + '</div>';
+
+  return _pmCard(_t('Suggested links'), null, null,
+    '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);line-height:1.6;border-bottom:1px solid var(--line)">' +
+    _accE(_t('Suggestions only — nothing is linked until you say so. A dossier is offered an ITP when it quotes that ITP\'s number, or when exactly one ITP in the same discipline carries the same title. An ambiguous title produces no suggestion at all rather than a coin toss.')) +
+    '</div>' + list);
+}
+
+function accCovTab(k) { _accCovTab = k; _accRepaint(); }
+async function accCovRefresh() { await _accCovLoad(true); _accRepaint(); }
+async function accCovLink(dossierId, itpId) {
+  try { await tkApi('/api/pm/acceptance/link', { method: 'POST', body: { dossierId: dossierId, itpId: itpId } }); }
+  catch (e) { toast(_errMsg(e), 'error'); return; }
+  await _accReload(['pm_acc']);
+  await _accCovLoad(true);
+  toast(_t('Linked'), 'success');
+  _accRepaint();
+}
+function accCovExport() {
+  const c = _ACCCOV; if (!c) return;
+  const side = _accCovTab === 'wbs' ? c.wbs : c.itp;
+  const lbl = _accCovTab === 'wbs' ? 'WBS' : 'ITP No';
+  const out = [[lbl, 'Title', 'Discipline', 'Planned', 'Called', 'Dossiers', 'Accepted',
+                'Overdue', 'State', 'References']];
+  (side.rows || []).forEach(r => out.push([r.no, r.title, r.discipline, r.due, r.called,
+    r.dossiers, r.accepted, r.overdue ? 'Y' : '', r.state, (r.refs || []).join(' ')]));
+  out.push([]);
+  /* The trust line travels WITH the export. A CSV of coverage figures that leaves it behind is the
+     number without its error bar, in the format most likely to be pasted into a report. */
+  out.push(['NOTE', (c.trust || {}).en || '']);
+  out.push(['GHI CHÚ', (c.trust || {}).vi || '']);
+  _accDownload('do-phu-nghiem-thu.csv', _accCsv(out));
+}
+
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   // pm_tasks is not decoration here: the register derives each package's percentage, date and
@@ -27160,7 +27415,7 @@ const _PM_TABS = [
      Scope lives in this app — Quality verifies a deliverable, this is where the customer
      accepts it. `need` is deliberately short: the five acceptance registers plus the project
      and its settings, which carry the numbering templates and the party names. */
-  { k: 'accept', label: 'Acceptance', fn: 'pmRenderAcceptance', need: ['pm_projects', 'pm_settings', 'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_acc_drawings'] },
+  { k: 'accept', label: 'Acceptance', fn: 'pmRenderAcceptance', need: ['pm_projects', 'pm_settings', 'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_acc_drawings', 'pm_quality_itp', 'pm_deliverables'] },
   { k: 'daily', label: 'Daily Report', fn: 'pmRenderDailyReport', need: ['pm_projects', 'dr_settings', 'dr_contractors'] },
   { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments', need: ['pm_projects', 'pm_sitereports', 'pm_weekreports', 'pm_rfis', 'pm_quality', 'pm_quality_itp', 'pm_changes', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_lessons', 'pm_procurement'] },
   // pm_resources is the @-mention roster: without it the picker silently says nobody is here.

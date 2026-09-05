@@ -1184,3 +1184,247 @@ def catalogue():
                   "written on a signed minute.",
         },
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#  Coverage — what is left to accept
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#
+#  The question a project manager asks weekly and currently answers by counting: of everything the
+#  ITP said would be inspected, and everything the WBS says will be delivered, how much has actually
+#  been accepted?
+#
+#  THE HONESTY PROBLEM, AND WHY THIS IS BUILT THE WAY IT IS
+#
+#  Nothing joins a dossier to the ITP it satisfies. The tempting fix is to match them by name — the
+#  dossier says "Lắp đặt thang máng cáp" and so does ITP 47, so call it covered. That produces a
+#  number that is confidently wrong: it silently pairs the tray acceptance on level 2 with the ITP
+#  for level 5, reports 80% coverage, and the first anybody knows is when the consultant asks for
+#  the missing minutes.
+#
+#  So: coverage is computed from EXPLICIT LINKS only. A dossier covers an ITP when somebody said it
+#  does. Name similarity produces a SUGGESTION, offered for one-click confirmation and never
+#  applied on its own.
+#
+#  And the count of unlinked dossiers is returned beside every figure, because it is the figure's
+#  own error bar. Ninety per cent coverage computed from links, with forty dossiers linked to
+#  nothing, is not ninety per cent — it is an unknown number, and the screen has to say so rather
+#  than draw a green bar. `trust` below is that statement.
+
+COV_ACCEPTED = "accepted"      # at least one accepted dossier against it
+COV_OPEN = "open"              # dossiers exist, none accepted yet
+COV_CALLED = "called"          # an inspection was called, no dossier compiled
+COV_NONE = "none"              # nothing at all
+
+
+def _fold(v):
+    """Accent- and case-insensitive, matching the browser's _accFold and the pm_ registers'
+    _pmFold. Used for SUGGESTIONS only — never for a figure anybody reports."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(v or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(s.replace("đ", "d").split())
+
+
+def _acc_state(dossiers):
+    if any(str(d.get("status") or "").strip().lower() == "accepted" for d in dossiers):
+        return COV_ACCEPTED
+    return COV_OPEN if dossiers else COV_NONE
+
+
+def coverage(itps=(), deliverables=(), dossiers=(), plans=(), today=""):
+    """What has been accepted, against what was planned to be.
+
+    Every argument is a plain list of rows; nothing here reads a database or a clock, so the whole
+    thing is exercised from tests/test_acceptance.py.
+
+      itps          pm_quality_itp rows — the inspections the ITP planned
+      deliverables  pm_deliverables rows — the WBS packages
+      dossiers      pm_acc rows
+      plans         pm_acc_plans rows — inspections called
+      today         'YYYY-MM-DD', for the overdue flag. Empty means do not judge lateness at all,
+                    which is the honest answer when the caller has not said what day it is.
+    """
+    by_itp, by_wbs, by_stage = {}, {}, {}
+    unlinked_dos, unlinked_plans = [], []
+
+    for d in dossiers or ():
+        i, w = str(d.get("itpId") or ""), str(d.get("deliverableId") or "")
+        if i:
+            by_itp.setdefault(i, []).append(d)
+        if w:
+            by_wbs.setdefault(w, []).append(d)
+        if not i and not w:
+            unlinked_dos.append(d)
+        st = str(d.get("stage") or "").strip().lower()
+        if st:
+            by_stage.setdefault(st, []).append(d)
+
+    plans_by_itp = {}
+    for p in plans or ():
+        i = str(p.get("itpId") or "")
+        if i:
+            plans_by_itp.setdefault(i, []).append(p)
+        elif not str(p.get("dossierId") or ""):
+            unlinked_plans.append(p)
+
+    def rows_for(src, key_id, label_fields, bucket, plan_bucket=None):
+        out = []
+        for r in src or ():
+            rid = str(r.get("id") or "")
+            mine = bucket.get(rid, [])
+            called = (plan_bucket or {}).get(rid, [])
+            state = _acc_state(mine)
+            if state == COV_NONE and called:
+                state = COV_CALLED
+            due = str(r.get("plannedFinish") or r.get("dueDate") or r.get("finish") or "")[:10]
+            out.append({
+                "id": rid,
+                "no": str(r.get(key_id) or "").strip(),
+                "title": next((str(r.get(f) or "") for f in label_fields if r.get(f)), ""),
+                "discipline": str(r.get("discipline") or ""),
+                "due": due,
+                "state": state,
+                "dossiers": len(mine),
+                "accepted": len([d for d in mine
+                                 if str(d.get("status") or "").strip().lower() == "accepted"]),
+                "called": len(called),
+                # Late only when the caller SAID what day it is. A missing date is not a reason to
+                # call something on time, and it is not a reason to call it late either.
+                "overdue": bool(today and due and due < today and state != COV_ACCEPTED),
+                "refs": [str(d.get("refNo") or d.get("id") or "") for d in mine][:6],
+            })
+        return out
+
+    itp_rows = rows_for(itps, "itpNo", ("title", "name"), by_itp, plans_by_itp)
+    wbs_rows = rows_for(deliverables, "wbs", ("name", "title"), by_wbs)
+
+    def tally(rows):
+        t = {COV_ACCEPTED: 0, COV_OPEN: 0, COV_CALLED: 0, COV_NONE: 0}
+        for r in rows:
+            t[r["state"]] += 1
+        return {"total": len(rows), "accepted": t[COV_ACCEPTED], "open": t[COV_OPEN],
+                "called": t[COV_CALLED], "none": t[COV_NONE],
+                "overdue": len([r for r in rows if r["overdue"]]),
+                "pct": (0 if not rows else int(round(t[COV_ACCEPTED] * 100.0 / len(rows))))}
+
+    stage_rows = []
+    for s in STAGES:
+        mine = by_stage.get(s["key"], [])
+        stage_rows.append({
+            "key": s["key"], "no": s["no"], "vi": s["vi"], "en": s["en"], "covered": s["covered"],
+            "dossiers": len(mine),
+            "accepted": len([d for d in mine
+                             if str(d.get("status") or "").strip().lower() == "accepted"]),
+        })
+    # Dossiers naming a stage this app does not know — an import, or a stage somebody renamed.
+    # Counted rather than dropped: a row that vanishes from a coverage screen is the worst kind.
+    _known = {s["key"] for s in STAGES}
+    stage_unknown = sum(len(v) for k, v in by_stage.items() if k not in _known)
+    stage_none = len([d for d in (dossiers or ()) if not str(d.get("stage") or "").strip()])
+
+    total_dos = len(dossiers or ())
+    linked = total_dos - len(unlinked_dos)
+    return {
+        "itp": dict(tally(itp_rows), rows=itp_rows),
+        "wbs": dict(tally(wbs_rows), rows=wbs_rows),
+        "stages": stage_rows,
+        "stageUnknown": stage_unknown,
+        "stageNotStated": stage_none,
+        "unlinkedDossiers": len(unlinked_dos),
+        "unlinkedPlans": len(unlinked_plans),
+        "trust": _coverage_trust(total_dos, linked, len(itps or ()), len(deliverables or ())),
+    }
+
+
+def _coverage_trust(total_dossiers, linked, n_itp, n_wbs):
+    """Can the percentages above be believed, and if not, why not.
+
+    This is not a caveat bolted onto a number — it is the number's error bar, and it decides what
+    the screen is allowed to draw. A coverage bar over a register where nothing is linked is a
+    picture of an assumption."""
+    pct = 0 if not total_dossiers else int(round(linked * 100.0 / total_dossiers))
+    if not n_itp and not n_wbs:
+        return {"level": "none", "linkedPct": pct,
+                "vi": "Chưa có ITP hay hạng mục WBS nào để đối chiếu. Lập kế hoạch ITP ở tab Chất "
+                      "lượng, hoặc khai báo hạng mục ở tab Phạm vi, rồi quay lại đây.",
+                "en": "There is no ITP or WBS package to measure against. Plan ITPs on the Quality "
+                      "tab, or set up packages on the Scope tab, then come back."}
+    if not total_dossiers:
+        return {"level": "empty", "linkedPct": 0,
+                "vi": "Chưa lập hồ sơ nghiệm thu nào — số liệu dưới đây là điểm xuất phát, không "
+                      "phải kết quả.",
+                "en": "No acceptance dossier has been compiled yet — the figures below are a "
+                      "starting point, not a result."}
+    if pct == 100:
+        return {"level": "full", "linkedPct": 100,
+                "vi": "Mọi hồ sơ đều đã gắn với ITP hoặc hạng mục WBS, nên các tỷ lệ dưới đây phản "
+                      "ánh đúng thực tế.",
+                "en": "Every dossier is linked to an ITP or a WBS package, so the percentages below "
+                      "say what they appear to say."}
+    if pct >= 60:
+        lvl = "partial"
+    else:
+        lvl = "low"
+    return {
+        "level": lvl, "linkedPct": pct,
+        "vi": "Mới %d%% số hồ sơ được gắn với ITP hoặc hạng mục WBS. Các hồ sơ chưa gắn KHÔNG được "
+              "tính vào tỷ lệ dưới đây, nên độ phủ thực tế cao hơn con số hiển thị — gắn hết rồi "
+              "hãy dùng số này để báo cáo." % pct,
+        "en": "Only %d%% of dossiers are linked to an ITP or a WBS package. Unlinked dossiers are "
+              "NOT counted below, so real coverage is higher than the figure shown — link them "
+              "before reporting this number." % pct,
+    }
+
+
+def suggest_links(itps=(), dossiers=(), limit=60):
+    """Candidate dossier→ITP pairings, with the reason each is suggested.
+
+    Offered for confirmation, NEVER applied. Two rules, strongest first:
+
+      `number`   the ITP's number appears verbatim in the dossier's reference, title or job
+                 description. Somebody typed it; that is close to a statement of intent.
+      `title`    same discipline AND the folded titles match exactly. Weaker — two floors of the
+                 same tray run produce identical titles — so it is offered only when exactly ONE
+                 ITP in that discipline has that title, and it is offered as a suggestion, which is
+                 the whole point of not doing this automatically.
+    """
+    out = []
+    linked = {str(d.get("itpId") or "") for d in dossiers or ()}
+    free = [d for d in (dossiers or ()) if not str(d.get("itpId") or "")]
+    if not free:
+        return out
+
+    by_title = {}
+    for t in itps or ():
+        key = (str(t.get("discipline") or "").upper(), _fold(t.get("title") or t.get("name")))
+        by_title.setdefault(key, []).append(t)
+
+    for d in free:
+        hay = _fold(" ".join(str(d.get(k) or "") for k in
+                             ("refNo", "title", "titleEn", "jobDescription", "note")))
+        hit, why = None, ""
+        for t in itps or ():
+            no = _fold(t.get("itpNo"))
+            # A bare "1" matches everything; require something with substance to it.
+            if no and len(no) >= 3 and no in hay:
+                hit, why = t, "number"
+                break
+        if hit is None:
+            key = (str(d.get("discipline") or "").upper(), _fold(d.get("title")))
+            same = by_title.get(key) or []
+            if len(same) == 1:
+                hit, why = same[0], "title"
+        if hit is None:
+            continue
+        out.append({
+            "dossierId": str(d.get("id") or ""), "dossierRef": str(d.get("refNo") or ""),
+            "dossierTitle": str(d.get("title") or ""),
+            "itpId": str(hit.get("id") or ""), "itpNo": str(hit.get("itpNo") or ""),
+            "itpTitle": str(hit.get("title") or hit.get("name") or ""),
+            "why": why,
+            "alreadyLinkedElsewhere": str(hit.get("id") or "") in linked,
+        })
+        if len(out) >= limit:
+            break
+    return out
