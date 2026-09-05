@@ -453,3 +453,38 @@ def test_one_contractors_sign_out_does_not_touch_another(base_url, api, tokens):
 
     st, _b, _h = _call(base_url, "GET", "/api/dr/site/day?token=" + OTHER_TOKEN, cookie=other)
     assert st == 200, "signing Taikisha out also signed Newtecons out"
+
+
+# ── who the code is sent FROM ────────────────────────────────────────────────────────────────────
+# `_dr_mail_sender` used to fall back through `portal_apprEmail`, which is the "Approval emails"
+# CHECKBOX and stores "1"/"0". Both are non-empty strings and therefore truthy, so on any server
+# where `portal_apprSenderProc` was unset the sender became literally "1": Graph was asked to send
+# as a mailbox named 1, `TK_ADMIN_EMAIL` was unreachable, and `_dr_send_code`'s "no sender address
+# configured" guard could never fire, so the site saw an opaque Graph error instead of the true
+# cause. Nothing caught it because every test and every live server had the setting populated.
+def test_the_sender_is_never_the_approval_emails_checkbox(base_url):
+    """The checkbox is stored under portal_apprEmail as "1"/"0". Neither may ever reach Graph as an
+    address — and "0" is the dangerous one, because it is falsy to a reader's eye and truthy to
+    Python."""
+    prev_proc = db.get_setting("portal_apprSenderProc", "")
+    prev_flag = db.get_setting("portal_apprEmail", "")
+    try:
+        for flag in ("1", "0"):
+            db.set_setting("portal_apprSenderProc", "")
+            db.set_setting("portal_apprEmail", flag)
+            got = app.Handler._dr_mail_sender(app.Handler)
+            assert got not in ("1", "0"), "the checkbox reached Graph as a sender: %r" % got
+            assert "@" in got, "the sender is not an address: %r" % got
+    finally:
+        db.set_setting("portal_apprSenderProc", prev_proc)
+        db.set_setting("portal_apprEmail", prev_flag)
+
+
+def test_the_configured_sender_still_wins(base_url):
+    """The fix must not quietly pin everyone to the default."""
+    prev = db.get_setting("portal_apprSenderProc", "")
+    try:
+        db.set_setting("portal_apprSenderProc", "  site@humiley.com  ")
+        assert app.Handler._dr_mail_sender(app.Handler) == "site@humiley.com"
+    finally:
+        db.set_setting("portal_apprSenderProc", prev)
