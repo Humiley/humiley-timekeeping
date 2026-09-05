@@ -91,8 +91,20 @@
      product's chrome, that is the report. They sit on a WHITE plate there because a logo is drawn
      for paper and most arrive as dark artwork on transparent — on any coloured ground half of them
      vanish, which looks exactly like a logo nobody set. */
-  .lang{background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12px;padding:7px 11px;
-        border-radius:var(--r-pill);cursor:pointer;font-weight:600;flex:0 0 auto}
+  /* Both languages visible, the current one lit. A single button showing the OTHER language is a
+     coin-flip for anybody who has not used it before — it never says which state you are in.
+     Flags are drawn inline as SVG, not emoji: 🇻🇳 does not render on Windows Chrome and degrades to
+     the bare letters "VN", which is the exact platform most specifiers are on. The written code
+     beside each flag carries the meaning; a flag is a country, not a language, so the SVGs are
+     hidden from screen readers. */
+  .lang{display:flex;gap:2px;flex:0 0 auto;background:rgba(255,255,255,.14);
+        border-radius:var(--r-pill);padding:3px}
+  .lang button{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;
+        color:rgba(255,255,255,.72);font-size:12px;font-weight:700;letter-spacing:.04em;
+        padding:6px 10px;border-radius:var(--r-pill);cursor:pointer;box-shadow:none;min-height:0}
+  .lang button[aria-pressed="true"]{background:#fff;color:var(--navy-deep)}
+  .lang svg{width:20px;height:14px;flex:none;border-radius:2px;
+            box-shadow:0 0 0 1px rgba(0,0,0,.12);display:block}
 
   .card{background:var(--card);border:0;border-radius:var(--r-lg);
         padding:18px;margin-top:12px;box-shadow:var(--ring),var(--shadow-card)}
@@ -202,6 +214,15 @@
   .sections{display:flex;flex-direction:column;gap:0;margin:0;padding:0;list-style:none}
   .sections li{border-top:1px solid var(--line)}
   .sections li:first-child{border-top:0}
+  /* A part heading — 2 Manpower, 5 Work progress, 9 Inspection — for the three numbers the report
+     splits into sub-sections. Without them the index read 1, 2.1, 2.2, 3, 4, 5.1, 5.3 as one flat
+     run, and the gaps looked like mistakes rather than structure. */
+  .sections .parthead{display:flex;align-items:baseline;gap:12px;padding:13px 8px 5px}
+  .sections .parthead .no{flex:0 0 2.7em;font-weight:700;color:var(--navy);font-size:13px;
+                          font-variant-numeric:tabular-nums}
+  .sections .parthead .nm{font-size:11px;font-weight:700;letter-spacing:.14em;
+                          text-transform:uppercase;color:var(--faint)}
+  .sections button.sub .no{color:var(--emerald-deep);font-size:12.5px}
   .sections button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;
     border:0;background:none;padding:14px 8px;font-weight:600;font-size:14.5px;
     border-radius:var(--r-sm);box-shadow:none}
@@ -294,7 +315,10 @@
 <body>
 <header><div class="wrap">
   <h1 id="hTitle">Daily Report<span class="who" id="hWho"></span></h1>
-  <button class="lang" id="langBtn" type="button">VN</button>
+  <span class="lang" role="group" aria-label="Language">
+    <button type="button" id="langEn" aria-pressed="true"><svg viewBox="0 0 60 30" preserveAspectRatio="none" aria-hidden="true" focusable="false"><clipPath id="fgb"><path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z"/></clipPath><path d="M0,0 v30 h60 v-30 z" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#fgb)" stroke="#C8102E" stroke-width="4"/><path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/><path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6"/></svg>EN</button>
+    <button type="button" id="langVi" aria-pressed="false"><svg viewBox="0 0 640 480" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path fill="#DA251D" d="M0 0h640v480H0z"/><polygon fill="#FF0" points="320,130 344.7,206 424.6,206 360,253 384.7,329 320,282 255.3,329 280,253 215.4,206 295.3,206"/></svg>VN</button>
+  </span>
 </div></header>
 
 <div class="wrap">
@@ -316,6 +340,7 @@ var VI = {
     "Chỉ những địa chỉ Humiley đã đăng ký cho công ty bạn mới mở được biểu mẫu này.",
   "Report date":"Ngày báo cáo","Today":"Hôm nay","Yesterday":"Hôm qua",
   "Section":"Mục",
+  "Manpower":"Nhân lực","Work progress":"Tiến độ thi công","Inspection":"Nghiệm thu",
   "Client":"Chủ đầu tư","Contractor":"Nhà thầu","Filed by":"Người lập",
   "Reporting for":"Báo cáo cho ngày",
   "Weather":"Thời tiết","Morning":"Buổi sáng","Afternoon":"Buổi chiều","Evening":"Buổi tối",
@@ -589,12 +614,44 @@ function mastheadHtml(){
 
 function viewMenu(){
   var html = '<div class="reveal">' + mastheadHtml() + '<div class="card"><ul class="sections">';
+  /* The report splits three of its numbers into sub-sections; the rest stand alone. Printing the
+     part heading before the first child of each turns a flat run of fourteen into the document's
+     own contents page. Derived from the numbers themselves, so a section that gains a sibling gets
+     a heading without anybody remembering to add one. */
+  var majors = {};
+  SECTIONS.forEach(function(x){ var m = String(x[3]).split('.')[0]; majors[m] = (majors[m] || 0) + 1; });
+  var partOf = { '2':'Manpower', '5':'Work progress', '9':'Inspection' };
+
+  /* Grouped into BLOCKS before anything is drawn. A part and its children have to be ONE grid item:
+     laid out as a flat run, the multi-column grid fills row by row and cheerfully put "2 Manpower"
+     at the end of one column with 2.1 at the top of the next — a heading pointing at nothing. */
+  var blocks = [], byMajor = {};
   SECTIONS.forEach(function(sec){
+    var major = String(sec[3]).split('.')[0];
+    if (majors[major] > 1) {
+      if (!byMajor[major]) { byMajor[major] = { major: major, rows: [] }; blocks.push(byMajor[major]); }
+      byMajor[major].rows.push(sec);
+    } else {
+      blocks.push({ major: major, rows: [sec] });
+    }
+  });
+
+  function rowHtml(sec, sub){
     var n = sectionCount(sec[0], sec[2]);
-    html += '<li><button data-sec="' + sec[0] + '"><span class="no">' + esc(sec[3] || '') + '</span>'
+    return '<button data-sec="' + sec[0] + '" class="' + (sub ? 'sub' : '') + '">'
+      + '<span class="no">' + esc(sec[3] || '') + '</span>'
       + '<span class="n">' + t(sec[1]) + '</span>'
       + '<span class="count' + (n ? ' has' : '') + '">' + (n || '—') + '</span>'
-      + '<span class="chev">›</span></button></li>';
+      + '<span class="chev">›</span></button>';
+  }
+
+  blocks.forEach(function(b){
+    var grouped = b.rows.length > 1;
+    html += '<li>'
+      + (grouped ? '<div class="parthead"><span class="no">' + esc(b.major) + '</span>'
+                   + '<span class="nm">' + t(partOf[b.major] || '') + '</span></div>' : '')
+      + b.rows.map(function(r){ return rowHtml(r, grouped); }).join('')
+      + '</li>';
   });
   html += '</ul></div><button class="link" id="out">' + t('Sign out') + '</button></div>';
   show(html);
@@ -834,14 +891,20 @@ async function uploadPhotos(){
 function wirePhotoBack(){ if (el('back2')) el('back2').onclick = viewMenu; }
 
 /* ── boot ──────────────────────────────────────────────────────────────────────────────────── */
-el('langBtn').onclick = function(){
-  lang = (lang === 'vi') ? 'en' : 'vi';
+/* Two buttons, both always visible, the current one pressed — rather than one button naming the
+   language you are NOT in, which never tells you which state you are already in. */
+function setLang(next){
+  lang = next;
   try { localStorage.setItem('drlang', lang); } catch(e){}
-  el('langBtn').textContent = (lang === 'vi') ? 'EN' : 'VN';
+  el('langEn').setAttribute('aria-pressed', String(lang !== 'vi'));
+  el('langVi').setAttribute('aria-pressed', String(lang === 'vi'));
   el('hTitle').firstChild.nodeValue = t('Daily Report');
   if (S.setup) { S.view === 'menu' ? viewMenu() : renderSection(''); } else { viewEmail(''); }
-};
-el('langBtn').textContent = (lang === 'vi') ? 'EN' : 'VN';
+}
+el('langEn').onclick = function(){ if (lang !== 'en') setLang('en'); };
+el('langVi').onclick = function(){ if (lang !== 'vi') setLang('vi'); };
+el('langEn').setAttribute('aria-pressed', String(lang !== 'vi'));
+el('langVi').setAttribute('aria-pressed', String(lang === 'vi'));
 el('hTitle').firstChild.nodeValue = t('Daily Report');
 var _origRender = renderSection;
 renderSection = function(n){ S.view = 'section'; _origRender(n); if (el('back2')) el('back2').onclick = viewMenu; };
