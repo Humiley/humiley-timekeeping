@@ -357,7 +357,7 @@ def test_every_blocking_reason_is_written_in_both_languages():
 
 def test_a_dossier_takes_a_copy_of_the_form_not_a_reference_to_it():
     """Rewording a library line must not change what a dossier signed last month says."""
-    f = A.form("HML-EL-205")
+    f = A.form("ELE-202")
     rows = A.snapshot_items(f)
     assert len(rows) == len(f["items"])
     assert rows[0]["seq"] == 1 and rows[0]["result"] == ""
@@ -406,3 +406,210 @@ def test_an_acceptance_with_no_scan_of_the_signed_minute_is_refused():
     a = _ok_work()
     a["dossier"] = {"accType": "work"}
     assert "no_minute" in [b["code"] for b in A.blockers(**a)]
+
+
+# ══ the checklist library ════════════════════════════════════════════════════════════════════════
+#
+# 97 forms of content nobody will read line by line again. What a test can check is the properties
+# that make it USABLE — and the one property that makes it honest.
+
+import acceptance_forms as FL
+
+
+def test_the_library_covers_every_discipline_the_app_offers():
+    """A discipline in the dropdown with no forms behind it is a dead end somebody finds at the
+    point of compiling a dossier."""
+    have = {f["disc"] for f in FL.LIBRARY}
+    assert have == set(A.DISCIPLINE_CODES), "no forms for: %s" % sorted(set(A.DISCIPLINE_CODES) - have)
+
+
+def test_form_codes_are_unique_and_shaped_like_a_document_number():
+    import re
+    codes = [f["code"] for f in FL.LIBRARY]
+    dups = sorted({c for c in codes if codes.count(c) > 1})
+    assert not dups, "duplicate form codes: %s" % dups
+    bad = [c for c in codes if not re.match(r"^[A-Z]{2,4}-\d{3}$", c)]
+    assert not bad, "form codes that will not sort or cite cleanly: %s" % bad
+
+
+def test_every_checklist_line_is_written_in_both_languages():
+    """A consultant reads the Vietnamese and a client's technical adviser often reads the English.
+    A line in one language only is a line one of them cannot check."""
+    bad = []
+    for f in FL.LIBRARY:
+        for i, it in enumerate(f["items"]):
+            if not it["vi"] and not it["en"]:
+                continue                      # the deliberate blank line on the blank form
+            if not (it["vi"].strip() and it["en"].strip()):
+                bad.append("%s line %d" % (f["code"], i + 1))
+    assert not bad, bad[:10]
+
+
+def test_every_real_line_says_how_it_is_checked():
+    """A checklist that says WHAT without saying HOW leaves the method to whoever is holding the
+    pen, and two engineers then "check" the same line differently."""
+    bad = []
+    for f in FL.LIBRARY:
+        for i, it in enumerate(f["items"]):
+            if (it["vi"] or it["en"]) and not it["method"].strip():
+                bad.append("%s line %d" % (f["code"], i + 1))
+    assert not bad, "lines with no inspection method: %s" % bad[:10]
+
+
+def test_methods_come_from_the_fixed_set_rather_than_being_typed_each_time():
+    """Free-text methods make the register unsearchable — "Đo", "đo đạc" and "Measure" are three
+    strings for one thing."""
+    allowed = {FL.M_V, FL.M_M, FL.M_T, FL.M_D, FL.M_C, FL.M_F, FL.M_W, ""}
+    bad = sorted({it["method"] for f in FL.LIBRARY for it in f["items"]} - allowed)
+    assert not bad, "methods outside the fixed set: %s" % bad
+
+
+def test_no_form_ships_marked_as_adopted():
+    """THE honesty property of the whole library. These are drafts written against the standards,
+    not transcriptions of an approved ITP; a form that shipped marked adopted would be the app
+    asserting a review that never happened, on a document somebody signs."""
+    assert all(f["adopted"] is False for f in FL.LIBRARY)
+    assert all(f["origin"] == "shipped" for f in FL.LIBRARY)
+
+
+def test_using_a_shipped_form_warns_and_never_blocks():
+    """Blocking would make the library useless on day one, which is how a control gets removed
+    rather than satisfied. Warning is what puts the provenance in front of the signer."""
+    a = _ok_work()
+    a["dossier"] = dict(a["dossier"], formCode="ELE-202")
+    r = A.readiness(**a)
+    w = [x for x in r if x["code"] == "form_not_adopted"]
+    assert w and w[0]["blocks"] is False
+    assert "ELE-202" in w[0]["vi"] and "ELE-202" in w[0]["en"]
+    assert A.can_accept(**a), "an un-adopted form must not stop an acceptance"
+
+
+def test_an_adopted_form_raises_nothing():
+    a = _ok_work()
+    a["dossier"] = dict(a["dossier"], formCode="ELE-202", formAdopted=True)
+    assert not [x for x in A.readiness(**a) if x["code"] == "form_not_adopted"]
+
+
+def test_the_library_counts_are_computed_not_written_down():
+    c = FL.counts()
+    assert sum(v["forms"] for v in c.values()) == len(FL.LIBRARY)
+    assert c["ELE"]["items"] == sum(
+        len([i for i in f["items"] if i["vi"] or i["en"]])
+        for f in FL.LIBRARY if f["disc"] == "ELE")
+
+
+# ══ the construction stages ══════════════════════════════════════════════════════════════════════
+
+def test_stages_are_numbered_in_order_and_point_at_real_predecessors():
+    nos = [s["no"] for s in A.STAGES]
+    assert nos == sorted(nos) == list(range(1, len(A.STAGES) + 1)), "stage numbering is not a sequence"
+    for s in A.STAGES:
+        if s["after"]:
+            prev = A.stage(s["after"])
+            assert prev, "%s follows unknown stage %r" % (s["key"], s["after"])
+            assert prev["no"] < s["no"], "%s follows a LATER stage" % s["key"]
+
+
+def test_every_stage_names_real_disciplines_and_real_acceptance_types():
+    for s in A.STAGES:
+        for d in s["disc"]:
+            assert d in A.DISCIPLINE_CODES, "%s: unknown discipline %r" % (s["key"], d)
+        for t in s["types"]:
+            assert A.acceptance_type(t), "%s: unknown acceptance type %r" % (s["key"], t)
+        assert s["note_vi"] and s["note_en"], s["key"]
+
+
+def test_every_acceptance_type_arises_in_at_least_one_stage():
+    """A type belonging to no stage cannot be planned for, and would only ever be reached by
+    somebody picking it out of a dropdown by accident."""
+    covered = {t for s in A.STAGES for t in s["types"]}
+    missing = sorted({t["key"] for t in A.ACCEPTANCE_TYPES} - covered)
+    assert not missing, missing
+
+
+def test_the_stages_that_get_covered_up_are_the_ones_that_actually_do():
+    """The one fact about a stage the app is firm on, so it is pinned rather than left to drift."""
+    covered = {s["key"] for s in A.STAGES if s["covered"]}
+    assert covered == {"foundation", "structure", "mep_rough", "envelope", "external"}
+    assert A.is_covered_stage("mep_rough") is True
+    assert A.is_covered_stage("finishes") is False
+    assert A.is_covered_stage("nonsense") is False
+
+
+def test_a_concealed_stage_warns_loudly_and_still_never_blocks():
+    """A concealed work acceptance is the only kind that cannot be redone — the alternative is
+    opening the building up. So it is said while there is still something to look at, and said as a
+    warning, because Điều 21 does not make it a condition of the signature."""
+    a = _ok_work()
+    a["dossier"] = dict(a["dossier"], stage="mep_rough")
+    w = [x for x in A.readiness(**a) if x["code"] == "stage_covered"]
+    assert w and w[0]["blocks"] is False
+    assert "che khuất" in w[0]["vi"] and "covered up" in w[0]["en"]
+    assert A.can_accept(**a)
+
+
+def test_a_stage_out_of_sequence_warns_about_the_one_before_it():
+    a = _ok_work()
+    a["dossier"] = dict(a["dossier"], stage="finishes")
+    codes = [x["code"] for x in A.readiness(**a)]
+    assert "stage_after_envelope" in codes
+    a["dossier"] = dict(a["dossier"], _stagesDone=["envelope"])
+    assert "stage_after_envelope" not in [x["code"] for x in A.readiness(**a)]
+
+
+def test_an_unusual_type_for_a_stage_is_questioned_not_refused():
+    a = _ok_work()
+    a["dossier"] = dict(a["dossier"], accType="work", stage="handover")
+    w = [x for x in A.readiness(**a) if x["code"] == "stage_type_unusual"]
+    assert w and w[0]["blocks"] is False
+
+
+def test_stages_for_a_discipline_are_the_ones_it_appears_in():
+    ele = [s["key"] for s in A.stages_for("ELE")]
+    assert "mep_rough" in ele and "test_commission" in ele
+    assert "finishes" not in ele, "an electrician should not scroll past architectural finishes"
+    assert A.stages_for("") == A.STAGES
+    assert A.stages_for("ZZZ") == A.STAGES, "an unknown discipline gets everything, not nothing"
+
+
+def test_stage_warnings_are_silent_when_the_dossier_names_no_stage():
+    assert A.stage_warnings({"accType": "work"}) == []
+    assert A.stage_warnings({"accType": "work", "stage": "nonsense"}) == []
+
+
+# ══ the detail each type now carries ═════════════════════════════════════════════════════════════
+
+def test_every_type_says_what_evidence_travels_with_the_minute():
+    """The commonest reason a dossier comes back from a consultant is a missing attachment, not a
+    failed inspection. Điều 21(3) requires the minute to identify what it was judged against, so the
+    form says up front what has to be with it."""
+    for t in A.ACCEPTANCE_TYPES:
+        assert t["evidence_vi"] and t["evidence_en"], t["key"]
+        assert len(t["evidence_vi"]) == len(t["evidence_en"]), t["key"]
+        assert t["attends_vi"] and t["attends_en"], t["key"]
+
+
+def test_the_notice_period_is_labelled_as_convention_rather_than_law():
+    """It is not in Điều 21 or Điều 24. Presenting a convention as a legal requirement is the same
+    error as citing a withdrawn standard edition."""
+    import io
+    src = io.open(A.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
+    assert src.count("convention, not law") >= len(
+        [t for t in A.ACCEPTANCE_TYPES if t.get("notice_days")])
+    for t in A.ACCEPTANCE_TYPES:
+        assert isinstance(t["notice_days"], int) and t["notice_days"] > 0, t["key"]
+
+
+def test_the_types_that_happen_in_every_stage_do_not_claim_one():
+    """Materials arrive and work happens at every stage of a build. A default naming one stage would
+    be wrong most of the time, and a wrong default is worse than a blank somebody has to fill."""
+    assert A.acceptance_type("material")["stage"] == ""
+    assert A.acceptance_type("work")["stage"] == ""
+    assert A.acceptance_type("handover_deed")["stage"] == "handover"
+
+
+def test_the_warranty_type_closes_the_last_obligation():
+    t = A.acceptance_type("warranty_end")
+    assert t and "Điều 28" in t["law"]
+    assert t["requires"] == ["handover_deed"]
+    assert A.stage("warranty")["types"] == ["warranty_end"]

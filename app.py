@@ -5770,6 +5770,32 @@ class Handler(BaseHTTPRequestHandler):
             return []
         return [r for r in db.list_collection(coll) if str(r.get("dossierId") or "") == did]
 
+    def _acc_context(self, dos):
+        """The dossier plus what the gate needs to know about the rest of the project.
+
+        Two facts live outside the row and are read from the register rather than trusted from the
+        browser: which construction STAGES already have an accepted dossier (so the sequence notes
+        know what is done), and whether the checklist form came from the project's own library or
+        is a shipped draft. `_stagesDone` is prefixed because it is not a stored field — it is
+        computed for this call, and a name that looked storable would eventually be stored."""
+        pid = str((dos or {}).get("projectId") or "")
+        done, out = set(), dict(dos or {})
+        for r in db.list_collection("pm_acc"):
+            if str(r.get("projectId") or "") != pid:
+                continue
+            if str(r.get("status") or "").strip().lower() == "accepted" and r.get("stage"):
+                done.add(str(r.get("stage")).strip().lower())
+        out["_stagesDone"] = sorted(done)
+        # A form the project ADOPTED — copied in and reviewed — is adopted. A shipped draft is not,
+        # whatever the row happens to carry, so this is recomputed rather than read off the dossier.
+        code = str(out.get("formCode") or "").strip().upper()
+        if code:
+            mine = next((f for f in db.list_collection("pm_acc_forms")
+                         if str(f.get("projectId") or "") == pid
+                         and str(f.get("code") or "").strip().upper() == code), None)
+            out["formAdopted"] = bool(mine and mine.get("adopted"))
+        return out
+
     def _acc_accepted_types(self, pid):
         """The acceptance types that ALREADY have an accepted dossier on this project.
 
@@ -5896,7 +5922,7 @@ class Handler(BaseHTTPRequestHandler):
                 row["hasImage"] = True
             drawings.append(row)
         why = acceptance.readiness(
-            dossier=dos, items=items, defects=defects,
+            dossier=self._acc_context(dos), items=items, defects=defects,
             accepted_types=self._acc_accepted_types(pid),
             signed_parties=acceptance.signed_parties(dos))
         return self._json({
@@ -5950,7 +5976,15 @@ class Handler(BaseHTTPRequestHandler):
         lines = acceptance.snapshot_items(src) if src else []
 
         disc = str((body or {}).get("discipline") or (src or {}).get("disc") or "GEN").strip().upper()
+        # The construction stage. Falls back to the acceptance type's own default, which is blank
+        # for the two types that happen in every stage — so a dossier arrives with the stage its
+        # type implies, or with none, and never with one the app guessed.
+        _stg = str((body or {}).get("stage") or
+                   (acceptance.acceptance_type(acc_type) or {}).get("stage") or "").strip().lower()
+        if _stg and not acceptance.stage(_stg):
+            return self._err("Unknown construction stage %r." % _stg, 400)
         dos = {
+            "stage": _stg,
             "id": uuid.uuid4().hex[:12],
             "projectId": pid,
             "accType": acc_type,
@@ -6069,7 +6103,7 @@ class Handler(BaseHTTPRequestHandler):
                        key=lambda r: _acc_seq(r.get("seq")))
         defects = self._acc_kids("pm_acc_defects", did)
         why = acceptance.blockers(
-            dossier=rec, items=items, defects=defects,
+            dossier=self._acc_context(rec), items=items, defects=defects,
             accepted_types=self._acc_accepted_types(rec.get("projectId")),
             signed_parties=acceptance.signed_parties(rec))
         if why:

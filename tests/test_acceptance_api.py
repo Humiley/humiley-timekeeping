@@ -430,14 +430,14 @@ def test_composing_copies_the_checklist_rather_than_pointing_at_it(base_url, pro
     edited, and a minute signed in March would quietly start saying what the form says in
     September."""
     kind, _, out = _H()._acc_compose_ep(PM, {
-        "projectId": proj["id"], "accType": "work", "formCode": "HML-EL-205",
+        "projectId": proj["id"], "accType": "work", "formCode": "ELE-202",
         "refNo": "ZZ-ELE-900"})
     assert kind == "json", out
     did = out["dossier"]["id"]
     rows = [r for r in db.list_collection("pm_acc_items") if r.get("dossierId") == did]
-    assert len(rows) == len(A.form("HML-EL-205")["items"]) > 5
+    assert len(rows) == len(A.form("ELE-202")["items"]) > 5
     assert all(r["result"] == "" for r in rows), "a copied checklist starts unanswered"
-    assert out["dossier"]["formCode"] == "HML-EL-205"
+    assert out["dossier"]["formCode"] == "ELE-202"
 
 
 def test_a_work_acceptance_is_not_born_carrying_completion_clearances(base_url, proj):
@@ -459,11 +459,11 @@ def test_a_projects_own_form_library_wins_over_the_seeded_one(base_url, proj):
     """The seeded library is a starting point. A contractor's real PP-EL-205 is written against
     their own ITP and must override it."""
     db.put_collection_item("pm_acc_forms", {
-        "projectId": proj["id"], "code": "HML-EL-205", "disc": "ELE",
+        "projectId": proj["id"], "code": "ELE-202", "disc": "ELE",
         "vi": "Bản của dự án", "en": "The project's own",
         "items": [{"vi": "Một mục duy nhất", "en": "One single line"}]})
     _, _, out = _H()._acc_compose_ep(PM, {
-        "projectId": proj["id"], "accType": "work", "formCode": "HML-EL-205"})
+        "projectId": proj["id"], "accType": "work", "formCode": "ELE-202"})
     assert out["items"] == 1
     assert out["dossier"]["formTitleEn"] == "The project's own"
 

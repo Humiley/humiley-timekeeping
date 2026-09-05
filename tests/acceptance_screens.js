@@ -255,5 +255,77 @@ console.log('\nThe mark-up is data, and the dimension tool does not invent a mea
      'one bad row must not take the whole drawing down');
 }
 
+
+// ══ 8 · the library at 97 forms, and the adoption step ═════════════════════════════════════════
+console.log('\nA library this size is searched, not scrolled — and adopting is not copying\n');
+{
+  const tab = take('function _accFormsTab(', '_accFormsTab');
+  ok('the discipline column carries counts, so the size of each is visible before clicking',
+     /lines \+ ' ' \+ _t2\('lines'/.test(tab) && /rows\.length/.test(tab),
+     'ten forms is a list; ninety-seven under one heading is a scroll');
+  ok('the list is filtered by a search box',
+     /_accFold\(\[f\.code, f\.vi, f\.en, f\.standard\]/.test(tab),
+     'finding PP-EL-205 by eye is the slowest part of compiling a dossier');
+  ok('the search is accent- and case-insensitive',
+     /normalize\('NFD'\)/.test(take('function _accFold(', '_accFold')),
+     'the library is written in Vietnamese and searched on whatever keyboard is to hand');
+  ok('a form shows which of the three states it is in',
+     /_t\('adopted'\)/.test(tab) && /_t\('project draft'\)/.test(tab) && /_t\('template'\)/.test(tab),
+     'shipped template, project draft and adopted are three different things to sign against');
+  ok('and who reviewed it, once one has',
+     /f\.adoptedBy/.test(tab));
+
+  const repaint = take('function _accRepaintFormList(', '_accRepaintFormList');
+  ok('the search swaps the list by ID rather than by DOM position',
+     /getElementById\('acc-form-list'\)/.test(repaint),
+     'the first version reached for it structurally and matched the wrong node once a KPI strip ' +
+     'appeared above the card — the box then filtered nothing, silently');
+  ok('…and falls back to a full repaint rather than doing nothing',
+     (repaint.match(/_accRepaint\(\); return;/g) || []).length >= 2);
+
+  const adopt = take('async function accFormAdopt(', 'accFormAdopt');
+  ok('copying a template in never marks it adopted',
+     /adopted: false, origin: 'copied'/.test(adopt),
+     'copying is not reviewing; treating them as one act lets a project mark a hundred forms ' +
+     'adopted in an afternoon with nobody having read one');
+  const approve = take('async function accFormApprove(', 'accFormApprove');
+  ok('adopting is a separate, confirmed act that records who and when',
+     /adopted: true/.test(approve) && /adoptedBy/.test(approve) && /adoptedOn/.test(approve) &&
+     /await tkConfirm/.test(approve));
+}
+
+// ══ 9 · stages and evidence ════════════════════════════════════════════════════════════════════
+console.log('\nWhere in the build it sits, and what has to be with it\n');
+{
+  const stages = take('function _accStagesFor(', '_accStagesFor');
+  ok('the stage list is filtered to the discipline',
+     /\(x\.disc \|\| \[\]\)\.indexOf\(d\) >= 0/.test(stages),
+     'an electrician should not scroll past foundations to find first fix');
+  ok('…and falls back to every stage rather than none',
+     /return mine\.length \? mine : all;/.test(stages),
+     'an empty dropdown is unfillable, which is worse than an over-long one');
+
+  const changed = take('function _accNewStageChanged(', '_accNewStageChanged');
+  ok('choosing a concealed stage says so at the moment it is chosen',
+     /st\.covered/.test(changed) && /covered up/.test(changed),
+     'a concealed work acceptance is the only kind that cannot be redone');
+
+  const ev = take('function _accEvidenceCard(', '_accEvidenceCard');
+  ok('the dossier says what documents have to travel with the minute',
+     /evidence_vi : t\.evidence_en/.test(ev),
+     'the commonest reason a dossier comes back is a missing attachment, not a failed inspection');
+  ok('and who has to attend',
+     /attends_vi : t\.attends_en/.test(ev));
+  ok('the notice period is labelled as a convention, not a rule',
+     /a convention, not a legal requirement/.test(ev),
+     'it is in no article; presenting it as law is the same error as citing a withdrawn standard');
+  ok('the card is absent when the type carries no evidence list',
+     /if \(!ev\.length\) return '';/.test(ev),
+     'an empty panel headed "what has to be with this minute" reads as "nothing does"');
+
+  ok('the stage reaches the server on compose and on save',
+     /stage: g\('stage'\)/.test(src) && /'standardRef', 'stage', 'jobDescription'/.test(src));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

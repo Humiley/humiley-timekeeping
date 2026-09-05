@@ -61,7 +61,12 @@ cites a withdrawn edition is a finding at audit. So:
 
 Pure module: no database, no request, no clock. Everything below is exercised by
 tests/test_acceptance.py.
+
+The checklist CONTENT lives in acceptance_forms.py. This file is the law and stays small enough to
+read in one sitting; that one is 97 forms and grows.
 """
+
+import acceptance_forms
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 #  Disciplines — the "bộ môn" a dossier belongs to
@@ -166,6 +171,14 @@ def signed_parties(dossier):
 ACCEPTANCE_TYPES = [
     {
         "key": "material",
+        # Every stage of the build takes materials, so naming one here would be wrong most of the
+        # time. The DOSSIER carries the stage; the type does not presume it.
+        "stage": "",
+        "notice_days": 1,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Phiếu giao hàng', 'Chứng chỉ xuất xứ (CO)', 'Chứng nhận chất lượng (CQ)', 'Kết quả thí nghiệm của lô', 'Phiếu duyệt vật tư'],
+        "evidence_en": ['Delivery note', 'Certificate of origin', 'Certificate of quality', 'Batch test results', 'Approved material submittal'],
+        "attends_vi": 'Cán bộ kỹ thuật nhà thầu, tư vấn giám sát; đại diện chủ đầu tư khi vật tư chính.',
+        "attends_en": 'Contractor engineer and supervision consultant; the client for principal materials.',
         "vi": "Nghiệm thu vật liệu, cấu kiện, thiết bị đầu vào",
         "en": "Acceptance of incoming materials, components and equipment",
         "law": "Nghị định 06/2021/NĐ-CP, Điều 12",
@@ -180,6 +193,13 @@ ACCEPTANCE_TYPES = [
     },
     {
         "key": "work",
+        # Likewise: work happens in every stage. Điều 21 does not care which one.
+        "stage": "",
+        "notice_days": 1,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Bản vẽ thi công được duyệt', 'Biện pháp thi công được duyệt', 'Biên bản nghiệm thu vật tư đầu vào liên quan', 'Kết quả thí nghiệm hiện trường', 'Ảnh chụp hiện trạng trước khi che khuất'],
+        "evidence_en": ['Approved shop drawing', 'Approved method statement', 'Related incoming-material acceptance', 'Site test results', 'Photographs before covering up'],
+        "attends_vi": 'Người phụ trách kỹ thuật thi công trực tiếp và người giám sát trực tiếp của chủ đầu tư.',
+        "attends_en": "The contractor's person directly in charge and the client's direct supervisor.",
         "vi": "Nghiệm thu công việc xây dựng",
         "en": "Acceptance of construction work",
         "law": "Nghị định 06/2021/NĐ-CP, Điều 21",
@@ -194,6 +214,12 @@ ACCEPTANCE_TYPES = [
     },
     {
         "key": "commission",
+        "stage": "test_commission",
+        "notice_days": 3,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Quy trình chạy thử được duyệt', 'Biên bản thí nghiệm từng hạng mục', 'Chứng chỉ hiệu chuẩn thiết bị đo', 'Bảng số liệu cân chỉnh (TAB)', 'Ma trận nguyên nhân — hệ quả đã thử'],
+        "evidence_en": ['Approved commissioning procedure', 'Component test records', 'Instrument calibration certificates', 'Balancing (TAB) data sheets', 'Tested cause-and-effect matrix'],
+        "attends_vi": 'Nhà thầu, tư vấn giám sát, chủ đầu tư; nhà sản xuất khi thiết bị chính.',
+        "attends_en": 'Contractor, supervision consultant and client; the manufacturer for principal plant.',
         "vi": "Nghiệm thu chạy thử, thí nghiệm, vận hành thử",
         "en": "Testing, trial run and commissioning acceptance",
         "law": "Nghị định 06/2021/NĐ-CP, Điều 21 và Điều 24 khoản 2",
@@ -208,6 +234,12 @@ ACCEPTANCE_TYPES = [
     },
     {
         "key": "stage",
+        "stage": "structure",
+        "notice_days": 3,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Danh mục biên bản nghiệm thu công việc thuộc giai đoạn', 'Kết quả thí nghiệm của giai đoạn', 'Bản vẽ hoàn công giai đoạn', 'Danh mục tồn tại chuyển tiếp'],
+        "evidence_en": ['Schedule of work acceptances in the stage', 'Stage test results', 'Stage as-built drawings', 'Carried-forward punch list'],
+        "attends_vi": 'Chỉ huy trưởng nhà thầu, tư vấn giám sát, đại diện BQLDA; giám sát tác giả khi cần.',
+        "attends_en": "Contractor's site manager, supervision consultant, PMU; design supervision where needed.",
         "vi": "Nghiệm thu giai đoạn thi công hoặc bộ phận công trình",
         "en": "Acceptance of a construction stage or part of the works",
         "law": "Nghị định 06/2021/NĐ-CP, Điều 23",
@@ -222,6 +254,12 @@ ACCEPTANCE_TYPES = [
     },
     {
         "key": "handover_part",
+        "stage": "completion",
+        "notice_days": 7,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Toàn bộ biên bản nghiệm thu công việc và giai đoạn', 'Kết quả thí nghiệm, chạy thử', 'Văn bản chấp thuận PCCC', 'Văn bản về bảo vệ môi trường', 'Bản vẽ hoàn công hạng mục', 'Quy trình vận hành và bảo trì', 'Danh mục tồn tại và thời hạn khắc phục'],
+        "evidence_en": ['All work and stage acceptance minutes', 'Test and commissioning results', 'Fire-safety written acceptance', 'Environmental clearance', 'As-built drawings for the item', 'Operation and maintenance procedures', 'Punch list with rectification dates'],
+        "attends_vi": 'Chủ đầu tư, tư vấn QLXD & giám sát, nhà thầu chính và các nhà thầu phụ liên quan.',
+        "attends_en": 'Client, construction management and supervision consultant, main and relevant subcontractors.',
         "vi": "Nghiệm thu hoàn thành hạng mục công trình",
         "en": "Completion acceptance of a work item",
         "law": "Nghị định 06/2021/NĐ-CP, Điều 24",
@@ -237,6 +275,12 @@ ACCEPTANCE_TYPES = [
     },
     {
         "key": "handover_all",
+        "stage": "completion",
+        "notice_days": 15,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Hồ sơ hoàn thành công trình theo danh mục', 'Toàn bộ biên bản nghiệm thu hạng mục', 'Thông báo kết quả kiểm tra công tác nghiệm thu của cơ quan chuyên môn', 'Văn bản chấp thuận PCCC và môi trường', 'Bản vẽ hoàn công toàn công trình', 'Kết quả quan trắc, kiểm định (nếu có)'],
+        "evidence_en": ['The completion dossier per its schedule', 'All work-item acceptance minutes', "Construction authority's notice on the acceptance check", 'Fire-safety and environmental clearances', 'Complete as-built drawings', 'Monitoring and third-party inspection results where applicable'],
+        "attends_vi": 'Chủ đầu tư, tư vấn QLXD & giám sát, nhà thầu thiết kế, nhà thầu thi công.',
+        "attends_en": 'Client, construction management and supervision consultant, designer, contractor.',
         "vi": "Nghiệm thu hoàn thành công trình đưa vào sử dụng",
         "en": "Completion acceptance of the works for use",
         "law": "Nghị định 06/2021/NĐ-CP, Điều 24; Luật Xây dựng, Điều 123",
@@ -252,6 +296,12 @@ ACCEPTANCE_TYPES = [
     },
     {
         "key": "handover_deed",
+        "stage": "handover",
+        "notice_days": 15,   # convention, not law — a project agrees its own notice period
+        "evidence_vi": ['Biên bản nghiệm thu hoàn thành công trình', 'Hồ sơ hoàn thành công trình', 'Quy trình vận hành, bảo trì và định mức bảo trì', 'Biên bản đào tạo vận hành', 'Danh mục vật tư dự phòng, dụng cụ chuyên dụng', 'Chỉ số công tơ, đồng hồ tại thời điểm bàn giao'],
+        "evidence_en": ['Completion acceptance minute', 'The completion dossier', 'Operation, maintenance procedures and schedules', 'Operator training record', 'Spare parts and special tools schedule', 'Meter readings at handover'],
+        "attends_vi": 'Chủ đầu tư, chủ quản lý sử dụng, nhà thầu thi công.',
+        "attends_en": 'Client, the operating owner and the contractor.',
         "vi": "Bàn giao công trình đưa vào sử dụng",
         "en": "Handover of the works into use",
         "law": "Luật Xây dựng, Điều 124; Nghị định 06/2021/NĐ-CP, Điều 27",
@@ -264,6 +314,28 @@ ACCEPTANCE_TYPES = [
         "requires": ["handover_all"],
         "expects": [],
         "clearances": True,
+    },
+{
+        "key": "warranty_end",
+        "stage": "warranty",
+        "notice_days": 30,   # convention, not law — a project agrees its own notice period
+        "vi": "Nghiệm thu hết thời hạn bảo hành",
+        "en": "End-of-warranty acceptance",
+        "law": "Nghị định 06/2021/NĐ-CP, Điều 28",
+        "pmbok": "Close Project or Phase (§4.7) — the last obligation to close",
+        "proves_vi": "Hết thời hạn bảo hành, các tồn tại phát sinh đã được khắc phục và các bên "
+                     "xác nhận để giải toả bảo đảm bảo hành.",
+        "proves_en": "The warranty period has expired, defects arising have been rectified, and the "
+                     "parties confirm so the warranty security can be released.",
+        "evidence_vi": ["Biên bản bàn giao công trình", "Danh mục lỗi phát sinh trong thời gian bảo hành",
+                        "Biên bản khắc phục từng lỗi", "Bảo lãnh bảo hành còn hiệu lực"],
+        "evidence_en": ["Handover minute", "Schedule of defects arising during the warranty period",
+                        "Rectification records for each", "The warranty security"],
+        "attends_vi": "Chủ đầu tư, chủ quản lý sử dụng, nhà thầu thi công.",
+        "attends_en": "Client, the operating owner and the contractor.",
+        "parties": [PARTY_CONTRACTOR, PARTY_CLIENT],
+        "requires": ["handover_deed"],
+        "expects": [],
     },
 ]
 
@@ -281,6 +353,186 @@ def required_parties(type_key):
     worse answer than one that demands the minimum."""
     t = acceptance_type(type_key)
     return list(t["parties"]) if t else [PARTY_CONTRACTOR, PARTY_SUPERVISOR]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#  Giai đoạn thi công — the construction stages an acceptance belongs to
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#
+#  Điều 23 says stage acceptance happens "where the client and contractor agree it is needed, or
+#  where the work will be covered up" — and then names no stages, because the stages of a warehouse
+#  are not the stages of a hospital. So this is a DEFAULT SEQUENCE, not a rule: it is what the app
+#  offers, what it groups the register by, and what it measures coverage against. A project renames,
+#  merges or drops any of it.
+#
+#  What earns each stage its place is the second field, `covered`: whether work in it gets BUILT
+#  OVER. That is the one thing about a stage the app can be firm on, because a concealed work
+#  acceptance is the only kind that cannot be redone later — the alternative is opening the building
+#  up. It is why the stage list exists at all rather than being a free-text label.
+#
+#  `types` is which acceptance types normally arise in the stage; `after` is the stage that normally
+#  precedes it. Both advisory — see stage_warnings, which warns and never refuses. The refusals in
+#  this module come from the ARTICLE, not from a sequence somebody drew.
+
+STAGES = [
+    {"key": "site", "no": 1, "covered": False,
+     "vi": "Chuẩn bị mặt bằng, định vị công trình", "en": "Site preparation and setting out",
+     "disc": ["CIV", "GEN"], "types": ["work"], "after": None,
+     "note_vi": "Mốc chuẩn, tim trục và cao độ gốc — sai ở đây thì sai suốt công trình.",
+     "note_en": "Benchmarks, grid lines and datum — an error here runs through the whole works."},
+
+    {"key": "foundation", "no": 2, "covered": True,
+     "vi": "Móng và phần ngầm", "en": "Foundations and substructure",
+     "disc": ["CIV", "OSM"], "types": ["material", "work", "stage"], "after": "site",
+     "note_vi": "Cọc, đài, giằng và chống thấm phần ngầm bị lấp — nghiệm thu trước khi che khuất.",
+     "note_en": "Piles, caps, beams and tanking are buried — accept before they are covered."},
+
+    {"key": "structure", "no": 3, "covered": True,
+     "vi": "Kết cấu phần thân", "en": "Superstructure",
+     "disc": ["CIV", "OSM"], "types": ["material", "work", "stage"], "after": "foundation",
+     "note_vi": "Cốt thép và chi tiết đặt sẵn bị bê tông phủ kín; ảnh chụp trước khi đổ là bắt buộc.",
+     "note_en": "Reinforcement and cast-ins vanish under concrete; photographs before the pour are not optional."},
+
+    {"key": "mep_rough", "no": 4, "covered": True,
+     "vi": "Cơ điện đi ngầm, trong kết cấu", "en": "MEP first fix / rough-in",
+     "disc": ["ELE", "ELV", "FF", "HVAC", "PLU", "LTN"], "types": ["work"], "after": "structure",
+     "note_vi": "Ống chờ, ống luồn và tuyến ngầm bị trát, đổ hoặc lấp — đây là giai đoạn dễ mất "
+                "bằng chứng nhất của cả dự án.",
+     "note_en": "Sleeves, conduits and buried runs are plastered, poured or backfilled over — the "
+                "stage where evidence is most easily lost on any project."},
+
+    {"key": "envelope", "no": 5, "covered": True,
+     "vi": "Bao che, mái và chống thấm", "en": "Envelope, roofing and waterproofing",
+     "disc": ["CIV", "ARC"], "types": ["work", "stage"], "after": "structure",
+     "note_vi": "Chống thấm bị lát, ốp hoặc đắp phủ; ngâm nước thử phải xong trước lớp bảo vệ.",
+     "note_en": "Waterproofing is tiled, clad or screeded over; flood testing must finish before the protection layer."},
+
+    {"key": "mep_plant", "no": 6, "covered": False,
+     "vi": "Lắp đặt thiết bị chính", "en": "Main plant installation",
+     "disc": ["ELE", "HVAC", "PLU", "FF"], "types": ["material", "work"], "after": "mep_rough",
+     "note_vi": "Máy phát, chiller, bơm, tủ điện — nghiệm thu lắp đặt trước khi chạy thử.",
+     "note_en": "Generators, chillers, pumps, switchboards — installation accepted before commissioning."},
+
+    {"key": "finishes", "no": 7, "covered": False,
+     "vi": "Hoàn thiện kiến trúc", "en": "Architectural finishes",
+     "disc": ["ARC"], "types": ["work", "stage"], "after": "envelope",
+     "note_vi": "Trát, ốp lát, sơn, trần, cửa — phần lớn tồn tại của dự án phát sinh ở đây.",
+     "note_en": "Plaster, tiling, paint, ceilings, doors — where most of a project's punch list comes from."},
+
+    {"key": "mep_terminal", "no": 8, "covered": False,
+     "vi": "Cơ điện thiết bị đầu cuối", "en": "MEP second fix / terminals",
+     "disc": ["ELE", "ELV", "FF", "HVAC", "PLU"], "types": ["work"], "after": "finishes",
+     "note_vi": "Đèn, ổ cắm, miệng gió, đầu phun, thiết bị vệ sinh — phối hợp với trần và hoàn thiện.",
+     "note_en": "Lights, outlets, diffusers, sprinkler heads, sanitaryware — coordinated with ceilings and finishes."},
+
+    {"key": "external", "no": 9, "covered": True,
+     "vi": "Hạ tầng ngoài nhà, sân đường", "en": "External works and infrastructure",
+     "disc": ["CIV", "ELE", "PLU"], "types": ["work", "stage"], "after": "structure",
+     "note_vi": "Cống, tuyến cáp ngầm và các lớp kết cấu áo đường bị lấp trước khi hoàn thiện mặt.",
+     "note_en": "Drains, buried cable routes and pavement layers are covered before the surface goes on."},
+
+    {"key": "test_commission", "no": 10, "covered": False,
+     "vi": "Thí nghiệm, chạy thử và cân chỉnh", "en": "Testing, commissioning and balancing",
+     "disc": ["ELE", "ELV", "FF", "HVAC", "PLU", "LTN"], "types": ["commission"], "after": "mep_terminal",
+     "note_vi": "Chạy thử không tải rồi có tải, cân chỉnh TAB, thử liên động — điều kiện của Điều 24.",
+     "note_en": "No-load then on-load runs, TAB balancing, interlock testing — Điều 24's precondition."},
+
+    {"key": "authority", "no": 11, "covered": False,
+     "vi": "Nghiệm thu của cơ quan quản lý nhà nước", "en": "Statutory and authority acceptance",
+     "disc": ["FF", "GEN"], "types": ["commission", "handover_part"], "after": "test_commission",
+     "note_vi": "PCCC, môi trường và kiểm tra công tác nghiệm thu của cơ quan chuyên môn về xây dựng. "
+                "Thời gian chờ văn bản thường dài hơn dự kiến — bắt đầu sớm.",
+     "note_en": "Fire safety, environment and the construction authority's check. The wait for the "
+                "written acceptance is routinely longer than planned — start early."},
+
+    {"key": "completion", "no": 12, "covered": False,
+     "vi": "Nghiệm thu hoàn thành", "en": "Completion acceptance",
+     "disc": ["GEN"], "types": ["handover_part", "handover_all"], "after": "authority",
+     "note_vi": "Hạng mục rồi toàn công trình. Tồn tại còn lại phải không ảnh hưởng chịu lực, "
+                "an toàn và công năng.",
+     "note_en": "Work items, then the whole works. Remaining items must affect neither strength, "
+                "safety nor function."},
+
+    {"key": "handover", "no": 13, "covered": False,
+     "vi": "Bàn giao đưa vào sử dụng", "en": "Handover into use",
+     "disc": ["GEN"], "types": ["handover_deed"], "after": "completion",
+     "note_vi": "Hồ sơ hoàn thành, quy trình vận hành bảo trì, đào tạo và thời hạn bảo hành.",
+     "note_en": "The completion dossier, O&M procedures, training and the warranty period."},
+
+    {"key": "warranty", "no": 14, "covered": False,
+     "vi": "Bảo hành và hết hạn bảo hành", "en": "Warranty and end of warranty",
+     "disc": ["GEN"], "types": ["warranty_end"], "after": "handover",
+     "note_vi": "Nghị định 06/2021 Điều 28. Hết thời hạn, các bên xác nhận và giải toả bảo lãnh.",
+     "note_en": "Decree 06/2021 Art. 28. At the end of the period the parties confirm and the "
+                "warranty security is released."},
+]
+
+STAGE_KEYS = [s["key"] for s in STAGES]
+
+
+def stage(key):
+    k = str(key or "").strip().lower()
+    return next((s for s in STAGES if s["key"] == k), None)
+
+
+def stages_for(disc_code):
+    """The stages a discipline actually appears in. What the plan screen offers an electrician, so
+    they are not scrolling past foundations and finishes to find first fix."""
+    c = str(disc_code or "").strip().upper()
+    if not c:
+        return list(STAGES)
+    return [s for s in STAGES if c in s["disc"]] or list(STAGES)
+
+
+def is_covered_stage(key):
+    """Does work in this stage get built over?
+
+    The one fact about a stage the app is firm on. A concealed work acceptance is the only kind that
+    cannot be redone — the alternative is opening the building up — so the screen says so, loudly,
+    while there is still something to look at."""
+    s = stage(key)
+    return bool(s and s["covered"])
+
+
+def stage_warnings(dossier, accepted_stage_keys=()):
+    """Advisory notes about WHERE in the build this dossier sits. Never blocking: Điều 23 leaves the
+    stages to agreement, and a sequence the app drew is not grounds to refuse a signature.
+
+    Returns the same {code, blocks, vi, en} shape `readiness` uses, so a caller can concatenate them
+    without knowing which list a note came from."""
+    out = []
+    s = stage((dossier or {}).get("stage"))
+    if not s:
+        return out
+    done = {str(k or "").strip().lower() for k in (accepted_stage_keys or ())}
+
+    if s["covered"]:
+        out.append({
+            "code": "stage_covered", "blocks": False,
+            "vi": "Công việc giai đoạn này sẽ bị che khuất. Chụp ảnh hiện trạng và đính kèm bản vẽ "
+                  "đánh dấu trước khi cho phép che lấp — không có cách nào kiểm tra lại sau đó.",
+            "en": "Work in this stage gets covered up. Photograph it and attach a marked-up drawing "
+                  "before permission to cover is given — there is no way to check it afterwards.",
+        })
+    prev = s.get("after")
+    if prev and prev not in done:
+        p = stage(prev) or {}
+        out.append({
+            "code": "stage_after_" + prev, "blocks": False,
+            "vi": "Giai đoạn “%s” thường hoàn tất trước giai đoạn này." % (p.get("vi") or prev),
+            "en": "Stage “%s” normally completes before this one." % (p.get("en") or prev),
+        })
+    t = (dossier or {}).get("accType")
+    if t and s.get("types") and t not in s["types"]:
+        tt = acceptance_type(t) or {}
+        out.append({
+            "code": "stage_type_unusual", "blocks": False,
+            "vi": "“%s” không phải loại nghiệm thu thường gặp ở giai đoạn “%s” — xác nhận nếu đúng ý."
+                  % (tt.get("vi") or t, s["vi"]),
+            "en": "“%s” is not the usual acceptance type for stage “%s” — confirm if intended."
+                  % (tt.get("en") or t, s["en"]),
+        })
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -812,6 +1064,25 @@ def readiness(dossier, items, defects, accepted_types=(), signed_parties=()):
                 "Chưa ghi người ký của %s." % str(pm.get("vi") or pk),
                 "No signatory named for the %s." % str(pm.get("en") or pk).lower())
 
+    # ── where in the build this sits ──────────────────────────────────────────────────────────
+    # Advisory by construction: Điều 23 leaves the stages to agreement between the client and the
+    # contractor, so a sequence this app drew is not grounds to refuse anybody's signature.
+    out.extend(stage_warnings(dossier, (dossier or {}).get("_stagesDone") or ()))
+
+    # ── the checklist's provenance ────────────────────────────────────────────────────────────
+    # A shipped form is a DRAFT written against the standard it names, not a transcription of an
+    # approved ITP. Nothing refuses a dossier for using one — that would make the library useless
+    # on day one — but the person about to sign is told, on the same panel as everything else,
+    # that these lines have not been through the project's QA/QC.
+    if (dossier or {}).get("formCode") and not (dossier or {}).get("formAdopted"):
+        add("form_not_adopted", False,
+            "Biểu mẫu %s là bản mẫu đi kèm phần mềm, chưa được QA/QC dự án soát xét và ban hành. "
+            "Nhận về dự án, rà soát rồi đánh dấu đã duyệt trước khi dùng cho hồ sơ ký chính thức."
+            % (dossier or {}).get("formCode"),
+            "Form %s is a template shipped with the portal — not reviewed or issued by this "
+            "project's QA/QC. Adopt it into the project, review it, and mark it approved before it "
+            "carries a signed minute." % (dossier or {}).get("formCode"))
+
     # ── the signed sheet itself ───────────────────────────────────────────────────────────────
     # An acceptance the register calls Accepted, with no scan of the minute everyone actually
     # signed, is a claim rather than a record. It is the first thing an audit asks for and the
@@ -834,293 +1105,20 @@ def can_accept(*a, **kw):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
-#  Seed checklist library
+#  The checklist library
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 #
-#  A STARTER set, not a complete one. A real MEP contractor's library runs to a hundred-odd forms
-#  (PP-EL-201 … PP-HV-4xx) written against that contractor's ITP, and inventing them here would be
-#  producing plausible checklists nobody wrote — which is worse than an empty library, because
-#  somebody would sign one. So this seeds the shapes and the disciplines; the library screen imports
-#  the project's own forms from CSV or JSON, and every form is editable in the app.
+#  97 forms, civil through detailed MEP, in acceptance_forms.py. Re-exported here so every caller
+#  keeps asking one module the question "what forms are there" — the content moved, the surface did
+#  not.
 #
-#  Each item: vi | en | method (how it is checked) | criteria (what it is judged against).
+#  Every shipped form carries `adopted: False`. They are drafts written against the standards they
+#  name, not transcriptions of an approved ITP, and the difference has to be visible to whoever is
+#  about to sign one. `adoption_warning` below is what puts it on the screen; a project adopts a
+#  form by copying it in, reviewing it, and saying so.
 
-def _it(vi, en, method="", criteria=""):
-    return {"vi": vi, "en": en, "method": method, "criteria": criteria}
-
-
-FORM_LIBRARY = [
-    {
-        "code": "HML-OSM-001", "disc": "OSM",
-        "vi": "Nghiệm thu vật tư, thiết bị đầu vào",
-        "en": "Incoming material and equipment acceptance",
-        "standard": "TCVN 4055:2012",
-        "items": [
-            _it("Chủng loại, quy cách đúng với vật tư được phê duyệt",
-                "Type and specification match the approved material submittal",
-                "Đối chiếu / Compare", "Material approval / submittal"),
-            _it("Số lượng nhận đúng theo phiếu giao hàng",
-                "Quantity received matches the delivery note", "Đếm / Count", "Delivery note"),
-            _it("Có chứng chỉ xuất xứ (CO) và chứng nhận chất lượng (CQ)",
-                "Certificate of origin and certificate of quality provided",
-                "Kiểm tra hồ sơ / Document check", "NĐ 06/2021 Điều 12"),
-            _it("Có kết quả thí nghiệm phù hợp tiêu chuẩn áp dụng",
-                "Test results provided and conform to the applicable standard",
-                "Kiểm tra hồ sơ / Document check", "Project specification"),
-            _it("Tình trạng bao bì, nhãn mác nguyên vẹn, không hư hỏng khi vận chuyển",
-                "Packaging and labelling intact, no transport damage", "Quan sát / Visual", "—"),
-            _it("Hạn sử dụng còn hiệu lực (với vật tư có hạn dùng)",
-                "Shelf life still valid (for materials that have one)", "Quan sát / Visual", "—"),
-            _it("Điều kiện lưu kho tại công trường đáp ứng yêu cầu của nhà sản xuất",
-                "Site storage conditions meet the manufacturer's requirement",
-                "Quan sát / Visual", "Manufacturer's instruction"),
-        ],
-    },
-    {
-        "code": "HML-EL-201", "disc": "ELE",
-        "vi": "Lắp đặt lỗ chờ, ống chờ sàn vách",
-        "en": "Installation of slab / wall openings and sleeves",
-        "standard": "TCVN 9207:2012",
-        "items": [
-            _it("Vị trí lỗ chờ, ống chờ đúng bản vẽ thi công được phê duyệt",
-                "Opening and sleeve positions follow the approved shop drawing",
-                "Đo / Measure", "Approved shop drawing"),
-            _it("Cao độ và kích thước trong dung sai cho phép",
-                "Level and dimensions within the permitted tolerance", "Đo / Measure", "±10 mm"),
-            _it("Chủng loại và đường kính ống chờ đúng thiết kế",
-                "Sleeve type and diameter as designed", "Đối chiếu / Compare", "Design"),
-            _it("Ống chờ được cố định chắc chắn, không xê dịch khi đổ bê tông",
-                "Sleeves fixed securely and will not move during the concrete pour",
-                "Quan sát / Visual", "Method statement"),
-            _it("Bịt đầu ống chống lọt vữa, bê tông",
-                "Sleeve ends capped against mortar and concrete ingress", "Quan sát / Visual", "—"),
-            _it("Không xung đột với cốt thép chịu lực; đã được kỹ sư kết cấu chấp thuận nếu có cắt thép",
-                "No clash with structural reinforcement; structural engineer's approval where bars are cut",
-                "Quan sát / Visual", "TCVN 4453:1995"),
-            _it("Khoảng cách tới các hệ thống khác đáp ứng yêu cầu phối hợp",
-                "Clearance to other services meets the coordination requirement",
-                "Đo / Measure", "Coordinated drawing"),
-            _it("Đã đánh dấu, ghi nhãn nhận biết tuyến",
-                "Marked and labelled for route identification", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-EL-205", "disc": "ELE",
-        "vi": "Lắp đặt thang cáp, máng cáp",
-        "en": "Installation of cable tray and trunking",
-        "standard": "TCVN 9207:2012",
-        "items": [
-            _it("Tuyến đi đúng bản vẽ thi công được phê duyệt",
-                "Route as per the approved shop drawing", "Đối chiếu / Compare", "Approved shop drawing"),
-            _it("Cao độ lắp đặt và độ thẳng, độ phẳng đạt yêu cầu",
-                "Installation level, straightness and flatness acceptable", "Đo / Measure", "±5 mm / 3 m"),
-            _it("Khoảng cách giá đỡ đúng chỉ dẫn của nhà sản xuất",
-                "Support spacing follows the manufacturer's instruction", "Đo / Measure",
-                "Manufacturer's instruction"),
-            _it("Chủng loại, kích thước, lớp mạ đúng thiết kế",
-                "Type, size and finish as designed", "Đối chiếu / Compare", "Design"),
-            _it("Liên kết cơ khí chắc chắn, đủ bu lông, không biến dạng",
-                "Mechanical joints sound, fully bolted, no distortion", "Quan sát / Visual", "—"),
-            _it("Liên kết đẳng thế (nối đất) liên tục trên toàn tuyến",
-                "Earth bonding continuous along the whole route",
-                "Đo điện trở / Resistance test", "TCVN 9358:2012"),
-            _it("Không có cạnh sắc gây hư hỏng vỏ cáp",
-                "No sharp edges that could damage cable sheathing", "Quan sát / Visual", "—"),
-            _it("Khoảng cách tới hệ thống khác và tới kết cấu đáp ứng yêu cầu",
-                "Clearance to other services and to structure acceptable", "Đo / Measure",
-                "Coordinated drawing"),
-            _it("Xuyên tường, xuyên sàn đã chèn bịt chống cháy đúng cấp",
-                "Wall and floor penetrations fire-stopped to the correct rating",
-                "Quan sát / Visual", "QCVN 06:2022/BXD"),
-            _it("Đã dán nhãn tuyến và mã hiệu",
-                "Route labels and identification codes applied", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-EL-203", "disc": "ELE",
-        "vi": "Lắp đặt dây, cáp điện",
-        "en": "Installation of cables and wires",
-        "standard": "TCVN 7447 / TCVN 9207:2012",
-        "items": [
-            _it("Chủng loại, tiết diện cáp đúng thiết kế",
-                "Cable type and cross-section as designed", "Đối chiếu / Compare", "Design"),
-            _it("Bán kính uốn không nhỏ hơn giá trị nhà sản xuất quy định",
-                "Bending radius not less than the manufacturer's minimum", "Đo / Measure",
-                "Manufacturer's instruction"),
-            _it("Cáp được đỡ, buộc gọn, không chịu lực kéo tại đầu nối",
-                "Cables supported and tied, no tension at terminations", "Quan sát / Visual", "—"),
-            _it("Đầu cốt, đầu nối đúng chủng loại và được ép đúng dụng cụ",
-                "Lugs and terminations of the correct type, crimped with the correct tool",
-                "Quan sát / Visual", "Manufacturer's instruction"),
-            _it("Đo điện trở cách điện đạt yêu cầu",
-                "Insulation resistance test passed", "Thí nghiệm / Test", "TCVN 7447"),
-            _it("Đo điện trở vòng lặp sự cố và thông mạch bảo vệ",
-                "Earth-fault loop impedance and protective-conductor continuity verified",
-                "Thí nghiệm / Test", "TCVN 7447"),
-            _it("Thứ tự pha đúng và thống nhất toàn hệ thống",
-                "Phase sequence correct and consistent across the system", "Thí nghiệm / Test", "—"),
-            _it("Đánh số lõi, dán nhãn hai đầu cáp",
-                "Cores numbered and both cable ends labelled", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-LT-101", "disc": "LTN",
-        "vi": "Hệ thống nối đất và chống sét",
-        "en": "Earthing and lightning protection system",
-        "standard": "TCVN 9385:2012 / TCVN 9358:2012",
-        "items": [
-            _it("Vị trí kim thu sét, dây dẫn sét đúng thiết kế",
-                "Air terminal and down-conductor positions as designed",
-                "Đối chiếu / Compare", "Design"),
-            _it("Số lượng và khoảng cách dây xuống đạt yêu cầu tiêu chuẩn",
-                "Number and spacing of down conductors meet the standard",
-                "Đo / Measure", "TCVN 9385:2012"),
-            _it("Cọc tiếp địa đủ số lượng, đủ độ sâu",
-                "Earth rods to the required number and depth", "Đo / Measure", "Design"),
-            _it("Mối nối hàn hoá nhiệt / ép đạt yêu cầu, được bảo vệ chống ăn mòn",
-                "Exothermic or compression joints sound and corrosion-protected",
-                "Quan sát / Visual", "—"),
-            _it("Điện trở nối đất đo được đạt giá trị thiết kế",
-                "Measured earth resistance meets the design value", "Thí nghiệm / Test", "Design value"),
-            _it("Có hộp kiểm tra tiếp địa, tiếp cận được để đo định kỳ",
-                "Test box provided and accessible for periodic measurement",
-                "Quan sát / Visual", "TCVN 9385:2012"),
-            _it("Liên kết đẳng thế với kết cấu và các hệ thống kim loại",
-                "Equipotential bonding to structure and metallic services",
-                "Quan sát / Visual", "TCVN 9358:2012"),
-        ],
-    },
-    {
-        "code": "HML-FF-101", "disc": "FF",
-        "vi": "Lắp đặt hệ thống chữa cháy tự động (sprinkler)",
-        "en": "Installation of the automatic sprinkler system",
-        "standard": "TCVN 7336:2021",
-        "items": [
-            _it("Tuyến ống, đường kính đúng bản vẽ được phê duyệt và được thẩm duyệt PCCC",
-                "Pipe routes and diameters as per the approved and fire-authority-appraised drawing",
-                "Đối chiếu / Compare", "Approved drawing"),
-            _it("Chủng loại đầu phun, hệ số K và nhiệt độ tác động đúng thiết kế",
-                "Sprinkler head type, K-factor and operating temperature as designed",
-                "Đối chiếu / Compare", "TCVN 7336:2021"),
-            _it("Khoảng cách đầu phun tới trần, tới tường và giữa các đầu đạt yêu cầu",
-                "Head clearance to ceiling, to walls and between heads within limits",
-                "Đo / Measure", "TCVN 7336:2021"),
-            _it("Giá treo, gối đỡ đủ số lượng, đúng khoảng cách",
-                "Hangers and supports to the required number and spacing", "Đo / Measure",
-                "TCVN 7336:2021"),
-            _it("Thử áp lực đường ống đạt yêu cầu, giữ áp đủ thời gian quy định",
-                "Pipework pressure test passed and held for the specified duration",
-                "Thí nghiệm / Test", "TCVN 7336:2021"),
-            _it("Súc rửa đường ống trước khi đấu nối đầu phun",
-                "Pipework flushed before sprinkler heads are fitted", "Quan sát / Visual", "—"),
-            _it("Van chặn, van báo động, công tắc dòng chảy lắp đúng vị trí và hoạt động",
-                "Control valves, alarm valves and flow switches correctly located and functional",
-                "Thí nghiệm / Test", "TCVN 7336:2021"),
-            _it("Chèn bịt chống cháy tại vị trí xuyên tường, xuyên sàn đúng cấp",
-                "Fire-stopping at wall and floor penetrations to the correct rating",
-                "Quan sát / Visual", "QCVN 06:2022/BXD"),
-            _it("Sơn, nhãn nhận biết đường ống theo quy định",
-                "Pipework painted and labelled as required", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-HV-101", "disc": "HVAC",
-        "vi": "Lắp đặt ống gió và phụ kiện",
-        "en": "Installation of ductwork and accessories",
-        "standard": "TCVN 5687:2010",
-        "items": [
-            _it("Tuyến ống gió, kích thước đúng bản vẽ được phê duyệt",
-                "Duct routes and sizes as per the approved drawing", "Đối chiếu / Compare",
-                "Approved shop drawing"),
-            _it("Vật liệu, chiều dày tôn đúng thiết kế",
-                "Material and sheet thickness as designed", "Đo / Measure", "Design"),
-            _it("Mối nối kín, gioăng đầy đủ, không rò rỉ nhìn thấy",
-                "Joints sealed, gaskets complete, no visible leakage", "Quan sát / Visual", "—"),
-            _it("Thử rò rỉ đường ống đạt cấp kín theo yêu cầu",
-                "Duct leakage test achieves the required tightness class",
-                "Thí nghiệm / Test", "Specification"),
-            _it("Giá treo đủ số lượng, đúng khoảng cách, có đệm chống rung",
-                "Hangers to the required number and spacing, with anti-vibration pads",
-                "Đo / Measure", "Manufacturer's instruction"),
-            _it("Bảo ôn đúng chủng loại, chiều dày, kín mạch hơi",
-                "Insulation of the correct type and thickness, vapour barrier continuous",
-                "Quan sát / Visual", "QCVN 09:2017/BXD"),
-            _it("Van gió, van chặn lửa lắp đúng vị trí và thao tác được",
-                "Dampers and fire dampers correctly located and operable",
-                "Thí nghiệm / Test", "QCVN 06:2022/BXD"),
-            _it("Cửa thăm vệ sinh bố trí tại các vị trí cần thiết",
-                "Access doors provided where cleaning access is needed", "Quan sát / Visual", "—"),
-            _it("Đã vệ sinh bên trong ống trước khi đóng trần",
-                "Duct interior cleaned before the ceiling is closed", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-PL-101", "disc": "PLU",
-        "vi": "Lắp đặt đường ống cấp nước bên trong",
-        "en": "Installation of internal water supply pipework",
-        "standard": "TCVN 4513:1988",
-        "items": [
-            _it("Tuyến ống, đường kính đúng bản vẽ được phê duyệt",
-                "Pipe routes and diameters as per the approved drawing",
-                "Đối chiếu / Compare", "Approved shop drawing"),
-            _it("Vật liệu ống và phụ kiện đúng chủng loại được duyệt",
-                "Pipe and fitting materials as approved", "Đối chiếu / Compare", "Material approval"),
-            _it("Độ dốc, cao độ lắp đặt đạt yêu cầu",
-                "Gradient and installation level acceptable", "Đo / Measure", "Design"),
-            _it("Mối nối thực hiện đúng quy trình của nhà sản xuất",
-                "Joints made to the manufacturer's procedure", "Quan sát / Visual",
-                "Manufacturer's instruction"),
-            _it("Giá đỡ đủ số lượng, đúng khoảng cách",
-                "Supports to the required number and spacing", "Đo / Measure",
-                "Manufacturer's instruction"),
-            _it("Thử áp lực đạt yêu cầu và giữ áp đủ thời gian quy định",
-                "Pressure test passed and held for the specified duration",
-                "Thí nghiệm / Test", "Specification"),
-            _it("Súc xả, khử trùng đường ống trước khi đưa vào sử dụng",
-                "Pipework flushed and disinfected before use", "Thí nghiệm / Test",
-                "QCVN 01-1:2018/BYT"),
-            _it("Bảo ôn, chống đọng sương nơi yêu cầu",
-                "Insulation and condensation control where required", "Quan sát / Visual", "—"),
-            _it("Dán nhãn, đánh dấu hướng dòng chảy",
-                "Labels applied and flow direction marked", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-CIV-101", "disc": "CIV",
-        "vi": "Nghiệm thu cốt thép trước khi đổ bê tông",
-        "en": "Reinforcement acceptance before concrete pour",
-        "standard": "TCVN 4453:1995",
-        "items": [
-            _it("Chủng loại, đường kính thép đúng thiết kế",
-                "Bar type and diameter as designed", "Đo / Measure", "Design"),
-            _it("Số lượng, khoảng cách thanh thép đúng bản vẽ",
-                "Bar count and spacing as per drawing", "Đo / Measure", "Design"),
-            _it("Chiều dài neo, nối chồng đạt yêu cầu",
-                "Anchorage and lap lengths acceptable", "Đo / Measure", "TCVN 4453:1995"),
-            _it("Lớp bê tông bảo vệ đủ, con kê đủ số lượng và đúng chủng loại",
-                "Concrete cover achieved; spacers of the correct type and number",
-                "Đo / Measure", "TCVN 4453:1995"),
-            _it("Thép sạch, không dính dầu mỡ, không rỉ vảy",
-                "Bars clean, free of oil and loose rust scale", "Quan sát / Visual", "—"),
-            _it("Ván khuôn kín khít, đúng kích thước, chống phình",
-                "Formwork tight, to size, and braced against bulging", "Đo / Measure", "TCVN 4453:1995"),
-            _it("Các chi tiết đặt sẵn, ống chờ MEP đã lắp và được nghiệm thu",
-                "Cast-in items and MEP sleeves installed and already accepted",
-                "Đối chiếu / Compare", "NĐ 06/2021 Điều 21"),
-            _it("Vệ sinh trong ván khuôn trước khi đổ",
-                "Formwork cleaned out before the pour", "Quan sát / Visual", "—"),
-        ],
-    },
-    {
-        "code": "HML-GEN-001", "disc": "GEN",
-        "vi": "Biểu mẫu trống — tự soạn danh mục kiểm tra",
-        "en": "Blank form — write your own checklist",
-        "standard": "",
-        "items": [
-            _it("", "", "", ""),
-        ],
-    },
-]
+FORM_LIBRARY = acceptance_forms.LIBRARY
+LIBRARY_COUNTS = acceptance_forms.counts
 
 
 def form(code):
@@ -1165,6 +1163,8 @@ def catalogue():
     return {
         "disciplines": DISCIPLINES,
         "types": ACCEPTANCE_TYPES,
+        "stages": STAGES,
+        "counts": LIBRARY_COUNTS(),
         "parties": PARTIES,
         "statuses": STATUSES,
         "results": RESULTS,

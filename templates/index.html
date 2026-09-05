@@ -24774,43 +24774,81 @@ function _accFormsTab(pid) {
   const mine = _pmScopeFor('pm_acc_forms', pid);
   const seeded = (_accCat().forms || []);
   const codes = new Set(mine.map(f => String(f.code || '').toUpperCase()));
-  /* The project's own form WINS over the seeded one of the same code. A contractor's real PP-EL-205
-     is written against their own ITP; the seeded library is a starting point, and showing both
-     would leave somebody choosing between two forms with the same number. */
+  /* The project's own form WINS over the shipped one of the same code. A contractor's real
+     PP-EL-205 is written against their own ITP; the shipped library is a starting point, and
+     showing both would leave somebody choosing between two forms with the same number. */
   const merged = mine.map(f => Object.assign({}, f, { _own: true }))
     .concat(seeded.filter(f => !codes.has(String(f.code || '').toUpperCase()))
                   .map(f => Object.assign({}, f, { _own: false })));
 
   const byDisc = {};
   merged.forEach(f => { (byDisc[f.disc || 'GEN'] = byDisc[f.disc || 'GEN'] || []).push(f); });
-  const discList = (_accCat().disciplines || []).filter(d => (byDisc[d.code] || []).length)
-    .map(d => '<div onclick="_accFormPick(\'' + d.code + '\')" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;cursor:pointer;background:' +
-      (_accFormDisc === d.code ? 'var(--light-tint)' : 'transparent') + '">' +
-      '<span style="font-size:12.5px;color:var(--text)"><span style="font-family:monospace;font-size:10px;color:var(--text-light);margin-right:6px">' + d.code + '</span>' + _accE(_accLbl(d)) + '</span>' +
-      '<span style="font-size:11px;color:var(--text-light);font-variant-numeric:tabular-nums">' + (byDisc[d.code] || []).length + '</span></div>').join('');
+
+  const nAdopted = merged.filter(f => f._own && f.adopted).length;
+  const nDraft = merged.length - nAdopted;
+
+  /* Counts per discipline, computed from what is on the screen rather than from the catalogue's
+     figures: the project's own forms are in here too, and a column that showed only the shipped
+     count would disagree with the list beside it. */
+  const discList = (_accCat().disciplines || []).map(d => {
+    const rows = byDisc[d.code] || [];
+    const lines = rows.reduce((n, f) => n + (f.items || []).length, 0);
+    const on = _accFormDisc === d.code;
+    return '<div onclick="_accFormPick(\'' + d.code + '\')" style="display:flex;justify-content:space-between;' +
+      'align-items:center;gap:8px;padding:9px 11px;border-radius:8px;cursor:pointer;background:' +
+      (on ? 'var(--light-tint)' : 'transparent') + '">' +
+      '<span style="font-size:12.5px;color:var(--text);min-width:0">' +
+        '<span style="font-family:monospace;font-size:10px;color:var(--text-light);margin-right:6px">' + d.code + '</span>' +
+        _accE(_accLbl(d)) + '</span>' +
+      '<span style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;line-height:1.25">' +
+        '<span style="font-size:12px;font-weight:700;color:' + (rows.length ? 'var(--navy)' : 'var(--text-light)') + '">' + rows.length + '</span>' +
+        '<div style="font-size:9.5px;color:var(--text-light)">' + lines + ' ' + _t2('lines', 'mục') + '</div></span></div>';
+  }).join('');
 
   const cur = _accFormDisc || ((_accCat().disciplines || []).find(d => (byDisc[d.code] || []).length) || {}).code || 'GEN';
-  const list = (byDisc[cur] || []).slice().sort(_pmDocNoCmp('code')).map(f =>
+  const q = _accFold(_accFormQ);
+  const rows = (byDisc[cur] || []).filter(f => !q ||
+      _accFold([f.code, f.vi, f.en, f.standard].join(' ')).indexOf(q) >= 0)
+    .slice().sort(_pmDocNoCmp('code'));
+
+  const badge = f => f._own
+    ? (f.adopted ? _pmBadge(_t('adopted'), '#00B060') : _pmBadge(_t('project draft'), '#F59E0B'))
+    : _pmBadge(_t('template'), '#94a3b8');
+
+  const list = rows.map(f =>
     '<div style="display:flex;gap:12px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--soft-bg)">' +
-    '<span style="flex:0 0 106px;font-family:monospace;font-size:11px;color:var(--navy);font-weight:700;font-variant-numeric:tabular-nums">' + _accE(f.code) + '</span>' +
+    '<span style="flex:0 0 84px;font-family:monospace;font-size:11px;color:var(--navy);font-weight:700;font-variant-numeric:tabular-nums">' + _accE(f.code) + '</span>' +
     '<div style="flex:1;min-width:0">' +
       '<div style="font-size:12.5px;font-weight:600;color:var(--text)">' + _accE(f.vi || '') + '</div>' +
       (f.en ? '<div style="font-size:11px;color:var(--text-light);font-style:italic">' + _accE(f.en) + '</div>' : '') +
       (f.standard ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">' + _accE(f.standard) + '</div>' : '') +
+      (f._own && f.adopted && f.adoptedBy
+        ? '<div style="font-size:10px;color:var(--emerald);margin-top:2px">✓ ' +
+          _accE(_t('reviewed by') + ' ' + f.adoptedBy + (f.adoptedOn ? ' · ' + _pmFmt(f.adoptedOn) : '')) + '</div>' : '') +
     '</div>' +
     '<span style="flex:0 0 auto;font-size:10.5px;color:var(--text-light);white-space:nowrap">' + ((f.items || []).length) + ' ' + _t('items') + '</span>' +
-    '<span style="flex:0 0 auto">' + (f._own
-      ? _pmBadge(_t('project'), '#00B060')
-      : _pmBadge(_t('standard'), '#94a3b8')) + '</span>' +
+    '<span style="flex:0 0 auto">' + badge(f) + '</span>' +
     '<span style="flex:0 0 auto;white-space:nowrap">' +
       '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accFormPreview(\'' + _tkEscA(f.code) + '\')">' + _t('View') + '</button>' +
-      (f._own ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accFormEdit(\'' + f.id + '\')">' + _t('Edit') + '</button>' +
-                '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:#C00000" onclick="accFormDelete(\'' + f.id + '\')">' + _t('Delete') + '</button>'
-              : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--navy)" onclick="accFormAdopt(\'' + _tkEscA(f.code) + '\')" title="' +
-                _tkEscA(_t('Copy it into this project so you can edit its lines')) + '">' + _t('Adopt') + '</button>') +
-    '</span></div>').join('') || '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:12px">' + _t('No form in this discipline yet.') + '</div>';
+      (f._own
+        ? (f.adopted ? '' : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald)" onclick="accFormApprove(\'' + f.id + '\')" title="' +
+            _tkEscA(_t('Confirm this form has been reviewed against the project ITP')) + '">✓ ' + _t('Review & adopt') + '</button>') +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accFormEdit(\'' + f.id + '\')">' + _t('Edit') + '</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:#C00000" onclick="accFormDelete(\'' + f.id + '\')">' + _t('Delete') + '</button>'
+        : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--navy)" onclick="accFormAdopt(\'' + _tkEscA(f.code) + '\')" title="' +
+            _tkEscA(_t('Copy it into this project so you can edit its lines')) + '">' + _t('Copy to project') + '</button>') +
+    '</span></div>').join('') ||
+    '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:12px">' +
+    (q ? _t('Nothing matches that search in this discipline.') : _t('No form in this discipline yet.')) + '</div>';
 
-  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Forms available'), merged.length),
+    _hrKpi(_t('Adopted by this project'), nAdopted, nAdopted ? 'var(--emerald)' : 'var(--text-light)'),
+    _hrKpi(_t('Templates not yet reviewed'), nDraft, nDraft ? '#F59E0B' : 'var(--text-light)'),
+    _hrKpi(_t('Checklist lines'), merged.reduce((n, f) => n + (f.items || []).length, 0), '#3168A8')
+  ]);
+
+  return kpis + '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
     '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
       '<div class="card-title">' + _t('Checklist library') + '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -24819,12 +24857,65 @@ function _accFormsTab(pid) {
         '<button class="btn btn-primary btn-sm" onclick="accFormEdit()">' + _PLUS_SVG + ' ' + _t('New form') + '</button>' +
       '</div></div>' +
     '<div style="padding:10px 16px;font-size:11.5px;color:var(--text-light);line-height:1.65;border-bottom:1px solid var(--line)">' +
-      _accE(_t('The forms shipped with the portal are a STARTING SET, not a contractor\'s library. A real MEP library runs to a hundred-odd forms written against that contractor\'s ITP — import yours, or adopt a shipped one and edit its lines. A dossier takes a COPY of the form at the moment it is compiled, so editing a form here never changes a minute that has already been signed.')) +
+      _accE(_t('The forms shipped with the portal are DRAFTS written against the standards they name — not transcriptions of an approved ITP, and not reviewed by anybody on this project. Copy one into the project, correct it against your own ITP and the current standard editions, then Review & adopt. A dossier compiled from a form that has not been adopted says so on its readiness panel.')) +
     '</div>' +
+    '<div style="padding:9px 16px;border-bottom:1px solid var(--line);background:var(--soft-bg)">' +
+      '<input id="acc-form-q" class="form-control" style="font-size:12.5px" value="' + _tkEscA(_accFormQ) + '" ' +
+      'placeholder="' + _tkEscA(_t('Search this discipline — code, title or standard')) + '" ' +
+      'oninput="_accFormSearch(this.value)"></div>' +
     '<div style="display:flex;gap:0;flex-wrap:wrap;align-items:flex-start">' +
-      '<div style="flex:0 0 232px;min-width:200px;padding:10px;border-right:1px solid var(--line)">' + discList + '</div>' +
-      '<div style="flex:1;min-width:300px">' + list + '</div>' +
-    '</div></div>';
+      '<div style="flex:0 0 246px;min-width:210px;padding:10px;border-right:1px solid var(--line)">' + discList + '</div>' +
+      '<div id="acc-form-list" style="flex:1;min-width:300px">' + list + '</div>' +
+    '</div></div>' + _accStandardsNote();
+}
+
+/* Accent- and case-insensitive, so "may bien ap" finds "máy biến áp". The same fold the project
+   registers use — a library searched on whatever keyboard is to hand. */
+function _accFold(v) {
+  return String(v == null ? '' : v).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/\s+/g, ' ').trim();
+}
+let _accFormQ = '';
+function _accFormSearch(v) {
+  _accFormQ = v;
+  /* Repaint the LIST only. A full repaint would destroy the input the person is typing into and
+     take the caret with it — the same reason _pmSet puts focus back rather than ignoring it. */
+  _accRepaintFormList();
+}
+function _accRepaintFormList() {
+  /* Swap the list BY ID. The first version reached for it structurally — "the second child of the
+     card's last div" — and quietly matched the wrong node once a KPI strip appeared above the
+     card: the search box then filtered nothing, with no error, which is the worst way for a filter
+     to fail. An id cannot drift when the layout does. */
+  const live = document.getElementById('acc-form-list');
+  if (!live) { _accRepaint(); return; }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = _accFormsTab(_pmPid());
+  const fresh = tmp.querySelector('#acc-form-list');
+  if (!fresh) { _accRepaint(); return; }
+  live.innerHTML = fresh.innerHTML;
+}
+
+/* Adopting is TWO steps, and that is the point. Copying a form in is not reviewing it, and a
+   screen that treated them as one act would let a project mark a hundred forms adopted in an
+   afternoon with nobody having read one. */
+async function accFormApprove(id) {
+  const pid = _pmPid();
+  const f = _pmScopeFor('pm_acc_forms', pid).find(x => x.id === id); if (!f) return;
+  const ok = await tkConfirm({
+    body: _t('Confirm that') + ' ' + f.code + ' ' +
+      _t('has been checked against this project\'s ITP, its standard editions are current, and it is fit to carry a signed minute. Your name and today\'s date are recorded against it.'),
+    confirmText: _t('Yes — reviewed and adopted') });
+  if (!ok) return;
+  try {
+    await tkApi('/api/coll/pm_acc_forms/' + encodeURIComponent(id), { method: 'PATCH',
+      body: Object.assign({}, f, { adopted: true, adoptedBy: (TK.user || {}).name || '',
+                                   adoptedById: (TK.user || {}).id || '', adoptedOn: _pmToday() }) });
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  await _accReload(['pm_acc_forms']);
+  toast(f.code + ' — ' + _t('adopted'), 'success');
+  _accRepaint();
 }
 let _accFormDisc = '';
 function _accFormPick(c) { _accFormDisc = c; _accRepaint(); }
@@ -24950,12 +25041,15 @@ async function accNewDossier(preset) {
       _accE(_t('Fill this once. It produces the invitation, the minute and the inspection record as one A4 set.')) + '</div>' +
     '<div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">' +
       '<div style="grid-column:1/-1"><label class="form-label">' + _t('Kind of acceptance') + '</label>' +
-        '<select id="acc-n-type" class="form-control" onchange="_accNewTypeChanged()">' + types + '</select>' +
+        '<select id="acc-n-type" class="form-control" onchange="_accNewTypeChanged();_accNewStageList()">' + types + '</select>' +
         '<div id="acc-n-lawnote" style="font-size:11px;color:var(--text-light);margin-top:5px;line-height:1.55"></div></div>' +
       '<div><label class="form-label">' + _t('Discipline') + '</label>' +
-        '<select id="acc-n-disc" class="form-control" onchange="_accNewFormList()">' + discs + '</select></div>' +
+        '<select id="acc-n-disc" class="form-control" onchange="_accNewFormList();_accNewStageList()">' + discs + '</select></div>' +
       '<div><label class="form-label">' + _t('Checklist form') + '</label>' +
         '<select id="acc-n-form" class="form-control"></select></div>' +
+      '<div style="grid-column:1/-1"><label class="form-label">' + _t('Construction stage') + '</label>' +
+        '<select id="acc-n-stage" class="form-control" onchange="_accNewStageChanged()"></select>' +
+        '<div id="acc-n-stagenote" style="font-size:11px;color:var(--text-light);margin-top:5px;line-height:1.55"></div></div>' +
       '<div><label class="form-label">' + _t('Dossier reference No.') + '</label>' +
         '<input id="acc-n-ref" class="form-control" style="font-family:monospace"></div>' +
       '<div><label class="form-label">' + _t('Acceptance date') + '</label>' +
@@ -24986,6 +25080,7 @@ async function accNewDossier(preset) {
     if (e && [...e.options].some(o => o.value === want)) e.value = want;
   }
   _accNewFormList();
+  _accNewStageList();
   _accNewTypeChanged();
   const ref = document.getElementById('acc-n-ref');
   if (ref) ref.value = _accRenderNo(s.accRefTpl || d.ref,
@@ -25003,6 +25098,40 @@ function _accNewTypeChanged() {
   n.innerHTML = _accE(proves) +
     (needs ? '<div style="margin-top:4px;color:#B45309"><b>' + _t('Cannot be signed until accepted:') + '</b> ' + _accE(needs) + '</div>' : '');
 }
+/* Only the stages the DISCIPLINE appears in. An electrician compiling a first-fix acceptance
+   should not be scrolling past foundations and architectural finishes to find it. */
+function _accNewStageList() {
+  const sel = document.getElementById('acc-n-stage'); if (!sel) return;
+  const disc = (document.getElementById('acc-n-disc') || {}).value || '';
+  const t = _accType((document.getElementById('acc-n-type') || {}).value) || {};
+  const list = (typeof _accStagesFor === 'function') ? _accStagesFor(disc) : (_accCat().stages || []);
+  const want = sel.value || t.stage || '';
+  sel.innerHTML = '<option value="">' + _accE(_t('(not stated)')) + '</option>' +
+    list.map(x => '<option value="' + x.key + '"' + (x.key === want ? ' selected' : '') + '>' +
+      x.no + '. ' + _accE(_accLbl(x)) + '</option>').join('');
+  _accNewStageChanged();
+}
+function _accStagesFor(disc) {
+  const all = _accCat().stages || [];
+  const d = String(disc || '').toUpperCase();
+  if (!d) return all;
+  const mine = all.filter(x => (x.disc || []).indexOf(d) >= 0);
+  return mine.length ? mine : all;
+}
+function _accNewStageChanged() {
+  const n = document.getElementById('acc-n-stagenote'); if (!n) return;
+  const st = _accStage((document.getElementById('acc-n-stage') || {}).value);
+  if (!st) { n.innerHTML = ''; return; }
+  const note = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? st.note_vi : st.note_en;
+  n.innerHTML = _accE(note) + (st.covered
+    ? '<div style="margin-top:4px;color:#B45309;font-weight:600">⚠ ' +
+      _accE(_t('Work in this stage gets covered up — photograph it and mark up the drawing before it is.')) + '</div>'
+    : '');
+}
+function _accStage(k) {
+  return (_accCat().stages || []).find(x => x.key === String(k || '').toLowerCase()) || null;
+}
+
 function _accNewFormList() {
   const disc = (document.getElementById('acc-n-disc') || {}).value || '';
   const sel = document.getElementById('acc-n-form'); if (!sel) return;
@@ -25027,7 +25156,7 @@ async function _accNewGo() {
     const r = await tkApi('/api/pm/acceptance/compose', { method: 'POST', body: {
       projectId: pid, accType: g('type'), discipline: g('disc'), formCode: g('form'),
       refNo: g('ref'), acceptDate: g('date'), timeFrom: g('from'), timeTo: g('to'),
-      location: g('loc'), planIds: plans
+      location: g('loc'), stage: g('stage'), planIds: plans
     } });
     if (ov) ov.remove();
     await _accReload();
@@ -25078,7 +25207,7 @@ function _accPaintDetail() {
   const body = document.getElementById('acc-body'); if (!body || !_accView) return;
   const v = _accView, d = v.dossier || {};
   try {
-    body.innerHTML = _accHeaderCard(v) + _accReadyCard(v) + _accFormCard(v) +
+    body.innerHTML = _accHeaderCard(v) + _accReadyCard(v) + _accEvidenceCard(v) + _accFormCard(v) +
       _accChecklistCard(v) + _accBasisCard(v) + _accClearanceCard(v) + _accDefectCard(v) +
       _accDrawingsCard(v) + _accSignCard(v);
   } catch (e) {
@@ -25148,6 +25277,41 @@ function _accReadyCard(v) {
     '</div></div>';
 }
 
+/* What has to travel WITH the minute, who has to be there, and how much notice is conventional.
+   The commonest reason a dossier comes back from a consultant is a missing attachment rather than a
+   failed inspection, and until this panel existed the app only said so after somebody had walked to
+   site. Nothing here is enforced: Điều 21(3) requires the minute to identify what it was judged
+   against, but WHICH documents that is on a given contract is the project's call, not the app's. */
+function _accEvidenceCard(v) {
+  const d = v.dossier || {}, t = _accType(d.accType) || {};
+  const vi = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi');
+  const ev = (vi ? t.evidence_vi : t.evidence_en) || [];
+  if (!ev.length) return '';
+  const st = _accStage(d.stage);
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div class="card-title">' + _t('What has to be with this minute') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _accE(t.law || '') + '</span></div>' +
+    '<div style="padding:12px 16px;display:flex;gap:18px;flex-wrap:wrap">' +
+      '<div style="flex:2;min-width:260px">' +
+        '<div style="font-size:10.5px;font-weight:700;color:var(--text-light);letter-spacing:.4px;margin-bottom:6px">' +
+          _accE(_t('DOCUMENTS')) + '</div>' +
+        ev.map(x => '<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:12.5px;line-height:1.5">' +
+          '<span style="color:var(--text-light)">•</span><span>' + _accE(x) + '</span></div>').join('') +
+      '</div>' +
+      '<div style="flex:1;min-width:220px">' +
+        '<div style="font-size:10.5px;font-weight:700;color:var(--text-light);letter-spacing:.4px;margin-bottom:6px">' +
+          _accE(_t('WHO ATTENDS')) + '</div>' +
+        '<div style="font-size:12.5px;line-height:1.55">' + _accE((vi ? t.attends_vi : t.attends_en) || '') + '</div>' +
+        (t.notice_days ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:9px;line-height:1.5">' +
+          _accE(_t('Notice usually given') + ': ' + t.notice_days + ' ' + _t('working day(s)') + ' — ' +
+                _t('a convention, not a legal requirement; the contract may say otherwise.')) + '</div>' : '') +
+        (st ? '<div style="font-size:11.5px;margin-top:9px;line-height:1.5' + (st.covered ? ';color:#B45309;font-weight:600' : ';color:var(--text-light)') + '">' +
+          (st.covered ? '⚠ ' : '') + _accE(vi ? st.note_vi : st.note_en) + '</div>' : '') +
+      '</div>' +
+    '</div></div>';
+}
+
 /* The dossier's own particulars — Điều 21(3) requires the minute to say what work, where, when and
    against what. Editable in place while the dossier is open; the whole card goes read-only once it
    is signed, which is why every input carries the same `disabled` flag. */
@@ -25183,6 +25347,12 @@ function _accFormCard(v) {
       inp('axis', _t('Axis / zone'), d.axis, { ph: 'Trục A-D / 1-6' }) +
       inp('component', _t2('Component', 'Tên cấu kiện'), d.component, { ph: _t('Cable tray & trunking') }) +
       inp('standardRef', _t('Standard applied'), d.standardRef, { list: 'acc-std-list' }) +
+      '<div><label class="form-label" style="font-size:11.5px">' + _accE(_t('Construction stage')) + '</label>' +
+        '<select id="acc-f-stage" class="form-control"' + (ro ? ' disabled' : '') + '>' +
+        '<option value="">' + _accE(_t('(not stated)')) + '</option>' +
+        _accStagesFor(d.discipline).map(x => '<option value="' + x.key + '"' +
+          (x.key === (d.stage || '') ? ' selected' : '') + '>' + x.no + '. ' + _accE(_accLbl(x)) +
+          '</option>').join('') + '</select></div>' +
       inp('jobDescription', _t('Job description'), d.jobDescription, { area: true, wide: true }) +
       inp('transmittalRef', _t('Transmittal reference'), d.transmittalRef) +
       '<div style="grid-column:1/-1">' + _accMinuteBox(d, ro) + '</div>' +
@@ -25565,7 +25735,7 @@ async function accSaveHeader(quiet) {
   const g = k => { const e = document.getElementById('acc-f-' + k); return e ? String(e.value || '').trim() : undefined; };
   const body = Object.assign({}, d);
   ['title', 'titleEn', 'acceptDate', 'timeFrom', 'timeTo', 'location', 'axis', 'component',
-   'standardRef', 'jobDescription', 'transmittalRef', 'signContractor', 'signContractorTitle',
+   'standardRef', 'stage', 'jobDescription', 'transmittalRef', 'signContractor', 'signContractorTitle',
    'signSupervisor', 'signSupervisorTitle', 'signClient', 'signClientTitle',
    'signDesigner', 'signDesignerTitle'].forEach(k => { const v = g(k); if (v !== undefined) body[k] = v; });
   const basis = (_accCat().basis || []).map(b => ({
@@ -26003,10 +26173,14 @@ async function accFormAdopt(code) {
   try {
     await tkApi('/api/coll/pm_acc_forms', { method: 'POST', body: {
       projectId: _pmPid(), code: f.code, disc: f.disc, vi: f.vi, en: f.en,
-      standard: f.standard || '', items: f.items || [] } });
+      standard: f.standard || '', items: f.items || [],
+      /* Copied in as a DRAFT, never as adopted. The copy is now the project's to edit, but nobody
+         has read it yet — and a screen that marked it reviewed at the moment it was duplicated
+         would be recording a review that did not happen. Review & adopt is the separate act. */
+      adopted: false, origin: 'copied' } });
   } catch (e) { toast(_errMsg(e), 'error'); return; }
   await _accReload(['pm_acc_forms']);
-  toast(_accE(f.code) + ' ' + _t('copied into this project — its lines are now editable'), 'success');
+  toast(_accE(f.code) + ' ' + _t('copied into this project — edit its lines, then Review & adopt'), 'success', 6000);
   _accRepaint();
 }
 
