@@ -100,6 +100,7 @@ import workforce         # headcount and turnover over time, from dated facts (p
 import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
 import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
+import acceptance        # hồ sơ nghiệm thu: NĐ 06/2021 Đ21/23/24 acceptance chain + TCVN/QCVN (pure)
 import daily_report      # the construction Daily Report: its ten pages and every number on them (pure)
 import dr_sharepoint     # reading that report out of the SharePoint forms the site fills in (pure)
 import dr_forms          # the SharePoint lists and Microsoft Forms that report is filled in WITH (pure)
@@ -713,6 +714,14 @@ def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
 
 
 _APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "rejected", "paid": "paid"}
+
+
+def _acc_seq(v):
+    """A checklist line's position, for sorting. The register is imported from spreadsheets, so the
+    column arrives as "1", 1, "01", "1." and blank — and a sort that raises on the blank one takes
+    the whole dossier down rather than putting an unnumbered line last."""
+    s = "".join(ch for ch in str(v if v is not None else "") if ch.isdigit())
+    return int(s) if s else 10 ** 9
 # The effective defaults the config GET substitutes for these keys — the SAVE side must compare against the
 # SAME defaults, else a manager's unchanged (echoed-default) value looks like a change and trips the admin gate.
 _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
@@ -4608,6 +4617,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._portal_get(u))
         if path == "/api/pm/chat/summary":
             return self._guard(lambda u: self._pm_chat_summary(u))
+        if path == "/api/pm/acceptance/catalogue":
+            return self._guard(lambda u: self._acc_catalogue_ep(u))
+        if path == "/api/pm/acceptance/dossier":
+            return self._guard(lambda u: self._acc_dossier_ep(u, qs))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
@@ -4953,6 +4966,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._appr_remind_ep(u))
         if path == "/api/pm/chat/read":
             return self._guard(lambda u: self._pm_chat_read(u, body))
+        if path == "/api/pm/acceptance/compose":
+            return self._guard(lambda u: self._acc_compose_ep(u, body))
         if path == "/api/appr/digesttest":
             return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/tk/nudgetest":
@@ -5744,6 +5759,253 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         return self._err(msg, code)
+
+    # ── Hồ sơ nghiệm thu ─────────────────────────────────────────────────────────────────────────
+    def _acc_kids(self, coll, dossier_id):
+        """One dossier's child rows — checklist lines, punch list."""
+        did = str(dossier_id or "")
+        if not did:
+            return []
+        return [r for r in db.list_collection(coll) if str(r.get("dossierId") or "") == did]
+
+    def _acc_accepted_types(self, pid):
+        """The acceptance types that ALREADY have an accepted dossier on this project.
+
+        This is the Điều 24(2) input, and PMBOK's "verified deliverables" input to Validate Scope:
+        you cannot accept a completion while the work underneath it was never accepted. Read from
+        the register rather than trusted from the browser — the browser is where somebody would
+        otherwise be able to claim it."""
+        out = set()
+        for r in db.list_collection("pm_acc"):
+            if str(r.get("projectId") or "") != str(pid or ""):
+                continue
+            if str(r.get("status") or "").strip().lower() == "accepted":
+                out.add(str(r.get("accType") or "").strip().lower())
+        return out
+
+    def _acc_gate(self, u):
+        """The PM app has to be on. Same gate the rest of the module reads through."""
+        if self._app_blocked(u, "pm"):
+            return self._err("Access restricted — the PM app is not enabled for your account.", 403)
+        return None
+
+    def _acc_catalogue_ep(self, u):
+        """The law, the standards and the seeded form library, in one payload.
+
+        Served rather than duplicated into the browser. A second copy of Nghị định 06's article
+        numbers living in index.html is a copy that drifts, and the one that drifts is always the
+        one on the screen somebody is reading."""
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        return self._json({"ok": True, "catalogue": acceptance.catalogue()})
+
+    def _acc_dossier_ep(self, u, qs):
+        """One dossier, assembled the way it prints — and what is standing between it and a
+        signature.
+
+        The readiness verdict is computed HERE, not in the browser, because it is the same function
+        `_acc_appr_check` refuses with. Two implementations of the same gate would eventually
+        disagree, and the one people would believe is the green one on the screen."""
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        did = str((qs.get("id") or [""])[0] or "").strip()
+        if not did:
+            return self._err("Which dossier?", 400)
+        dos = db.get_collection_item("pm_acc", did)
+        if not dos:
+            return self._err("Acceptance dossier not found.", 404)
+        pid = str(dos.get("projectId") or "")
+        vis = self._pm_visible_projects(u)
+        if vis is not None and pid and pid not in vis:
+            return self._err("That project is not one of yours. Ask its project manager, or have "
+                             "yourself added to the Team.", 403)
+        items = sorted(self._acc_kids("pm_acc_items", did), key=lambda r: _acc_seq(r.get("seq")))
+        defects = sorted(self._acc_kids("pm_acc_defects", did), key=lambda r: _acc_seq(r.get("no")))
+        why = acceptance.readiness(
+            dossier=dos, items=items, defects=defects,
+            accepted_types=self._acc_accepted_types(pid),
+            signed_parties=acceptance.signed_parties(dos))
+        return self._json({
+            "ok": True,
+            "dossier": dos,
+            "items": items,
+            "defects": defects,
+            "project": db.get_collection_item("pm_projects", pid) or {},
+            "settings": db.get_collection_item("pm_settings", pid) or {},
+            "progress": acceptance.checklist_progress(items),
+            "result": acceptance.dossier_result(items),
+            "readiness": why,
+            "canAccept": not [w for w in why if w["blocks"]],
+        })
+
+    def _acc_compose_ep(self, u, body):
+        """Lập hồ sơ — create a dossier and SNAPSHOT a checklist onto it.
+
+        The snapshot is the point. A dossier that pointed at a library form would change its own
+        wording every time the library was edited, and a minute signed in March would quietly start
+        saying what the form says in September. Estimating snapshots its rates for the same reason,
+        and for the same reason this is a server act: a browser doing the copy could be talked into
+        copying something else.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        pid = str((body or {}).get("projectId") or "").strip()
+        if not pid:
+            return self._err("Open the acceptance dossier from a project.", 400)
+        refusal = self._pm_write_refusal(u, pid)
+        if refusal:
+            return self._err(refusal, 403)
+        acc_type = str((body or {}).get("accType") or "work").strip().lower()
+        if not acceptance.acceptance_type(acc_type):
+            return self._err("Unknown acceptance type %r." % acc_type, 400)
+
+        # Where the checklist comes from: the project's own form library first, then the seeded one.
+        code = str((body or {}).get("formCode") or "").strip()
+        src = None
+        if code:
+            src = next((f for f in db.list_collection("pm_acc_forms")
+                        if str(f.get("projectId") or "") == pid
+                        and str(f.get("code") or "").strip().upper() == code.upper()), None)
+            if src is None:
+                src = acceptance.form(code)
+            if src is None:
+                return self._err("No checklist form with code %r — add it in the form library "
+                                 "first, or import your own." % code, 404)
+        lines = acceptance.snapshot_items(src) if src else []
+
+        disc = str((body or {}).get("discipline") or (src or {}).get("disc") or "GEN").strip().upper()
+        dos = {
+            "id": uuid.uuid4().hex[:12],
+            "projectId": pid,
+            "accType": acc_type,
+            "discipline": disc,
+            "formCode": str((src or {}).get("code") or code or ""),
+            "formTitleVi": str((src or {}).get("vi") or ""),
+            "formTitleEn": str((src or {}).get("en") or ""),
+            "standardRef": str((body or {}).get("standardRef") or (src or {}).get("standard") or ""),
+            "refNo": str((body or {}).get("refNo") or "").strip(),
+            "title": str((body or {}).get("title") or (src or {}).get("vi") or "").strip(),
+            "titleEn": str((body or {}).get("titleEn") or (src or {}).get("en") or "").strip(),
+            "acceptDate": str((body or {}).get("acceptDate") or "")[:10],
+            "timeFrom": str((body or {}).get("timeFrom") or ""),
+            "timeTo": str((body or {}).get("timeTo") or ""),
+            "location": str((body or {}).get("location") or ""),
+            "axis": str((body or {}).get("axis") or ""),
+            "component": str((body or {}).get("component") or ""),
+            "jobDescription": str((body or {}).get("jobDescription") or ""),
+            "basis": acceptance.default_basis(),
+            # Only the types Điều 24 attaches clearances to are born with the checklist. A work
+            # acceptance carrying five empty clearance rows would teach people to tick past them,
+            # and the ticking-past is what the check exists to prevent.
+            "clearances": (acceptance.default_clearances()
+                           if (acceptance.acceptance_type(acc_type) or {}).get("clearances") else []),
+            "status": acceptance.STATUS_DRAFT,
+            "createdBy": u.get("name") or "",
+            "createdById": u.get("id") or "",
+            "createdAt": self._utc_now(),
+        }
+        db.put_collection_item("pm_acc", dos)
+        for ln in lines:
+            ln["id"] = uuid.uuid4().hex[:12]
+            ln["projectId"] = pid
+            ln["dossierId"] = dos["id"]
+            db.put_collection_item("pm_acc_items", ln)
+
+        # The plan rows this dossier answers. A dossier can bind several called inspections — each
+        # keeps its OWN ARF number on its own invitation sheet, and the dossier carries a reference
+        # number of its own. Merging the two series would lose the count of failed inspections,
+        # which is exactly the number a client asks for.
+        bound = []
+        for plan_id in ((body or {}).get("planIds") or [])[:200]:
+            row = db.get_collection_item("pm_acc_plans", str(plan_id))
+            if not row or str(row.get("projectId") or "") != pid:
+                continue
+            row["dossierId"] = dos["id"]
+            db.put_collection_item("pm_acc_plans", row)
+            bound.append(row.get("id"))
+        if bound:
+            dos["planIds"] = bound
+            db.put_collection_item("pm_acc", dos)
+
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "", "actorId": u.get("id"),
+            "action": "Acceptance dossier created",
+            "target": "pm_acc/" + dos["id"],
+            "detail": "%s · %s · %d checklist line(s) copied from %s"
+                      % (acc_type, disc, len(lines), dos["formCode"] or "no form"),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "dossier": dos, "items": len(lines), "plans": len(bound)})
+
+    def _acc_appr_check(self, u, cur_status, set_status, sigs, rec):
+        """Who may sign an acceptance dossier, and whether it is ready to be signed.
+
+        Authority is NOT the portal's HR access level, for the same reason the eng_ module gives:
+        the person who compiles and checks an acceptance dossier is the project's QA/QC engineer,
+        who is an ordinary staff account. Gating on `manager` would mean either handing every site
+        engineer manager access — which opens payroll-adjacent screens — or having the wrong person
+        sign every minute.
+
+        The chain is compile → check → file:
+          (no status)  amending your own draft, or attaching the signed sheet
+          Submitted    "I compiled this dossier and it is complete" — the person who prepared it
+          Reviewed     "I have checked it against the work" — NOT the person who compiled it
+          Accepted     "the minute came back signed by all parties and is filed" — and this is the
+                       one the readiness gate stands in front of
+          Rejected     "the inspection did not pass" — always allowed; refusing to record a failure
+                       is the one refusal that would make people stop using the register
+        """
+        t = str(set_status or "").strip().lower()
+        rec = rec or {}
+        me = u.get("id") or ""
+
+        if t in ("", "rejected"):
+            return None
+
+        if t == "submitted":
+            return None
+
+        if t == "reviewed":
+            # Segregation of duties, read off the SERVER's record of who submitted — not off the
+            # client-supplied `meaning`, which a signer could word to omit "compiled" and then check
+            # their own work. Same reasoning as the payrun preparer/finaliser split.
+            prep = ""
+            for s in (sigs or []):
+                if str((s or {}).get("setStatus") or "").strip().lower() == "submitted":
+                    prep = str((s or {}).get("userId") or "")
+            # No manager exemption, and that is the point rather than an oversight. Everywhere else
+            # in this file a manager steps over a gate because the gate stops accidents; this one
+            # stops a person marking their own homework, and a director doing it is the case the
+            # control most needs to cover. It is also what the rest of _appr_check already does —
+            # "You cannot review your own request" and the payrun preparer/finaliser split are both
+            # unconditional. An exemption here would be the odd one out.
+            if prep and prep == me:
+                return ("The person who compiled an acceptance dossier cannot also check it. Ask "
+                        "the project's QA/QC engineer or the project manager to check it — a "
+                        "second pair of eyes on the work is the whole reason this step exists.")
+            return None
+
+        if t != "accepted":
+            return "An acceptance dossier is submitted, checked, accepted or rejected."
+
+        # ── the gate ─────────────────────────────────────────────────────────────────────────
+        did = str(rec.get("id") or "")
+        items = sorted(self._acc_kids("pm_acc_items", did),
+                       key=lambda r: _acc_seq(r.get("seq")))
+        defects = self._acc_kids("pm_acc_defects", did)
+        why = acceptance.blockers(
+            dossier=rec, items=items, defects=defects,
+            accepted_types=self._acc_accepted_types(rec.get("projectId")),
+            signed_parties=acceptance.signed_parties(rec))
+        if why:
+            # Every reason, not the first. A person about to walk to site with a form needs the
+            # whole list — being sent back four times, once per missing item, is how a control
+            # stops being used and starts being worked around.
+            return ("This dossier is not ready to be accepted:\n• "
+                    + "\n• ".join(w["en"] + "  /  " + w["vi"] for w in why))
+        return None
 
     def _eng_appr_check(self, u, coll, cur_status, set_status, rec):
         t = str(set_status or "").strip().lower()
@@ -7295,6 +7557,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
                 return "Manager access is required to decide a change request or certify a payment certificate."
             return None
+        # ---- Hồ sơ nghiệm thu — the acceptance dossier -----------------------------------
+        if coll == "pm_acc":
+            return self._acc_appr_check(u, cur_status, set_status, sigs, rec)
         # ---- Engineering design control -------------------------------------------------
         # Authority here is NOT the portal's HR access level. The person who may approve a general
         # arrangement drawing for construction is the discipline lead named on that drawing, and in a
@@ -11749,9 +12014,9 @@ class Handler(BaseHTTPRequestHandler):
                 "replacedPhotos": len(stale)}
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -21010,6 +21275,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("%s cannot be rewritten after it is issued — %s decides what it "
                                  "says. Issue a superseding one instead. Refused change to: %s."
                                  % (_what[0].upper() + _what[1:], _where, ", ".join(_bad)), 400)
+        # ── A signed acceptance minute stops being a form and becomes evidence ────────────────
+        # Unlike ISSUED_ONLY above, this is conditional on STATUS rather than on the collection: a
+        # dossier is an ordinary working record all the way through Draft, Submitted and Reviewed,
+        # and freezes the moment it is accepted or rejected. Freezing it earlier would make the
+        # register unusable; freezing it never means the checklist line that failed can be edited to
+        # Đạt after the minute is signed, and nothing would show it had ever said anything else.
+        #
+        # What may still be written afterwards is the paperwork that arrives late: a better scan of
+        # the signed sheet, the transmittal reference, a note. Not one word of what was inspected.
+        if name in ("pm_acc", "pm_acc_items", "pm_acc_defects"):
+            _cur = db.get_collection_item(name, iid) or {}
+            _dos = _cur if name == "pm_acc" else (
+                db.get_collection_item("pm_acc", _cur.get("dossierId")) or {})
+            if _dos and str(_dos.get("status") or "").strip().lower() in ("accepted", "rejected"):
+                _open = ({"minuteFile", "minuteUrl", "minuteName", "note", "transmittalRef",
+                          "spUrl", "signatures", "status", "_rev", "id"}
+                         if name == "pm_acc" else
+                         # A punch-list item on a conditionally-accepted minute is MEANT to be closed
+                         # afterwards — that is the whole point of Điều 24(3). What may change is the
+                         # closing, never what was found.
+                         ({"status", "closedOn", "closedBy", "closeNote", "photo", "photoUrl",
+                           "photoName", "_rev", "id"} if name == "pm_acc_defects"
+                          else {"_rev", "id"}))
+                _b = body or {}
+                _bad = sorted({k for k in set(_b) | set(_cur)
+                               if k not in _open and str(_cur.get(k)) != str(_b.get(k))})
+                if _bad:
+                    return self._err(
+                        "This belongs to a signed acceptance minute (%s) and what it says about the "
+                        "inspection cannot be rewritten. Raise a new acceptance if the work was "
+                        "re-inspected. Refused change to: %s."
+                        % (_dos.get("refNo") or _dos.get("id") or "accepted", ", ".join(_bad)), 400)
         if (name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_")) \
                 and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
@@ -21845,6 +22142,34 @@ class Handler(BaseHTTPRequestHandler):
             if existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"):
                 return self._err("This record has been signed and cannot be deleted. "
                                  "Raise a superseding change request instead.", 403)
+        # ── An acceptance minute is the artefact the whole dossier exists to produce ───────────
+        # A biên bản nghiệm thu is what the client, the supervision consultant and — for the works
+        # classes that attract it — the construction authority actually check, and Nghị định
+        # 06/2021 Điều 26 requires the completed-works dossier to be kept. Deleting an accepted one
+        # leaves the register short by a minute with nothing saying it ever existed, which is
+        # exactly the gap an audit finds and nobody can then explain.
+        #
+        # Narrow on purpose: a DRAFT dossier — set up wrong, duplicated, abandoned — carries no
+        # signature and deletes freely. Refusing those would train people around the guard on the
+        # ones that matter. Admin included: an admin is who gets asked to "just remove it".
+        if name == "pm_acc":
+            if (existing.get("signatures")
+                    or str(existing.get("status") or "").strip().lower() in ("accepted", "rejected")):
+                return self._err(
+                    "This acceptance minute has been signed and is part of the completed-works "
+                    "dossier (Nghị định 06/2021/NĐ-CP, Điều 26) — it cannot be deleted. If the work "
+                    "was re-inspected, raise a new acceptance; the failed one is the record of why "
+                    "there was a second visit.", 403)
+        # A checklist line or a punch-list item belonging to a signed minute is part of that minute.
+        # Deleting the failed line out of an accepted dossier would turn a conditional acceptance
+        # into a clean one, in one click, with no trace.
+        if name in ("pm_acc_items", "pm_acc_defects"):
+            _par = db.get_collection_item("pm_acc", existing.get("dossierId")) or {}
+            if (_par.get("signatures")
+                    or str(_par.get("status") or "").strip().lower() in ("accepted", "rejected")):
+                return self._err(
+                    "This line belongs to a signed acceptance minute and cannot be deleted. Close "
+                    "the outstanding item instead — that keeps the record of what was found.", 403)
         # A signed production step is the same kind of evidence, and deleting one is strictly worse
         # than editing it — which _coll_update already refuses. Without this, the operator who signed
         # a hold point could destroy the record of what was measured, and the as-built dossier would

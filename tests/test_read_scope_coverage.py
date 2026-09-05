@@ -75,6 +75,17 @@ SHARED = {
     "pm_quality", "pm_quality_itp", "pm_resources", "pm_comms",
     "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis",
     "pm_sitereports", "pm_weekreports",
+    # Hồ sơ nghiệm thu. Same class as pm_quality and pm_quality_itp beside it, and shared for a
+    # stronger reason than convenience: an acceptance dossier is the document the client and the
+    # supervision consultant are ENTITLED to see, and Nghị định 06/2021 Điều 26 requires the set to
+    # be assembled and kept. A site engineer who cannot read what was accepted upstream cannot tell
+    # whether their own work may be covered up. There is no personal data on any of the five — a
+    # signatory's NAME is on the minute, but a name printed on a document a third party signs is
+    # not the same thing as the HR record the SELF_OWNED mechanism exists for.
+    #
+    # Deliberately NOT manager-gated the way pm_costs is: nothing here carries a price. The reason
+    # pm_costs is scoped is commercial terms, and an acceptance minute has none.
+    "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects",
     #
     # pm_execNotes, pm_portfolioSnapshots and pm_quality_itp_items used to be listed here. They
     # were registered and reached by nothing — no endpoint, no screen, no test — and are now

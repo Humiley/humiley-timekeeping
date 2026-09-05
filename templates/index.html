@@ -1221,6 +1221,14 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   #content .pm-gantt-left{position:static !important;width:220px !important;z-index:auto !important}
 }
 
+#accPrintOverlay .acc-sheet { box-shadow: 0 2px 16px rgba(0,0,0,.28); }
+#accPrintOverlay .acc-sheet table { table-layout: auto; }
+@media (max-width:900px) {
+  /* A 210 mm sheet does not fit a phone. It scrolls rather than reflowing: reflowing it would
+     show a layout that is not the one that prints, which is worse than a scrollbar. */
+  #accPrintOverlay { padding: 10px !important; }
+  #accPrintOverlay .acc-sheet { transform-origin: top left; }
+}
 @media print {
   body * { visibility: hidden !important; }
   #payslipOverlay, #payslipOverlay * { visibility: visible !important; }
@@ -1234,6 +1242,20 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     display: block !important; padding: 0 !important; overflow: visible !important; }
   #ahuCardOverlay .ahu-card-noprint { display: none !important; }
   #ahuCardOverlay .ahu-card-step { break-inside: avoid; page-break-inside: avoid; }
+  /* The acceptance set. Same visibility trick as the payslip and the AHU card: everything is
+     hidden and only the sheets are shown, so one Print produces the A4 forms and not the
+     portal around them. The sheets are already sized in mm, so @page only has to stop the
+     browser adding its own margin on top of the 13/14 mm the sheet draws. */
+  #accPrintOverlay, #accPrintOverlay * { visibility: visible !important; }
+  #accPrintOverlay { position: absolute !important; inset: 0 !important; background: #fff !important;
+    display: block !important; padding: 0 !important; overflow: visible !important; }
+  #accPrintOverlay .acc-noprint, #accPrintOverlay .acc-print-ctl { display: none !important; }
+  #accPrintOverlay .acc-sheet { box-shadow: none !important; margin: 0 !important;
+    break-after: page; page-break-after: always; }
+  #accPrintOverlay .acc-sheet:last-child { break-after: auto; page-break-after: auto; }
+  #accPrintOverlay table { break-inside: auto; }
+  #accPrintOverlay tr { break-inside: avoid; page-break-inside: avoid; }
+  @page { size: A4; margin: 0; }
 }
 
 </style>
@@ -7985,6 +8007,11 @@ function _hrEditDel(type, id, reload) {
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
 const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_schedules: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_qs_subvo: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+  /* The acceptance registers move together — a checklist result changes the dossier roll-up and
+     a closed defect changes whether the minute can be signed — so an edit to any of them
+     repaints the whole screen rather than one table. */
+  pm_acc: () => _accRepaint(), pm_acc_items: () => _accRepaint(), pm_acc_plans: () => _accRepaint(),
+  pm_acc_forms: () => _accRepaint(), pm_acc_defects: () => _accRepaint(),
   // A QS register edit has to re-read /api/qs/summary: every figure on the tab is computed
   // server-side from these rows, so redrawing without refetching would show a table that has
   // changed under totals that have not.
@@ -17520,6 +17547,35 @@ const _QA_SPECS = {
     { k: 'discipline', label: 'Package (Discipline)', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
     { k: 'standardRef', label: 'Standard / spec ref' }, { k: 'plannedStart', label: 'Planned start', type: 'date' }, { k: 'plannedFinish', label: 'Planned finish', type: 'date' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
     { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' }, { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Approved', 'Superseded'] }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
+  /* Kế hoạch nghiệm thu — one row per inspection CALLED, including the ones that do not pass.
+     The result lives here rather than on the dossier because a failed visit still happened and
+     still has a number; the count of them is what a client asks for. */
+  pm_acc_plans: { title: 'Inspection called', coll: 'pm_acc_plans', reload: 'pm_acc_plans', fields: [
+    { k: 'arfNo', label: 'Invitation No. (ARF)' },
+    { k: 'discipline', label: 'Discipline', type: 'select', options: ['OSM', 'CIV', 'ARC', 'ELE', 'LTN', 'ELV', 'FF', 'HVAC', 'PLU', 'GEN'] },
+    { k: 'formCode', label: 'Checklist form code' },
+    { k: 'title', label: 'Work (Vietnamese)', type: 'textarea' },
+    { k: 'titleEn', label: 'Work (English)', type: 'textarea' },
+    { k: 'acceptDate', label: 'Date', type: 'date' },
+    { k: 'timeFrom', label: 'Start time' }, { k: 'timeTo', label: 'End time' },
+    { k: 'location', label: 'Location' },
+    { k: 'result', label: 'Result', type: 'select', options: ['', 'Đạt', 'Không đạt'] },
+    { k: 'note', label: 'Note (why it did not pass, when it is called again)', type: 'textarea' },
+    { k: 'attachment', label: 'Attachment', type: 'file' }] },
+  /* Danh mục tồn tại — Nghị định 06/2021 Điều 24 khoản 3. `impact` is NOT a Minor/Major/Critical
+     severity scale, deliberately: the article names three consequences, and a severity dropdown
+     would let a structural crack be called "Major" and signed around. Any one of the three blocks
+     the acceptance; the fourth option is the one that does not. */
+  pm_acc_defects: { title: 'Outstanding item', coll: 'pm_acc_defects', reload: 'pm_acc_defects', fields: [
+    { k: 'no', label: 'No.', type: 'number' },
+    { k: 'description', label: 'What is outstanding', type: 'textarea' },
+    { k: 'impact', label: 'Impact (Điều 24 khoản 3)', type: 'select', options: ['cosmetic', 'structural', 'safety', 'function'] },
+    { k: 'responsible', label: 'Responsible' },
+    { k: 'due', label: 'Rectify by', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Closed'] },
+    { k: 'closedOn', label: 'Closed on', type: 'date' },
+    { k: 'closeNote', label: 'How it was closed', type: 'textarea' },
+    { k: 'photo', label: 'Photo', type: 'file' }] },
   pm_resources: { title: 'Team Member', coll: 'pm_resources', reload: 'pm_resources', fields: [
     { k: 'name', label: 'Member', type: 'select', options: 'employees' }, { k: 'projectRole', label: 'Project role' },
     { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
@@ -18004,6 +18060,11 @@ const _PM_UPLOAD_DIR = {
   pm_lessons: '09_Project_Closeout',
   pm_quality: '07_Validation_GMP_Compliance',
   pm_quality_itp: '06_Commissioning_Qualification',
+  /* An acceptance minute is a handover document, not a working attachment — it belongs with the
+     completed-works dossier Nghị định 06/2021 Điều 26 requires to be kept. */
+  pm_acc: '08_Documentation_Handover',
+  pm_acc_defects: '08_Documentation_Handover',
+  pm_acc_plans: '06_Commissioning_Qualification',
   pm_comms: '12_Meeting_Minutes_Correspondence',
   pm_issues: '11_Risk_Issue_Register_Live',
   pm_risks: '11_Risk_Issue_Register_Live',
@@ -22252,6 +22313,7 @@ function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.us
 
 const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_qs_subvo', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports',
   'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning',
+  'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects',
   'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
@@ -22664,7 +22726,7 @@ function _pmDocNoCmp(f) {
   };
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
-const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' }, pm_qs_variations: { f: 'voNo', tag: 'VO' }, pm_qs_daywork: { f: 'sheetNo', tag: 'DW' }, pm_qs_subvo: { f: 'subVoNo', tag: 'SVO' } };
+const _PM_NUMSPEC = { pm_acc_plans: { f: 'arfNo', tag: 'ARF' }, pm_acc: { f: 'refNo', tag: 'NT' }, pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' }, pm_qs_variations: { f: 'voNo', tag: 'VO' }, pm_qs_daywork: { f: 'sheetNo', tag: 'DW' }, pm_qs_subvo: { f: 'subVoNo', tag: 'SVO' } };
 function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
 /* Zero-pad to three, and NEVER truncate past it.
    `('00' + seq).slice(-3)` was fine to 999 and then wrapped: 1000 became "000", 1001 became "001",
@@ -22708,6 +22770,20 @@ function _pmAutoNumber(coll, data) {
   if (String(data[sp.f] || '').trim()) return;
   const pid = data.projectId || _pmPid(); if (!pid) return;
   let tag = sp.tag; if (coll === 'pm_quality') tag = ({ NCR: 'NCR', Inspection: 'INS', Audit: 'AUD', Test: 'TST', 'ITP item': 'ITP' })[data.type] || 'QA';
+  /* The acceptance registers number themselves from the PROJECT'S OWN template when one is set —
+     `{PREFIX}-ARF-{DISC}-{SEQ}` reads SLPXA-RIC-ME-ARF-ELE-001, which is what the consultant's
+     file is indexed by. Without a template they fall through to the app's PREFIX-TAG-NNN like
+     every other register, so the feature is opt-in rather than a format nobody asked for. */
+  if (coll === 'pm_acc_plans' || coll === 'pm_acc') {
+    const st = (_HR.pm_settings || []).find(x => x.id === pid) || {};
+    const tpl = coll === 'pm_acc_plans' ? st.accArfTpl : st.accRefTpl;
+    if (String(tpl || '').trim() && typeof _accRenderNo === 'function') {
+      data[sp.f] = _accRenderNo(tpl, { prefix: st.accPrefix || _pmPrefix3(pid),
+        disc: data.discipline || '', code: data.formCode || '',
+        seq: _pmNextSeq(coll, sp.f, pid) });
+      return;
+    }
+  }
   const style = _pmNumStyle(coll, sp.f, pid);
   const fmt = n => (style && style.plain)
     ? (style.pad ? ('0000000000' + n).slice(-Math.max(style.pad, String(n).length)) : String(n))
@@ -24154,7 +24230,7 @@ function _pmLongCell(v, n) {
   return '<span title="' + _tkEscA(t) + '"' + (cut ? ' style="cursor:help"' : '') + '>' +
     _pmEsc(cut ? t.slice(0, n || 60).trim() + '…' : t) + '</span>';
 }
-function _pmRowEditable(coll) { const sw = ['pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
+function _pmRowEditable(coll) { const sw = ['pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
@@ -24335,6 +24411,1852 @@ const _PM_COLL_LABEL = {
   pm_qs_valuations: 'Interim valuations',
   pm_qs_cvr: 'Cost-value reconciliation'
 };
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   HỒ SƠ NGHIỆM THU — the acceptance dossier
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+   A Vietnamese project hands over a DOSSIER, not a building. Work is inspected as it is covered up,
+   each inspection is minuted and signed, and those minutes roll up into stage and completion
+   acceptances. The bound set is what the client, the supervision consultant and — for the works
+   classes that attract it — the construction authority actually check.
+
+   The portal already had the two ends of that chain: pm_quality_itp plans an inspection and
+   pm_quality records that one happened. Neither produced the document anybody signs. This is the
+   middle.
+
+   The chain, in both vocabularies (see acceptance.py, which is the authority for all of it):
+
+     Điều 12  vật tư đầu vào      Control Quality on procured inputs
+     Điều 21  công việc xây dựng   Control Quality       → a VERIFIED deliverable
+     Điều 23  giai đoạn / bộ phận  Validate Scope at a phase boundary
+     Điều 24  hoàn thành hạng mục  Validate Scope        → an ACCEPTED deliverable
+     Điều 124 bàn giao             Close Project or Phase
+
+   NOTHING about that chain is decided here. Every rule, every article reference, every standard and
+   the readiness verdict come from /api/pm/acceptance/*. A second copy in the browser would drift,
+   and the copy people read is always the one on the screen. What this file does is draw it.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+let _accTabK = 'board';
+let _ACCCAT = null;          // the catalogue: types, standards, forms, clearances. Fetched once.
+let _accOpenId = '';         // the dossier being worked on, '' for the register
+let _accView = null;         // its assembled server-side view (rows + readiness verdict)
+let _accBusy = false;
+const _ACC_COLLS = ['pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects'];
+
+const _ACC_TABS = [
+  { k: 'board', label: 'Overview', fn: '_accBoard' },
+  { k: 'plan', label: 'Acceptance plan', fn: '_accPlanTab' },
+  { k: 'reg', label: 'Dossier register', fn: '_accRegTab' },
+  { k: 'forms', label: 'Checklist library', fn: '_accFormsTab' },
+  { k: 'setup', label: 'Numbering & parties', fn: '_accSetupTab' }
+];
+
+/* ---- small shared helpers ------------------------------------------------------------------ */
+function _accE(s) { return _pmEsc(s == null ? '' : s); }
+function _accCat() { return _ACCCAT || {}; }
+function _accType(k) { return (_accCat().types || []).find(t => t.key === String(k || '').toLowerCase()) || null; }
+function _accDisc(c) { return (_accCat().disciplines || []).find(d => d.code === String(c || '').toUpperCase()) || null; }
+function _accStatusMeta(s) { return (_accCat().statuses || []).find(x => x.key === s) || { key: s, vi: s, en: s, hex: '#94a3b8' }; }
+function _accResMeta(r) { return (_accCat().results || []).find(x => x.key === r) || null; }
+/* The bilingual label for anything the catalogue carries. The register is filled in Vietnamese and
+   read by consultants in both, so a label picks the language the app is in and keeps the other
+   available on hover rather than choosing one for good. */
+function _accLbl(o, key) {
+  if (!o) return '';
+  const vi = o.vi || o[key + 'Vi'] || '', en = o.en || o[key + 'En'] || '';
+  const cur = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? (vi || en) : (en || vi);
+  return cur;
+}
+function _accBi(o) {
+  const vi = (o && o.vi) || '', en = (o && o.en) || '';
+  if (!vi || !en || vi === en) return _accE(vi || en);
+  return '<span title="' + _tkEscA(vi + ' / ' + en) + '">' + _accE(_accLbl(o)) + '</span>';
+}
+
+/* Normalise a result cell the same way acceptance.py's _res does. The register is filled in two
+   languages and imported from spreadsheets, so "Đạt", "Pass", "P" and "OK" all arrive meaning the
+   same thing — and anything unrecognised is PENDING, never PASS. An unreadable cell must not close
+   a checklist line, here or on the server. */
+function _accRes(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (!s) return 'pending';
+  if (['pass', 'p', 'ok', 'đạt', 'dat', 'yes', 'y', 'accepted', 'conform'].indexOf(s) >= 0) return 'pass';
+  if (['fail', 'f', 'không đạt', 'khong dat', 'kđ', 'kd', 'k.đạt', 'k.dat', 'no', 'n', 'rejected', 'nonconform'].indexOf(s) >= 0) return 'fail';
+  if (['na', 'n/a', 'n.a', 'không áp dụng', 'khong ap dung', 'kap'].indexOf(s) >= 0) return 'na';
+  return 'pending';
+}
+function _accProgress(items) {
+  const c = { pass: 0, fail: 0, na: 0, pending: 0 };
+  (items || []).forEach(i => { c[_accRes(i.result)]++; });
+  const total = c.pass + c.fail + c.na + c.pending, applicable = total - c.na;
+  return { total: total, applicable: applicable, pass: c.pass, fail: c.fail, na: c.na,
+           pending: c.pending, pct: applicable ? Math.round(c.pass * 100 / applicable) : 0 };
+}
+function _accResultOf(items) {
+  const p = _accProgress(items);
+  if (p.fail) return 'fail';
+  if (p.pending || !p.applicable) return 'pending';
+  return 'pass';
+}
+function _accResBadge(r) {
+  const m = _accResMeta(r) || { vi: '—', en: '—', hex: '#94a3b8' };
+  return _pmBadge(_accLbl(m), m.hex);
+}
+function _accStatusBadge(s) {
+  const m = _accStatusMeta(s || 'Draft');
+  return _pmBadge(_accLbl(m), m.hex);
+}
+
+/* ---- the tab -------------------------------------------------------------------------------- */
+async function pmRenderAcceptance(pid) {
+  const p = _pmProj(pid); if (!p) return;
+  _pmSet('<div id="acc-subbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px"></div>' +
+         '<div id="acc-body">' + tkSkeleton() + '</div>');
+  if (!_ACCCAT) {
+    try {
+      const r = await tkApi('/api/pm/acceptance/catalogue');
+      _ACCCAT = (r && r.catalogue) || null;
+    } catch (e) { _ACCCAT = null; }
+  }
+  if (!_ACCCAT) {
+    const b0 = document.getElementById('acc-body');
+    if (b0) b0.innerHTML = '<div class="card" style="padding:18px">' +
+      '<div style="font-weight:700;color:#C00000;margin-bottom:6px">' + _t('Could not load the acceptance catalogue') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' +
+      _accE(_t('The acceptance types, the standards list and the checklist library all come from the server. Without them this screen would have to guess what the law requires, so it does not open.')) +
+      '</div><button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="pmTab(\'accept\')">' + _t('Retry') + '</button></div>';
+    return;
+  }
+  const bar = document.getElementById('acc-subbar');
+  if (bar) bar.innerHTML = _accTabRow();
+  if (_accOpenId) { accOpen(_accOpenId); return; }
+  accTab(_accTabK);
+}
+function _accTabRow() {
+  return _ACC_TABS.map(t => '<button class="tab" data-acck="' + t.k + '" onclick="accTab(\'' + t.k + '\')" style="border:none;background:' +
+    (t.k === _accTabK && !_accOpenId ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _accTabK && !_accOpenId ? '#fff' : 'var(--text-light)') +
+    ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + _accE(_t(t.label)) + '</button>').join('');
+}
+function accTab(k) {
+  const t = _ACC_TABS.find(x => x.k === k); if (!t) return;
+  _accTabK = k; _accOpenId = ''; _accView = null;
+  const bar = document.getElementById('acc-subbar'); if (bar) bar.innerHTML = _accTabRow();
+  const body = document.getElementById('acc-body'); if (!body) return;
+  try { body.innerHTML = (window[t.fn] || (() => ''))(_pmPid()) || ''; }
+  catch (e) { body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error rendering ' + _accE(t.label) + ': ' + _accE(e.message) + '</div>'; }
+}
+function _accRepaint() {
+  if (_accOpenId) { accOpen(_accOpenId); return; }
+  const body = document.getElementById('acc-body');
+  const t = _ACC_TABS.find(x => x.k === _accTabK);
+  if (body && t) { try { body.innerHTML = (window[t.fn] || (() => ''))(_pmPid()) || ''; } catch (e) { } }
+}
+/* Every write in this module goes through here. tkApi invalidates the collection cache on a write,
+   but the acceptance screens read FIVE registers that move together — a checklist result changes
+   the dossier's roll-up, closing a defect changes whether the minute can be signed — so a repaint
+   that refetched only the register written to would show a table that had changed under totals
+   that had not. Same reasoning as the QS tab refetching its summary. */
+async function _accReload(colls) {
+  (colls || _ACC_COLLS).forEach(c => { try { tkCollInvalidate(c); } catch (e) { } });
+  await Promise.all((colls || _ACC_COLLS).map(c => tkLoadColl(c).catch(() => { })));
+}
+
+/* ═══════════════ 1 · Overview ═══════════════════════════════════════════════════════════════ */
+
+function _accBoard(pid) {
+  const dos = _pmScopeFor('pm_acc', pid), plans = _pmScopeFor('pm_acc_plans', pid);
+  const items = _pmScopeFor('pm_acc_items', pid), defects = _pmScopeFor('pm_acc_defects', pid);
+  const accepted = dos.filter(d => d.status === 'Accepted');
+  const openDefects = defects.filter(d => String(d.status || 'Open').toLowerCase() !== 'closed');
+  const blockingDefects = openDefects.filter(d =>
+    ((_accCat().defectImpacts || []).find(i => i.key === d.impact) || {}).blocks);
+  const uncalled = plans.filter(p => !p.dossierId);
+  const failed = plans.filter(p => _accRes(p.result) === 'fail');
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Dossiers'), dos.length),
+    _hrKpi(_t2('Accepted', 'Đã nghiệm thu'), accepted.length, 'var(--emerald)'),
+    _hrKpi(_t('Inspections called'), plans.length, '#3168A8'),
+    _hrKpi(_t('Re-inspections'), failed.length, failed.length ? '#EA580C' : 'var(--text-light)'),
+    _hrKpi(_t('Open defects'), openDefects.length, openDefects.length ? '#F59E0B' : 'var(--text-light)'),
+    _hrKpi(_t('Blocking handover'), blockingDefects.length, blockingDefects.length ? '#DC2626' : 'var(--text-light)')
+  ]);
+
+  /* The chain, drawn. This is the one thing a project manager most often gets wrong — signing a
+     completion while the work underneath it was never accepted — so the screen shows the whole
+     ladder with the count at each rung, in the order the law puts them. */
+  const byType = {};
+  dos.forEach(d => {
+    const k = String(d.accType || 'work');
+    byType[k] = byType[k] || { all: 0, ok: 0 };
+    byType[k].all++;
+    if (d.status === 'Accepted') byType[k].ok++;
+  });
+  const chain = (_accCat().types || []).map((t, i) => {
+    const c = byType[t.key] || { all: 0, ok: 0 };
+    const prereqOk = (t.requires || []).every(r => (byType[r] || {}).ok);
+    const hex = c.ok ? '#00B060' : (c.all ? '#F59E0B' : '#CBD5E1');
+    return '<div style="display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--soft-bg)">' +
+      '<div style="flex:0 0 26px;height:26px;border-radius:50%;background:' + hex + '1f;color:' + hex +
+        ';display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + (i + 1) + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">' + _accBi(t) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:2px;line-height:1.5">' +
+          '<span style="font-weight:600">' + _accE(t.law) + '</span> · ' + _accE(t.pmbok) + '</div>' +
+        (t.requires && t.requires.length && !prereqOk && c.all
+          ? '<div style="font-size:11px;color:#C00000;margin-top:3px">⚠ ' +
+            _accE(_t('Needs an accepted') + ' ' + (t.requires.map(r => _accLbl(_accType(r) || {})).join(', '))) + '</div>'
+          : '') +
+      '</div>' +
+      '<div style="flex:0 0 auto;text-align:right;font-size:11px;color:var(--text-light);white-space:nowrap">' +
+        '<span style="font-size:16px;font-weight:800;color:' + hex + '">' + c.ok + '</span> / ' + c.all +
+        '<div style="font-size:10px">' + _t('accepted') + '</div></div>' +
+    '</div>';
+  }).join('');
+
+  const chainCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' +
+      _t('The acceptance chain') + '</div></div>' +
+    '<div style="padding:4px 16px 14px">' +
+      '<div style="font-size:12px;color:var(--text-light);line-height:1.65;padding:8px 0 4px">' +
+      _accE(_t('Each rung is only signable once the ones it depends on are. That is Nghị định 06/2021 Điều 24 khoản 2, and it is the same rule PMBOK states as “Validate Scope takes verified deliverables as its input”. The portal enforces it on the signature, not on the typing.')) +
+      '</div>' + chain + '</div></div>';
+
+  /* Anything that needs somebody to do something, in one place. A register that only lists is a
+     register people stop opening. */
+  const readyToSign = dos.filter(d => d.status === 'Reviewed');
+  const inProgress = dos.filter(d => d.status === 'Draft' || d.status === 'Submitted');
+  const todo = [];
+  if (uncalled.length) todo.push([_t('Inspections called with no dossier compiled'), uncalled.length, '#F59E0B', "accTab('plan')"]);
+  if (inProgress.length) todo.push([_t('Dossiers still being compiled'), inProgress.length, '#3168A8', "accTab('reg')"]);
+  if (readyToSign.length) todo.push([_t('Checked, waiting to be accepted'), readyToSign.length, 'var(--emerald)', "accTab('reg')"]);
+  if (blockingDefects.length) todo.push([_t('Open defects that block a handover'), blockingDefects.length, '#DC2626', "accTab('reg')"]);
+  const todoCard = todo.length
+    ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+      '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('What needs doing') + '</div></div>' +
+      '<div style="padding:6px 16px 12px">' + todo.map(t =>
+        '<div onclick="' + t[3] + '" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--soft-bg);cursor:pointer">' +
+        '<span style="font-size:12.5px;color:var(--text)">' + _accE(t[0]) + '</span>' +
+        '<span class="badge" style="background:' + t[2] + '1f;color:' + t[2] + ';font-weight:800">' + t[1] + '</span></div>').join('') +
+      '</div></div>'
+    : '';
+
+  const empty = dos.length || plans.length ? '' :
+    '<div class="card" style="padding:22px;text-align:center">' +
+    '<div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:6px">' + _t('Nothing has been called for acceptance yet') + '</div>' +
+    '<div style="font-size:12.5px;color:var(--text-light);line-height:1.7;max-width:640px;margin:0 auto 14px">' +
+    _accE(_t('Start with the checklist library — load the standard forms, or import your own — then plan an inspection and compile its dossier. The forms print as an A4 set: the invitation, the minute and the inspection record.')) + '</div>' +
+    '<button class="btn btn-primary btn-sm" onclick="accTab(\'forms\')">' + _t('Open the checklist library') + '</button></div>';
+
+  return kpis + todoCard + chainCard + empty + _accStandardsNote();
+}
+
+/* The one claim in this module that goes stale on its own. It has to be on the screen that uses
+   it, not only in a docstring nobody opens. */
+function _accStandardsNote() {
+  const n = _accCat().note || {};
+  const txt = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? (n.vi || n.en) : (n.en || n.vi);
+  if (!txt) return '';
+  return '<div class="card" style="padding:12px 16px;border-left:3px solid #F59E0B;margin-bottom:14px">' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.65">' +
+    '<b style="color:#B45309">' + _t('About the standards list') + '</b> — ' + _accE(txt) + '</div></div>';
+}
+
+/* ═══════════════ 2 · Kế hoạch nghiệm thu — the inspections called ═══════════════════════════ */
+
+function _accPlanTab(pid) {
+  const rows = _pmScopeFor('pm_acc_plans', pid);
+  const specs = [{ k: 'discipline', label: _t('Discipline') }, { k: 'formCode', label: _t('Form') },
+                 { k: 'result', label: _t('Result') }];
+  const bar = _pmFiltBar('pm_acc_plans', rows, specs);
+  const shown = _pmFiltApply('pm_acc_plans', rows, specs)
+    .slice().sort((a, b) => String(b.acceptDate || '').localeCompare(String(a.acceptDate || '')));
+
+  const sel = _accSelectedPlans();
+  const compose = '<button class="btn btn-primary btn-sm" onclick="accComposeFromPlan()"' +
+    (sel.length ? '' : ' disabled style="opacity:.5"') + '>' +
+    _accE(_t('Compile a dossier from') + ' ' + sel.length + ' ' + _t('selected')) + '</button>';
+
+  const tbl = _pmCard(_t('Acceptance plan — inspections called'), 'pm_acc_plans', _t('Call an inspection'),
+    '<div style="padding:9px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+    _accE(_t('Every inspection you invite the consultant and the client to, including the ones that do not pass. Each keeps its own invitation number; tick several and compile them into one dossier, which carries a reference number of its own. Merging the two series would lose the count of re-inspections — the number a client asks for.')) +
+    '</div>' + bar + _pmTable('pm_acc_plans', [
+      { label: '', w: '28px', render: r => '<input type="checkbox" data-accplan="' + r.id + '"' +
+          (r.dossierId ? ' disabled title="' + _tkEscA(_t('Already in a dossier')) + '"' : '') +
+          ' onchange="_accRepaintPlanBar()">' },
+      { label: _t('ARF No.'), sk: 'arfNo', nowrap: true,
+        render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _accE(r.arfNo || '—') + '</span>' },
+      { label: _t('Date'), sk: 'acceptDate', nowrap: true,
+        render: r => _pmFmt(r.acceptDate) + ((r.timeFrom || r.timeTo)
+          ? '<div style="font-size:10px;color:var(--text-light)">' + _accE([r.timeFrom, r.timeTo].filter(Boolean).join(' – ')) + '</div>' : '') },
+      { label: _t('Discipline'), sk: 'discipline',
+        render: r => r.discipline ? _pmBadge(r.discipline, '#3168A8') : '—' },
+      { label: _t('Form'), sk: 'formCode',
+        render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _accE(r.formCode || '—') + '</span>' },
+      { label: _t('Work'), sk: 'title',
+        render: r => '<span style="font-weight:600">' + _accE(r.title || '') + '</span>' +
+          (r.titleEn ? '<div style="font-size:10.5px;color:var(--text-light);font-style:italic">' + _accE(r.titleEn) + '</div>' : '') },
+      { label: _t('Location'), k: 'location' },
+      { label: _t('Result'), sk: 'result', render: r => _accResBadge(_accRes(r.result)) },
+      { label: _t('Dossier'), sk: 'dossierId', render: r => {
+        if (!r.dossierId) return '<span style="color:#F59E0B;font-size:11px">' + _t('not compiled') + '</span>';
+        const d = (_HR.pm_acc || []).find(x => x.id === r.dossierId);
+        return d ? '<a href="javascript:void(0)" onclick="accOpen(\'' + d.id + '\')" style="color:var(--navy);font-weight:600;font-size:11.5px;font-variant-numeric:tabular-nums">' +
+          _accE(d.refNo || d.id) + '</a>' : '<span style="color:var(--text-light)">—</span>'; } }
+    ], shown, { minw: 1020, empty: _t('No inspection has been called yet.') }),
+    compose + '<button class="btn btn-outline btn-sm" onclick="accExportPlan()">↓ ' + _t('Export') + '</button>');
+  return tbl;
+}
+function _accSelectedPlans() {
+  return [...document.querySelectorAll('input[data-accplan]:checked')].map(i => i.getAttribute('data-accplan'));
+}
+function _accRepaintPlanBar() {
+  /* Only the button's label and enabled state change, so the table is left alone — repainting the
+     whole tab here would throw away every other tick the moment one was made. */
+  const sel = _accSelectedPlans();
+  const b = [...document.querySelectorAll('#acc-body button')].find(x => /accComposeFromPlan/.test(x.getAttribute('onclick') || ''));
+  if (!b) return;
+  b.disabled = !sel.length;
+  b.style.opacity = sel.length ? '' : '.5';
+  b.textContent = _t('Compile a dossier from') + ' ' + sel.length + ' ' + _t('selected');
+}
+
+/* ═══════════════ 3 · Sổ hồ sơ — the dossier register ════════════════════════════════════════ */
+
+function _accRegTab(pid) {
+  const rows = _pmScopeFor('pm_acc', pid), items = _pmScopeFor('pm_acc_items', pid);
+  const byDos = {};
+  items.forEach(i => { (byDos[i.dossierId] = byDos[i.dossierId] || []).push(i); });
+  const specs = [{ k: 'accType', label: _t('Type') }, { k: 'discipline', label: _t('Discipline') },
+                 { k: 'status', label: _t('Status') }];
+  const bar = _pmFiltBar('pm_acc', rows, specs);
+  const shown = _pmFiltApply('pm_acc', rows, specs).slice().sort(_pmDocNoCmp('refNo'));
+
+  const tbl = _pmCard(_t('Acceptance dossier register'), null, null,
+    bar + _pmTable('pm_acc', [
+      { label: _t('Ref. No.'), sk: 'refNo', nowrap: true,
+        render: r => '<a href="javascript:void(0)" onclick="accOpen(\'' + r.id + '\')" style="color:var(--navy);font-weight:700;font-size:11.5px;font-variant-numeric:tabular-nums">' +
+          _accE(r.refNo || _t('(no number)')) + '</a>' },
+      { label: _t('Type'), sk: 'accType', render: r => {
+        const t = _accType(r.accType);
+        return t ? '<span title="' + _tkEscA(t.law) + '" style="font-size:11.5px">' + _accE(_accLbl(t)) + '</span>' +
+          '<div style="font-size:10px;color:var(--text-light)">' + _accE(t.law) + '</div>' : _accE(r.accType || '—'); } },
+      { label: _t('Discipline'), sk: 'discipline', render: r => r.discipline ? _pmBadge(r.discipline, '#3168A8') : '—' },
+      { label: _t('Work'), sk: 'title', render: r => '<span style="font-weight:600">' + _accE(r.title || '') + '</span>' +
+          (r.location ? '<div style="font-size:10.5px;color:var(--text-light)">' + _accE(r.location) + '</div>' : '') },
+      { label: _t('Date'), sk: 'acceptDate', nowrap: true, render: r => _pmFmt(r.acceptDate) },
+      { label: _t('Checklist'), render: r => {
+        const p = _accProgress(byDos[r.id] || []);
+        if (!p.total) return '<span style="color:#F59E0B;font-size:11px">' + _t('no form') + '</span>';
+        const hex = p.fail ? '#DC2626' : (p.pending ? '#F59E0B' : '#00B060');
+        return '<div style="min-width:74px"><div style="font-size:11px;font-variant-numeric:tabular-nums;color:' + hex + ';font-weight:700">' +
+          p.pass + '/' + p.applicable + (p.na ? ' <span style="color:var(--text-light);font-weight:400">+' + p.na + ' N/A</span>' : '') + '</div>' +
+          '<div style="height:4px;border-radius:3px;background:var(--soft-bg);margin-top:3px;overflow:hidden">' +
+          '<div style="height:100%;width:' + p.pct + '%;background:' + hex + '"></div></div></div>'; } },
+      { label: _t('Result'), render: r => _accResBadge(_accResultOf(byDos[r.id] || [])) },
+      { label: _t('Status'), sk: 'status', render: r => _accStatusBadge(r.status) },
+      { label: _t('Signed sheet'), render: r => (r.minuteFile || r.minuteUrl || r.hasFile)
+          ? '<span style="color:var(--emerald);font-weight:700">✓</span>'
+          : '<span style="color:var(--text-light)">—</span>' },
+      { label: '', render: r => '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--navy);white-space:nowrap" onclick="accOpen(\'' + r.id + '\')">' + _t('Open') + ' →</button>' }
+    ], shown, { minw: 1080, noActions: true, empty: _t('No dossier has been compiled yet.') }),
+    '<button class="btn btn-primary btn-sm" onclick="accNewDossier()">' + _PLUS_SVG + ' ' + _t('New dossier') + '</button>' +
+    '<button class="btn btn-outline btn-sm" onclick="accExportRegister()">↓ ' + _t('Export register') + '</button>');
+  return tbl;
+}
+
+/* ═══════════════ 4 · Thư viện biểu mẫu — the checklist library ══════════════════════════════ */
+
+function _accFormsTab(pid) {
+  const mine = _pmScopeFor('pm_acc_forms', pid);
+  const seeded = (_accCat().forms || []);
+  const codes = new Set(mine.map(f => String(f.code || '').toUpperCase()));
+  /* The project's own form WINS over the seeded one of the same code. A contractor's real PP-EL-205
+     is written against their own ITP; the seeded library is a starting point, and showing both
+     would leave somebody choosing between two forms with the same number. */
+  const merged = mine.map(f => Object.assign({}, f, { _own: true }))
+    .concat(seeded.filter(f => !codes.has(String(f.code || '').toUpperCase()))
+                  .map(f => Object.assign({}, f, { _own: false })));
+
+  const byDisc = {};
+  merged.forEach(f => { (byDisc[f.disc || 'GEN'] = byDisc[f.disc || 'GEN'] || []).push(f); });
+  const discList = (_accCat().disciplines || []).filter(d => (byDisc[d.code] || []).length)
+    .map(d => '<div onclick="_accFormPick(\'' + d.code + '\')" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;cursor:pointer;background:' +
+      (_accFormDisc === d.code ? 'var(--light-tint)' : 'transparent') + '">' +
+      '<span style="font-size:12.5px;color:var(--text)"><span style="font-family:monospace;font-size:10px;color:var(--text-light);margin-right:6px">' + d.code + '</span>' + _accE(_accLbl(d)) + '</span>' +
+      '<span style="font-size:11px;color:var(--text-light);font-variant-numeric:tabular-nums">' + (byDisc[d.code] || []).length + '</span></div>').join('');
+
+  const cur = _accFormDisc || ((_accCat().disciplines || []).find(d => (byDisc[d.code] || []).length) || {}).code || 'GEN';
+  const list = (byDisc[cur] || []).slice().sort(_pmDocNoCmp('code')).map(f =>
+    '<div style="display:flex;gap:12px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--soft-bg)">' +
+    '<span style="flex:0 0 106px;font-family:monospace;font-size:11px;color:var(--navy);font-weight:700;font-variant-numeric:tabular-nums">' + _accE(f.code) + '</span>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:12.5px;font-weight:600;color:var(--text)">' + _accE(f.vi || '') + '</div>' +
+      (f.en ? '<div style="font-size:11px;color:var(--text-light);font-style:italic">' + _accE(f.en) + '</div>' : '') +
+      (f.standard ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">' + _accE(f.standard) + '</div>' : '') +
+    '</div>' +
+    '<span style="flex:0 0 auto;font-size:10.5px;color:var(--text-light);white-space:nowrap">' + ((f.items || []).length) + ' ' + _t('items') + '</span>' +
+    '<span style="flex:0 0 auto">' + (f._own
+      ? _pmBadge(_t('project'), '#00B060')
+      : _pmBadge(_t('standard'), '#94a3b8')) + '</span>' +
+    '<span style="flex:0 0 auto;white-space:nowrap">' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accFormPreview(\'' + _tkEscA(f.code) + '\')">' + _t('View') + '</button>' +
+      (f._own ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="accFormEdit(\'' + f.id + '\')">' + _t('Edit') + '</button>' +
+                '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:#C00000" onclick="accFormDelete(\'' + f.id + '\')">' + _t('Delete') + '</button>'
+              : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--navy)" onclick="accFormAdopt(\'' + _tkEscA(f.code) + '\')" title="' +
+                _tkEscA(_t('Copy it into this project so you can edit its lines')) + '">' + _t('Adopt') + '</button>') +
+    '</span></div>').join('') || '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:12px">' + _t('No form in this discipline yet.') + '</div>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div class="card-title">' + _t('Checklist library') + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button class="btn btn-outline btn-sm" onclick="accFormImport()">↑ ' + _t('Import forms') + '</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="accFormExport()">↓ ' + _t('Export') + '</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="accFormEdit()">' + _PLUS_SVG + ' ' + _t('New form') + '</button>' +
+      '</div></div>' +
+    '<div style="padding:10px 16px;font-size:11.5px;color:var(--text-light);line-height:1.65;border-bottom:1px solid var(--line)">' +
+      _accE(_t('The forms shipped with the portal are a STARTING SET, not a contractor\'s library. A real MEP library runs to a hundred-odd forms written against that contractor\'s ITP — import yours, or adopt a shipped one and edit its lines. A dossier takes a COPY of the form at the moment it is compiled, so editing a form here never changes a minute that has already been signed.')) +
+    '</div>' +
+    '<div style="display:flex;gap:0;flex-wrap:wrap;align-items:flex-start">' +
+      '<div style="flex:0 0 232px;min-width:200px;padding:10px;border-right:1px solid var(--line)">' + discList + '</div>' +
+      '<div style="flex:1;min-width:300px">' + list + '</div>' +
+    '</div></div>';
+}
+let _accFormDisc = '';
+function _accFormPick(c) { _accFormDisc = c; _accRepaint(); }
+
+/* ═══════════════ 5 · Numbering & parties ═══════════════════════════════════════════════════ */
+
+function _accSetupTab(pid) {
+  const s = (_HR.pm_settings || []).find(x => x.id === pid) || {};
+  const d = _accCat().defaults || {};
+  const tok = (_accCat().numberTokens || []).map(t =>
+    '<span style="display:inline-block;background:var(--soft-bg);border-radius:6px;padding:2px 7px;margin:0 5px 5px 0;font-size:11px">' +
+    '<code style="font-family:monospace;color:var(--navy);font-weight:700">' + _accE(t.token) + '</code> ' +
+    _accE(_accLbl(t)) + '</span>').join('');
+
+  const fld = (k, label, val, ph, help) =>
+    '<div style="margin-bottom:13px"><label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-dark);margin-bottom:4px">' + _accE(label) + '</label>' +
+    '<input id="acc-set-' + k + '" class="form-control" value="' + _tkEscA(val || '') + '" placeholder="' + _tkEscA(ph || '') + '" style="font-family:monospace;font-size:12.5px">' +
+    (help ? '<div style="font-size:11px;color:var(--text-light);margin-top:4px;line-height:1.55">' + _accE(help) + '</div>' : '') + '</div>';
+
+  const parties = (_accCat().parties || []).map(p =>
+    '<div style="padding:11px 0;border-bottom:1px solid var(--soft-bg)">' +
+    '<div style="font-size:12.5px;font-weight:700;color:var(--text)">' + _accE(_accLbl(p)) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-bottom:6px">' +
+      _accE((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? p.role_vi : p.role_en) + '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<input id="acc-party-' + p.key + '" class="form-control" style="flex:1;min-width:180px;font-size:12.5px" placeholder="' +
+        _tkEscA(_t('Organisation name as it appears on the minute')) + '" value="' +
+        _tkEscA((s.accParties || {})[p.key] || '') + '"></div></div>').join('');
+
+  return '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">' +
+    '<div class="card" style="flex:1;min-width:330px;padding:0;overflow:hidden">' +
+      '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Document numbering') + '</div></div>' +
+      '<div style="padding:14px 16px">' +
+        '<div style="font-size:11.5px;color:var(--text-light);line-height:1.65;margin-bottom:12px">' +
+          _accE(_t('Two series run independently: one number for every inspection CALLED — including the ones that fail and are called again — and one for every DOSSIER compiled. A dossier can bind several invitations; each keeps its own number on its own sheet.')) + '</div>' +
+        '<div style="margin-bottom:12px">' + tok + '</div>' +
+        fld('prefix', _t('Project code'), s.accPrefix || '', 'SLPXA-RIC-ME',
+            _t('The {PREFIX} token. Usually the project abbreviation and the package.')) +
+        fld('arf', _t('Invitation number (ARF)'), s.accArfTpl || d.arf, d.arf, '') +
+        fld('ref', _t('Dossier reference number'), s.accRefTpl || d.ref, d.ref, '') +
+        '<div style="font-size:11.5px;color:var(--text-light);background:var(--soft-bg);border-radius:8px;padding:9px 11px;line-height:1.6">' +
+          _t('Preview') + ' — <code style="font-family:monospace;color:var(--navy);font-weight:700">' +
+          _accE(_accRenderNo(s.accArfTpl || d.arf, { prefix: s.accPrefix || 'PRJ', disc: 'ELE', seq: 1 })) + '</code>' +
+          ' · <code style="font-family:monospace;color:var(--navy);font-weight:700">' +
+          _accE(_accRenderNo(s.accRefTpl || d.ref, { prefix: s.accPrefix || 'PRJ', disc: 'ELE', seq: 1 })) + '</code></div>' +
+      '</div></div>' +
+    '<div class="card" style="flex:1;min-width:330px;padding:0;overflow:hidden">' +
+      '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('The parties who sign') + '</div></div>' +
+      '<div style="padding:6px 16px 14px">' +
+        '<div style="font-size:11.5px;color:var(--text-light);line-height:1.65;padding:8px 0">' +
+          _accE(_t('Filled once and printed on every minute. Who signs for each party on a given inspection is named on the dossier itself — that is the check that catches a form issued with an empty signature block.')) + '</div>' +
+        parties +
+        '<button class="btn btn-primary btn-sm" style="margin-top:13px" onclick="accSaveSetup()">' + _t('Save') + '</button>' +
+      '</div></div></div>';
+}
+
+function _accRenderNo(tpl, o) {
+  let n = String(tpl || '');
+  const seq = String(o.seq == null ? 1 : o.seq);
+  const pad = seq.length >= 3 ? seq : ('000' + seq).slice(-3);
+  const yy = String(new Date().getFullYear()).slice(-2);
+  [['{PREFIX}', o.prefix], ['{DISC}', o.disc], ['{CODE}', o.code], ['{TYPE}', o.type],
+   ['{SEQ}', pad], ['{YY}', yy]].forEach(p => { n = n.split(p[0]).join(p[1] == null ? '' : String(p[1])); });
+  while (n.indexOf('--') >= 0) n = n.split('--').join('-');
+  return n.replace(/^-+|-+$/g, '');
+}
+/* The next number in a register, continuing from the HIGHEST already there — not the count. A
+   register holding 1, 2 and 7 goes on to 8, and deleting the last record must not hand its number
+   to the next one. Mirrors acceptance.next_seq, and it is the same reasoning _pmNextSeq gives. */
+function _accNextSeq(coll, field, pid) {
+  let top = 0;
+  _pmScopeFor(coll, pid).forEach(r => {
+    const m = String(r[field] || '').match(/(\d+)\s*$/);
+    if (m && +m[1] > top) top = +m[1];
+  });
+  return top + 1;
+}
+async function accSaveSetup() {
+  const pid = _pmPid(); if (!pid) return;
+  const g = k => (document.getElementById('acc-set-' + k) || {}).value || '';
+  const parties = {};
+  (_accCat().parties || []).forEach(p => {
+    parties[p.key] = ((document.getElementById('acc-party-' + p.key) || {}).value || '').trim();
+  });
+  const cur = (_HR.pm_settings || []).find(x => x.id === pid) || { id: pid };
+  /* pm_settings is a whole-document PATCH, so the existing row is spread first — sending only the
+     acceptance keys would erase every other setting on the project. */
+  const body = Object.assign({}, cur, { id: pid, projectId: pid,
+    accPrefix: g('prefix').trim(), accArfTpl: g('arf').trim(), accRefTpl: g('ref').trim(),
+    accParties: parties });
+  try {
+    await tkApi('/api/coll/pm_settings/' + encodeURIComponent(pid), { method: 'PATCH', body: body });
+  } catch (e) {
+    try { await tkApi('/api/coll/pm_settings', { method: 'POST', body: body }); }
+    catch (e2) { toast(_errMsg(e2), 'error'); return; }
+  }
+  await _accReload(['pm_settings']);
+  toast(_t('Saved'), 'success');
+  _accRepaint();
+}
+
+/* ═══════════════ 6 · Lập hồ sơ — compiling a dossier ═══════════════════════════════════════ */
+
+/* The compile step is a SERVER act (/api/pm/acceptance/compose). It snapshots the checklist onto
+   the dossier, and a snapshot taken in the browser could be talked into copying something else.
+   The browser's job is to ask which form, and to fill in the number. */
+async function accNewDossier(preset) {
+  const pid = _pmPid(); if (!pid) return;
+  const s = (_HR.pm_settings || []).find(x => x.id === pid) || {};
+  const d = _accCat().defaults || {};
+  const types = (_accCat().types || []).map(t =>
+    '<option value="' + _tkEscA(t.key) + '">' + _accE(_accLbl(t)) + ' — ' + _accE(t.law) + '</option>').join('');
+  const discs = (_accCat().disciplines || []).map(x =>
+    '<option value="' + x.code + '">' + x.code + ' — ' + _accE(_accLbl(x)) + '</option>').join('');
+
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open'; ov.id = 'accNewOverlay';
+  ov.style.display = 'flex'; ov.style.zIndex = '2000';
+  ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="width:640px;max-width:95vw">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Compile an acceptance dossier') + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'accNewOverlay\').remove()">✕</button></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' +
+      _accE(_t('Fill this once. It produces the invitation, the minute and the inspection record as one A4 set.')) + '</div>' +
+    '<div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">' +
+      '<div style="grid-column:1/-1"><label class="form-label">' + _t('Kind of acceptance') + '</label>' +
+        '<select id="acc-n-type" class="form-control" onchange="_accNewTypeChanged()">' + types + '</select>' +
+        '<div id="acc-n-lawnote" style="font-size:11px;color:var(--text-light);margin-top:5px;line-height:1.55"></div></div>' +
+      '<div><label class="form-label">' + _t('Discipline') + '</label>' +
+        '<select id="acc-n-disc" class="form-control" onchange="_accNewFormList()">' + discs + '</select></div>' +
+      '<div><label class="form-label">' + _t('Checklist form') + '</label>' +
+        '<select id="acc-n-form" class="form-control"></select></div>' +
+      '<div><label class="form-label">' + _t('Dossier reference No.') + '</label>' +
+        '<input id="acc-n-ref" class="form-control" style="font-family:monospace"></div>' +
+      '<div><label class="form-label">' + _t('Acceptance date') + '</label>' +
+        '<input id="acc-n-date" type="date" class="form-control" value="' + _pmToday() + '"></div>' +
+      '<div><label class="form-label">' + _t('Start time') + '</label>' +
+        '<input id="acc-n-from" class="form-control" placeholder="9h00"></div>' +
+      '<div><label class="form-label">' + _t('End time') + '</label>' +
+        '<input id="acc-n-to" class="form-control" placeholder="9h30"></div>' +
+      '<div style="grid-column:1/-1"><label class="form-label">' + _t('Location') + '</label>' +
+        '<input id="acc-n-loc" class="form-control" placeholder="' + _tkEscA(_t('Tầng 1 - Xưởng A3 / 1st Floor - A3 Warehouse')) + '"></div>' +
+    '</div>' +
+    '<div class="modal-footer" style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'accNewOverlay\').remove()">' + _t('Cancel') + '</button>' +
+      '<button class="btn btn-primary" id="acc-n-go" onclick="_accNewGo()">' + _t('Compile') + '</button></div></div>';
+  document.body.appendChild(ov);
+  if (preset && preset.discipline) { const e = document.getElementById('acc-n-disc'); if (e) e.value = preset.discipline; }
+  /* The kind of acceptance is the single most consequential field on this form — it decides which
+     article the minute cites, who has to sign it and what must already be accepted underneath it.
+     So it does NOT default to whatever happens to be first in the catalogue. It defaults to
+     Điều 21, the acceptance of construction work, which is what the overwhelming majority of
+     dossiers on any project are; the exception is an incoming-materials inspection, which the OSM
+     discipline already identifies. Getting this wrong silently is worse than any other field on
+     the form, because the register would then read as a chain that was never actually walked. */
+  {
+    const e = document.getElementById('acc-n-type');
+    const disc = (preset && preset.discipline) || (document.getElementById('acc-n-disc') || {}).value || '';
+    const want = (preset && preset.accType) || (String(disc).toUpperCase() === 'OSM' ? 'material' : 'work');
+    if (e && [...e.options].some(o => o.value === want)) e.value = want;
+  }
+  _accNewFormList();
+  _accNewTypeChanged();
+  const ref = document.getElementById('acc-n-ref');
+  if (ref) ref.value = _accRenderNo(s.accRefTpl || d.ref,
+    { prefix: s.accPrefix || _pmPrefix3(pid), disc: (document.getElementById('acc-n-disc') || {}).value || 'GEN',
+      seq: _accNextSeq('pm_acc', 'refNo', pid) });
+  if (preset && preset.planIds) ov.setAttribute('data-plans', preset.planIds.join(','));
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(ov); } catch (e) { }
+}
+function _accNewTypeChanged() {
+  const t = _accType((document.getElementById('acc-n-type') || {}).value);
+  const n = document.getElementById('acc-n-lawnote'); if (!n) return;
+  if (!t) { n.innerHTML = ''; return; }
+  const proves = (typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? t.proves_vi : t.proves_en;
+  const needs = (t.requires || []).map(r => _accLbl(_accType(r) || {})).join(', ');
+  n.innerHTML = _accE(proves) +
+    (needs ? '<div style="margin-top:4px;color:#B45309"><b>' + _t('Cannot be signed until accepted:') + '</b> ' + _accE(needs) + '</div>' : '');
+}
+function _accNewFormList() {
+  const disc = (document.getElementById('acc-n-disc') || {}).value || '';
+  const sel = document.getElementById('acc-n-form'); if (!sel) return;
+  const pid = _pmPid();
+  const mine = _pmScopeFor('pm_acc_forms', pid).filter(f => !disc || f.disc === disc);
+  const codes = new Set(mine.map(f => String(f.code || '').toUpperCase()));
+  const seeded = (_accCat().forms || []).filter(f => (!disc || f.disc === disc) && !codes.has(String(f.code || '').toUpperCase()));
+  const all = mine.concat(seeded).sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+  sel.innerHTML = '<option value="">' + _accE(_t('(no checklist — type the lines yourself)')) + '</option>' +
+    all.map(f => '<option value="' + _tkEscA(f.code) + '">' + _accE(f.code) + ' · ' + _accE(f.vi || f.en || '') +
+      ' (' + ((f.items || []).length) + ')</option>').join('');
+}
+async function _accNewGo() {
+  if (_accBusy) return;
+  const pid = _pmPid(); if (!pid) return;
+  const g = k => ((document.getElementById('acc-n-' + k) || {}).value || '').trim();
+  const ov = document.getElementById('accNewOverlay');
+  const plans = ((ov && ov.getAttribute('data-plans')) || '').split(',').filter(Boolean);
+  const btn = document.getElementById('acc-n-go');
+  _accBusy = true; if (btn) { btn.disabled = true; btn.textContent = _t('Compiling…'); }
+  try {
+    const r = await tkApi('/api/pm/acceptance/compose', { method: 'POST', body: {
+      projectId: pid, accType: g('type'), discipline: g('disc'), formCode: g('form'),
+      refNo: g('ref'), acceptDate: g('date'), timeFrom: g('from'), timeTo: g('to'),
+      location: g('loc'), planIds: plans
+    } });
+    if (ov) ov.remove();
+    await _accReload();
+    toast(_t('Dossier compiled') + ' — ' + (r.items || 0) + ' ' + _t('checklist lines'), 'success');
+    accOpen(r.dossier.id);
+  } catch (e) {
+    toast(_errMsg(e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = _t('Compile'); }
+  } finally { _accBusy = false; }
+}
+function accComposeFromPlan() {
+  const ids = _accSelectedPlans();
+  if (!ids.length) { toast(_t('Tick the inspections to compile first.'), 'warn'); return; }
+  const rows = ids.map(i => (_HR.pm_acc_plans || []).find(r => r.id === i)).filter(Boolean);
+  const first = rows[0] || {};
+  accNewDossier({ discipline: first.discipline, planIds: ids });
+  setTimeout(() => {
+    const f = document.getElementById('acc-n-form');
+    if (f && first.formCode) { f.value = first.formCode; }
+    const l = document.getElementById('acc-n-loc'); if (l && first.location) l.value = first.location;
+    const d = document.getElementById('acc-n-date'); if (d && first.acceptDate) d.value = first.acceptDate;
+    const a = document.getElementById('acc-n-from'); if (a && first.timeFrom) a.value = first.timeFrom;
+    const b = document.getElementById('acc-n-to'); if (b && first.timeTo) b.value = first.timeTo;
+  }, 0);
+}
+
+/* ═══════════════ 7 · The dossier workspace ═════════════════════════════════════════════════ */
+
+async function accOpen(id) {
+  _accOpenId = id;
+  const body = document.getElementById('acc-body');
+  const bar = document.getElementById('acc-subbar');
+  if (bar) bar.innerHTML = _accTabRow();
+  if (body) body.innerHTML = tkSkeleton();
+  try {
+    _accView = await tkApi('/api/pm/acceptance/dossier?id=' + encodeURIComponent(id));
+  } catch (e) {
+    if (body) body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">' + _accE(_errMsg(e)) +
+      '</div><button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="accBackToRegister()">← ' + _t('Back') + '</button>';
+    return;
+  }
+  _accPaintDetail();
+}
+function accBackToRegister() { _accOpenId = ''; _accView = null; _accTabK = 'reg'; _accRepaint();
+  const bar = document.getElementById('acc-subbar'); if (bar) bar.innerHTML = _accTabRow(); }
+
+function _accPaintDetail() {
+  const body = document.getElementById('acc-body'); if (!body || !_accView) return;
+  const v = _accView, d = v.dossier || {};
+  try {
+    body.innerHTML = _accHeaderCard(v) + _accReadyCard(v) + _accFormCard(v) +
+      _accChecklistCard(v) + _accBasisCard(v) + _accClearanceCard(v) + _accDefectCard(v) +
+      _accSignCard(v);
+  } catch (e) {
+    body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error: ' + _accE(e.message) + '</div>';
+  }
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(body); } catch (e) { }
+}
+function _accFrozen(d) { return d.status === 'Accepted' || d.status === 'Rejected'; }
+
+function _accHeaderCard(v) {
+  const d = v.dossier || {}, t = _accType(d.accType) || {};
+  const disc = _accDisc(d.discipline) || {};
+  const p = v.progress || {};
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div style="padding:14px 16px;background:var(--light-tint);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
+      '<button class="btn btn-ghost btn-sm" onclick="accBackToRegister()" style="flex:0 0 auto">←</button>' +
+      '<div style="flex:1;min-width:220px">' +
+        '<div style="font-family:monospace;font-size:15px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+          _accE(d.refNo || _t('(no number)')) + '</div>' +
+        '<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:3px">' + _accE(d.title || '') + '</div>' +
+        (d.titleEn ? '<div style="font-size:11.5px;color:var(--text-light);font-style:italic">' + _accE(d.titleEn) + '</div>' : '') +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:5px;line-height:1.55">' +
+          _accE(_accLbl(t)) + ' · <b>' + _accE(t.law || '') + '</b><br>' + _accE(t.pmbok || '') + '</div>' +
+      '</div>' +
+      '<div style="flex:0 0 auto;text-align:right">' +
+        _accStatusBadge(d.status) + ' ' + _accResBadge(v.result) +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+          (disc.code ? _accE(disc.code + ' · ' + _accLbl(disc)) : '') + '</div>' +
+        (p.total ? '<div style="font-size:11px;color:var(--text-light);margin-top:2px;font-variant-numeric:tabular-nums">' +
+          p.pass + '/' + p.applicable + ' ' + _t('passed') + '</div>' : '') +
+      '</div>' +
+      '<div style="flex:0 0 100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
+        '<button class="btn btn-primary btn-sm" onclick="accPrint()">🖨 ' + _t('Print / Save the A4 set') + '</button>' +
+        (_accFrozen(d) ? '' : '<button class="btn btn-outline btn-sm" onclick="accSaveHeader()">' + _t('Save changes') + '</button>') +
+        '<button class="btn btn-outline btn-sm" onclick="accExportDossier()">↓ ' + _t('Export') + '</button>' +
+      '</div>' +
+    '</div>' +
+    (_accFrozen(d)
+      ? '<div style="padding:9px 16px;background:#FEF3C7;font-size:11.5px;color:#92400E;line-height:1.6">🔒 ' +
+        _accE(_t('This minute has been signed. What it says about the inspection can no longer be edited — that is what makes it evidence. A late scan, a transmittal reference and closing an outstanding defect are still allowed.')) + '</div>'
+      : '') +
+    '</div>';
+}
+
+/* The readiness panel. This is the most important element on the screen: every reason comes from
+   the SERVER, computed by the same function that refuses the signature. A screen that made its own
+   judgement would eventually disagree with the gate, and the one people believe is the green one. */
+function _accReadyCard(v) {
+  const w = v.readiness || [];
+  const blocks = w.filter(x => x.blocks), warns = w.filter(x => !x.blocks);
+  const line = (x, hex) => '<div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0">' +
+    '<span style="flex:0 0 auto;margin-top:5px;width:7px;height:7px;border-radius:50%;background:' + hex + '"></span>' +
+    '<span style="flex:1;font-size:12.5px;color:var(--text);line-height:1.55">' +
+      _accE((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? x.vi : x.en) + '</span></div>';
+  if (!blocks.length && !warns.length) {
+    return '<div class="card" style="padding:13px 16px;margin-bottom:14px;border-left:3px solid var(--emerald)">' +
+      '<div style="font-size:12.5px;color:var(--text)"><b style="color:var(--emerald)">' + _t('Ready to be accepted') + '</b> — ' +
+      _accE(_t('every checklist line has a result, nothing outstanding blocks a handover, the chain beneath it is accepted and every signature block is named.')) + '</div></div>';
+  }
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;border-left:3px solid ' +
+    (blocks.length ? '#DC2626' : '#F59E0B') + '">' +
+    '<div class="card-hdr" style="padding:11px 16px"><div class="card-title">' +
+      (blocks.length ? _t('Not ready to be accepted') : _t('Ready, with notes')) + '</div></div>' +
+    '<div style="padding:4px 16px 12px">' +
+      blocks.map(x => line(x, '#DC2626')).join('') +
+      warns.map(x => line(x, '#F59E0B')).join('') +
+    '</div></div>';
+}
+
+/* The dossier's own particulars — Điều 21(3) requires the minute to say what work, where, when and
+   against what. Editable in place while the dossier is open; the whole card goes read-only once it
+   is signed, which is why every input carries the same `disabled` flag. */
+function _accFormCard(v) {
+  const d = v.dossier || {}, ro = _accFrozen(d);
+  const inp = (k, label, val, opts) => {
+    opts = opts || {};
+    const tag = opts.area
+      ? '<textarea id="acc-f-' + k + '" class="form-control" rows="2"' + (ro ? ' disabled' : '') + '>' + _accE(val || '') + '</textarea>'
+      : '<input id="acc-f-' + k + '" ' + (opts.type ? 'type="' + opts.type + '" ' : '') + 'class="form-control"' +
+        (ro ? ' disabled' : '') + ' value="' + _tkEscA(val || '') + '"' +
+        (opts.ph ? ' placeholder="' + _tkEscA(opts.ph) + '"' : '') +
+        (opts.list ? ' list="' + opts.list + '"' : '') + '>';
+    return '<div style="' + (opts.wide ? 'grid-column:1/-1;' : '') + '">' +
+      '<label class="form-label" style="font-size:11.5px">' + _accE(label) + '</label>' + tag + '</div>';
+  };
+  const stds = (_accCat().standards || []).filter(s =>
+    !d.discipline || s.disc.indexOf(String(d.discipline).toUpperCase()) >= 0 || s.disc.indexOf('GEN') >= 0);
+  const datalist = '<datalist id="acc-std-list">' + stds.map(s =>
+    '<option value="' + _tkEscA(s.code + (String(s.edition || '').charAt(0) >= '0' && String(s.edition || '').charAt(0) <= '9' ? ':' : ' ') + (s.edition || '')) +
+    '">' + _accE(s.vi) + '</option>').join('') + '</datalist>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('What was inspected') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _t('Nghị định 06/2021, Điều 21 khoản 3') + '</span></div>' +
+    '<div style="padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:11px">' +
+      inp('title', _t('Work (Vietnamese)'), d.title, { area: true, wide: true }) +
+      inp('titleEn', _t('Work (English)'), d.titleEn, { area: true, wide: true }) +
+      inp('acceptDate', _t('Acceptance date'), d.acceptDate, { type: 'date' }) +
+      inp('timeFrom', _t('Start time'), d.timeFrom, { ph: '9h00' }) +
+      inp('timeTo', _t('End time'), d.timeTo, { ph: '9h30' }) +
+      inp('location', _t('Location'), d.location) +
+      inp('axis', _t('Axis / zone'), d.axis, { ph: 'Trục A-D / 1-6' }) +
+      inp('component', _t2('Component', 'Tên cấu kiện'), d.component, { ph: _t('Cable tray & trunking') }) +
+      inp('standardRef', _t('Standard applied'), d.standardRef, { list: 'acc-std-list' }) +
+      inp('jobDescription', _t('Job description'), d.jobDescription, { area: true, wide: true }) +
+      inp('transmittalRef', _t('Transmittal reference'), d.transmittalRef) +
+      '<div style="grid-column:1/-1">' + _accMinuteBox(d, ro) + '</div>' +
+    datalist + '</div></div>';
+}
+function _accMinuteBox(d, ro) {
+  const has = d.minuteFile || d.minuteUrl || d.hasFile;
+  return '<label class="form-label" style="font-size:11.5px">' + _t('Scan of the signed minute') + '</label>' +
+    '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">' +
+    (has ? '<a href="javascript:void(0)" onclick="_accOpenMinute()" style="color:var(--navy);font-weight:600;font-size:12.5px">📎 ' +
+        _accE(d.minuteName || _t('View the signed sheet')) + '</a>'
+         : '<span style="font-size:12px;color:#B45309">' + _t('Not attached yet') + '</span>') +
+    '<input type="file" id="acc-f-minute" accept="image/*,application/pdf" onchange="accAttachMinute()"' +
+      (ro ? '' : '') + ' style="font-size:12px">' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:5px;line-height:1.55">' +
+    _accE(_t('The three signature blocks are signed in ink on the printed sheet — that sheet is the legal artefact. Attach the scan here; an acceptance cannot be signed off in the portal without it.')) + '</div>';
+}
+
+/* ═══════════════ 8 · The checklist ═════════════════════════════════════════════════════════ */
+
+function _accChecklistCard(v) {
+  const d = v.dossier || {}, ro = _accFrozen(d), rows = v.items || [];
+  const p = v.progress || {};
+  const btn = (r, key, label, hex) => {
+    const on = _accRes(r.result) === key;
+    return '<button ' + (ro ? 'disabled ' : '') + 'onclick="accSetResult(\'' + r.id + '\',\'' + key + '\')" ' +
+      'style="border:1px solid ' + (on ? hex : 'var(--line)') + ';background:' + (on ? hex : 'transparent') +
+      ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-size:10.5px;font-weight:700;padding:3px 8px;' +
+      'border-radius:6px;cursor:' + (ro ? 'default' : 'pointer') + ';white-space:nowrap;opacity:' + (ro && !on ? '.4' : '1') + '">' +
+      _accE(label) + '</button>';
+  };
+  const body = rows.length ? rows.map((r, i) =>
+    '<tr>' +
+    '<td style="width:34px;text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums;font-size:11px;vertical-align:top;padding-top:11px">' + (i + 1) + '</td>' +
+    '<td style="vertical-align:top">' +
+      '<div style="font-size:12.5px;color:var(--text);line-height:1.5">' + _accE(r.textVi || '') + '</div>' +
+      (r.textEn ? '<div style="font-size:11px;color:var(--text-light);font-style:italic;line-height:1.45">' + _accE(r.textEn) + '</div>' : '') +
+    '</td>' +
+    '<td style="width:150px;font-size:11px;color:var(--text-light);vertical-align:top">' + _accE(r.method || '') + '</td>' +
+    '<td style="width:150px;font-size:11px;color:var(--text-light);vertical-align:top">' + _accE(r.criteria || '') + '</td>' +
+    '<td style="width:186px;white-space:nowrap;vertical-align:top">' +
+      btn(r, 'pass', _t('Pass'), '#00B060') + ' ' + btn(r, 'fail', _t('Fail'), '#DC2626') + ' ' + btn(r, 'na', 'N/A', '#94a3b8') +
+    '</td>' +
+    '<td style="width:180px;vertical-align:top">' +
+      '<input class="form-control" style="font-size:11.5px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+        ' value="' + _tkEscA(r.note || '') + '" placeholder="' + _tkEscA(_t('note')) + '"' +
+        ' onchange="accSetNote(\'' + r.id + '\',this.value)"></td>' +
+    (ro ? '' : '<td style="width:1%;white-space:nowrap;vertical-align:top">' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="accDelLine(\'' + r.id + '\')">✕</button></td>') +
+    '</tr>').join('')
+    : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:18px;font-size:12.5px">' +
+      _accE(_t('No checklist on this dossier. Attach a form from the library, or add the lines by hand.')) + '</td></tr>';
+
+  const quick = ro ? '' :
+    '<div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:7px;flex-wrap:wrap;align-items:center">' +
+    '<input id="acc-newline" class="form-control" style="flex:1;min-width:220px;font-size:12.5px" placeholder="' +
+      _tkEscA(_t('Add a checklist line — Vietnamese | English')) + '" onkeydown="if(event.key===\'Enter\'){event.preventDefault();accAddLine();}">' +
+    '<button class="btn btn-outline btn-sm" onclick="accAddLine()">' + _PLUS_SVG + ' ' + _t('Add line') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="accAttachForm()">' + _t('Attach a form from the library') + '</button>' +
+    (rows.length ? '<button class="btn btn-ghost btn-sm" style="color:var(--emerald)" onclick="accPassRest()">' +
+      _t('Mark every unchecked line Pass') + '</button>' : '') +
+    '</div>';
+
+  const hdr = p.total
+    ? '<span style="font-size:11.5px;color:var(--text-light);font-variant-numeric:tabular-nums">' +
+      p.pass + ' ' + _t('pass') + ' · ' + p.fail + ' ' + _t('fail') + ' · ' + p.na + ' N/A · ' + p.pending + ' ' + _t('unchecked') + '</span>'
+    : '';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div class="card-title">' + _t('Inspection checklist') +
+        (d.formCode ? ' <span style="font-family:monospace;font-size:11px;color:var(--text-light);font-weight:400">' + _accE(d.formCode) + '</span>' : '') +
+      '</div>' + hdr + '</div>' +
+    '<div class="table-wrap"><table style="min-width:900px"><thead><tr>' +
+      '<th style="width:34px"></th><th>' + _t('What is checked') + '</th><th>' + _t2('Method', 'Phương pháp') + '</th>' +
+      '<th>' + _t('Criterion') + '</th><th>' + _t('Result') + '</th><th>' + _t('Note') + '</th>' + (ro ? '' : '<th></th>') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>' + quick + '</div>';
+}
+
+async function accSetResult(itemId, key) {
+  const row = (_accView.items || []).find(r => r.id === itemId); if (!row) return;
+  const cur = _accRes(row.result);
+  const map = { pass: 'Đạt', fail: 'Không đạt', na: 'N/A' };
+  /* Clicking the button that is already on clears it back to unchecked. Without that, a line ticked
+     Pass by mistake could only be corrected to Fail or N/A — and "unchecked" is a real state the
+     gate refuses on, so it has to be reachable. */
+  const want = (cur === key) ? '' : map[key];
+  await _accPatchItem(row, { result: want });
+}
+async function accSetNote(itemId, val) {
+  const row = (_accView.items || []).find(r => r.id === itemId); if (!row) return;
+  await _accPatchItem(row, { note: String(val || '').slice(0, 400) }, true);
+}
+async function _accPatchItem(row, changes, quiet) {
+  try {
+    await tkApi('/api/coll/pm_acc_items/' + encodeURIComponent(row.id), { method: 'PATCH', body: Object.assign({}, row, changes) });
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  Object.assign(row, changes);
+  if (!quiet) { await accOpen(_accOpenId); }   // the readiness verdict moves with every result
+}
+async function accAddLine() {
+  const el = document.getElementById('acc-newline'); if (!el) return;
+  const raw = (el.value || '').trim(); if (!raw) return;
+  const parts = raw.split('|');
+  try {
+    await tkApi('/api/coll/pm_acc_items', { method: 'POST', body: {
+      projectId: _pmPid(), dossierId: _accOpenId,
+      seq: (_accView.items || []).length + 1,
+      textVi: (parts[0] || '').trim(), textEn: (parts[1] || '').trim(),
+      method: (parts[2] || '').trim(), criteria: (parts[3] || '').trim(), result: '', note: ''
+    } });
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  el.value = '';
+  await accOpen(_accOpenId);
+}
+async function accDelLine(id) {
+  if (!await tkConfirm(_t('Remove this checklist line?'))) return;
+  try { await tkApi('/api/coll/pm_acc_items/' + encodeURIComponent(id), { method: 'DELETE' }); }
+  catch (e) { toast(_errMsg(e), 'error'); return; }
+  await accOpen(_accOpenId);
+}
+/* Deliberately marks only the UNCHECKED lines, and never touches a Fail. A "tick everything" button
+   that overwrote a recorded failure would be a one-click way to turn a failed inspection into a
+   passed one, which is the exact thing this module exists to make impossible. */
+async function accPassRest() {
+  const pend = (_accView.items || []).filter(r => _accRes(r.result) === 'pending');
+  if (!pend.length) { toast(_t('Every line already has a result.'), 'success'); return; }
+  if (!await tkConfirm(_t('Mark') + ' ' + pend.length + ' ' + _t('unchecked line(s) as Pass? Lines already marked Fail are not touched.'))) return;
+  for (const r of pend) {
+    try { await tkApi('/api/coll/pm_acc_items/' + encodeURIComponent(r.id), { method: 'PATCH', body: Object.assign({}, r, { result: 'Đạt' }) }); }
+    catch (e) { toast(_errMsg(e), 'error'); break; }
+  }
+  await accOpen(_accOpenId);
+}
+async function accAttachForm() {
+  const pid = _pmPid();
+  const mine = _pmScopeFor('pm_acc_forms', pid);
+  const codes = new Set(mine.map(f => String(f.code || '').toUpperCase()));
+  const all = mine.concat((_accCat().forms || []).filter(f => !codes.has(String(f.code || '').toUpperCase())));
+  const code = await _accPickForm(all);
+  if (!code) return;
+  const f = all.find(x => String(x.code).toUpperCase() === String(code).toUpperCase()); if (!f) return;
+  const base = (_accView.items || []).length;
+  for (let i = 0; i < (f.items || []).length; i++) {
+    const it = f.items[i];
+    try {
+      await tkApi('/api/coll/pm_acc_items', { method: 'POST', body: {
+        projectId: pid, dossierId: _accOpenId, seq: base + i + 1,
+        textVi: it.vi || '', textEn: it.en || '', method: it.method || '',
+        criteria: it.criteria || '', result: '', note: ''
+      } });
+    } catch (e) { toast(_errMsg(e), 'error'); break; }
+  }
+  try {
+    await tkApi('/api/coll/pm_acc/' + encodeURIComponent(_accOpenId), { method: 'PATCH', body: Object.assign({}, _accView.dossier, { formCode: f.code, formTitleVi: f.vi || '', formTitleEn: f.en || '' }) });
+  } catch (e) { }
+  await _accReload(['pm_acc', 'pm_acc_items']);
+  await accOpen(_accOpenId);
+}
+function _accPickForm(all) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2100';
+    const opts = all.slice().sort((a, b) => String(a.code).localeCompare(String(b.code))).map(f =>
+      '<option value="' + _tkEscA(f.code) + '">' + _accE(f.code) + ' · ' + _accE(f.vi || f.en || '') +
+      ' (' + ((f.items || []).length) + ')</option>').join('');
+    ov.innerHTML = '<div class="modal" style="width:520px;max-width:94vw">' +
+      '<div class="modal-title" style="margin-bottom:10px">' + _t('Attach a checklist form') + '</div>' +
+      '<select id="acc-pickform" class="form-control" size="12" style="width:100%">' + opts + '</select>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:8px;line-height:1.55">' +
+      _accE(_t('Its lines are COPIED onto this dossier. Editing the library afterwards never changes what this minute says.')) + '</div>' +
+      '<div class="modal-footer" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button class="btn btn-ghost" id="acc-pf-x">' + _t('Cancel') + '</button>' +
+      '<button class="btn btn-primary" id="acc-pf-ok">' + _t('Attach') + '</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#acc-pf-x').onclick = () => { ov.remove(); resolve(null); };
+    ov.querySelector('#acc-pf-ok').onclick = () => {
+      const v = (ov.querySelector('#acc-pickform') || {}).value || ''; ov.remove(); resolve(v);
+    };
+  });
+}
+
+/* ═══════════════ 9 · Basis documents, clearances, punch list ═══════════════════════════════ */
+
+function _accBasisCard(v) {
+  const d = v.dossier || {}, ro = _accFrozen(d);
+  const rows = (_accCat().basis || []).map(b => {
+    const cur = ((d.basis || []).find(x => x.key === b.key)) || {};
+    return '<tr>' +
+      '<td style="width:190px;font-size:12px"><b>' + _accE(b.vi) + '</b><div style="font-size:10.5px;color:var(--text-light);font-style:italic">' + _accE(b.en) + '</div></td>' +
+      '<td><input class="form-control" style="font-size:12px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+        ' id="acc-b-no-' + b.key + '" value="' + _tkEscA(cur.docNo || '') + '" placeholder="' + _tkEscA(_t('Number')) + '"></td>' +
+      '<td><input class="form-control" style="font-size:12px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+        ' id="acc-b-t-' + b.key + '" value="' + _tkEscA(cur.title || '') + '" placeholder="' + _tkEscA(b.hint_vi) + '"></td>' +
+      '<td style="width:150px"><input type="date" class="form-control" style="font-size:12px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+        ' id="acc-b-d-' + b.key + '" value="' + _tkEscA(cur.date || '') + '"></td></tr>';
+  }).join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Basis documents') + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + _t('printed on the inspection record') + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:760px"><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function _accClearanceCard(v) {
+  const d = v.dossier || {}, t = _accType(d.accType) || {};
+  if (!t.clearances) return '';
+  const ro = _accFrozen(d);
+  const rows = (_accCat().clearances || []).map(c => {
+    const cur = ((d.clearances || []).find(x => x.key === c.key)) || { applies: c.applies };
+    const on = !!cur.applies;
+    return '<div style="padding:11px 0;border-bottom:1px solid var(--soft-bg)">' +
+      '<div style="display:flex;gap:9px;align-items:flex-start">' +
+        '<input type="checkbox" id="acc-c-on-' + c.key + '"' + (on ? ' checked' : '') + (ro ? ' disabled' : '') +
+          ' style="margin-top:3px" onchange="_accClearToggle(\'' + c.key + '\')">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:12.5px;font-weight:600;color:var(--text)">' + _accE(c.vi) + '</div>' +
+          '<div style="font-size:11px;color:var(--text-light);font-style:italic">' + _accE(c.en) + '</div>' +
+          '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">' + _accE(c.note_vi) + '</div>' +
+          '<div id="acc-c-box-' + c.key + '" style="display:' + (on ? 'flex' : 'none') + ';gap:7px;margin-top:7px;flex-wrap:wrap">' +
+            '<input class="form-control" style="flex:1;min-width:180px;font-size:12px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+              ' id="acc-c-ref-' + c.key + '" value="' + _tkEscA(cur.ref || '') + '" placeholder="' + _tkEscA(_t('Document number')) + '">' +
+            '<input type="date" class="form-control" style="width:150px;font-size:12px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+              ' id="acc-c-date-' + c.key + '" value="' + _tkEscA(cur.date || '') + '"></div>' +
+          '<div id="acc-c-why-' + c.key + '" style="display:' + (!on && c.applies ? 'block' : 'none') + ';margin-top:7px">' +
+            '<input class="form-control" style="font-size:12px;padding:5px 7px"' + (ro ? ' disabled' : '') +
+              ' id="acc-c-reason-' + c.key + '" value="' + _tkEscA(cur.reason || '') + '" placeholder="' +
+              _tkEscA(_t('Why it does not apply to this works')) + '"></div>' +
+        '</div></div></div>';
+  }).join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('External clearances') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _t('Nghị định 06/2021, Điều 24 khoản 2') + '</span></div>' +
+    '<div style="padding:4px 16px 12px">' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.65;padding:8px 0">' +
+      _accE(_t('Which clearances a works attracts is a project fact, not a rule the app can decide. Switch off the ones that do not apply — but a clearance that is on by default is on because it applies to most works, so switching it off has to say why.')) + '</div>' +
+      rows + '</div></div>';
+}
+function _accClearToggle(key) {
+  const on = (document.getElementById('acc-c-on-' + key) || {}).checked;
+  const box = document.getElementById('acc-c-box-' + key), why = document.getElementById('acc-c-why-' + key);
+  const meta = (_accCat().clearances || []).find(c => c.key === key) || {};
+  if (box) box.style.display = on ? 'flex' : 'none';
+  if (why) why.style.display = (!on && meta.applies) ? 'block' : 'none';
+}
+
+function _accDefectCard(v) {
+  const d = v.dossier || {}, rows = v.defects || [];
+  const impacts = _accCat().defectImpacts || [];
+  const meta = k => impacts.find(i => i.key === k) || {};
+  const body = rows.length ? rows.map((r, i) => {
+    const m = meta(r.impact);
+    const open = String(r.status || 'Open').toLowerCase() !== 'closed';
+    return '<tr>' +
+      '<td style="width:34px;text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums;font-size:11px">' + (i + 1) + '</td>' +
+      '<td style="font-size:12.5px">' + _accE(r.description || '') + '</td>' +
+      '<td style="width:220px">' + (m.key
+        ? _pmBadge(_accLbl(m), m.blocks ? '#DC2626' : '#94a3b8')
+        : '<span style="color:#F59E0B;font-size:11px">' + _t('impact not stated') + '</span>') + '</td>' +
+      '<td style="width:130px;font-size:11.5px">' + _accE(r.responsible || '—') + '</td>' +
+      '<td style="width:110px;font-size:11.5px">' + _pmFmt(r.due) + '</td>' +
+      '<td style="width:100px">' + _pmBadge(open ? _t('Open') : _t('Closed'), open ? '#F59E0B' : '#00B060') + '</td>' +
+      '<td style="width:1%;white-space:nowrap">' +
+        (open ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald)" onclick="accCloseDefect(\'' + r.id + '\')">✓ ' + _t('Close') + '</button>' : '') +
+        (_accFrozen(d) ? '' : _hrEditDel('pm_acc_defects', r.id, 'pm_acc_defects')) + '</td></tr>';
+  }).join('')
+    : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px;font-size:12.5px">' +
+      _t('Nothing outstanding.') + '</td></tr>';
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div class="card-title">' + _t('Outstanding items (punch list)') + '</div>' +
+      '<button class="btn btn-outline btn-sm" onclick="accAddDefect()">' + _PLUS_SVG + ' ' + _t('Add') + '</button></div>' +
+    '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);line-height:1.6;border-bottom:1px solid var(--line)">' +
+      _accE(_t('A minute may be signed with items still outstanding — Nghị định 06/2021 Điều 24 khoản 3 — provided none of them affects load-bearing capacity, safety in use, or the function of the works. Any one of those three blocks the acceptance until it is closed.')) + '</div>' +
+    '<div class="table-wrap"><table style="min-width:840px"><thead><tr>' +
+      '<th style="width:34px"></th><th>' + _t('What is outstanding') + '</th><th>' + _t2('Impact', 'Ảnh hưởng') + '</th>' +
+      '<th>' + _t('Responsible') + '</th><th>' + _t('Due') + '</th><th>' + _t('Status') + '</th><th></th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+}
+function accAddDefect() {
+  tkQuickAdd('pm_acc_defects', null, { projectId: _pmPid(), dossierId: _accOpenId,
+    no: (_accView.defects || []).length + 1, status: 'Open' });
+}
+async function accCloseDefect(id) {
+  const r = (_accView.defects || []).find(x => x.id === id); if (!r) return;
+  try {
+    await tkApi('/api/coll/pm_acc_defects/' + encodeURIComponent(id), { method: 'PATCH', body: Object.assign({}, r, { status: 'Closed', closedOn: _pmToday(),
+                             closedBy: (TK.user || {}).name || '' }) });
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  await _accReload(['pm_acc_defects']);
+  await accOpen(_accOpenId);
+}
+
+/* ═══════════════ 10 · Signatures ═══════════════════════════════════════════════════════════ */
+
+function _accSignCard(v) {
+  const d = v.dossier || {}, t = _accType(d.accType) || {};
+  const need = t.parties || ['contractor', 'supervisor'];
+  const ro = _accFrozen(d);
+  const s = (_HR.pm_settings || []).find(x => x.id === _pmPid()) || {};
+  const fieldFor = { contractor: 'signContractor', supervisor: 'signSupervisor',
+                     client: 'signClient', designer: 'signDesigner' };
+  const blocks = (_accCat().parties || []).filter(p => need.indexOf(p.key) >= 0).map(p => {
+    const f = fieldFor[p.key];
+    return '<div style="flex:1;min-width:210px;border:1px solid var(--line);border-radius:9px;padding:11px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy)">' + _accE(_accLbl(p)) + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light);line-height:1.45;margin-bottom:7px">' +
+        _accE((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? p.role_vi : p.role_en) +
+        ((s.accParties || {})[p.key] ? '<br><b>' + _accE(s.accParties[p.key]) + '</b>' : '') + '</div>' +
+      '<input id="acc-f-' + f + '" class="form-control" style="font-size:12.5px"' + (ro ? ' disabled' : '') +
+        ' value="' + _tkEscA(d[f] || '') + '" placeholder="' + _tkEscA(_t('Full name')) + '">' +
+      '<input id="acc-f-' + f + 'Title" class="form-control" style="font-size:11.5px;margin-top:5px"' + (ro ? ' disabled' : '') +
+        ' value="' + _tkEscA(d[f + 'Title'] || '') + '" placeholder="' + _tkEscA(_t('Position')) + '">' +
+    '</div>';
+  }).join('');
+
+  const sigs = (d.signatures || []).map(g =>
+    '<div style="padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px;line-height:1.6">' +
+    '<b>' + _accE(g.name || '') + '</b> — ' + _accE(g.meaning || '') +
+    '<div style="font-size:10.5px;color:var(--text-light)">' + _accE(g.ts || '') +
+      (g.method ? ' · ' + _accE(g.method) : '') + (g.setStatus ? ' · ' + _accE(g.setStatus) : '') + '</div></div>').join('')
+    || '<div style="font-size:12px;color:var(--text-light);padding:7px 0">' + _t('Nobody has signed this in the portal yet.') + '</div>';
+
+  const next = d.status === 'Draft' ? ['Submitted', _t('Sign: I compiled this dossier'), 'var(--navy)']
+    : d.status === 'Submitted' ? ['Reviewed', _t('Sign: I have checked it against the work'), '#3168A8']
+    : d.status === 'Reviewed' ? ['Accepted', _t('Sign: the minute came back signed — accept'), 'var(--emerald)']
+    : null;
+  /* Only the ACCEPT step is gated here, and only because the reasons are already on the screen.
+     The server refuses it either way — a disabled button is not a control — but its refusal comes
+     back as one string and tkESign shows it in a toast, and a nine-item bulleted list is not
+     readable in six seconds. The readiness panel above lists every reason permanently, so the
+     button points at it instead of firing a request whose answer nobody can read. Submit, Review
+     and Reject are never gated: recording that an inspection failed has to work with nothing in
+     place, and compiling has to work on a dossier that is by definition incomplete. */
+  const gated = next && next[0] === 'Accepted' && v.canAccept === false;
+  const actions = ro ? '' :
+    (next
+      ? (gated
+        ? '<button class="btn btn-sm" disabled style="background:var(--soft-bg);color:var(--text-light);cursor:not-allowed" ' +
+          'title="' + _tkEscA(_t('See “Not ready to be accepted” above')) + '">✍ ' + _accE(next[1]) + '</button>' +
+          '<span style="font-size:11.5px;color:#B45309;align-self:center">' +
+          _accE(_t('Clear the items listed above first.')) + '</span>'
+        : '<button class="btn btn-primary btn-sm" style="background:' + next[2] + '" onclick="accSign(\'' + next[0] + '\')">✍ ' + _accE(next[1]) + '</button>')
+      : '') +
+    ' <button class="btn btn-outline btn-sm" style="color:#C00000;border-color:#FCA5A5" onclick="accSign(\'Rejected\')">' +
+      _t('Record a failed inspection') + '</button>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('Who signs this minute') + '</div></div>' +
+    '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);line-height:1.6">' +
+      _accE(_t('The three blocks are signed in ink on the printed sheet, at the inspection. What the portal records is the internal chain — compiled, checked, filed — as an electronic signature under the same Part 11 rules the rest of the portal uses. Naming somebody here who never touched this system would be worse than no signature at all.')) + '</div>' +
+    '<div style="padding:4px 16px 14px;display:flex;gap:11px;flex-wrap:wrap">' + blocks + '</div>' +
+    '<div style="padding:0 16px 14px">' +
+      '<div style="font-size:11.5px;font-weight:700;color:var(--text-dark);margin-bottom:5px">' + _t('Portal signature trail') + '</div>' +
+      sigs +
+      (actions ? '<div style="margin-top:13px;display:flex;gap:7px;flex-wrap:wrap">' + actions + '</div>' : '') +
+    '</div></div>';
+}
+
+async function accSign(status) {
+  const d = (_accView || {}).dossier || {}; if (!d.id) return;
+  const meaning = { Submitted: 'Acceptance dossier compiled and submitted',
+                    Reviewed: 'Acceptance dossier checked against the work',
+                    Accepted: 'Acceptance minute signed by all parties and filed',
+                    Rejected: 'Inspection did not pass' }[status] || status;
+  /* Save first. Somebody who has just typed the consultant's name into the signature block and
+     presses Sign would otherwise be refused for a blank block they can see filled in front of
+     them — the server reads the STORED row, and an unsaved field is not on it. */
+  if (!_accFrozen(d)) { const ok = await accSaveHeader(true); if (!ok) return; }
+  tkESign({
+    coll: 'pm_acc', id: d.id, meaning: meaning, setStatus: status,
+    onDone: async () => { await _accReload(); await accOpen(d.id); }
+  });
+}
+
+/* ═══════════════ 11 · Saving the header ════════════════════════════════════════════════════ */
+
+async function accSaveHeader(quiet) {
+  const d = (_accView || {}).dossier; if (!d) return false;
+  const g = k => { const e = document.getElementById('acc-f-' + k); return e ? String(e.value || '').trim() : undefined; };
+  const body = Object.assign({}, d);
+  ['title', 'titleEn', 'acceptDate', 'timeFrom', 'timeTo', 'location', 'axis', 'component',
+   'standardRef', 'jobDescription', 'transmittalRef', 'signContractor', 'signContractorTitle',
+   'signSupervisor', 'signSupervisorTitle', 'signClient', 'signClientTitle',
+   'signDesigner', 'signDesignerTitle'].forEach(k => { const v = g(k); if (v !== undefined) body[k] = v; });
+  const basis = (_accCat().basis || []).map(b => ({
+    key: b.key,
+    docNo: ((document.getElementById('acc-b-no-' + b.key) || {}).value || '').trim(),
+    title: ((document.getElementById('acc-b-t-' + b.key) || {}).value || '').trim(),
+    date: ((document.getElementById('acc-b-d-' + b.key) || {}).value || '').trim()
+  }));
+  if (document.getElementById('acc-b-no-' + ((_accCat().basis || [])[0] || {}).key)) body.basis = basis;
+  const t = _accType(d.accType) || {};
+  if (t.clearances && document.getElementById('acc-c-on-' + ((_accCat().clearances || [])[0] || {}).key)) {
+    body.clearances = (_accCat().clearances || []).map(c => ({
+      key: c.key,
+      applies: !!(document.getElementById('acc-c-on-' + c.key) || {}).checked,
+      ref: ((document.getElementById('acc-c-ref-' + c.key) || {}).value || '').trim(),
+      date: ((document.getElementById('acc-c-date-' + c.key) || {}).value || '').trim(),
+      reason: ((document.getElementById('acc-c-reason-' + c.key) || {}).value || '').trim()
+    }));
+  }
+  try {
+    await tkApi('/api/coll/pm_acc/' + encodeURIComponent(d.id), { method: 'PATCH', body: body });
+  } catch (e) { toast(_errMsg(e), 'error'); return false; }
+  await _accReload(['pm_acc']);
+  if (!quiet) { toast(_t('Saved'), 'success'); await accOpen(d.id); }
+  else { _accView.dossier = Object.assign(d, body); }
+  return true;
+}
+
+async function accAttachMinute() {
+  const el = document.getElementById('acc-f-minute');
+  const f = el && el.files && el.files[0]; if (!f) return;
+  if (f.size > 8 * 1024 * 1024) { toast(_t('That file is over 8 MB — attach a smaller scan.'), 'warn'); return; }
+  const url = await new Promise(res => {
+    const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(''); r.readAsDataURL(f);
+  });
+  if (!url) { toast(_t('Could not read that file.'), 'error'); return; }
+  const d = (_accView || {}).dossier;
+  try {
+    await tkApi('/api/coll/pm_acc/' + encodeURIComponent(d.id), { method: 'PATCH', body: Object.assign({}, d, { minuteFile: url, minuteName: f.name }) });
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  await _accReload(['pm_acc']);
+  await accOpen(d.id);
+  toast(_t('Signed sheet attached'), 'success');
+}
+function _accOpenMinute() {
+  const d = (_accView || {}).dossier || {};
+  const u = d.minuteFile || d.minuteUrl; if (!u) return;
+  /* A new tab, never an iframe. An iPhone renders only page one of a PDF inside an iframe, so a
+     three-page signed minute would look like a one-page one to whoever checked it on site. */
+  try { window.open(u, '_blank'); } catch (e) { toast(_t('Could not open the file.'), 'error'); }
+}
+
+/* ═══════════════ 12 · Xuất & in — the A4 set ═══════════════════════════════════════════════
+
+   Printed from the browser rather than generated as a PDF, and that is a decision rather than a
+   shortcut. These sheets are covered in Vietnamese diacritics; the portal's jsPDF path needs an
+   embedded subset font and still loses characters outside it, while a printed page uses the
+   system's own fonts and cannot. The A4 layout below is what the print dialog turns into a PDF —
+   choose A4, margins None, and leave Background graphics on so the table headers keep their fill.
+
+   The set is what a Vietnamese dossier actually contains:
+     1  Phiếu yêu cầu nghiệm thu (ARF)  — the invitation, one per inspection called
+     2  Biên bản nghiệm thu             — the minute, NĐ 06/2021 Điều 21 khoản 3
+     3  Biên bản kiểm tra (checklist)   — what was checked, against what
+     4  Phụ lục: danh mục tồn tại       — only when there is a punch list                       */
+
+let _accPrintPick = { arf: true, minute: true, check: true, punch: true };
+let _accPrintPt = 9.8;
+
+function accPrint() {
+  if (!_accView) return;
+  const v = _accView, d = v.dossier || {};
+  const drop = (v.defects || []).length ? '' : ' disabled';
+  const chk = (k, label, sub) =>
+    '<label style="flex:1;min-width:190px;display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:11px;cursor:pointer">' +
+    '<input type="checkbox" data-accpr="' + k + '"' + (_accPrintPick[k] ? ' checked' : '') +
+      (k === 'punch' ? drop : '') + ' onchange="_accPrintToggle(\'' + k + '\')" style="margin-top:2px">' +
+    '<span><span style="font-size:12.5px;font-weight:700;color:var(--text)">' + _accE(label) + '</span>' +
+    '<div style="font-size:10.5px;color:var(--text-light)">' + _accE(sub) + '</div></span></label>';
+
+  let ov = document.getElementById('accPrintOverlay');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'accPrintOverlay'; document.body.appendChild(ov); }
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;overflow:auto;padding:22px';
+  ov.innerHTML =
+    '<div class="acc-print-ctl" style="max-width:860px;margin:0 auto 16px;background:#fff;border-radius:10px;padding:16px 18px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
+        '<div><div style="font-size:15px;font-weight:800;color:var(--navy)">' + _t('Print the acceptance set') + '</div>' +
+        '<div style="font-size:11.5px;color:var(--text-light)">' + _accE(d.refNo || '') + '</div></div>' +
+        '<div style="display:flex;gap:7px">' +
+          '<button class="btn btn-primary btn-sm" onclick="window.print()">🖨 ' + _t('Print / Save as PDF') + '</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="accPrintClose()">' + _t('Close') + '</button></div></div>' +
+      '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px">' +
+        chk('arf', _t('Acceptance request'), 'ARF · ' + _t('the invitation')) +
+        chk('minute', _t('Acceptance minute'), 'BBNT · NĐ 06/2021 Đ.21') +
+        chk('check', _t('Inspection record'), _t('the checklist')) +
+        chk('punch', _t('Outstanding items'), 'Đ.24(3) · ' + ((v.defects || []).length || 0)) +
+      '</div>' +
+      '<div style="display:flex;gap:11px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-light)">' +
+        '<span>' + _t('Print text size') + '</span>' +
+        '<input type="range" min="7.5" max="12" step="0.1" value="' + _accPrintPt + '" oninput="_accPrintSize(this.value)" style="flex:1;min-width:170px">' +
+        '<b id="acc-pt-lbl" style="color:var(--navy)">' + _accPrintPt + 'pt</b></div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:9px;line-height:1.6">' +
+        _accE(_t('In the print dialog choose A4, margins None, and leave Background graphics ON so the table headers keep their fill. Then Save as PDF.')) + '</div>' +
+    '</div>' +
+    '<div id="acc-print-sheets">' + _accSheets(v) + '</div>';
+  ov.style.display = 'block';
+  _accPrintSize(_accPrintPt);
+}
+function accPrintClose() { const o = document.getElementById('accPrintOverlay'); if (o) { o.style.display = 'none'; o.innerHTML = ''; } }
+function _accPrintToggle(k) {
+  _accPrintPick[k] = !_accPrintPick[k];
+  const host = document.getElementById('acc-print-sheets');
+  if (host && _accView) { host.innerHTML = _accSheets(_accView); _accPrintSize(_accPrintPt); }
+}
+function _accPrintSize(v) {
+  _accPrintPt = Math.round(parseFloat(v) * 10) / 10;
+  const l = document.getElementById('acc-pt-lbl'); if (l) l.textContent = _accPrintPt + 'pt';
+  const h = document.getElementById('acc-print-sheets'); if (h) h.style.fontSize = _accPrintPt + 'pt';
+}
+/* A sheet dropped here is dropped from THIS print run only. The reference form set does the same
+   thing, and it is what makes a 4-sheet set usable when the client only asked for the minute. */
+function accDropSheet(el) { const s = el.closest('.acc-sheet'); if (s) s.remove(); }
+
+function _accSheets(v) {
+  const out = [];
+  if (_accPrintPick.arf) {
+    const plans = (_pmScopeFor('pm_acc_plans', _pmPid()) || []).filter(p => p.dossierId === (v.dossier || {}).id);
+    /* One invitation per inspection CALLED. A dossier that binds three visits prints three
+       invitations, each with its own number — which is what the consultant's file has to match. */
+    if (plans.length) plans.forEach(p => out.push(_accSheetARF(v, p)));
+    else out.push(_accSheetARF(v, null));
+  }
+  if (_accPrintPick.minute) out.push(_accSheetMinute(v));
+  if (_accPrintPick.check) out.push(_accSheetChecklist(v));
+  if (_accPrintPick.punch && (v.defects || []).length) out.push(_accSheetPunch(v));
+  return out.join('');
+}
+
+/* ---- shared sheet furniture ---------------------------------------------------------------- */
+function _accSheet(inner) {
+  return '<div class="acc-sheet" style="position:relative;width:210mm;min-height:296mm;margin:0 auto 16px;background:#fff;' +
+    'padding:14mm 13mm;box-sizing:border-box;color:#000;font-family:\'Times New Roman\',Times,serif;line-height:1.35">' +
+    '<button class="acc-noprint" onclick="accDropSheet(this)" style="position:absolute;top:6px;right:6px;border:1px solid #ddd;' +
+    'background:#fff;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer;color:#666">✕ ' + _t('Drop this sheet') + '</button>' +
+    inner + '</div>';
+}
+function _accSheetHead(v, titleVi, titleEn) {
+  const p = v.project || {}, d = v.dossier || {};
+  return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:.82em;color:#555;letter-spacing:.4px">' +
+      '<span>CLIENT\'S LOGO</span><span>CONTRACTOR\'S LOGO</span></div>' +
+    '<div style="text-align:center;margin:6px 0 12px">' +
+      '<div style="font-size:1.5em;font-weight:700;text-transform:uppercase;letter-spacing:.5px">' + _accE(titleVi) + '</div>' +
+      '<div style="font-size:1.05em;font-style:italic">' + _accE(titleEn) + '</div></div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:1em">' + _accKV([
+      [['Dự án:', 'Project:'], _accE(p.name || ''), ['Số tham chiếu:', 'Reference No.:'], '<b>' + _accE(d.refNo || '') + '</b>'],
+      [['Gói thầu:', 'Package:'], _accE(p.package || p.scope || ''), ['Ngày:', 'Date:'], '<b>' + _accE(_accVnDate(d.acceptDate)) + '</b>'],
+      [['Địa điểm:', 'Location:'], _accE(d.location || ''), ['Giờ:', 'Time:'],
+        _accE([d.timeFrom, d.timeTo].filter(Boolean).join(' – '))]
+    ]) + '</table>';
+}
+function _accKV(rows) {
+  return rows.map(r => '<tr>' +
+    '<td style="border:1px solid #000;padding:3px 5px;width:19%;vertical-align:top"><b>' + _accE(r[0][0]) + '</b><div style="font-style:italic;font-size:.86em">' + _accE(r[0][1]) + '</div></td>' +
+    '<td style="border:1px solid #000;padding:3px 5px;width:31%;vertical-align:top">' + r[1] + '</td>' +
+    '<td style="border:1px solid #000;padding:3px 5px;width:19%;vertical-align:top"><b>' + _accE(r[2][0]) + '</b><div style="font-style:italic;font-size:.86em">' + _accE(r[2][1]) + '</div></td>' +
+    '<td style="border:1px solid #000;padding:3px 5px;vertical-align:top">' + r[3] + '</td></tr>').join('');
+}
+function _accVnDate(s) {
+  const t = String(s || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  return t.slice(8, 10) + '-' + t.slice(5, 7) + '-' + t.slice(0, 4);
+}
+/* The three (or four) signature blocks. Điều 21(2) names WHO must sign a work acceptance; the
+   dossier names the person. A block with nobody named still prints — an empty one on a sheet that
+   somebody has to take to site is the visible version of the problem, and the readiness panel has
+   already said so in words. */
+function _accSigBlocks(v) {
+  const d = v.dossier || {}, t = _accType(d.accType) || {};
+  const s = (_HR.pm_settings || []).find(x => x.id === _pmPid()) || {};
+  const f = { contractor: 'signContractor', supervisor: 'signSupervisor', client: 'signClient', designer: 'signDesigner' };
+  const cols = (_accCat().parties || []).filter(p => (t.parties || []).indexOf(p.key) >= 0);
+  const w = Math.floor(100 / Math.max(1, cols.length));
+  return '<table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:.95em"><tr>' +
+    cols.map(p => '<td style="border:1px solid #000;padding:5px 6px;width:' + w + '%;vertical-align:top;text-align:center">' +
+      '<div style="font-weight:700;text-transform:uppercase;font-size:.92em">' + _accE(p.vi) + '</div>' +
+      '<div style="font-style:italic;font-size:.82em">' + _accE(p.en) + '</div>' +
+      ((s.accParties || {})[p.key] ? '<div style="font-size:.85em;margin-top:2px">' + _accE(s.accParties[p.key]) + '</div>' : '') +
+      '<div style="font-size:.78em;color:#444;margin-top:3px;line-height:1.25">' + _accE(p.role_vi) + '</div>' +
+      '<div style="height:22mm"></div>' +
+      '<div style="border-top:1px dotted #666;padding-top:3px;font-weight:700">' + _accE(d[f[p.key]] || '') + '</div>' +
+      '<div style="font-size:.82em;font-style:italic">' + _accE(d[f[p.key] + 'Title'] || '') + '</div>' +
+    '</td>').join('') + '</tr></table>';
+}
+
+/* ---- 1 · Phiếu yêu cầu nghiệm thu ---------------------------------------------------------- */
+function _accSheetARF(v, plan) {
+  const d = v.dossier || {};
+  const no = (plan && plan.arfNo) || d.arfNo || d.refNo || '';
+  const body =
+    _accSheetHead(Object.assign({}, v, { dossier: Object.assign({}, d, { refNo: no,
+      acceptDate: (plan && plan.acceptDate) || d.acceptDate,
+      timeFrom: (plan && plan.timeFrom) || d.timeFrom, timeTo: (plan && plan.timeTo) || d.timeTo }) }),
+      'Phiếu yêu cầu nghiệm thu', 'Acceptance Request Form') +
+    '<div style="margin:12px 0 6px;font-size:1em">' +
+      'Chúng tôi yêu cầu sự hiện diện của các ông để nghiệm thu các mục công tác sau:' +
+      '<div style="font-style:italic;font-size:.88em">We request your presence to inspect the following works:</div></div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:.97em">' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;width:34%;text-align:left">Hạng mục / Item</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE((plan && plan.title) || d.title || '') +
+        ((plan && plan.titleEn) || d.titleEn ? '<div style="font-style:italic;font-size:.88em">' + _accE((plan && plan.titleEn) || d.titleEn) + '</div>' : '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Mô tả công việc / Job description</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.jobDescription || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Vị trí / Location</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE((plan && plan.location) || d.location || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Trục / Axis – Zone</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.axis || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Tên cấu kiện / Component</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.component || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Tiêu chuẩn áp dụng / Standard</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.standardRef || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Biểu mẫu checklist / Checklist form</th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.formCode || '') + '</td></tr>' +
+    '</table>' + _accSigBlocks(v) +
+    '<div style="margin-top:9px;font-size:.8em;color:#444;font-style:italic">' +
+      'Phiếu này được lập theo Nghị định 06/2021/NĐ-CP về quản lý chất lượng, thi công xây dựng và bảo trì công trình xây dựng.</div>';
+  return _accSheet(body);
+}
+
+/* ---- 2 · Biên bản nghiệm thu — NĐ 06/2021 Điều 21 khoản 3 ---------------------------------- */
+function _accSheetMinute(v) {
+  const d = v.dossier || {}, t = _accType(d.accType) || {}, p = v.project || {};
+  const res = v.result;
+  const concl = res === 'pass'
+    ? { vi: 'CHẤP THUẬN NGHIỆM THU. Công việc đủ điều kiện chuyển bước thi công.',
+        en: 'ACCEPTED. The work may proceed to the next step.' }
+    : res === 'fail'
+      ? { vi: 'KHÔNG CHẤP THUẬN NGHIỆM THU. Nhà thầu khắc phục các nội dung nêu tại phần kết quả kiểm tra và đề nghị nghiệm thu lại.',
+          en: 'NOT ACCEPTED. The contractor is to rectify the items listed in the inspection record and call a re-inspection.' }
+      : { vi: 'CHƯA KẾT LUẬN — biên bản chưa hoàn tất phần kiểm tra.',
+          en: 'NO CONCLUSION — the inspection record is not complete.' };
+  const openD = (v.defects || []).filter(x => String(x.status || 'Open').toLowerCase() !== 'closed');
+  const punchNote = openD.length
+    ? '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left;width:26%">Tồn tại<div style="font-style:italic;font-size:.86em">Outstanding items</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + openD.length +
+      ' mục, chi tiết tại phụ lục kèm theo. Các tồn tại này không ảnh hưởng khả năng chịu lực, an toàn sử dụng và công năng công trình (Điều 24 khoản 3).' +
+      '<div style="font-style:italic;font-size:.88em">' + openD.length + ' item(s), listed in the annex. None affects load-bearing capacity, safety in use or the function of the works.</div></td></tr>'
+    : '';
+  const clearRows = (t.clearances ? (d.clearances || []).filter(c => c.applies) : []).map(c => {
+    const m = (_accCat().clearances || []).find(x => x.key === c.key) || {};
+    return '<tr><td style="border:1px solid #000;padding:3px 6px">' + _accE(m.vi || c.key) + '</td>' +
+      '<td style="border:1px solid #000;padding:3px 6px;width:32%">' + _accE(c.ref || '') + '</td>' +
+      '<td style="border:1px solid #000;padding:3px 6px;width:20%">' + _accE(_accVnDate(c.date)) + '</td></tr>';
+  }).join('');
+
+  /* t.vi and t.en, NOT _accLbl(t). The printed sheet is bilingual by construction — a Vietnamese
+     title line above an English one — and _accLbl returns whichever language the APP is in, so an
+     English session printed "BIÊN BẢN NGHIỆM THU ACCEPTANCE OF CONSTRUCTION WORK" on the line that
+     has to be Vietnamese. The sheet's language does not follow the operator's UI language; it is
+     fixed by what the document is. */
+  const body = _accSheetHead(v, String(t.vi || 'Biên bản nghiệm thu'), String(t.en || 'Acceptance minute')) +
+    '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:.97em">' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left;width:26%">Căn cứ pháp lý<div style="font-style:italic;font-size:.86em">Legal basis</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(t.law || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Tên công việc nghiệm thu<div style="font-style:italic;font-size:.86em">Work accepted</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.title || '') +
+        (d.titleEn ? '<div style="font-style:italic;font-size:.88em">' + _accE(d.titleEn) + '</div>' : '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Thời gian, địa điểm<div style="font-style:italic;font-size:.86em">Time and place</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' +
+        _accE([d.timeFrom, d.timeTo].filter(Boolean).join(' – ')) + ', ngày ' + _accE(_accVnDate(d.acceptDate)) +
+        ' — ' + _accE(d.location || '') + (d.axis ? ' (' + _accE(d.axis) + ')' : '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Tiêu chuẩn áp dụng<div style="font-style:italic;font-size:.86em">Standard applied</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(d.standardRef || '') + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Tài liệu căn cứ<div style="font-style:italic;font-size:.86em">Basis documents</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accBasisLines(d) + '</td></tr>' +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Kết quả kiểm tra<div style="font-style:italic;font-size:.86em">Inspection result</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px">' + _accE(
+        (v.progress || {}).pass + '/' + (v.progress || {}).applicable +
+        ' mục đạt' + ((v.progress || {}).na ? ', ' + (v.progress || {}).na + ' mục không áp dụng' : '') +
+        ((v.progress || {}).fail ? ', ' + (v.progress || {}).fail + ' mục KHÔNG ĐẠT' : '')) +
+        ' — chi tiết tại biên bản kiểm tra kèm theo' + (d.formCode ? ' (' + _accE(d.formCode) + ')' : '') + '.</td></tr>' +
+      punchNote +
+      '<tr><th style="border:1px solid #000;padding:4px 6px;background:#EFEFEF;text-align:left">Kết luận<div style="font-style:italic;font-size:.86em">Conclusion</div></th>' +
+      '<td style="border:1px solid #000;padding:4px 6px"><b>' + _accE(concl.vi) + '</b>' +
+        '<div style="font-style:italic;font-size:.88em">' + _accE(concl.en) + '</div></td></tr>' +
+    '</table>' +
+    (clearRows ? '<div style="margin-top:10px;font-weight:700;font-size:.95em">Văn bản chấp thuận của cơ quan nhà nước có thẩm quyền' +
+      '<span style="font-style:italic;font-weight:400"> / External clearances</span></div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:.94em;margin-top:4px">' +
+      '<tr><th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Nội dung</th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Số văn bản</th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Ngày</th></tr>' + clearRows + '</table>' : '') +
+    _accSigBlocks(v) +
+    '<div style="margin-top:9px;font-size:.8em;color:#444;font-style:italic">' +
+      'Biên bản được lập thành ' + ((t.parties || []).length || 2) + ' bản có giá trị như nhau, mỗi bên giữ 01 bản. ' +
+      'Nội dung theo ' + _accE(t.law || 'Nghị định 06/2021/NĐ-CP') + '.</div>';
+  return _accSheet(body);
+}
+function _accBasisLines(d) {
+  const rows = (d.basis || []).filter(b => (b.docNo || '').trim() || (b.title || '').trim());
+  if (!rows.length) return '<span style="color:#666">—</span>';
+  return rows.map(b => {
+    const m = (_accCat().basis || []).find(x => x.key === b.key) || {};
+    return '<div>• <b>' + _accE(m.vi || b.key) + ':</b> ' +
+      _accE([b.docNo, b.title].filter(Boolean).join(' — ')) +
+      (b.date ? ' (' + _accE(_accVnDate(b.date)) + ')' : '') + '</div>';
+  }).join('');
+}
+
+/* ---- 3 · Biên bản kiểm tra (checklist) ----------------------------------------------------- */
+function _accSheetChecklist(v) {
+  const d = v.dossier || {}, rows = v.items || [];
+  const mark = r => {
+    const k = _accRes(r.result);
+    const cell = (on, txt) => '<td style="border:1px solid #000;padding:3px;text-align:center;width:8%;' +
+      (on ? 'font-weight:700' : 'color:#bbb') + '">' + (on ? '✔' : '') + '</td>';
+    return cell(k === 'pass') + cell(k === 'fail') + cell(k === 'na');
+  };
+  const body = _accSheetHead(v, 'Biên bản kiểm tra', 'Inspection Record') +
+    '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:.95em">' +
+      '<tr><th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left;width:26%">Biểu mẫu / Form</th>' +
+      '<td style="border:1px solid #000;padding:3px 6px">' + _accE(d.formCode || '') +
+        (d.formTitleVi ? ' — ' + _accE(d.formTitleVi) : '') + '</td></tr></table>' +
+    '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.93em">' +
+      '<thead><tr>' +
+        '<th style="border:1px solid #000;padding:3px 4px;background:#EFEFEF;width:5%">TT</th>' +
+        '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Nội dung kiểm tra<div style="font-style:italic;font-weight:400;font-size:.86em">Item checked</div></th>' +
+        '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;width:14%;text-align:left">Phương pháp<div style="font-style:italic;font-weight:400;font-size:.86em">Method</div></th>' +
+        '<th style="border:1px solid #000;padding:3px 4px;background:#EFEFEF">Đạt</th>' +
+        '<th style="border:1px solid #000;padding:3px 4px;background:#EFEFEF">K.Đạt</th>' +
+        '<th style="border:1px solid #000;padding:3px 4px;background:#EFEFEF">N/A</th>' +
+        '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;width:17%;text-align:left">Ghi chú<div style="font-style:italic;font-weight:400;font-size:.86em">Note</div></th>' +
+      '</tr></thead><tbody>' +
+      (rows.length ? rows.map((r, i) =>
+        '<tr style="page-break-inside:avoid">' +
+        '<td style="border:1px solid #000;padding:3px 4px;text-align:center">' + (i + 1) + '</td>' +
+        '<td style="border:1px solid #000;padding:3px 6px">' + _accE(r.textVi || '') +
+          (r.textEn ? '<div style="font-style:italic;font-size:.87em">' + _accE(r.textEn) + '</div>' : '') +
+          (r.criteria ? '<div style="font-size:.84em;color:#444">' + _accE(r.criteria) + '</div>' : '') + '</td>' +
+        '<td style="border:1px solid #000;padding:3px 6px;font-size:.9em">' + _accE(r.method || '') + '</td>' +
+        mark(r) +
+        '<td style="border:1px solid #000;padding:3px 6px;font-size:.9em">' + _accE(r.note || '') + '</td></tr>').join('')
+        : '<tr><td colspan="7" style="border:1px solid #000;padding:14px;text-align:center;color:#666">Chưa có nội dung kiểm tra.</td></tr>') +
+      '</tbody></table>' +
+    '<div style="margin-top:7px;font-size:.9em">Tài liệu căn cứ / <i>Basis documents</i>:</div>' +
+    '<div style="font-size:.9em">' + _accBasisLines(d) + '</div>' +
+    _accSigBlocks(v);
+  return _accSheet(body);
+}
+
+/* ---- 4 · Phụ lục — danh mục tồn tại -------------------------------------------------------- */
+function _accSheetPunch(v) {
+  const rows = v.defects || [];
+  const impacts = _accCat().defectImpacts || [];
+  const body = _accSheetHead(v, 'Phụ lục — Danh mục tồn tại', 'Annex — Outstanding items') +
+    '<div style="margin:9px 0 6px;font-size:.92em;font-style:italic">' +
+      'Nghị định 06/2021/NĐ-CP, Điều 24 khoản 3 — công trình được nghiệm thu khi các tồn tại còn lại không ảnh hưởng ' +
+      'khả năng chịu lực, an toàn sử dụng và công năng của công trình.</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:.93em"><thead><tr>' +
+      '<th style="border:1px solid #000;padding:3px 4px;background:#EFEFEF;width:5%">TT</th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Nội dung tồn tại / Item</th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;width:24%;text-align:left">Ảnh hưởng / Impact</th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;width:16%;text-align:left">Trách nhiệm / By</th>' +
+      '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;width:14%;text-align:left">Hạn / Due</th>' +
+    '</tr></thead><tbody>' + rows.map((r, i) => {
+      const m = impacts.find(x => x.key === r.impact) || {};
+      return '<tr style="page-break-inside:avoid">' +
+        '<td style="border:1px solid #000;padding:3px 4px;text-align:center">' + (i + 1) + '</td>' +
+        '<td style="border:1px solid #000;padding:3px 6px">' + _accE(r.description || '') + '</td>' +
+        '<td style="border:1px solid #000;padding:3px 6px">' + _accE(m.vi || '') + '</td>' +
+        '<td style="border:1px solid #000;padding:3px 6px">' + _accE(r.responsible || '') + '</td>' +
+        '<td style="border:1px solid #000;padding:3px 6px">' + _accE(_accVnDate(r.due)) + '</td></tr>';
+    }).join('') + '</tbody></table>' + _accSigBlocks(v);
+  return _accSheet(body);
+}
+
+/* ═══════════════ 13 · Library: preview, adopt, import, export ═════════════════════════════ */
+
+function accFormPreview(code) {
+  const pid = _pmPid();
+  const f = _pmScopeFor('pm_acc_forms', pid).find(x => String(x.code).toUpperCase() === String(code).toUpperCase())
+    || (_accCat().forms || []).find(x => String(x.code).toUpperCase() === String(code).toUpperCase());
+  if (!f) return;
+  const rows = (f.items || []).map((it, i) =>
+    '<tr><td style="padding:5px 7px;color:var(--text-light);font-variant-numeric:tabular-nums;width:30px;text-align:right;vertical-align:top">' + (i + 1) + '</td>' +
+    '<td style="padding:5px 7px;font-size:12.5px;vertical-align:top">' + _accE(it.vi || '') +
+      (it.en ? '<div style="font-size:11px;color:var(--text-light);font-style:italic">' + _accE(it.en) + '</div>' : '') + '</td>' +
+    '<td style="padding:5px 7px;font-size:11px;color:var(--text-light);width:120px;vertical-align:top">' + _accE(it.method || '') + '</td>' +
+    '<td style="padding:5px 7px;font-size:11px;color:var(--text-light);width:150px;vertical-align:top">' + _accE(it.criteria || '') + '</td></tr>').join('');
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2100';
+  ov.innerHTML = '<div class="modal" style="width:720px;max-width:95vw">' +
+    '<div class="modal-header"><div class="modal-title">' + _accE(f.code) + ' · ' + _accE(f.vi || '') + '</div>' +
+    '<button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div>' +
+    (f.standard ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' + _accE(f.standard) + '</div>' : '') +
+    '<div style="max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:8px">' +
+    '<table style="width:100%;border-collapse:collapse">' + rows + '</table></div></div>';
+  document.body.appendChild(ov);
+}
+
+/* Adopting copies a shipped form into the project so its lines can be edited. The shipped one stays
+   where it is: a library that could be edited in place would change what every OTHER project's next
+   dossier says. */
+async function accFormAdopt(code) {
+  const f = (_accCat().forms || []).find(x => String(x.code).toUpperCase() === String(code).toUpperCase());
+  if (!f) return;
+  try {
+    await tkApi('/api/coll/pm_acc_forms', { method: 'POST', body: {
+      projectId: _pmPid(), code: f.code, disc: f.disc, vi: f.vi, en: f.en,
+      standard: f.standard || '', items: f.items || [] } });
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  await _accReload(['pm_acc_forms']);
+  toast(_accE(f.code) + ' ' + _t('copied into this project — its lines are now editable'), 'success');
+  _accRepaint();
+}
+
+/* Import the contractor's OWN library. Two shapes are accepted because both are what people
+   actually have: the JSON this screen exports, and a flat CSV one line per checklist item — which
+   is what falls out of Excel, and Excel is where these libraries live. */
+function accFormImport() {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2100';
+  ov.innerHTML = '<div class="modal" style="width:600px;max-width:95vw">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Import checklist forms') + '</div>' +
+    '<button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.65;margin-bottom:11px">' +
+      _accE(_t('A JSON file exported from this screen, or a CSV with one line per checklist item and these columns:')) +
+      '<div style="font-family:monospace;font-size:11px;background:var(--soft-bg);border-radius:7px;padding:8px 10px;margin-top:7px;overflow-x:auto;white-space:nowrap">' +
+      'code,discipline,form_vi,form_en,standard,item_vi,item_en,method,criteria</div></div>' +
+    '<input type="file" id="acc-imp-file" accept=".json,.csv,text/csv,application/json" class="form-control">' +
+    '<div id="acc-imp-out" style="font-size:12px;margin-top:11px;line-height:1.6"></div>' +
+    '<div class="modal-footer" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+    '<button class="btn btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="accFormImportGo()">' + _t('Import') + '</button></div></div>';
+  document.body.appendChild(ov);
+}
+async function accFormImportGo() {
+  const el = document.getElementById('acc-imp-file');
+  const out = document.getElementById('acc-imp-out');
+  const f = el && el.files && el.files[0];
+  if (!f) { if (out) out.innerHTML = '<span style="color:#C00000">' + _t('Choose a file first.') + '</span>'; return; }
+  const text = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(String(rd.result || '')); rd.onerror = () => r(''); rd.readAsText(f); });
+  let forms = [];
+  try {
+    forms = /\.json$/i.test(f.name) ? _accParseFormsJson(text) : _accParseFormsCsv(text);
+  } catch (e) {
+    if (out) out.innerHTML = '<span style="color:#C00000">' + _accE(e.message) + '</span>';
+    return;
+  }
+  if (!forms.length) {
+    if (out) out.innerHTML = '<span style="color:#C00000">' + _t('Nothing recognisable in that file — check the column names.') + '</span>';
+    return;
+  }
+  let ok = 0, failed = 0;
+  const pid = _pmPid();
+  const mine = _pmScopeFor('pm_acc_forms', pid);
+  for (const fm of forms) {
+    const ex = mine.find(x => String(x.code).toUpperCase() === String(fm.code).toUpperCase());
+    try {
+      if (ex) await tkApi('/api/coll/pm_acc_forms/' + encodeURIComponent(ex.id), { method: 'PATCH', body: Object.assign({}, ex, fm) });
+      else await tkApi('/api/coll/pm_acc_forms', { method: 'POST', body: Object.assign({ projectId: pid }, fm) });
+      ok++;
+    } catch (e) { failed++; }
+  }
+  await _accReload(['pm_acc_forms']);
+  /* Says what it did AND what it could not, per form. An importer that reports only its successes
+     is how a half-loaded library gets discovered three weeks later, at an inspection. */
+  if (out) out.innerHTML = '<b style="color:var(--emerald)">' + ok + '</b> ' + _t('form(s) imported') +
+    (failed ? ' · <b style="color:#C00000">' + failed + '</b> ' + _t('refused') : '');
+  toast(ok + ' ' + _t('form(s) imported'), failed ? 'warn' : 'success');
+  _accRepaint();
+}
+function _accParseFormsJson(text) {
+  const j = JSON.parse(text);
+  const arr = Array.isArray(j) ? j : (j.forms || []);
+  return arr.filter(f => f && f.code).map(f => ({
+    code: String(f.code).trim(), disc: String(f.disc || f.discipline || 'GEN').toUpperCase(),
+    vi: String(f.vi || f.title || ''), en: String(f.en || f.titleEn || ''),
+    standard: String(f.standard || ''),
+    items: (f.items || []).map(i => ({ vi: String(i.vi || i.text || ''), en: String(i.en || ''),
+                                       method: String(i.method || ''), criteria: String(i.criteria || '') }))
+  }));
+}
+function _accParseFormsCsv(text) {
+  const rows = _accCsvRows(text);
+  if (!rows.length) return [];
+  const head = rows[0].map(h => String(h || '').trim().toLowerCase().replace(/\s+/g, '_'));
+  const ix = n => head.indexOf(n);
+  const need = ['code', 'item_vi'];
+  for (const n of need) if (ix(n) < 0) throw new Error('CSV is missing the "' + n + '" column.');
+  const by = {};
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const get = n => { const i = ix(n); return i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : ''; };
+    const code = get('code'); if (!code) continue;
+    if (!by[code]) by[code] = { code: code, disc: (get('discipline') || 'GEN').toUpperCase(),
+                                vi: get('form_vi'), en: get('form_en'), standard: get('standard'), items: [] };
+    if (get('item_vi') || get('item_en')) {
+      by[code].items.push({ vi: get('item_vi'), en: get('item_en'),
+                            method: get('method'), criteria: get('criteria') });
+    }
+  }
+  return Object.keys(by).map(k => by[k]);
+}
+/* A CSV reader that survives what these files actually contain: quoted fields with commas in them
+   (every Vietnamese checklist line has one), doubled quotes, and CRLF. A `split(',')` here would
+   silently shred every line and the import would look like it worked. */
+function _accCsvRows(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  const s = String(text || '').replace(/^﻿/, '');
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); cell = ''; rows.push(row); row = []; }
+    else if (c === '\r') { /* CRLF: the \n does the work */ }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x || '').trim() !== ''));
+}
+
+/* ═══════════════ 14 · Exports ══════════════════════════════════════════════════════════════ */
+
+function _accCsv(rows) {
+  return rows.map(r => r.map(c => {
+    const s = String(c == null ? '' : c);
+    return /[",\n]/.test(s) ? '"' + s.split('"').join('""') + '"' : s;
+  }).join(',')).join('\r\n');
+}
+function _accDownload(name, text, mime) {
+  /* ﻿: without the BOM Excel opens a UTF-8 CSV as Windows-1252 and every Vietnamese diacritic
+     becomes mojibake — which is how a register exported for a client arrives unreadable. */
+  const blob = new Blob(['﻿' + text], { type: (mime || 'text/csv') + ';charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+}
+function accExportRegister() {
+  const pid = _pmPid(), rows = _pmScopeFor('pm_acc', pid), items = _pmScopeFor('pm_acc_items', pid);
+  const by = {}; items.forEach(i => { (by[i.dossierId] = by[i.dossierId] || []).push(i); });
+  const out = [['Ref No', 'Type', 'Law', 'Discipline', 'Form', 'Work (VI)', 'Work (EN)', 'Location',
+                'Axis', 'Component', 'Standard', 'Date', 'From', 'To', 'Pass', 'Fail', 'N/A',
+                'Unchecked', 'Result', 'Status', 'Signed sheet']];
+  rows.slice().sort(_pmDocNoCmp('refNo')).forEach(r => {
+    const t = _accType(r.accType) || {}, p = _accProgress(by[r.id] || []);
+    out.push([r.refNo || '', _accLbl(t), t.law || '', r.discipline || '', r.formCode || '',
+      r.title || '', r.titleEn || '', r.location || '', r.axis || '', r.component || '',
+      r.standardRef || '', r.acceptDate || '', r.timeFrom || '', r.timeTo || '',
+      p.pass, p.fail, p.na, p.pending, _accLbl(_accResMeta(_accResultOf(by[r.id] || [])) || {}),
+      r.status || '', (r.minuteFile || r.minuteUrl || r.hasFile) ? 'Y' : '']);
+  });
+  _accDownload('so-ho-so-nghiem-thu.csv', _accCsv(out));
+}
+function accExportPlan() {
+  const rows = _pmScopeFor('pm_acc_plans', _pmPid());
+  const out = [['ARF No', 'Date', 'From', 'To', 'Discipline', 'Form', 'Work (VI)', 'Work (EN)',
+                'Location', 'Result', 'Dossier', 'Note']];
+  rows.slice().sort(_pmDocNoCmp('arfNo')).forEach(r => {
+    const d = (_HR.pm_acc || []).find(x => x.id === r.dossierId);
+    out.push([r.arfNo || '', r.acceptDate || '', r.timeFrom || '', r.timeTo || '', r.discipline || '',
+      r.formCode || '', r.title || '', r.titleEn || '', r.location || '',
+      _accLbl(_accResMeta(_accRes(r.result)) || {}), (d && d.refNo) || '', r.note || '']);
+  });
+  _accDownload('ke-hoach-nghiem-thu.csv', _accCsv(out));
+}
+function accExportDossier() {
+  const v = _accView; if (!v) return;
+  const d = v.dossier || {};
+  const out = [['#', 'Item (VI)', 'Item (EN)', 'Method', 'Criterion', 'Result', 'Note']];
+  (v.items || []).forEach((r, i) => out.push([i + 1, r.textVi || '', r.textEn || '', r.method || '',
+    r.criteria || '', _accLbl(_accResMeta(_accRes(r.result)) || {}), r.note || '']));
+  if ((v.defects || []).length) {
+    out.push([]); out.push(['Outstanding items — NĐ 06/2021 Điều 24 khoản 3']);
+    out.push(['#', 'Item', 'Impact', 'Responsible', 'Due', 'Status']);
+    (v.defects || []).forEach((r, i) => {
+      const m = (_accCat().defectImpacts || []).find(x => x.key === r.impact) || {};
+      out.push([i + 1, r.description || '', m.vi || '', r.responsible || '', r.due || '', r.status || 'Open']);
+    });
+  }
+  _accDownload((d.refNo || 'ho-so-nghiem-thu') + '.csv', _accCsv(out));
+}
+function accFormExport() {
+  const mine = _pmScopeFor('pm_acc_forms', _pmPid());
+  const all = mine.length ? mine : (_accCat().forms || []);
+  const out = [['code', 'discipline', 'form_vi', 'form_en', 'standard', 'item_vi', 'item_en', 'method', 'criteria']];
+  all.forEach(f => (f.items || []).forEach(i =>
+    out.push([f.code || '', f.disc || '', f.vi || '', f.en || '', f.standard || '',
+              i.vi || '', i.en || '', i.method || '', i.criteria || ''])));
+  _accDownload('thu-vien-bieu-mau.csv', _accCsv(out));
+}
+
+/* ═══════════════ 15 · The form editor ═════════════════════════════════════════════════════
+
+   A checklist form is a code, a title, a standard and a LIST OF LINES. The generic quick-add modal
+   edits flat records; it has no way to edit a list, and a `type: 'textarea'` holding JSON would be
+   a field people break by looking at it. So the library gets its own editor, and the lines are
+   edited as text — one line each, `Vietnamese | English | method | criterion` — which is also
+   exactly the shape the CSV import reads, so somebody can paste a column out of Excel straight
+   into it.                                                                                       */
+
+function accFormEdit(id) {
+  const pid = _pmPid();
+  const f = id ? _pmScopeFor('pm_acc_forms', pid).find(x => x.id === id) : null;
+  const discs = (_accCat().disciplines || []).map(d =>
+    '<option value="' + d.code + '"' + ((f && f.disc === d.code) ? ' selected' : '') + '>' +
+    d.code + ' — ' + _accE(_accLbl(d)) + '</option>').join('');
+  const lines = ((f && f.items) || []).map(i =>
+    [i.vi || '', i.en || '', i.method || '', i.criteria || ''].join(' | ').replace(/(\s\|\s*)+$/, '')).join('\n');
+  const stds = (_accCat().standards || []).map(s =>
+    '<option value="' + _tkEscA(s.code + (/^\d/.test(String(s.edition || '')) ? ':' : ' ') + (s.edition || '')) + '">' +
+    _accE(s.vi) + '</option>').join('');
+
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open'; ov.id = 'accFormOverlay';
+  ov.style.display = 'flex'; ov.style.zIndex = '2000';
+  ov.innerHTML = '<div class="modal" style="width:760px;max-width:96vw">' +
+    '<div class="modal-header"><div class="modal-title">' +
+      (f ? _t('Edit checklist form') : _t('New checklist form')) + '</div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'accFormOverlay\').remove()">✕</button></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:11px">' +
+      '<div><label class="form-label">' + _t('Form code') + '</label>' +
+        '<input id="acc-fe-code" class="form-control" style="font-family:monospace" value="' + _tkEscA((f && f.code) || '') +
+        '" placeholder="PP-EL-205"></div>' +
+      '<div><label class="form-label">' + _t('Discipline') + '</label>' +
+        '<select id="acc-fe-disc" class="form-control">' + discs + '</select></div>' +
+      '<div style="grid-column:1/-1"><label class="form-label">' + _t('Title (Vietnamese)') + '</label>' +
+        '<input id="acc-fe-vi" class="form-control" value="' + _tkEscA((f && f.vi) || '') + '"></div>' +
+      '<div style="grid-column:1/-1"><label class="form-label">' + _t('Title (English)') + '</label>' +
+        '<input id="acc-fe-en" class="form-control" value="' + _tkEscA((f && f.en) || '') + '"></div>' +
+      '<div style="grid-column:1/-1"><label class="form-label">' + _t('Standard') + '</label>' +
+        '<input id="acc-fe-std" class="form-control" list="acc-fe-stdlist" value="' + _tkEscA((f && f.standard) || '') + '">' +
+        '<datalist id="acc-fe-stdlist">' + stds + '</datalist></div>' +
+    '</div>' +
+    '<div style="margin-top:12px"><label class="form-label">' + _t('Checklist lines') + '</label>' +
+      '<div style="font-size:11px;color:var(--text-light);line-height:1.6;margin-bottom:5px">' +
+      _accE(_t('One line each. Separate the four parts with a vertical bar: Vietnamese | English | method | criterion. Only the first is required.')) + '</div>' +
+      '<textarea id="acc-fe-items" class="form-control" rows="12" style="font-size:12.5px;line-height:1.55;font-family:inherit">' +
+      _accE(lines) + '</textarea>' +
+      '<div id="acc-fe-count" style="font-size:11px;color:var(--text-light);margin-top:4px"></div></div>' +
+    '<div class="modal-footer" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'accFormOverlay\').remove()">' + _t('Cancel') + '</button>' +
+      '<button class="btn btn-primary" onclick="accFormEditSave(' + (id ? "'" + id + "'" : 'null') + ')">' + _t('Save') + '</button></div></div>';
+  document.body.appendChild(ov);
+  const ta = document.getElementById('acc-fe-items');
+  const count = () => {
+    const n = _accLinesFrom((ta || {}).value || '').length;
+    const c = document.getElementById('acc-fe-count');
+    if (c) c.textContent = n + ' ' + _t('checklist line(s)');
+  };
+  if (ta) ta.addEventListener('input', count);
+  count();
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(ov); } catch (e) { }
+}
+function _accLinesFrom(text) {
+  return String(text || '').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const p = l.split('|');
+    return { vi: (p[0] || '').trim(), en: (p[1] || '').trim(),
+             method: (p[2] || '').trim(), criteria: (p[3] || '').trim() };
+  }).filter(i => i.vi || i.en);
+}
+async function accFormEditSave(id) {
+  const g = k => ((document.getElementById('acc-fe-' + k) || {}).value || '').trim();
+  const code = g('code');
+  if (!code) { toast(_t('A form needs a code — it is what a minute cites.'), 'warn'); return; }
+  const items = _accLinesFrom((document.getElementById('acc-fe-items') || {}).value || '');
+  const pid = _pmPid();
+  const body = { projectId: pid, code: code, disc: g('disc') || 'GEN', vi: g('vi'), en: g('en'),
+                 standard: g('std'), items: items };
+  try {
+    if (id) {
+      const ex = _pmScopeFor('pm_acc_forms', pid).find(x => x.id === id) || {};
+      await tkApi('/api/coll/pm_acc_forms/' + encodeURIComponent(id), { method: 'PATCH', body: Object.assign({}, ex, body) });
+    } else {
+      await tkApi('/api/coll/pm_acc_forms', { method: 'POST', body: body });
+    }
+  } catch (e) { toast(_errMsg(e), 'error'); return; }
+  const ov = document.getElementById('accFormOverlay'); if (ov) ov.remove();
+  await _accReload(['pm_acc_forms']);
+  toast(_t('Saved') + ' — ' + items.length + ' ' + _t('checklist line(s)'), 'success');
+  _accRepaint();
+}
+async function accFormDelete(id) {
+  if (!await tkConfirm({ body: _t('Delete this checklist form? Dossiers already compiled from it keep their own copy of the lines and are not affected.'), danger: true })) return;
+  try { await tkApi('/api/coll/pm_acc_forms/' + encodeURIComponent(id), { method: 'DELETE' }); }
+  catch (e) { toast(_errMsg(e), 'error'); return; }
+  await _accReload(['pm_acc_forms']);
+  _accRepaint();
+}
+
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   // pm_tasks is not decoration here: the register derives each package's percentage, date and
@@ -24361,6 +26283,12 @@ const _PM_TABS = [
   { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders', need: ['pm_stakeholders'] },
   { k: 'docs', label: 'Docs Control', fn: 'pmRenderRfis', need: ['pm_projects', 'pm_rfis', 'pm_sitereports', 'pm_weekreports'] },
   // The file register harvests attachment metadata out of every register that can carry a file.
+  /* Hồ sơ nghiệm thu. It sits between Docs Control and Documents because that is what it is:
+     the controlled document the project actually hands over. It is also where PMBOK's Validate
+     Scope lives in this app — Quality verifies a deliverable, this is where the customer
+     accepts it. `need` is deliberately short: the five acceptance registers plus the project
+     and its settings, which carry the numbering templates and the party names. */
+  { k: 'accept', label: 'Acceptance', fn: 'pmRenderAcceptance', need: ['pm_projects', 'pm_settings', 'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects'] },
   { k: 'daily', label: 'Daily Report', fn: 'pmRenderDailyReport', need: ['pm_projects', 'dr_settings', 'dr_contractors'] },
   { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments', need: ['pm_projects', 'pm_sitereports', 'pm_weekreports', 'pm_rfis', 'pm_quality', 'pm_quality_itp', 'pm_changes', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_lessons', 'pm_procurement'] },
   // pm_resources is the @-mention roster: without it the picker silently says nobody is here.
@@ -29378,6 +31306,8 @@ function _pmFiltApply(coll, rows, specs) {
 const _PM_FILT_Q = {
   pm_quality: ['refNo', 'title', 'contractor', 'discipline', 'type', 'status', 'raisedBy', 'owner'],
   pm_quality_itp: ['itpNo', 'itpNoPrev', 'title', 'contractor', 'discipline', 'standardRef', 'status'],
+  pm_acc: ['refNo', 'title', 'titleEn', 'location', 'axis', 'component', 'formCode', 'discipline', 'accType', 'status', 'standardRef'],
+  pm_acc_plans: ['arfNo', 'title', 'titleEn', 'location', 'formCode', 'discipline', 'result', 'note'],
   pm_comms: ['subject', 'type', 'audience', 'status', 'note'],
   pm_issues: ['issueNo', 'title', 'owner', 'priority', 'status', 'description'],
 };
