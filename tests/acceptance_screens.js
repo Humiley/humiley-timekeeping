@@ -155,9 +155,14 @@ console.log('\nThe tab is registered where a project workspace looks for it\n');
 {
   ok('the Acceptance tab exists in _PM_TABS',
      /\{ k: 'accept', label: 'Acceptance', fn: 'pmRenderAcceptance'/.test(src));
-  ok('it asks for the five registers it reads',
-     /'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects'\] \}/.test(src),
-     'a tab that does not declare `need` renders an empty register and calls it empty');
+  // Read out of the tab entry rather than matched as one frozen string: the list grows (drawings
+  // were the sixth), and an assertion that has to be retyped every time one is added is an
+  // assertion somebody eventually retypes without checking.
+  const tab = (src.match(/\{ k: 'accept',[\s\S]*?\] \},/) || [''])[0];
+  ok('it declares every register it reads',
+     ['pm_projects', 'pm_settings', 'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms',
+      'pm_acc_defects', 'pm_acc_drawings'].every(c => tab.indexOf("'" + c + "'") > 0),
+     'a tab that does not declare `need` renders an empty register and calls it empty — ' + tab.slice(0, 200));
   ok('every sub-tab names a function that exists',
      /const _ACC_TABS = \[/.test(src) &&
      ['_accBoard', '_accPlanTab', '_accRegTab', '_accFormsTab', '_accSetupTab']
@@ -169,6 +174,85 @@ console.log('\nThe tab is registered where a project workspace looks for it\n');
   ok('…and recording a FAILED inspection is never gated',
      /accSign\(\\?'Rejected\\?'\)/.test(signCard) && !/gated[\s\S]{0,120}Rejected/.test(signCard),
      'refusing to record a failure is the one refusal that stops people using the register');
+}
+
+// ══ 6 · the drawing mark-up: three ways it lost work, and one it printed the wrong thing ═══════
+console.log('\nThe drawing mark-up saves what was drawn, and prints what was saved\n');
+{
+  const write = take('async function _accDrawWrite(', '_accDrawWrite');
+  ok('the new _rev is taken back off the write',
+     /if \(saved && saved\._rev != null\) row\._rev = saved\._rev;/.test(write),
+     'tkApi turns a PATCH\'s _rev into an If-Match, so a row held open across two saves sends the ' +
+     'version it was loaded at — every mark after the first 409d and silently vanished');
+  ok('a save asked for during a save is queued, not dropped',
+     /_accDraw\.again = true; return;/.test(write) &&
+     /if \(_accDraw\.again\) \{ _accDraw\.again = false; _accDrawWrite\(\); \}/.test(write),
+     '"if (saving) return" lost the marks drawn during the round trip, while the status still ' +
+     'said saved from an earlier one');
+  ok('a refused write re-reads rather than pushing the stale marks back',
+     /_accDraw\.again = false; *\/\/ the re-read is now the truth/.test(write));
+  ok('the raster is never echoed back on a shapes save',
+     /if \(!body\.image\) delete body\.image;/.test(write),
+     'the row in hand may have come from a read that stripped the image — sending it as it stands ' +
+     'blanks the drawing');
+
+  const printFn = take('async function accPrint(', 'accPrint');
+  ok('printing re-reads EVERY drawing, not only the ones missing a raster',
+     /const all = _accView\.drawings \|\| \[\];/.test(printFn) &&
+     /if \(Array\.isArray\(full\.shapes\)\) r\.shapes = full\.shapes;/.test(printFn),
+     'fetching only imageless rows printed the mark-up as it stood when the dossier was opened — ' +
+     'on the sheet a client and a consultant sign');
+
+  const sheet = take('function _accSheetDrawing(', '_accSheetDrawing');
+  ok('a drawing that did not load prints a reason, never an empty frame',
+     /did not load/.test(sheet),
+     'a blank box on a numbered sheet reads as a drawing with nothing on it');
+  ok('the sheet reuses the editor\'s renderer',
+     /_accShapesSvg\(row\.shapes \|\| \[\], false\)/.test(sheet),
+     'a second print-only renderer is how the screen and the paper come to disagree');
+
+  // Marks are stored in the drawing's own pixels, so the panel's numbers have to be scaled.
+  const down = take('function accDrawDown(', 'accDrawDown');
+  ok('stroke and text size are scaled to the drawing\'s resolution',
+     /sw: Math\.max\(1, _accDraw\.sw \* k\)/.test(down) && /fs: Math\.round\(_accDraw\.fs \* k\)/.test(down),
+     'a stroke of 3 on a 2200px sheet shown at 330px is under half a screen pixel — invisible');
+  const toShape = take('function _accDragToShape(', '_accDragToShape');
+  ok('and so is the "that was a tap, not a drag" threshold',
+     /far < 6 \* _accK\(\)/.test(toShape),
+     'six drawing pixels on a 2200px sheet is a fifth of a screen pixel, so the test never fired');
+
+  // Picking a tool must not repaint the dossier.
+  const tool = take('function accDrawTool(', 'accDrawTool');
+  ok('choosing a tool restyles the toolbar instead of repainting the detail',
+     /data-acctool/.test(tool) && tool.indexOf('_accPaintDetail(') < 0,
+     'repainting threw the <img> away and re-decoded the drawing on every tap, resetting scroll');
+
+  const save = take('function _accDrawSave(', '_accDrawSave');
+  ok('the thumbnail strip is kept in step with the editor',
+     /mirror\.shapes = shapes;/.test(save),
+     '_accView.drawings is a different object — without this the strip said "0 marks" beside a ' +
+     'drawing covered in them');
+}
+
+// ══ 7 · what the module stores, and what it deliberately does not ══════════════════════════════
+console.log('\nThe mark-up is data, and the dimension tool does not invent a measurement\n');
+{
+  const dim = take('function _accDimSvg(', '_accDimSvg');
+  ok('a dimension prints the typed label and nothing computed',
+     /String\(s\.label == null \? '' : s\.label\)/.test(dim) && !/Math\.sqrt[^;]*toFixed/.test(dim),
+     'the app does not know the drawing\'s scale; a number that looked like millimetres and was ' +
+     'not would be worse than none, on a sheet somebody signs');
+
+  const svgFn = take('function _accShapeSvg(', '_accShapeSvg');
+  ok('text is escaped before it goes into the SVG',
+     /_accE\(s\.t \|\| ''\)/.test(svgFn));
+  ok('every tool in the palette has a renderer',
+     ['hl', 'box', 'cloud', 'arr', 'line', 'pen', 'text', 'dim']
+       .every(k => svgFn.indexOf("case '" + k + "'") > 0),
+     'a tool that draws nothing looks like a broken pointer, not a missing case');
+  ok('an unknown kind renders nothing rather than throwing',
+     /default:\s*\n\s*return '';/.test(svgFn),
+     'one bad row must not take the whole drawing down');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

@@ -292,6 +292,137 @@ def test_the_scan_of_the_signed_sheet_may_still_be_attached_afterwards(base_url,
     assert kind != "err", msg
 
 
+# ── marked-up drawings ──────────────────────────────────────────────────────────────────────────
+
+PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+def _drawing(pid, did, **kw):
+    r = {"projectId": pid, "dossierId": did, "seq": 1, "name": "SD-101.png",
+         "image": PNG, "w": 2200, "h": 1558, "caption": "", "paper": "A4L",
+         "shapes": [{"k": "box", "x": 10, "y": 10, "w": 100, "h": 80, "color": "#E11D48", "sw": 7}]}
+    r.update(kw)
+    return db.put_collection_item("pm_acc_drawings", r)
+
+
+def test_the_dossier_view_returns_drawings_without_their_rasters(base_url, proj):
+    """This endpoint is re-read after every checklist click. A dozen A3 sheets re-sent each time is
+    the most expensive thing this module could do, and the screen only needs the shapes to draw a
+    thumbnail count — the bytes come from the image endpoint when a sheet is actually opened."""
+    d = _dossier(proj["id"])
+    _line(proj["id"], d["id"])
+    _drawing(proj["id"], d["id"])
+    _, _, out = _H()._acc_dossier_ep(PM, {"id": [d["id"]]})
+    assert len(out["drawings"]) == 1
+    dr = out["drawings"][0]
+    assert dr["image"] == "" and dr["hasImage"] is True and dr["imageBytes"] > 0
+    assert len(dr["shapes"]) == 1, "the mark-up itself must still come back — it is tiny"
+
+
+def test_a_register_read_strips_the_raster_too(base_url, proj):
+    """The same cost by the other route. `image` is not a generic key — only this collection uses
+    it — so the shared stripper has to be told about it or a list read ships every sheet."""
+    d = _dossier(proj["id"])
+    _drawing(proj["id"], d["id"])
+    lean = app.Handler._strip_file_bytes({"id": "x", "image": PNG, "shapes": []})
+    assert lean["image"] == "" and lean["hasImage"] is True and lean["imageBytes"] == len(PNG)
+
+
+def test_a_row_with_no_image_is_returned_untouched(base_url):
+    """The stripper must not invent hasImage on every record in the portal."""
+    row = {"id": "x", "name": "n"}
+    assert app.Handler._strip_file_bytes(row) is row
+
+
+def test_a_drawing_on_a_signed_minute_cannot_be_marked_up_or_removed(base_url, proj):
+    """A mark-up is what the minute POINTS AT. Being able to move an arrow onto a different grid
+    line after the minute is signed is the same as being able to change what it says."""
+    d = _dossier(proj["id"], status=A.STATUS_ACCEPTED)
+    dr = _drawing(proj["id"], d["id"])
+    kind, _, msg = _update(PM, "pm_acc_drawings", dr["id"],
+                           dict(dr, shapes=[{"k": "arr", "x1": 0, "y1": 0, "x2": 9, "y2": 9}]))
+    assert kind == "err" and "shapes" in msg
+    kind2, status2, _ = _delete(PM, "pm_acc_drawings", dr["id"])
+    assert kind2 == "err" and status2 == 403
+
+
+def test_a_drawing_on_an_unsigned_dossier_is_freely_marked_up(base_url, proj):
+    d = _dossier(proj["id"], status=A.STATUS_REVIEWED)
+    dr = _drawing(proj["id"], d["id"])
+    kind, _, msg = _update(PM, "pm_acc_drawings", dr["id"], dict(dr, shapes=[], caption="Tầng 1"))
+    assert kind != "err", msg
+    assert db.get_collection_item("pm_acc_drawings", dr["id"])["caption"] == "Tầng 1"
+
+
+def test_nothing_new_can_be_added_to_a_signed_minute(base_url, proj):
+    """The hole the update and delete guards left. Both froze a signed dossier's children; CREATE
+    was reachable by the one verb neither covered, so a drawing, a checklist line or an outstanding
+    item could still be added to a minute somebody had already put their name to."""
+    d = _dossier(proj["id"], status=A.STATUS_ACCEPTED)
+    for coll, row in (("pm_acc_drawings", {"name": "late.png", "image": PNG}),
+                      ("pm_acc_items", {"textVi": "Mục thêm sau", "result": "Đạt"}),
+                      ("pm_acc_defects", {"description": "Tồn tại thêm sau", "impact": "cosmetic"})):
+        body = dict(row, projectId=proj["id"], dossierId=d["id"])
+        kind, status, msg = _H()._coll_add(PM, coll, body)
+        assert kind == "err" and status == 409, (coll, kind, status, msg)
+        assert "has been signed" in msg
+
+
+def test_and_still_can_be_added_to_one_that_is_not(base_url, proj):
+    d = _dossier(proj["id"], status=A.STATUS_SUBMITTED)
+    kind, _, out = _H()._coll_add(PM, "pm_acc_items", {
+        "projectId": proj["id"], "dossierId": d["id"], "textVi": "Mục mới", "result": ""})
+    assert kind == "json", out
+
+
+def test_the_image_endpoint_serves_real_bytes_over_http(base_url, proj, tokens):
+    """Over the socket, not through the stubbed handler. This endpoint writes a body itself rather
+    than going through _json, so a fake handler with no socket proves nothing about it — and the
+    headers are the point: an uploaded file served from the portal's own origin has to arrive
+    sandboxed and non-sniffable, like every other file this app hands back."""
+    import urllib.request
+    import urllib.error
+
+    d = _dossier(proj["id"])
+    dr = _drawing(proj["id"], d["id"])
+    req = urllib.request.Request(
+        base_url + "/api/pm/acceptance/drawing?id=" + dr["id"],
+        headers={"Authorization": "Bearer " + tokens["admin"]})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        body = r.read()
+        assert r.status == 200
+        assert r.headers.get("Content-Type") == "image/png"
+        assert body[:8] == b"\x89PNG\r\n\x1a\n", "that is not a PNG"
+        assert r.headers.get("X-Content-Type-Options") == "nosniff"
+        assert "sandbox" in (r.headers.get("Content-Security-Policy") or "")
+
+    blank = _drawing(proj["id"], d["id"], image="", seq=2)
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            base_url + "/api/pm/acceptance/drawing?id=" + blank["id"],
+            headers={"Authorization": "Bearer " + tokens["admin"]}), timeout=10)
+        assert False, "a row with no image must not return 200"
+    except urllib.error.HTTPError as e:
+        assert e.code == 404
+
+
+def test_the_image_endpoint_will_not_serve_a_project_you_are_not_on(base_url, proj, tokens):
+    """Scoping is not re-implemented in that endpoint — it goes through _coll_one, which runs the
+    LIST and picks the row out of it. A second answer to the same question is how two gates come to
+    disagree; this asserts the one that is there actually bites."""
+    import urllib.request
+    import urllib.error
+
+    d = _dossier(proj["id"])
+    dr = _drawing(proj["id"], d["id"])
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            base_url + "/api/pm/acceptance/drawing?id=" + dr["id"]), timeout=10)
+        assert False, "an unauthenticated caller was served a project drawing"
+    except urllib.error.HTTPError as e:
+        assert e.code in (401, 403)
+
+
 # ── composing a dossier ─────────────────────────────────────────────────────────────────────────
 
 def test_composing_copies_the_checklist_rather_than_pointing_at_it(base_url, proj):

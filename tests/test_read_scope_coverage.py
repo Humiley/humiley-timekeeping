@@ -86,6 +86,10 @@ SHARED = {
     # Deliberately NOT manager-gated the way pm_costs is: nothing here carries a price. The reason
     # pm_costs is scoped is commercial terms, and an acceptance minute has none.
     "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects",
+    # pm_acc_drawings is the marked-up drawing the minute points at, so it is part of the same
+    # document and shares its answer. The one thing it adds is BYTES — a dozen A3 rasters — and
+    # that is a size question, answered by _strip_file_bytes on the list read, not a scope one.
+    "pm_acc_drawings",
     #
     # pm_execNotes, pm_portfolioSnapshots and pm_quality_itp_items used to be listed here. They
     # were registered and reached by nothing — no endpoint, no screen, no test — and are now

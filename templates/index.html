@@ -8012,6 +8012,7 @@ const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () =>
      repaints the whole screen rather than one table. */
   pm_acc: () => _accRepaint(), pm_acc_items: () => _accRepaint(), pm_acc_plans: () => _accRepaint(),
   pm_acc_forms: () => _accRepaint(), pm_acc_defects: () => _accRepaint(),
+  pm_acc_drawings: () => _accRepaint(),
   // A QS register edit has to re-read /api/qs/summary: every figure on the tab is computed
   // server-side from these rows, so redrawing without refetching would show a table that has
   // changed under totals that have not.
@@ -18065,6 +18066,7 @@ const _PM_UPLOAD_DIR = {
   pm_acc: '08_Documentation_Handover',
   pm_acc_defects: '08_Documentation_Handover',
   pm_acc_plans: '06_Commissioning_Qualification',
+  pm_acc_drawings: '08_Documentation_Handover',
   pm_comms: '12_Meeting_Minutes_Correspondence',
   pm_issues: '11_Risk_Issue_Register_Live',
   pm_risks: '11_Risk_Issue_Register_Live',
@@ -22313,7 +22315,7 @@ function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.us
 
 const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_qs_subvo', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports',
   'pm_qs_boq', 'pm_qs_measure', 'pm_qs_variations', 'pm_qs_daywork', 'pm_qs_materials', 'pm_qs_valuations', 'pm_qs_cvr', 'pm_qs_commissioning',
-  'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects',
+  'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_acc_drawings',
   'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
@@ -24230,7 +24232,7 @@ function _pmLongCell(v, n) {
   return '<span title="' + _tkEscA(t) + '"' + (cut ? ' style="cursor:help"' : '') + '>' +
     _pmEsc(cut ? t.slice(0, n || 60).trim() + '…' : t) + '</span>';
 }
-function _pmRowEditable(coll) { const sw = ['pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
+function _pmRowEditable(coll) { const sw = ['pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_acc_drawings', 'pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
@@ -25078,7 +25080,7 @@ function _accPaintDetail() {
   try {
     body.innerHTML = _accHeaderCard(v) + _accReadyCard(v) + _accFormCard(v) +
       _accChecklistCard(v) + _accBasisCard(v) + _accClearanceCard(v) + _accDefectCard(v) +
-      _accSignCard(v);
+      _accDrawingsCard(v) + _accSignCard(v);
   } catch (e) {
     body.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error: ' + _accE(e.message) + '</div>';
   }
@@ -25630,17 +25632,41 @@ function _accOpenMinute() {
      3  Biên bản kiểm tra (checklist)   — what was checked, against what
      4  Phụ lục: danh mục tồn tại       — only when there is a punch list                       */
 
-let _accPrintPick = { arf: true, minute: true, check: true, punch: true };
+let _accPrintPick = { arf: true, minute: true, check: true, punch: true, draw: true };
 let _accPrintPt = 9.8;
 
-function accPrint() {
+async function accPrint() {
   if (!_accView) return;
+  /* The dossier read strips every drawing's bytes, so the print set would render a set of empty
+     boxes — the sheets would be there, correctly numbered, with nothing on them. That is the worst
+     possible failure for this screen: a plausible-looking set somebody signs. Fetch the rasters
+     first, once, and say so while it happens. */
+  /* EVERY drawing, every time, and the SHAPES come back with the image. Fetching only the ones
+     missing their raster left the mark-up as it stood when the dossier was last opened, so a sheet
+     annotated in the last few minutes printed with the marks it had before — on the document a
+     client and a consultant put their names to. Printing is a deliberate, occasional act; making
+     it re-read is the cheapest possible way to guarantee the paper says what the database does. */
+  const all = _accView.drawings || [];
+  if (all.length) {
+    toast(_t('Loading') + ' ' + all.length + ' ' + _t('drawing(s) for print…'), 'info');
+    for (const r of all) {
+      try {
+        const got = await tkApi('/api/coll/pm_acc_drawings/' + encodeURIComponent(r.id));
+        const full = (got && got.item) || got || {};
+        if (full.image) r.image = full.image;
+        if (Array.isArray(full.shapes)) r.shapes = full.shapes;
+        if (full.caption != null) r.caption = full.caption;
+        if (full.paper) r.paper = full.paper;
+      } catch (e) { /* the sheet below says so rather than printing an empty frame */ }
+    }
+  }
   const v = _accView, d = v.dossier || {};
   const drop = (v.defects || []).length ? '' : ' disabled';
+  const dropD = (v.drawings || []).length ? '' : ' disabled';
   const chk = (k, label, sub) =>
     '<label style="flex:1;min-width:190px;display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:11px;cursor:pointer">' +
     '<input type="checkbox" data-accpr="' + k + '"' + (_accPrintPick[k] ? ' checked' : '') +
-      (k === 'punch' ? drop : '') + ' onchange="_accPrintToggle(\'' + k + '\')" style="margin-top:2px">' +
+      (k === 'punch' ? drop : (k === 'draw' ? dropD : '')) + ' onchange="_accPrintToggle(\'' + k + '\')" style="margin-top:2px">' +
     '<span><span style="font-size:12.5px;font-weight:700;color:var(--text)">' + _accE(label) + '</span>' +
     '<div style="font-size:10.5px;color:var(--text-light)">' + _accE(sub) + '</div></span></label>';
 
@@ -25660,6 +25686,7 @@ function accPrint() {
         chk('minute', _t('Acceptance minute'), 'BBNT · NĐ 06/2021 Đ.21') +
         chk('check', _t('Inspection record'), _t('the checklist')) +
         chk('punch', _t('Outstanding items'), 'Đ.24(3) · ' + ((v.defects || []).length || 0)) +
+        chk('draw', _t('Drawings'), _t('marked up') + ' · ' + ((v.drawings || []).length || 0)) +
       '</div>' +
       '<div style="display:flex;gap:11px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-light)">' +
         '<span>' + _t('Print text size') + '</span>' +
@@ -25699,6 +25726,10 @@ function _accSheets(v) {
   if (_accPrintPick.minute) out.push(_accSheetMinute(v));
   if (_accPrintPick.check) out.push(_accSheetChecklist(v));
   if (_accPrintPick.punch && (v.defects || []).length) out.push(_accSheetPunch(v));
+  /* The drawings come LAST, as an annex, and each is a sheet of its own. Bound behind the minute
+     is where a dossier carries them, and it means dropping them from a print run (the client only
+     asked for the minute) leaves the numbered forms in front untouched. */
+  if (_accPrintPick.draw) (v.drawings || []).forEach((r, i) => out.push(_accSheetDrawing(v, r, i + 1)));
   return out.join('');
 }
 
@@ -26257,6 +26288,673 @@ async function accFormDelete(id) {
   _accRepaint();
 }
 
+/* ═══════════════ 16 · Bản vẽ đính kèm — marking up the drawing ═════════════════════════════
+
+   An acceptance minute says a work was inspected. The DRAWING says where, and what on it was
+   looked at — the sleeve at grid C-3, the tray run that was re-supported, the panel that failed.
+   Without it a dossier read six months later cannot be tied back to the building.
+
+   THE MARK-UP IS DATA, NOT PIXELS. Every shape is stored as a vector object in the image's own
+   coordinate space and drawn as SVG over the raster. That is the whole design, and three things
+   fall out of it:
+
+     · it stays CORRECTABLE. An arrow pointing at the wrong grid line is moved or deleted, up until
+       the minute is signed — at which point it freezes with everything else on the dossier, because
+       being able to change what a signed minute points at is the same as being able to change what
+       it says;
+     · it PRINTS at the printer's resolution rather than the screen's. An A3 detail annotated at
+       1000px and burned into a PNG is a blurred sheet on A4; an SVG overlay has no resolution;
+     · deleting one object is a click on it. With a canvas the only undo is "redraw everything from
+       a history you also had to keep", which is the same data with a worse renderer in front of it.
+
+   A PDF is RASTERISED on upload, one drawing per page. Keeping the PDF and rendering it live would
+   anchor the mark-up to a render that changes with the viewer — and on an iPhone an in-page PDF
+   shows page one and nothing else, so a three-page detail would silently lose two of them.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+const _ACC_TOOLS = [
+  { k: 'hl',    vi: 'Tô sáng',      en: 'Highlight',  icon: '▭' },
+  { k: 'box',   vi: 'Khung',        en: 'Box',        icon: '▢' },
+  { k: 'cloud', vi: 'Mây sửa đổi',  en: 'Cloud',      icon: '☁' },
+  { k: 'arr',   vi: 'Mũi tên',      en: 'Arrow',      icon: '↗' },
+  { k: 'pen',   vi: 'Bút vẽ',       en: 'Pen',        icon: '✎' },
+  { k: 'text',  vi: 'Chèn chữ',     en: 'Text',       icon: 'T' },
+  { k: 'line',  vi: 'Đường',        en: 'Line',       icon: '╱' },
+  { k: 'dim',   vi: 'Kích thước',   en: 'Dimension',  icon: '↔' },
+  { k: 'del',   vi: 'Xoá đối tượng', en: 'Delete',    icon: '⌫' }
+];
+const _ACC_COLORS = ['#E11D48', '#2563EB', '#059669', '#D97706', '#7C3AED', '#0B1F3A', '#FFFFFF'];
+/* The long edge every uploaded drawing is resampled to. 2200px is a deliberate compromise: enough
+   that a 1:100 A3 general arrangement stays readable when a reviewer zooms, small enough that a
+   dozen sheets on one dossier do not turn the record into something nobody can sync. The mark-up
+   is vector, so print sharpness does not depend on this number — only how far you can zoom the
+   background does. */
+const _ACC_MAXPX = 2200;
+const _ACC_MAXBYTES = 6 * 1024 * 1024;
+
+let _accDraw = {            // the editor's whole state; nothing here is persisted directly
+  id: '',                   // which drawing row is open
+  row: null,                // the row INCLUDING its image (the dossier read strips the bytes)
+  tool: 'hl',
+  color: '#E11D48',
+  sw: 3,
+  fs: 20,
+  text: '',
+  drag: null,               // the shape being dragged out right now
+  saving: false,            // a write is in flight
+  again: false              // …and another was asked for while it was
+};
+
+function _accDrawFrozen() {
+  return _accFrozen((_accView || {}).dossier || {});
+}
+
+/* ---- the card on the dossier ---------------------------------------------------------------- */
+function _accDrawingsCard(v) {
+  const rows = v.drawings || [], ro = _accFrozen(v.dossier || {});
+  const strip = rows.length
+    ? rows.map((r, i) =>
+      '<div onclick="accDrawOpen(\'' + r.id + '\')" style="flex:0 0 auto;width:132px;cursor:pointer;' +
+      'border:1px solid ' + (_accDraw.id === r.id ? 'var(--navy)' : 'var(--line)') + ';border-radius:9px;overflow:hidden;background:var(--soft-bg)">' +
+      '<div style="height:84px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);background:#fff">' +
+        (r.hasImage || r.image ? '<img src="/api/pm/acceptance/drawing?id=' + encodeURIComponent(r.id) + '" alt="" ' +
+           'style="max-width:100%;max-height:84px;object-fit:contain" loading="lazy">'
+         : _t('no image')) + '</div>' +
+      '<div style="padding:5px 7px;font-size:10.5px;line-height:1.35">' +
+        /* _t2, not _t. "Sheet" already means "Khổ bản vẽ" — the drawing's PAPER SIZE — elsewhere
+           in the portal, and _VI is one flat object keyed by the English string. Taking the shared
+           key would have retranslated that other screen; here the word means a numbered page. */
+        '<div style="font-weight:700;color:var(--navy)">' + _t2('Sheet', 'Tờ') + ' ' + (i + 1) + '</div>' +
+        '<div style="color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+          _accE(r.caption || r.name || '') + '</div>' +
+        '<div style="color:var(--text-light)">' + ((r.shapes || []).length) + ' ' + _t('marks') + '</div>' +
+      '</div></div>').join('')
+    : '<div style="padding:14px;color:var(--text-light);font-size:12.5px">' +
+      _accE(_t('No drawing attached. A minute says a work was inspected; the drawing says where on the building.')) + '</div>';
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div class="card-title">' + _t('Drawings attached') + '</div>' +
+      (ro ? '' :
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<label class="btn btn-primary btn-sm" style="cursor:pointer;margin:0">' + _PLUS_SVG + ' ' + _t('Add drawing') +
+          '<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="accDrawAdd(this)"></label>' +
+      '</div>') + '</div>' +
+    '<div style="padding:9px 16px;font-size:11.5px;color:var(--text-light);line-height:1.6;border-bottom:1px solid var(--line)">' +
+      _accE(_t('Image or PDF. A PDF is turned into one sheet per page, so nothing is lost the way an in-page PDF loses every page after the first on a phone. Mark-up is kept as shapes, not painted into the picture — it stays correctable until the minute is signed, and it prints at the printer’s resolution rather than the screen’s.')) +
+    '</div>' +
+    '<div style="display:flex;gap:9px;padding:12px 16px;overflow-x:auto">' + strip + '</div>' +
+    (_accDraw.id ? _accDrawEditor() : '') +
+  '</div>';
+}
+
+/* ---- adding: rasterise whatever arrives ------------------------------------------------------ */
+async function accDrawAdd(input) {
+  const files = [...(input.files || [])]; input.value = '';
+  if (!files.length || !_accOpenId) return;
+  if (_accDrawFrozen()) { toast(_t('This minute has been signed.'), 'warn'); return; }
+  toast(_t('Reading') + ' ' + files.length + ' ' + _t('file(s)…'), 'info');
+  let seq = ((_accView.drawings || []).length) + 1, made = 0, failed = [];
+  for (const f of files) {
+    let sheets = [];
+    try {
+      sheets = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)
+        ? await _accRasterPdf(f) : [await _accRasterImage(f)];
+    } catch (e) { failed.push(f.name + ' — ' + (e.message || 'unreadable')); continue; }
+    for (const sh of sheets) {
+      if (sh.image.length > _ACC_MAXBYTES) { failed.push(f.name + ' — ' + _t('too large even after resampling')); continue; }
+      try {
+        await tkApi('/api/coll/pm_acc_drawings', { method: 'POST', body: {
+          projectId: _pmPid(), dossierId: _accOpenId, seq: seq++,
+          name: sh.name || f.name, image: sh.image, w: sh.w, h: sh.h,
+          caption: '', paper: sh.w > sh.h ? 'A4L' : 'A4P', shapes: [] } });
+        made++;
+      } catch (e) { failed.push(f.name + ' — ' + _errMsg(e)); }
+    }
+  }
+  await _accReload(['pm_acc_drawings']);
+  await accOpen(_accOpenId);
+  /* Says what did NOT arrive, by name. An importer that reports only its successes is how a
+     half-loaded dossier is discovered at the inspection it was assembled for. */
+  if (failed.length) toast(made + ' ' + _t('sheet(s) added') + ' · ' + _t('not added') + ': ' + failed.join('; '), 'warn', 9000);
+  else toast(made + ' ' + _t('sheet(s) added'), 'success');
+}
+
+/* Draw whatever it is onto a canvas capped at _ACC_MAXPX and take the pixels back out. Going
+   through a canvas rather than storing the file verbatim is what makes `w`/`h` trustworthy: the
+   shape coordinates are anchored to them, and an image whose stored size disagreed with its pixels
+   would put every mark in the wrong place. */
+function _accRasterImage(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('could not be read'));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('not an image this browser can open'));
+      img.onload = () => {
+        const nw = img.naturalWidth || img.width, nh = img.naturalHeight || img.height;
+        if (!nw || !nh) return reject(new Error('has no size'));
+        const s = Math.min(1, _ACC_MAXPX / Math.max(nw, nh));
+        const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);   // a transparent PNG must not print black
+        g.drawImage(img, 0, 0, w, h);
+        // JPEG for photographs, PNG for line art: a site photo as PNG is several times the size
+        // for no gain, and a drawing as JPEG grows ringing artefacts along every line.
+        const jpeg = /jpe?g/i.test(file.type) || /\.jpe?g$/i.test(file.name);
+        resolve({ image: c.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.9), w: w, h: h, name: file.name });
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+async function _accRasterPdf(file) {
+  await (typeof tkEnsureExportLibs === 'function' ? tkEnsureExportLibs() : Promise.resolve());
+  if (!window.pdfjsLib) throw new Error(_t('the PDF engine did not load — attach the page as an image instead'));
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const n = Math.min(pdf.numPages || 1, 20);
+  const out = [];
+  for (let p = 1; p <= n; p++) {
+    const page = await pdf.getPage(p);
+    const v1 = page.getViewport({ scale: 1 });
+    const scale = Math.min(3, _ACC_MAXPX / Math.max(v1.width, v1.height));
+    const vp = page.getViewport({ scale: scale });
+    const c = document.createElement('canvas');
+    c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: g, viewport: vp }).promise;
+    out.push({ image: c.toDataURL('image/png'), w: c.width, h: c.height,
+               name: file.name + (n > 1 ? ' · p.' + p : '') });
+  }
+  return out;
+}
+
+/* ---- opening one --------------------------------------------------------------------------- */
+async function accDrawOpen(id) {
+  if (_accDraw.id === id) { _accDraw.id = ''; _accDraw.row = null; _accPaintDetail(); return; }
+  _accDraw.id = id; _accDraw.row = null; _accDraw.drag = null;
+  _accPaintDetail();
+  try {
+    /* The dossier read strips the raster (a dozen A3 sheets re-sent on every checklist click), so
+       the bytes are fetched HERE, once, for the sheet actually being opened. */
+    const r = await tkApi('/api/coll/pm_acc_drawings/' + encodeURIComponent(id));
+    _accDraw.row = (r && r.item) || r || null;
+  } catch (e) { toast(_errMsg(e), 'error'); _accDraw.id = ''; }
+  _accPaintDetail();
+}
+
+/* ---- the editor ---------------------------------------------------------------------------- */
+function _accDrawEditor() {
+  const row = _accDraw.row;
+  const ro = _accDrawFrozen();
+  if (!row) return '<div style="padding:18px;text-align:center">' + tkSkeleton() + '</div>';
+  const shapes = row.shapes || [];
+
+  const tools = _ACC_TOOLS.filter(t => !ro || t.k !== 'del').map(t =>
+    '<button data-acctool="' + t.k + '" onclick="accDrawTool(\'' + t.k + '\')"' + (ro ? ' disabled' : '') +
+    ' title="' + _tkEscA(t.vi + ' / ' + t.en) + '" style="border:1px solid ' +
+    (_accDraw.tool === t.k ? 'var(--navy)' : 'var(--line)') + ';background:' +
+    (_accDraw.tool === t.k ? 'var(--navy)' : 'var(--card)') + ';color:' +
+    (_accDraw.tool === t.k ? '#fff' : 'var(--text)') + ';border-radius:8px;padding:7px 4px;' +
+    'font-size:10px;cursor:' + (ro ? 'default' : 'pointer') + ';display:flex;flex-direction:column;' +
+    'align-items:center;gap:3px;min-width:60px;opacity:' + (ro ? '.45' : '1') + '">' +
+    '<span style="font-size:15px;line-height:1">' + t.icon + '</span>' +
+    '<span style="line-height:1.15;text-align:center">' + _accE((typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? t.vi : t.en) + '</span></button>').join('');
+
+  const swatches = _ACC_COLORS.map(c =>
+    '<button data-acccolor="' + c + '" onclick="accDrawColor(\'' + c + '\')"' + (ro ? ' disabled' : '') +
+    ' style="width:26px;height:26px;border-radius:6px;background:' + c + ';cursor:' + (ro ? 'default' : 'pointer') +
+    ';border:' + (_accDraw.color === c ? '3px solid var(--navy)' : '1px solid var(--line)') + '"></button>').join('');
+
+  const sideTop =
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px">' + tools + '</div>' +
+    '<div style="margin-top:11px"><label style="font-size:10.5px;font-weight:700;color:var(--text-light);letter-spacing:.4px">' +
+      _accE(_t('TEXT TO PLACE')) + '</label>' +
+      '<textarea id="acc-dr-text" rows="2" class="form-control" style="font-size:12px;margin-top:4px"' + (ro ? ' disabled' : '') +
+      ' placeholder="' + _tkEscA(_t('e.g. Cao độ +3.200 đạt yêu cầu')) + '" oninput="_accDraw.text=this.value">' + _accE(_accDraw.text) + '</textarea>' +
+      '<div style="font-size:10.5px;color:var(--text-light);margin-top:3px;line-height:1.4">' +
+      _accE(_t('Choose “Text” then tap the drawing.')) + '</div></div>' +
+    '<div style="margin-top:11px"><label style="font-size:10.5px;font-weight:700;color:var(--text-light);letter-spacing:.4px">' +
+      _accE(_t('COLOUR')) + '</label>' +
+      '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">' + swatches + '</div></div>' +
+    '<div style="display:flex;gap:8px;margin-top:11px">' +
+      '<div style="flex:1"><label style="font-size:10.5px;font-weight:700;color:var(--text-light)">' + _accE(_t('TEXT SIZE')) + '</label>' +
+        '<input type="number" min="8" max="120" value="' + _accDraw.fs + '" class="form-control" style="font-size:12px"' + (ro ? ' disabled' : '') +
+        ' onchange="_accDraw.fs=Math.max(8,Math.min(120,+this.value||20))"></div>' +
+      '<div style="flex:1"><label style="font-size:10.5px;font-weight:700;color:var(--text-light)">' + _accE(_t('STROKE')) + '</label>' +
+        '<input type="number" min="1" max="24" value="' + _accDraw.sw + '" class="form-control" style="font-size:12px"' + (ro ? ' disabled' : '') +
+        ' onchange="_accDraw.sw=Math.max(1,Math.min(24,+this.value||3))"></div>' +
+    '</div>';
+
+  const sideBottom =
+    '<div style="margin-top:11px"><label style="font-size:10.5px;font-weight:700;color:var(--text-light);letter-spacing:.4px">' +
+      _accE(_t('CAPTION (printed under the drawing)')) + '</label>' +
+      '<input id="acc-dr-cap" class="form-control" style="font-size:12px;margin-top:4px"' + (ro ? ' disabled' : '') +
+      ' value="' + _tkEscA(row.caption || '') + '" placeholder="' + _tkEscA(_t('Bản vẽ mặt bằng thang máng')) + '"' +
+      ' onchange="accDrawMeta({caption:this.value})"></div>' +
+    '<div style="margin-top:11px"><label style="font-size:10.5px;font-weight:700;color:var(--text-light);letter-spacing:.4px">' +
+      _accE(_t('DRAWING BOX')) + '</label>' +
+      '<select class="form-control" style="font-size:12px;margin-top:4px"' + (ro ? ' disabled' : '') +
+      ' onchange="accDrawMeta({paper:this.value})">' +
+      ['A4P', 'A4L'].map(p => '<option value="' + p + '"' + ((row.paper || 'A4P') === p ? ' selected' : '') + '>' +
+        (p === 'A4P' ? _t('Tall — portrait drawing') : _t('Wide — landscape drawing')) + '</option>').join('') + '</select>' +
+      '<div style="font-size:10.5px;color:var(--text-light);margin-top:3px;line-height:1.4">' +
+      _accE(_t('The sheet is always A4 portrait; this is how much of it the drawing gets.')) + '</div></div>' +
+    (ro ? '' :
+    '<div style="display:flex;gap:6px;margin-top:13px;flex-wrap:wrap">' +
+      '<button class="btn btn-outline btn-sm" style="flex:1" onclick="accDrawUndo()"' +
+        (shapes.length ? '' : ' disabled style="flex:1;opacity:.45"') + '>↶ ' + _t('Undo') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="accDrawClear()"' +
+        (shapes.length ? '' : ' disabled') + '>' + _t('Clear all marks') + '</button>' +
+    '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;color:#C00000" onclick="accDrawDelete()">' +
+      _t('Remove this drawing') + '</button>');
+
+  const status = '<span id="acc-dr-status" style="font-size:11px;color:var(--text-light)">' +
+    shapes.length + ' ' + _t('marks') + '</span>';
+
+  return '<div style="border-top:1px solid var(--line);padding:12px 16px 16px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+      '<div style="font-size:12.5px;font-weight:700;color:var(--navy)">' + _accE(row.name || '') + '</div>' +
+      '<div style="display:flex;gap:9px;align-items:center">' + status +
+      '<button class="btn btn-ghost btn-sm" onclick="accDrawOpen(\'' + row.id + '\')">' + _t('Close') + '</button></div></div>' +
+    (ro ? '<div style="padding:7px 10px;background:#FEF3C7;border-radius:8px;font-size:11.5px;color:#92400E;margin-bottom:9px">🔒 ' +
+      _accE(_t('The minute is signed — the mark-up is part of what was accepted and can no longer be changed.')) + '</div>' : '') +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">' +
+      '<div style="flex:1;min-width:280px">' +
+        '<div id="acc-dr-stage" style="position:relative;background:var(--soft-bg);border:1px solid var(--line);' +
+        'border-radius:9px;overflow:auto;max-height:70vh;touch-action:none">' +
+          _accDrawStage(row) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:5px">' +
+          _accE(_t('Drag to draw. With “Delete” chosen, tap a mark to remove it.')) + '</div>' +
+      '</div>' +
+      '<div style="flex:0 0 236px;min-width:210px">' + sideTop + sideBottom + '</div>' +
+    '</div></div>';
+}
+
+/* The image and its overlay, in ONE coordinate space.
+   The SVG carries viewBox="0 0 w h" and width:100%, so every shape is stored in the drawing's own
+   pixels and the browser does the scaling — on screen, on a phone, and at whatever resolution the
+   printer asks for. Nothing in this module converts between screen and drawing coordinates except
+   _accDrawPt, which is the one place a scale factor exists. */
+function _accDrawStage(row) {
+  const w = row.w || 1000, h = row.h || 700;
+  return '<div style="position:relative;width:100%">' +
+    '<img id="acc-dr-img" src="' + (row.image || '') + '" alt="" draggable="false" ' +
+      'style="display:block;width:100%;height:auto;user-select:none">' +
+    '<svg id="acc-dr-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" ' +
+      'style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair" ' +
+      'onpointerdown="accDrawDown(event)" onpointermove="accDrawMove(event)" ' +
+      'onpointerup="accDrawUp(event)" onpointercancel="accDrawUp(event)" ' +
+      'onpointerleave="accDrawUp(event)">' +
+      _accShapesSvg(row.shapes || [], true) +
+      '<g id="acc-dr-ghost"></g>' +
+    '</svg></div>';
+}
+
+/* ---- shape → SVG --------------------------------------------------------------------------- */
+function _accShapesSvg(shapes, live) {
+  return (shapes || []).map((s, i) => _accShapeSvg(s, live ? i : -1)).join('');
+}
+function _accShapeSvg(s, idx) {
+  const c = s.color || '#E11D48', sw = s.sw || 3;
+  const hit = idx >= 0 ? ' data-si="' + idx + '" onclick="accDrawHit(event,' + idx + ')"' : '';
+  const P = n => (Math.round((+n || 0) * 100) / 100);
+  switch (s.k) {
+    case 'hl':
+      return '<rect' + hit + ' x="' + P(s.x) + '" y="' + P(s.y) + '" width="' + P(s.w) + '" height="' + P(s.h) +
+             '" fill="' + c + '" fill-opacity="0.28" stroke="' + c + '" stroke-opacity="0.55" stroke-width="' + sw + '"/>';
+    case 'box':
+      return '<rect' + hit + ' x="' + P(s.x) + '" y="' + P(s.y) + '" width="' + P(s.w) + '" height="' + P(s.h) +
+             '" fill="none" stroke="' + c + '" stroke-width="' + sw + '"/>';
+    case 'cloud':
+      return '<path' + hit + ' d="' + _accCloudPath(s) + '" fill="none" stroke="' + c + '" stroke-width="' + sw +
+             '" stroke-linejoin="round"/>';
+    case 'arr': {
+      const a = _accArrowHead(s, sw);
+      return '<g' + hit + '><line x1="' + P(s.x1) + '" y1="' + P(s.y1) + '" x2="' + P(a.bx) + '" y2="' + P(a.by) +
+             '" stroke="' + c + '" stroke-width="' + sw + '" stroke-linecap="round"/>' +
+             '<path d="' + a.head + '" fill="' + c + '"/></g>';
+    }
+    case 'line':
+      return '<line' + hit + ' x1="' + P(s.x1) + '" y1="' + P(s.y1) + '" x2="' + P(s.x2) + '" y2="' + P(s.y2) +
+             '" stroke="' + c + '" stroke-width="' + sw + '" stroke-linecap="round"/>';
+    case 'pen':
+      return '<polyline' + hit + ' points="' + (s.pts || []).map(p => P(p[0]) + ',' + P(p[1])).join(' ') +
+             '" fill="none" stroke="' + c + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-linejoin="round"/>';
+    case 'text':
+      return '<text' + hit + ' x="' + P(s.x) + '" y="' + P(s.y) + '" fill="' + c + '" font-size="' + (s.fs || 20) +
+             '" font-family="Arial,Helvetica,sans-serif" font-weight="700" ' +
+             'stroke="#fff" stroke-width="' + Math.max(2, (s.fs || 20) / 7) + '" paint-order="stroke">' +
+             _accE(s.t || '') + '</text>';
+    case 'dim':
+      return _accDimSvg(s, c, sw, hit, P);
+    default:
+      return '';
+  }
+}
+/* A revision cloud is a run of arcs along the rectangle's perimeter. The bump radius scales with
+   the box so a cloud round a small detail does not come out as three enormous lobes. */
+function _accCloudPath(s) {
+  const x = +s.x, y = +s.y, w = Math.abs(+s.w), h = Math.abs(+s.h);
+  if (!w || !h) return '';
+  const r = Math.max(6, Math.min(w, h) / 9);
+  const pts = [];
+  const run = (fx, fy, len, dx, dy) => {
+    const n = Math.max(2, Math.round(len / (r * 1.6)));
+    for (let i = 0; i < n; i++) pts.push([fx + dx * (len * i / n), fy + dy * (len * i / n)]);
+  };
+  run(x, y, w, 1, 0);
+  run(x + w, y, h, 0, 1);
+  run(x + w, y + h, w, -1, 0);
+  run(x, y + h, h, 0, -1);
+  if (!pts.length) return '';
+  let d = 'M ' + pts[0][0] + ' ' + pts[0][1];
+  for (let i = 1; i <= pts.length; i++) {
+    const p = pts[i % pts.length];
+    d += ' A ' + r + ' ' + r + ' 0 0 1 ' + p[0] + ' ' + p[1];
+  }
+  return d + ' Z';
+}
+function _accArrowHead(s, sw) {
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const hl = Math.max(10, sw * 4.5), hw = Math.max(6, sw * 2.6);
+  const ux = dx / len, uy = dy / len;
+  const bx = s.x2 - ux * hl, by = s.y2 - uy * hl;      // where the shaft stops
+  const px = -uy, py = ux;
+  return { bx: bx, by: by,
+    head: 'M ' + s.x2 + ' ' + s.y2 +
+          ' L ' + (bx + px * hw) + ' ' + (by + py * hw) +
+          ' L ' + (bx - px * hw) + ' ' + (by - py * hw) + ' Z' };
+}
+/* A dimension is a line with end ticks and its LENGTH IN DRAWING PIXELS written above it — which is
+   deliberately not a real-world measurement. The app does not know the drawing's scale, and a
+   number that looked like millimetres and was not would be worse than no number at all, on a sheet
+   somebody signs. Type the real figure into the label; the tool gives you the leader. */
+function _accDimSvg(s, c, sw, hit, P) {
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / len, uy = dy / len, px = -uy, py = ux;
+  const t = Math.max(7, sw * 3);
+  const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+  const fs = s.fs || 20;
+  const lab = String(s.label == null ? '' : s.label).trim();
+  return '<g' + hit + '>' +
+    '<line x1="' + P(s.x1) + '" y1="' + P(s.y1) + '" x2="' + P(s.x2) + '" y2="' + P(s.y2) +
+      '" stroke="' + c + '" stroke-width="' + sw + '"/>' +
+    '<line x1="' + P(s.x1 + px * t) + '" y1="' + P(s.y1 + py * t) + '" x2="' + P(s.x1 - px * t) +
+      '" y2="' + P(s.y1 - py * t) + '" stroke="' + c + '" stroke-width="' + sw + '"/>' +
+    '<line x1="' + P(s.x2 + px * t) + '" y1="' + P(s.y2 + py * t) + '" x2="' + P(s.x2 - px * t) +
+      '" y2="' + P(s.y2 - py * t) + '" stroke="' + c + '" stroke-width="' + sw + '"/>' +
+    (lab ? '<text x="' + P(mx + px * (t + fs * 0.5)) + '" y="' + P(my + py * (t + fs * 0.5)) +
+      '" fill="' + c + '" font-size="' + fs + '" font-family="Arial,Helvetica,sans-serif" ' +
+      'font-weight="700" text-anchor="middle" stroke="#fff" stroke-width="' + Math.max(2, fs / 7) +
+      '" paint-order="stroke">' + _accE(lab) + '</text>' : '') +
+  '</g>';
+}
+
+/* ---- pointer handling ----------------------------------------------------------------------- */
+/* Picking a tool restyles the TOOLBAR. It used to repaint the whole dossier detail — eight cards —
+   to move one highlight, which threw the image element away and re-decoded a 2200px drawing on
+   every tap. (Written out rather than in angle brackets: tests/test_a11y_static.py scans the raw
+   file for image tags with no alt text, and it does not know a comment from markup.)
+   On a site tablet that is a visible blank-and-reflow each time somebody switches from Box to
+   Arrow, and it silently resets the scroll position on a sheet they had scrolled into place.
+   It also made the editor briefly unusable: the SVG overlay is sized from the image, so between
+   the repaint and the image's layout the stage has zero height and a pointer lands nowhere. */
+function accDrawTool(k) {
+  _accDraw.tool = k;
+  document.querySelectorAll('[data-acctool]').forEach(b => {
+    const on = b.getAttribute('data-acctool') === k;
+    b.style.borderColor = on ? 'var(--navy)' : 'var(--line)';
+    b.style.background = on ? 'var(--navy)' : 'var(--card)';
+    b.style.color = on ? '#fff' : 'var(--text)';
+  });
+  const svg = document.getElementById('acc-dr-svg');
+  if (svg) svg.style.cursor = (k === 'del') ? 'pointer' : 'crosshair';
+}
+function accDrawColor(c) {
+  _accDraw.color = c;
+  document.querySelectorAll('[data-acccolor]').forEach(b => {
+    b.style.border = (b.getAttribute('data-acccolor') === c)
+      ? '3px solid var(--navy)' : '1px solid var(--line)';
+  });
+}
+
+/* Screen → drawing coordinates. The ONE place a scale factor lives: everything else works in the
+   image's own pixels, which is why a mark stays where it was put on a phone, on a desktop and on
+   the printed sheet. */
+function _accDrawPt(ev) {
+  const svg = document.getElementById('acc-dr-svg');
+  const row = _accDraw.row;
+  if (!svg || !row) return null;
+  const b = svg.getBoundingClientRect();
+  if (!b.width || !b.height) return null;
+  return [ (ev.clientX - b.left) / b.width * (row.w || 1000),
+           (ev.clientY - b.top) / b.height * (row.h || 700) ];
+}
+/* Marks are stored in the DRAWING'S pixels, and drawings arrive at wildly different resolutions —
+   a phone photo of a panel at 1200px and an A1 scan at 2200px. A stroke of "3" stored literally is
+   a bold line on the first and a hairline on the second, and at the size the editor actually shows
+   a 2200px sheet it was invisible: 3/2200 of ~330 screen pixels is under half a pixel. The
+   arrowheads were worse, because their size derives from the stroke.
+   So the numbers in the panel are read against a 1000px reference and multiplied up. "3" then
+   means the same THICKNESS on any drawing, which is what somebody choosing it meant. */
+function _accK() {
+  const r = _accDraw.row;
+  if (!r) return 1;
+  return Math.max(0.5, Math.max(r.w || 1000, r.h || 700) / 1000);
+}
+function accDrawDown(ev) {
+  if (_accDrawFrozen() || !_accDraw.row) return;
+  if (_accDraw.tool === 'del') return;            // delete acts on the shape's own click handler
+  const p = _accDrawPt(ev); if (!p) return;
+  ev.preventDefault();
+  try { ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId); } catch (e) { }
+  const k = _accK();
+  if (_accDraw.tool === 'text') {
+    const t = String(_accDraw.text || '').trim();
+    if (!t) { toast(_t('Type the text in the box on the right first.'), 'warn'); return; }
+    _accDrawPush({ k: 'text', x: p[0], y: p[1], t: t, color: _accDraw.color,
+                   fs: Math.round(_accDraw.fs * k) });
+    return;
+  }
+  _accDraw.drag = { k: _accDraw.tool, x1: p[0], y1: p[1], x2: p[0], y2: p[1],
+                    pts: [[p[0], p[1]]], color: _accDraw.color,
+                    sw: Math.max(1, _accDraw.sw * k), fs: Math.round(_accDraw.fs * k) };
+  _accDrawGhost();
+}
+function accDrawMove(ev) {
+  const d = _accDraw.drag; if (!d) return;
+  const p = _accDrawPt(ev); if (!p) return;
+  ev.preventDefault();
+  d.x2 = p[0]; d.y2 = p[1];
+  if (d.k === 'pen') {
+    const last = d.pts[d.pts.length - 1];
+    // Thin the trail: a pointer fires far faster than a drawing needs, and a 4000-point polyline
+    // stored per stroke is what turns a dossier into something that will not sync.
+    if (Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) > 2 * _accK()) d.pts.push([p[0], p[1]]);
+  }
+  _accDrawGhost();
+}
+function accDrawUp(ev) {
+  const d = _accDraw.drag; if (!d) return;
+  _accDraw.drag = null;
+  const g = document.getElementById('acc-dr-ghost'); if (g) g.innerHTML = '';
+  const shape = _accDragToShape(d);
+  if (!shape) { return; }        // a tap that drew nothing is a tap, not an empty mark
+  _accDrawPush(shape);
+}
+function _accDragToShape(d) {
+  const w = d.x2 - d.x1, h = d.y2 - d.y1;
+  const far = Math.abs(w) + Math.abs(h);
+  if (d.k === 'pen') return d.pts.length > 2 ? { k: 'pen', pts: d.pts, color: d.color, sw: d.sw } : null;
+  /* Scaled too. Six DRAWING pixels on a 2200px sheet is a fifth of a screen pixel, so the
+     "that was a tap, not a drag" test never fired and every stray tap left a zero-size mark. */
+  if (far < 6 * _accK()) return null;
+  if (d.k === 'hl' || d.k === 'box' || d.k === 'cloud') {
+    return { k: d.k, x: Math.min(d.x1, d.x2), y: Math.min(d.y1, d.y2),
+             w: Math.abs(w), h: Math.abs(h), color: d.color, sw: d.sw };
+  }
+  if (d.k === 'dim') {
+    return { k: 'dim', x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, color: d.color, sw: d.sw,
+             fs: d.fs, label: String(_accDraw.text || '').trim() };
+  }
+  return { k: d.k, x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, color: d.color, sw: d.sw };
+}
+function _accDrawGhost() {
+  const g = document.getElementById('acc-dr-ghost');
+  if (!g) return;
+  const d = _accDraw.drag;
+  g.innerHTML = d ? _accShapeSvg(_accDragToShape(d) || d, -1) : '';
+}
+function accDrawHit(ev, idx) {
+  if (_accDraw.tool !== 'del' || _accDrawFrozen()) return;
+  ev.stopPropagation();
+  const row = _accDraw.row; if (!row) return;
+  const shapes = (row.shapes || []).slice();
+  shapes.splice(idx, 1);
+  _accDrawSave(shapes);
+}
+function accDrawUndo() {
+  const row = _accDraw.row; if (!row) return;
+  const shapes = (row.shapes || []).slice();
+  if (!shapes.length) return;
+  shapes.pop();
+  _accDrawSave(shapes);
+}
+async function accDrawClear() {
+  const row = _accDraw.row; if (!row || !(row.shapes || []).length) return;
+  if (!await tkConfirm({ body: _t('Remove every mark from this drawing? The drawing itself stays.'), danger: true })) return;
+  _accDrawSave([]);
+}
+function _accDrawPush(shape) {
+  const row = _accDraw.row; if (!row) return;
+  _accDrawSave((row.shapes || []).concat([shape]));
+}
+
+/* Paint first, then persist. A mark has to appear under the finger immediately — waiting for a
+   round trip on site wifi makes the tool feel broken and people draw the same mark twice. The
+   write still decides: if it is refused (the minute was signed from another device while this one
+   was open) the row is re-read and the mark disappears, with the reason said out loud. */
+function _accDrawSave(shapes) {
+  const row = _accDraw.row; if (!row) return;
+  row.shapes = shapes;
+  const svg = document.getElementById('acc-dr-svg');
+  if (svg) {
+    const ghost = document.getElementById('acc-dr-ghost');
+    svg.innerHTML = _accShapesSvg(shapes, true) + '<g id="acc-dr-ghost"></g>';
+    if (ghost) { /* re-created above */ }
+  }
+  const st = document.getElementById('acc-dr-status');
+  if (st) st.textContent = shapes.length + ' ' + _t('marks');
+  /* The thumbnail strip reads _accView.drawings, which is a DIFFERENT object from the row the
+     editor holds. Without this the count under the sheet stays at whatever it was when the dossier
+     was opened, so the strip says "0 marks" beside a drawing covered in them. */
+  const mirror = ((_accView || {}).drawings || []).find(x => x.id === row.id);
+  if (mirror) mirror.shapes = shapes;
+  _accDrawFlush();
+}
+let _accDrawTimer = null;
+function _accDrawFlush() {
+  /* Debounced: a freehand stroke is one shape but a rectangle drag is one too, and somebody
+     marking up a busy detail produces a mark a second. One PATCH per mark on a 4G link would queue
+     behind itself; 700 ms after the last one is a single write carrying everything. */
+  clearTimeout(_accDrawTimer);
+  _accDrawTimer = setTimeout(_accDrawWrite, 700);
+}
+async function _accDrawWrite() {
+  const row = _accDraw.row; if (!row) return;
+  /* A save asked for while one is in flight is REMEMBERED, not dropped. `if (saving) return` lost
+     the marks drawn during the round trip — the status still said "saved", because an earlier save
+     had succeeded, and the loss only showed up on the next page load. A queue of one is enough:
+     the write always sends the CURRENT shapes, so a later request supersedes an earlier one. */
+  if (_accDraw.saving) { _accDraw.again = true; return; }
+  _accDraw.saving = true;
+  _accDraw.again = false;
+  try {
+    /* The image is NOT sent back. This is a whole-document PATCH, and the row in hand came from a
+       read that may have stripped the raster — sending it as it stands would blank the drawing. */
+    const body = Object.assign({}, row, { shapes: row.shapes || [] });
+    if (!body.image) delete body.image;
+    const res = await tkApi('/api/coll/pm_acc_drawings/' + encodeURIComponent(row.id), { method: 'PATCH', body: body });
+    /* Take the new `_rev` back. tkApi turns a PATCH's `_rev` into an If-Match precondition, so a
+       row held open across two saves sends the version it was LOADED at and the second write 409s
+       — which this function handles by re-reading, so every mark drawn after the first silently
+       vanished a second later. Only visible with more than 700 ms (one debounce) between marks,
+       which is every real editing session and no quick test.
+       Merged rather than assigned wholesale: `res.item` comes from the server and does not carry
+       whatever the person has drawn in the moments since this request went out. */
+    const saved = (res && res.item) || null;
+    if (saved && saved._rev != null) row._rev = saved._rev;
+    const st = document.getElementById('acc-dr-status');
+    if (st) st.textContent = (row.shapes || []).length + ' ' + _t('marks') + ' · ' + _t('saved');
+  } catch (e) {
+    toast(_errMsg(e), 'error', 7000);
+    // Re-read, never toggle. accDrawOpen(sameId) CLOSES the sheet, so calling it twice here
+    // shut the drawing and reopened it — losing the tool, the colour and the scroll position at
+    // the exact moment somebody is being told their mark did not save.
+    _accDraw.id = '';
+    await accDrawOpen(row.id);
+    _accDraw.again = false;              // the re-read is now the truth; do not push the old marks back
+  } finally {
+    _accDraw.saving = false;
+    if (_accDraw.again) { _accDraw.again = false; _accDrawWrite(); }
+  }
+}
+async function accDrawMeta(patch) {
+  const row = _accDraw.row; if (!row) return;
+  Object.assign(row, patch);
+  await _accDrawWrite();
+  const v = _accView;
+  if (v) { const r = (v.drawings || []).find(x => x.id === row.id); if (r) Object.assign(r, patch); }
+}
+async function accDrawDelete() {
+  const row = _accDraw.row; if (!row) return;
+  if (!await tkConfirm({ body: _t('Remove this drawing and its mark-up from the dossier?'), danger: true })) return;
+  try { await tkApi('/api/coll/pm_acc_drawings/' + encodeURIComponent(row.id), { method: 'DELETE' }); }
+  catch (e) { toast(_errMsg(e), 'error'); return; }
+  _accDraw.id = ''; _accDraw.row = null;
+  await _accReload(['pm_acc_drawings']);
+  await accOpen(_accOpenId);
+}
+
+/* ---- the printed sheet ---------------------------------------------------------------------- */
+/* One A4 sheet per drawing, image and mark-up together, caption underneath. The overlay is the
+   SAME SVG the editor draws — one renderer, so what is signed is what was seen. A second
+   print-only renderer is how the screen and the paper come to disagree. */
+function _accSheetDrawing(v, row, n) {
+  /* Every sheet in the set is A4 PORTRAIT, including this one. Mixing orientations in one print
+     job needs per-page @page rules that browsers honour inconsistently, and a set that prints
+     right in Chrome and wrong in Safari is worse than one that always letterboxes. So the choice
+     below is how much of the page the drawing gets — a tall box for a portrait drawing, a wide
+     short one for a landscape drawing — which is what a reduced A3 does in a real bound dossier
+     anyway. `object-fit: contain` means neither ever distorts. */
+  const boxH = (row.paper || 'A4P') === 'A4L' ? '118mm' : '196mm';
+  const body = _accSheetHead(v, 'Bản vẽ đính kèm', 'Drawing attached') +
+    '<div style="margin-top:8px;text-align:center">' +
+      '<div style="position:relative;display:inline-block;max-width:100%;width:100%;height:' + boxH + '">' +
+        (row.image
+          ? '<img src="' + row.image + '" alt="" style="width:100%;height:100%;object-fit:contain;display:block">'
+          /* Never an empty frame. A blank box on a numbered sheet reads as a drawing with nothing
+             on it; this reads as a drawing that did not load, which is what happened. */
+          : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;' +
+            'border:1px dashed #999;color:#666;font-size:.9em">Bản vẽ không tải được / drawing did not load</div>') +
+        '<svg viewBox="0 0 ' + (row.w || 1000) + ' ' + (row.h || 700) + '" preserveAspectRatio="xMidYMid meet" ' +
+          'style="position:absolute;inset:0;width:100%;height:100%">' + _accShapesSvg(row.shapes || [], false) + '</svg>' +
+      '</div>' +
+      '<div style="margin-top:7px;font-size:.95em"><b>Hình ' + n + '.</b> ' + _accE(row.caption || row.name || '') +
+        '<div style="font-style:italic;font-size:.86em;color:#444">Figure ' + n + '</div></div>' +
+    '</div>' + _accSigBlocks(v);
+  return _accSheet(body);
+}
+
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   // pm_tasks is not decoration here: the register derives each package's percentage, date and
@@ -26288,7 +26986,7 @@ const _PM_TABS = [
      Scope lives in this app — Quality verifies a deliverable, this is where the customer
      accepts it. `need` is deliberately short: the five acceptance registers plus the project
      and its settings, which carry the numbering templates and the party names. */
-  { k: 'accept', label: 'Acceptance', fn: 'pmRenderAcceptance', need: ['pm_projects', 'pm_settings', 'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects'] },
+  { k: 'accept', label: 'Acceptance', fn: 'pmRenderAcceptance', need: ['pm_projects', 'pm_settings', 'pm_acc', 'pm_acc_items', 'pm_acc_plans', 'pm_acc_forms', 'pm_acc_defects', 'pm_acc_drawings'] },
   { k: 'daily', label: 'Daily Report', fn: 'pmRenderDailyReport', need: ['pm_projects', 'dr_settings', 'dr_contractors'] },
   { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments', need: ['pm_projects', 'pm_sitereports', 'pm_weekreports', 'pm_rfis', 'pm_quality', 'pm_quality_itp', 'pm_changes', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_lessons', 'pm_procurement'] },
   // pm_resources is the @-mention roster: without it the picker silently says nobody is here.
@@ -31308,6 +32006,7 @@ const _PM_FILT_Q = {
   pm_quality_itp: ['itpNo', 'itpNoPrev', 'title', 'contractor', 'discipline', 'standardRef', 'status'],
   pm_acc: ['refNo', 'title', 'titleEn', 'location', 'axis', 'component', 'formCode', 'discipline', 'accType', 'status', 'standardRef'],
   pm_acc_plans: ['arfNo', 'title', 'titleEn', 'location', 'formCode', 'discipline', 'result', 'note'],
+  pm_acc_drawings: ['name', 'caption'],
   pm_comms: ['subject', 'type', 'audience', 'status', 'note'],
   pm_issues: ['issueNo', 'title', 'owner', 'priority', 'status', 'description'],
 };

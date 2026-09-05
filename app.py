@@ -4621,6 +4621,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._acc_catalogue_ep(u))
         if path == "/api/pm/acceptance/dossier":
             return self._guard(lambda u: self._acc_dossier_ep(u, qs))
+        if path == "/api/pm/acceptance/drawing":
+            return self._guard(lambda u: self._acc_drawing_image_ep(u, qs))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
@@ -5800,6 +5802,61 @@ class Handler(BaseHTTPRequestHandler):
             return blocked
         return self._json({"ok": True, "catalogue": acceptance.catalogue()})
 
+    def _acc_drawing_image_ep(self, u, qs):
+        """The raster behind one marked-up drawing, as bytes.
+
+        The dossier read and the register read both strip these — a dozen A3 sheets re-sent every
+        time a checklist line is ticked is the most expensive thing this module could do. But a
+        thumbnail strip still has to show pictures, and `<img src>` is how a browser asks for one:
+        it caches, it loads lazily, and it does not put a megabyte through the JSON path.
+
+        Scoping is not re-implemented here. It goes through _coll_one, which runs the LIST and then
+        picks the row out of it — so this endpoint can only ever serve a drawing whose register the
+        caller could already read. A separate check would be a second answer to the same question,
+        and the two would eventually disagree.
+        """
+        blocked = self._acc_gate(u)
+        if blocked:
+            return blocked
+        rid = str((qs.get("id") or [""])[0] or "").strip()
+        if not rid:
+            return self._err("Which drawing?", 400)
+        cap = {}
+        real = self._json
+        self._json = lambda obj, status=200: cap.setdefault("r", (obj, status))
+        try:
+            self._coll_one(u, "pm_acc_drawings", rid)
+        finally:
+            self._json = real
+        obj, status = cap.get("r", ({}, 500))
+        if status != 200:
+            return self._json(obj, status)
+        src = str(((obj.get("item") or {}).get("image")) or "")
+        if not src.startswith("data:image/"):
+            return self._err("That drawing has no image.", 404)
+        try:
+            head, b64 = src.split(",", 1)
+            ctype = head[5:].split(";")[0] or "image/png"
+            data = base64.b64decode(b64)
+        except Exception:
+            return self._err("That drawing's image could not be read.", 500)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=900")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        # A drawing is a file somebody uploaded from a site tablet. Sandboxed like every other
+        # uploaded file the portal serves, so an "image" that turns out not to be one cannot script
+        # against the portal's origin.
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
+        self._emit_sec_headers(ctype)
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
+        return None
+
     def _acc_dossier_ep(self, u, qs):
         """One dossier, assembled the way it prints — and what is standing between it and a
         signature.
@@ -5823,6 +5880,21 @@ class Handler(BaseHTTPRequestHandler):
                              "yourself added to the Team.", 403)
         items = sorted(self._acc_kids("pm_acc_items", did), key=lambda r: _acc_seq(r.get("seq")))
         defects = sorted(self._acc_kids("pm_acc_defects", did), key=lambda r: _acc_seq(r.get("no")))
+        # Marked-up drawings, WITHOUT their images. A dossier can carry a dozen A3 sheets at a
+        # megabyte each, and this endpoint is re-read after every checklist click — shipping the
+        # rasters each time would make the fastest interaction on the screen the most expensive
+        # request in the app. The shapes are tiny and are what the screen needs to draw the
+        # thumbnail count and the print set's sheet list; the bytes come from /api/coll when a
+        # drawing is actually opened. Same reasoning as the register read stripping `attachment`.
+        drawings = []
+        for r in sorted(self._acc_kids("pm_acc_drawings", did), key=lambda r: _acc_seq(r.get("seq"))):
+            row = dict(r)
+            n = len(row.get("image") or "")
+            if n:
+                row["image"] = ""
+                row["imageBytes"] = n
+                row["hasImage"] = True
+            drawings.append(row)
         why = acceptance.readiness(
             dossier=dos, items=items, defects=defects,
             accepted_types=self._acc_accepted_types(pid),
@@ -5832,6 +5904,7 @@ class Handler(BaseHTTPRequestHandler):
             "dossier": dos,
             "items": items,
             "defects": defects,
+            "drawings": drawings,
             "project": db.get_collection_item("pm_projects", pid) or {},
             "settings": db.get_collection_item("pm_settings", pid) or {},
             "progress": acceptance.checklist_progress(items),
@@ -12014,9 +12087,9 @@ class Handler(BaseHTTPRequestHandler):
                 "replacedPhotos": len(stale)}
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_acc_drawings", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_boq", "pm_qs_measure", "pm_qs_variations", "pm_qs_daywork", "pm_qs_materials", "pm_qs_valuations", "pm_qs_cvr", "pm_qs_commissioning", "pm_qs_subvo", "pm_chat", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_refusals", "eng_competence", "eng_holds", "eng_transmittals", "eng_baselines", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_settings", "dr_contractors", "dr_reports", "dr_photos", "dr_access", "gl_periods", "suppliers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_acc", "pm_acc_items", "pm_acc_plans", "pm_acc_forms", "pm_acc_defects", "pm_acc_drawings", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_qs_measure", "pm_qs_daywork", "pm_qs_commissioning", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_chases", "eng_timelogs", "eng_competence", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals", "dr_reports", "dr_photos"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -13613,8 +13686,24 @@ class Handler(BaseHTTPRequestHandler):
         `hasFile` is what the table reads to decide whether to offer a link, because the bytes it
         used to test are exactly what is no longer there. Without it every record with an attachment
         would render an em dash and the file would look lost.
+
+        `image` is here for the same reason under a different name. A marked-up acceptance drawing
+        keeps the RASTER on the row — that is what the mark-up coordinates are anchored to — and a
+        dossier can carry a dozen A3 sheets. A register read of pm_acc_drawings without this ships
+        every one of them to draw a list of file names. It is not a generic key: only that one
+        collection uses it, and calling the field `attachment` to get the existing strip for free
+        would have made the drawing look like something optional hanging off the row rather than
+        the thing the row is.
         """
         n = len(it.get("attachment") or "")
+        img = len(it.get("image") or "")
+        if img:
+            it = dict(it)
+            it["image"] = ""
+            it["imageBytes"] = img
+            it["hasImage"] = True
+            if not n and not isinstance(it.get("attachments"), list) and not it.get("items"):
+                return it
         atts = it.get("attachments")
         rows = it.get("items")
         # A claim is one record with a receipt PER LINE, so the payload is in items[] as often as it
@@ -14484,6 +14573,19 @@ class Handler(BaseHTTPRequestHandler):
             _refuse = self._pm_write_refusal(u, str(item.get("projectId") or ""))
             if _refuse:
                 return self._err(_refuse, 403)
+        # ── Nothing new joins a signed acceptance minute ─────────────────────────────────────
+        # _coll_update and _coll_delete both freeze a dossier's children once it is accepted or
+        # rejected. CREATE was the hole: adding a checklist line, an outstanding item or a
+        # marked-up drawing to a signed minute changes what that minute contains, which is the
+        # thing the other two guards exist to prevent — reached by the one verb neither covered.
+        # The browser hides the buttons; this is the gate that cannot be walked past.
+        if name in ("pm_acc_items", "pm_acc_defects", "pm_acc_drawings"):
+            _par = db.get_collection_item("pm_acc", item.get("dossierId")) or {}
+            if str(_par.get("status") or "").strip().lower() in ("accepted", "rejected"):
+                return self._err(
+                    "That acceptance minute has been signed — nothing further can be added to it. "
+                    "If the work was re-inspected, raise a new acceptance; the signed one stays as "
+                    "the record of what was accepted on the day.", 409)
         # A daily report is project data on the same footing. dr_settings is keyed BY the project id,
         # so it is scoped on that rather than on a projectId field it does not carry.
         if name.startswith("dr_"):
@@ -21284,7 +21386,7 @@ class Handler(BaseHTTPRequestHandler):
         #
         # What may still be written afterwards is the paperwork that arrives late: a better scan of
         # the signed sheet, the transmittal reference, a note. Not one word of what was inspected.
-        if name in ("pm_acc", "pm_acc_items", "pm_acc_defects"):
+        if name in ("pm_acc", "pm_acc_items", "pm_acc_defects", "pm_acc_drawings"):
             _cur = db.get_collection_item(name, iid) or {}
             _dos = _cur if name == "pm_acc" else (
                 db.get_collection_item("pm_acc", _cur.get("dossierId")) or {})
@@ -22163,13 +22265,14 @@ class Handler(BaseHTTPRequestHandler):
         # A checklist line or a punch-list item belonging to a signed minute is part of that minute.
         # Deleting the failed line out of an accepted dossier would turn a conditional acceptance
         # into a clean one, in one click, with no trace.
-        if name in ("pm_acc_items", "pm_acc_defects"):
+        if name in ("pm_acc_items", "pm_acc_defects", "pm_acc_drawings"):
             _par = db.get_collection_item("pm_acc", existing.get("dossierId")) or {}
             if (_par.get("signatures")
                     or str(_par.get("status") or "").strip().lower() in ("accepted", "rejected")):
                 return self._err(
-                    "This line belongs to a signed acceptance minute and cannot be deleted. Close "
-                    "the outstanding item instead — that keeps the record of what was found.", 403)
+                    "This belongs to a signed acceptance minute and cannot be deleted. A marked-up "
+                    "drawing is part of what was accepted; close an outstanding item rather than "
+                    "removing it, so the record of what was found survives.", 403)
         # A signed production step is the same kind of evidence, and deleting one is strictly worse
         # than editing it — which _coll_update already refuses. Without this, the operator who signed
         # a hold point could destroy the record of what was measured, and the as-built dossier would
