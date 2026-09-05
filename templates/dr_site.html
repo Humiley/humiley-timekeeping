@@ -21,35 +21,58 @@
   than the whole day, which is the difference between an annoyance and starting again.
 -->
 <style>
+  /* Lifted from index.html's :root rather than approximated, so this page and the portal cannot
+     drift apart on the brand. Same navy, same emerald, same radii and elevation scale. The values
+     are copied because this page must stay one self-contained file — it is opened by people with
+     no portal account, often on a bad connection, and a stylesheet request is a chance to fail. */
   :root{
-    --navy:#205090; --navy-deep:#163866; --emerald:#00925B; --danger:#C0392B; --warn:#8F5512;
-    --ink:#1C2430; --mut:#5C6470; --faint:#8A93A5;
-    --bg:#F2F5FA; --card:#FFFFFF; --line:#DBE2EE; --soft:#F1F5FA;
+    --navy:#205090; --navy-deep:#163866; --navy-light:#3168A8;
+    --emerald:#00B060; --emerald-deep:#008548;
+    --danger:#C00000; --warn:#F59E0B;
+    --ink:#1F2937; --mut:#5C6470; --faint:#8A93A5;
+    --bg:#f0f2f8; --card:#FFFFFF; --line:#dde2ee; --soft:#e8edf6;
+    --r-sm:8px; --r-md:12px; --r-btn:14px; --r-lg:24px; --r-pill:999px;
+    --shadow-sm:0 1px 2px rgba(32,80,144,.06);
+    --shadow-card:0 14px 34px rgba(32,80,144,.09);
   }
   *,*::before,*::after{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
-    background:var(--bg); color:var(--ink); font:16px/1.55 'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
+    background:var(--bg); color:var(--ink);
+    font:16px/1.55 Calibri,'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
     padding-bottom:env(safe-area-inset-bottom);
     -webkit-text-size-adjust:100%;
   }
   .wrap{max-width:680px;margin:0 auto;padding:0 14px 40px}
 
-  header{background:var(--navy);color:#fff;padding:calc(14px + env(safe-area-inset-top)) 0 14px}
-  header .wrap{display:flex;align-items:center;gap:12px}
-  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25}
-  header .who{font-size:11.5px;opacity:.85;font-weight:400;display:block}
-  .lang{background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12px;padding:6px 10px;
-        border-radius:6px;cursor:pointer}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
-  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep)}
+  /* The portal sidebar's gradient, so somebody who has seen the platform recognises this as the
+     same product rather than as a form on some other website. */
+  header{background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);
+         color:#fff;padding:calc(14px + env(safe-area-inset-top)) 0 16px}
+  header .wrap{display:flex;align-items:center;gap:12px}
+  header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25;min-width:0}
+  header .who{font-size:11.5px;opacity:.85;font-weight:400;display:block;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* The contractor's own mark. On a WHITE plate because a logo is drawn for paper and most arrive
+     as dark artwork on transparent — dropped straight onto the navy, half of them vanish. The plate
+     costs nothing and makes every logo legible, which is the same reason the letterhead uses one. */
+  .mark{flex:0 0 auto;height:38px;max-width:110px;background:#fff;border-radius:var(--r-sm);
+        padding:5px 7px;display:none;align-items:center;justify-content:center}
+  .mark img{max-height:28px;max-width:96px;width:auto;height:auto;display:block}
+  .mark.on{display:flex}
+  .lang{background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12px;padding:7px 11px;
+        border-radius:var(--r-pill);cursor:pointer;font-weight:600;flex:0 0 auto}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+        padding:18px;margin-top:12px;box-shadow:var(--shadow-card)}
+  h2{font-size:15px;margin:0 0 10px;color:var(--navy-deep);font-weight:700}
   p.hint{font-size:13px;color:var(--mut);margin:0 0 12px;line-height:1.5}
 
   label{display:block;font-size:12.5px;color:var(--mut);font-weight:600;margin:0 0 4px}
   input,select,textarea{
     width:100%;font:16px/1.4 inherit;color:var(--ink);background:var(--card);
-    border:1px solid var(--line);border-radius:8px;padding:11px 12px;
+    border:1px solid var(--line);border-radius:var(--r-sm);padding:11px 12px;
   }
   /* 16px is not a style choice: anything smaller makes iOS Safari zoom the whole page on focus. */
   textarea{min-height:64px;resize:vertical}
@@ -59,15 +82,16 @@
   .g2{grid-template-columns:1fr 1fr}
   .g3{grid-template-columns:repeat(3,1fr)}
 
-  button{font:15px/1 inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);
-         background:var(--card);color:var(--ink);padding:12px 16px;cursor:pointer}
+  button{font:15px/1 inherit;font-weight:600;border-radius:var(--r-btn);border:1px solid var(--line);
+         background:var(--card);color:var(--ink);padding:13px 16px;cursor:pointer;
+         box-shadow:var(--shadow-sm)}
   button:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
   .primary{background:var(--navy);border-color:var(--navy);color:#fff}
   .wide{width:100%}
   .link{background:none;border:0;color:var(--navy);text-decoration:underline;padding:6px 2px;font-size:13.5px}
   button[disabled]{opacity:.55;cursor:default}
 
-  .msg{font-size:13.5px;border-radius:8px;padding:10px 12px;margin-top:10px;line-height:1.5}
+  .msg{font-size:13.5px;border-radius:var(--r-md);padding:11px 13px;margin-top:10px;line-height:1.5}
   .msg.err{background:#FDECEA;color:#8A2118;border:1px solid #F3C4BE}
   .msg.ok{background:#E9F7F0;color:#0A6B45;border:1px solid #BFE6D4}
   .msg.info{background:var(--soft);color:var(--mut);border:1px solid var(--line)}
@@ -84,13 +108,15 @@
   .chev{color:var(--faint);font-size:13px}
 
   /* repeating rows */
-  .item{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--soft)}
+  .item{border:1px solid var(--line);border-radius:var(--r-md);padding:12px;margin-bottom:10px;
+        background:var(--soft)}
   .item .top{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
   .item .top b{flex:1;font-size:13px;color:var(--navy-deep)}
   .del{background:none;border:0;color:var(--danger);font-size:12.5px;padding:2px 4px;text-decoration:underline}
 
   .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
-  .photos figure{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--soft)}
+  .photos figure{margin:0;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;
+                 background:var(--soft)}
   .photos img{width:100%;height:78px;object-fit:cover;display:block}
   .photos figcaption{font-size:10.5px;color:var(--mut);padding:4px 5px;text-align:center;
                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -101,11 +127,56 @@
   .bar button{flex:1}
   .foot{font-size:11.5px;color:var(--faint);text-align:center;margin-top:18px;line-height:1.6}
   .hide{display:none !important}
+  /* ── narrow phones ──────────────────────────────────────────────────────────────────────────
+     Two number fields side by side stop being usable somewhere around a 360px screen — the label
+     wraps to three lines and the input is too small to hit. Below that they stack. */
+  @media (max-width:400px){
+    .g2,.g3{grid-template-columns:1fr}
+  }
+
+  /* ── tablets: iPad portrait upwards ─────────────────────────────────────────────────────── */
+  @media (min-width:700px){
+    .wrap{max-width:840px;padding:0 20px 48px}
+    .card{padding:22px 24px}
+    header h1{font-size:19px}
+    header .who{font-size:12.5px}
+    .mark{height:44px;max-width:132px}
+    .mark img{max-height:34px;max-width:118px}
+    /* The menu is 14 entries. On a phone that is a scroll; given width it is two columns and the
+       whole day is visible at once, which is the difference between hunting for the section you
+       have not filled in and seeing it. */
+    .sections{display:grid;grid-template-columns:1fr 1fr;column-gap:22px}
+    .sections li{border-top:1px solid var(--line)}
+    .sections li:nth-child(2){border-top:0}
+  }
+
+  /* ── desktop ────────────────────────────────────────────────────────────────────────────── */
+  @media (min-width:1024px){
+    .wrap{max-width:980px}
+    .sections{grid-template-columns:repeat(3,1fr);column-gap:26px}
+    .sections li:nth-child(3){border-top:0}
+    /* A form field 900px wide is harder to read, not easier. The inputs keep a sane measure and
+       the width goes to the layout instead. */
+    .row input,.row select,.row textarea{max-width:520px}
+    .g2 input,.g2 select,.g3 input,.g3 select{max-width:none}
+    /* Sticky-to-the-bottom is a phone idiom. On a desktop the actions belong with the form. */
+    .bar{position:static;margin:18px 0 0;padding:14px 0 0;border-top:1px solid var(--line);
+         box-shadow:none;justify-content:flex-start}
+    .bar button{flex:0 0 auto;min-width:150px}
+  }
+
+  /* A pointer is not a finger. Touch targets stay at 44px where there is no hover to help. */
+  @media (hover:none){
+    .sections button{min-height:52px}
+    button{min-height:46px}
+  }
+
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
 <header><div class="wrap">
+  <span class="mark" id="hMark"><img id="hMarkImg" alt=""></span>
   <h1 id="hTitle">Daily Report<span class="who" id="hWho"></span></h1>
   <button class="lang" id="langBtn" type="button">VN</button>
 </div></header>
@@ -236,6 +307,17 @@ async function load(date){
     S.today = r.today || r.date;   // the SERVER's today, in the site's timezone — a phone's clock is not authority
     S.email = (r.contractor || {}).email || S.email;
     el('hWho').textContent = S.contractor + (S.email ? ' · ' + S.email : '');
+    /* Drawn only once the day has loaded, which means only once signed in. Before that the page
+       must look identical for a real token and a guessed one — a logo appearing early would tell
+       somebody holding a guess both that the link is real and whose it is. The alt text stays
+       empty: the contractor's name is already in the heading beside it, and a screen reader
+       announcing it twice is worse than not announcing the image at all. */
+    if ((r.contractor || {}).hasLogo) {
+      el('hMarkImg').src = '/api/dr/site/logo?token=' + encodeURIComponent(TOKEN);
+      el('hMark').classList.add('on');
+    } else {
+      el('hMark').classList.remove('on');
+    }
     viewMenu();
   } catch(e){
     if (e.status === 401) { viewEmail(''); return; }
