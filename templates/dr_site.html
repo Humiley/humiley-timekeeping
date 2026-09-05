@@ -60,7 +60,11 @@
   /* Emerald is the accent, and the focus ring is where an accent earns its keep — it has to be the
      one thing on the page that is unmistakably not part of the form. */
   :focus-visible{outline:2px solid var(--emerald);outline-offset:3px;border-radius:4px}
-  .wrap{max-width:680px;margin:0 auto;padding:0 14px 40px}
+  /* The sheet uses the window it is given. It was capped at 680/840/980px, which on a laptop left
+     the document floating in a column with two empty thirds beside it — a phone page shown on a
+     desk. A ceiling stays only so a very wide monitor does not stretch a line of body text past
+     reading width. */
+  .wrap{max-width:1600px;margin:0 auto;padding:0 14px 40px}
 
 
   /* An INSET navy panel with rounded corners, which is what AeroSano's PageHero actually is —
@@ -85,6 +89,9 @@
      just about readable. A colour that arrives by inheritance is a colour one later rule can take
      away without touching this one. */
   header h1{font-size:17px;margin:0;font-weight:700;flex:1;line-height:1.25;min-width:0;color:#fff}
+  /* The reverse mark, because this ground is navy. The colour lock-up would half-disappear on it —
+     the same reason every logo on the white sheet below gets a white plate. */
+  header .hml{height:26px;width:auto;flex:0 0 auto;display:block;order:-1;margin-right:2px}
   header .who{font-size:11.5px;opacity:.85;font-weight:400;display:block;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* The three marks moved onto the document masthead below, where they belong: this bar is the
@@ -228,16 +235,22 @@
   .sections .parthead{display:flex;align-items:center;gap:12px;padding:14px 8px 8px}
   .sections .parthead .no{flex:0 0 2.7em;font-weight:700;color:var(--navy);font-size:13px;
                           font-variant-numeric:tabular-nums}
-  .sections .parthead .nm{font-size:14.5px;font-weight:700;color:var(--ink)}
+  .sections .parthead .nm{font-size:14.5px;font-weight:700;color:var(--navy)}
   .sections .subs{margin:0 0 6px 2.7em;padding-left:12px;border-left:2px solid var(--line)}
   .sections .subs button{padding-top:10px;padding-bottom:10px;font-weight:600}
   .sections button.sub .no{flex:0 0 2.4em;color:var(--emerald-deep);font-size:12.5px}
   .sections button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;
-    border:0;background:none;padding:14px 8px;font-weight:600;font-size:14.5px;
-    border-radius:var(--r-sm);box-shadow:none}
+    border:0;background:none;padding:14px 8px;font-weight:700;font-size:14.5px;
+    border-radius:var(--r-sm);box-shadow:none;color:var(--navy)}
+  /* A sub-item is subordinate to its parent, so it steps back to the body colour and weight. */
+  .sections button.sub{color:var(--ink);font-weight:600}
   .sections button:hover{background:var(--soft)}
   .sections button:active{transform:none}
-  .sections .n{flex:1}
+  /* Fixed columns, or the count and the chevron drift left and right by however wide the row's
+     number happened to be — which is exactly what a reader notices as "not aligned". */
+  .sections .n{flex:1;min-width:0}
+  .sections .count{flex:0 0 2.2em;text-align:right}
+  .sections .chev{flex:0 0 1em;text-align:right}
   /* The section's number in the PRINTED report, in the accent colour. This is the two-tone heading
      the system asks for — one navy line, one emerald phrase — with the emerald carrying something
      true rather than a word picked for emphasis. It also turns the menu into an index: a person can
@@ -302,13 +315,22 @@
   /* ── narrow phones ──────────────────────────────────────────────────────────────────────────
      Two number fields side by side stop being usable somewhere around a 360px screen — the label
      wraps to three lines and the input is too small to hit. Below that they stack. */
-  @media (max-width:400px){
+  @media (max-width:430px){
     .g2,.g3{grid-template-columns:1fr}
+    /* Three things competing for 375px: the mark, the title and the language switch. The mark and
+       the switch give way — the title and the contractor's name are what tell somebody which form
+       they have open, and a wrapped title with a truncated name told them neither. */
+    header .wrap{padding:14px}
+    header .hml{height:20px}
+    header h1{font-size:15.5px}
+    header .who{font-size:11px}
+    .lang button{padding:6px 8px;gap:5px;font-size:11px}
+    .lang svg{width:17px;height:12px}
   }
 
   /* ── tablets: iPad portrait upwards ─────────────────────────────────────────────────────── */
   @media (min-width:700px){
-    .wrap{max-width:840px;padding:0 20px 48px}
+    .wrap{padding:0 20px 48px}
     .card{padding:22px 24px}
     header h1{font-size:19px}
     header .who{font-size:12.5px}
@@ -326,7 +348,6 @@
 
   /* ── desktop ────────────────────────────────────────────────────────────────────────────── */
   @media (min-width:1024px){
-    .wrap{max-width:980px}
     .sections{grid-template-columns:repeat(3,1fr);column-gap:26px}
     .sections li:nth-child(3){border-top:0}
     /* A form field 900px wide is harder to read, not easier. The inputs keep a sane measure and
@@ -351,6 +372,7 @@
 <body>
 <header><div class="wrap">
   <h1 id="hTitle">Daily Report<span class="who" id="hWho"></span></h1>
+  <img class="hml" src="/static/brand/Humiley_Logo_White.png" alt="Humiley">
   <span class="lang" role="group" aria-label="Language">
     <button type="button" id="langEn" aria-pressed="true"><svg viewBox="0 0 60 30" preserveAspectRatio="none" aria-hidden="true" focusable="false"><clipPath id="fgb"><path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z"/></clipPath><path d="M0,0 v30 h60 v-30 z" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#fgb)" stroke="#C8102E" stroke-width="4"/><path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/><path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6"/></svg>EN</button>
     <button type="button" id="langVi" aria-pressed="false"><svg viewBox="0 0 640 480" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path fill="#DA251D" d="M0 0h640v480H0z"/><polygon fill="#FF0" points="320,130 344.7,206 424.6,206 360,253 384.7,329 320,282 255.3,329 280,253 215.4,206 295.3,206"/></svg>VN</button>
@@ -375,7 +397,7 @@ var VI = {
   "Only the addresses Humiley has listed for your company can open this form.":
     "Chỉ những địa chỉ Humiley đã đăng ký cho công ty bạn mới mở được biểu mẫu này.",
   "Report date":"Ngày báo cáo","Today":"Hôm nay","Yesterday":"Hôm qua",
-  "Section":"Mục",
+  "Section":"Phần",
   "Manpower":"Nhân lực","Work progress":"Tiến độ thi công","Inspection":"Nghiệm thu",
   "This daily report is issued by Humiley as project management consultant for":"Báo cáo hằng ngày này do Humiley phát hành với vai trò tư vấn quản lý dự án cho",
   "What you save here goes straight onto the report the client receives, so file the day as it happened — a section left empty is reported as not answered, never as nothing to report.":"Những gì bạn lưu ở đây sẽ đi thẳng vào báo cáo gửi khách hàng, nên hãy ghi đúng thực tế trong ngày — mục bỏ trống sẽ được báo là chưa trả lời, không phải là không có gì để báo.",
@@ -621,15 +643,14 @@ function mastheadHtml(){
   var p = S.project || {};
   var yday = shiftDay(S.today || S.date, -1);
   return '<div class="doc">'
-    /* Humiley left, the OWNER centre, the contractor right. The owner's project is the subject of
-       the document, so their mark takes the middle; we issue it, so ours opens; the contractor
-       files it, so theirs closes. The centre slot keeps its width whether or not a logo is set —
-       otherwise a project with no owner artwork slides the other two together and the header
-       silently changes shape between contractors. */
+    /* The two grounds carry different marks. HUMILEY sits on the navy bar, because that bar is
+       ours — it is the product speaking. The white sheet below is the DOCUMENT, and a document
+       carries the two parties to it: the owner on the left, whose project it is, and the contractor
+       on the right, who files it. That is also where the printed report puts them. */
     + '<div class="marks">'
-    +   '<span class="mk on"><img src="/static/brand/portal-logo-login.png" alt="Humiley"></span>'
-    +   '<span class="mk mid' + (p.hasLogo ? ' on' : '') + '" id="mkOwner">'
+    +   '<span class="mk' + (p.hasLogo ? ' on' : '') + '" id="mkOwner">'
     +     '<img id="mkOwnerImg" alt=""></span>'
+    +   '<span class="mk mid"></span>'
     +   '<span class="mk end' + (S.hasLogo ? ' on' : '') + '" id="mkCon">'
     +     '<img id="mkConImg" alt=""></span>'
     + '</div>'
@@ -705,8 +726,7 @@ function viewMenu(){
     +   '<img src="/static/brand/Humiley_Logo_White.png" alt="Humiley">'
     +   '<div class="fline">'
     +     t('This daily report is issued by Humiley as project management consultant for') + ' <b>'
-    +     esc(p.name || '') + '</b>. '
-    +     t('What you save here goes straight onto the report the client receives, so file the day as it happened — a section left empty is reported as not answered, never as nothing to report.')
+    +     esc(p.name || '') + '</b>.'
     +   '</div>'
     +   '<div class="fmeta"><span>' + esc(S.contractor || '') + ' · ' + esc(S.email || '') + '</span>'
     +     '<button class="signout" id="out">' + t('Sign out') + '</button></div>'
@@ -824,7 +844,11 @@ function renderRows(key){
   var spec = FIELDS[key] || [], rows = S.draft || [];
   var html = rows.length ? '' : msg('info', t('Nothing added yet.'));
   rows.forEach(function(r, i){
-    html += '<div class="item"><div class="top"><b>' + (i+1) + '</b>'
+    /* Not t('Item'): that key is already the FIELD label the report prints as "Item", and VI is a
+       single object literal, so a second entry under the same name would have silently replaced it
+       — every "Item" field on the form would have been relabelled by a change to a row number. */
+    html += '<div class="item"><div class="top"><b>'
+      + (lang === 'vi' ? 'Mục' : 'Item') + ' ' + (i+1) + '</b>'
       + '<button class="del" data-del="' + i + '">' + t('Remove') + '</button></div>';
     spec.forEach(function(f){
       html += '<div class="row"><label>' + t(f[1]) + '</label>' + field(f, r[f[0]] || '', i) + '</div>';
