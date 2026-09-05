@@ -477,5 +477,56 @@ console.log('\nThe invitation is seen before it is sent, and never claims to hav
      /copied, not addressed/.test(card));
 }
 
+
+// ══ 13 · the letterhead: the forms leave the building on paper ════════════════════════════════
+console.log('\nThe printed forms carry the brand, and never a placeholder\n');
+{
+  ok('no sheet still prints the placeholder words where a mark belongs',
+     src.indexOf("'<span>CLIENT") < 0 && src.indexOf('S LOGO</span>') < 0,
+     'they were placeholders carried over from the reference forms; on a client\'s desk they say nobody read the sheet');
+
+  const lh = take('function _accLetterhead(', '_accLetterhead');
+  ok('the issuing mark is the real logo, not a word',
+     /_lhLogo\(\)/.test(lh) && /_LH\.addr/.test(lh),
+     'same asset every other portal document draws');
+  ok('and the brand bar is drawn, bled to the sheet edge',
+     /#00B060/.test(lh) && /#205090/.test(lh));
+
+  const mark = take('function _accClientMark(', '_accClientMark');
+  ok('with no logo uploaded the client\'s NAME is printed',
+     /accParties \|\| \{\}\)\.client/.test(mark) && /account/.test(mark),
+     'a name is a fact; the word "logo" on a signed minute is an admission');
+  ok('and an empty client leaves the slot blank rather than inventing one',
+     /return nm\s*\n?\s*\?/.test(mark) || /nm\s*$/m.test(mark));
+
+  const foot = take('function _accSheetFoot(', '_accSheetFoot');
+  ok('every sheet is footed with its own document code',
+     /code \|\| 'HML-ACC'/.test(foot));
+  ok('the footer counts SHEETS, not pages',
+     /Tờ \{\{N\}\} \/ \{\{T\}\}/.test(foot),
+     'a checklist that runs to two pages would make "Page 2 of 5" a number somebody relies on and that is wrong');
+
+  ok('the body stays Times New Roman — the statutory face for a Vietnamese official document',
+     /font-family:\\'Times New Roman\\',Times,serif/.test(take('function _accSheet(', '_accSheet')),
+     'and Poppins here covers latin + latin-ext only, so every Vietnamese dấu would fall back anyway');
+
+  const num = take('function _accNumberSheets(', '_accNumberSheets');
+  ok('the numbering pass runs over the assembled set, not the DOM',
+     /html\.replace/.test(num) && /match\(\/\\\{\\\{N\\\}\\\}\/g\)/.test(num),
+     'the print overlay is rebuilt on every tick of the sheet picker');
+  ok('and both the acceptance set and the index run through it',
+     (src.match(/_accNumberSheets\(/g) || []).length >= 3);
+
+  const card = take('function _accBrandCard(', '_accBrandCard');
+  ok('the client mark saves on upload rather than waiting for a Save button',
+     /accClientLogoAdd/.test(card) && !/acc-set-logo/.test(card),
+     'a picture cannot show "typed but not saved" the way a text box can');
+  ok('the logo is resampled before it is stored',
+     /_accRasterImage\(f, 600\)/.test(take('async function accClientLogoAdd(', 'accClientLogoAdd')));
+  ok('and saving it spreads the existing settings row first',
+     /Object\.assign\(\{\}, cur/.test(take('async function _accSaveClientLogo(', '_accSaveClientLogo')),
+     'pm_settings is a whole-document PATCH — sending only the logo would erase every other project setting');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

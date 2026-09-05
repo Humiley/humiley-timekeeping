@@ -24997,7 +24997,7 @@ function _accSetupTab(pid) {
           _accE(_t('Filled once and printed on every minute. Who signs for each party on a given inspection is named on the dossier itself — that is the check that catches a form issued with an empty signature block.')) + '</div>' +
         parties +
         '<button class="btn btn-primary btn-sm" style="margin-top:13px" onclick="accSaveSetup()">' + _t('Save') + '</button>' +
-      '</div></div>' + _accContactsCard() + '</div>';
+      '</div></div>' + _accContactsCard() + _accBrandCard() + '</div>';
 }
 
 function _accRenderNo(tpl, o) {
@@ -25938,21 +25938,92 @@ function _accSheets(v) {
      is where a dossier carries them, and it means dropping them from a print run (the client only
      asked for the minute) leaves the numbered forms in front untouched. */
   if (_accPrintPick.draw) (v.drawings || []).forEach((r, i) => out.push(_accSheetDrawing(v, r, i + 1)));
-  return out.join('');
+  return _accNumberSheets(out.join(''));
+}
+
+/* ---- the letterhead ------------------------------------------------------------------------- */
+/* These sheets went out with the words CLIENT'S LOGO and CONTRACTOR'S LOGO printed across the top,
+   carried over from the reference forms where they were placeholders for somebody to fill in.
+
+   Two things this deliberately does NOT do.
+
+   It does not set the form's BODY in the brand face. Nghị định 30/2020/NĐ-CP fixes Times New Roman
+   13–14pt for Vietnamese official documents, and a biên bản nghiệm thu is filed next to documents
+   that follow it — setting ours in Poppins would make it the odd one in the folder. It would also
+   be unreadable: the Poppins subsets self-hosted here cover latin and latin-ext, and the Vietnamese
+   block U+1EA0–U+1EF1 is in neither, so every dấu in the form would silently fall back to a system
+   face anyway. The brand appears in the letterhead and the footer; the form stays a form.
+
+   And it does not stamp the Humiley mark in the CONTRACTOR slot. Humiley is the contractor on some
+   projects and the PMC or supervision consultant on others, so a mark in that slot would be wrong
+   half the time. The mark says who ISSUED the sheet, which is true either way; who each party is
+   is stated by name in the table below it and again over every signature line. */
+function _accSet() { return (_HR.pm_settings || []).find(x => x.id === _pmPid()) || {}; }
+function _accClientMark(v) {
+  const st = _accSet();
+  const nm = (st.accParties || {}).client || ((v || {}).project || {}).account || '';
+  if (st.accClientLogo) {
+    return '<img src="' + _tkEscA(st.accClientLogo) + '" alt="' + _tkEscA(nm) +
+      '" style="max-height:15mm;max-width:52mm;object-fit:contain">';
+  }
+  /* No logo uploaded: the client's NAME, set in type. Never the word "logo" — a placeholder that
+     reaches a client's desk is worse than a plain name, because it says nobody read the sheet. */
+  return nm
+    ? '<div style="font-size:1.02em;font-weight:700;line-height:1.25;max-width:62mm">' + _accE(nm) + '</div>'
+    : '';
+}
+function _accLetterhead(v) {
+  const mark = _accClientMark(v);
+  return '<div style="position:absolute;top:0;left:0;display:flex">' +
+      '<div style="width:40mm;height:2.4mm;background:#00B060"></div>' +
+      '<div style="width:28mm;height:2.4mm;background:#205090"></div></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8mm">' +
+      '<div style="min-height:15mm">' +
+        '<div style="font-size:.74em;letter-spacing:.6px;color:#5C6470;text-transform:uppercase">Chủ đầu tư / Client</div>' +
+        mark + '</div>' +
+      '<div style="text-align:right">' +
+        '<img src="' + _tkEscA(_lhLogo()) + '" alt="Humiley" style="height:13mm;object-fit:contain">' +
+        '<div style="font-size:.68em;color:#5C6470;line-height:1.45;margin-top:1mm">' +
+          _accE(_LH.addr) + '<br>' + _accE(_LH.web + '  ·  ' + _LH.email) + '</div></div></div>' +
+    '<div style="height:1px;background:#CFD6E2;margin:2.5mm 0 3mm"></div>';
+}
+/* The footer numbers the SHEET, not the page. Each form is one .acc-sheet and normally one sheet of
+   paper, but a checklist with sixty lines runs onto a second — and "Page 2 of 5" printed on what is
+   really page 6 of 8 is a number somebody would rely on when checking a bound set is complete. "Tờ"
+   counts forms, which is what it can actually count. */
+function _accSheetFoot(code, label) {
+  return '<div style="position:absolute;left:13mm;right:13mm;bottom:7mm">' +
+    '<div style="height:1px;background:#CFD6E2;margin-bottom:1.6mm"></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:6mm;font-size:.72em;color:#5C6470">' +
+      '<img src="' + _tkEscA(_lhLogo()) + '" alt="Humiley" style="height:6.5mm;object-fit:contain">' +
+      '<div style="text-align:center;line-height:1.4">' +
+        '<div style="font-weight:700;color:#205090;letter-spacing:.4px">' + _accE(String(label || '').toUpperCase()) + '</div>' +
+        '<div>[ ' + _accE(code || 'HML-ACC') + ' ]</div></div>' +
+      '<div style="white-space:nowrap">Tờ {{N}} / {{T}}</div></div></div>';
+}
+/* Number the {{N}}/{{T}} placeholders once the whole set is assembled. Done in string space rather
+   than over the DOM because the print overlay is rebuilt on every tick of the sheet picker, and a
+   numbering pass that has to be re-run after each rebuild is one somebody eventually forgets. */
+function _accNumberSheets(html) {
+  const total = (html.match(/\{\{N\}\}/g) || []).length;
+  let n = 0;
+  return html.replace(/\{\{N\}\}/g, () => ++n).replace(/\{\{T\}\}/g, total);
 }
 
 /* ---- shared sheet furniture ---------------------------------------------------------------- */
-function _accSheet(inner) {
+function _accSheet(inner, code, label) {
+  /* padding-bottom leaves 16mm for the footer, which is positioned against the bottom of the sheet.
+     A form long enough to overflow grows the box and takes the footer with it, so it lands on the
+     last physical page of that form rather than being overprinted by the text. */
   return '<div class="acc-sheet" style="position:relative;width:210mm;min-height:296mm;margin:0 auto 16px;background:#fff;' +
-    'padding:14mm 13mm;box-sizing:border-box;color:#000;font-family:\'Times New Roman\',Times,serif;line-height:1.35">' +
+    'padding:9mm 13mm 20mm;box-sizing:border-box;color:#000;font-family:\'Times New Roman\',Times,serif;line-height:1.35">' +
     '<button class="acc-noprint" onclick="accDropSheet(this)" style="position:absolute;top:6px;right:6px;border:1px solid #ddd;' +
     'background:#fff;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer;color:#666">✕ ' + _t('Drop this sheet') + '</button>' +
-    inner + '</div>';
+    inner + _accSheetFoot(code, label) + '</div>';
 }
 function _accSheetHead(v, titleVi, titleEn) {
   const p = v.project || {}, d = v.dossier || {};
-  return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:.82em;color:#555;letter-spacing:.4px">' +
-      '<span>CLIENT\'S LOGO</span><span>CONTRACTOR\'S LOGO</span></div>' +
+  return _accLetterhead(v) +
     '<div style="text-align:center;margin:6px 0 12px">' +
       '<div style="font-size:1.5em;font-weight:700;text-transform:uppercase;letter-spacing:.5px">' + _accE(titleVi) + '</div>' +
       '<div style="font-size:1.05em;font-style:italic">' + _accE(titleEn) + '</div></div>' +
@@ -26028,7 +26099,7 @@ function _accSheetARF(v, plan) {
     '</table>' + _accSigBlocks(v) +
     '<div style="margin-top:9px;font-size:.8em;color:#444;font-style:italic">' +
       'Phiếu này được lập theo Nghị định 06/2021/NĐ-CP về quản lý chất lượng, thi công xây dựng và bảo trì công trình xây dựng.</div>';
-  return _accSheet(body);
+  return _accSheet(body, 'HML-ACC-ARF', 'Phiếu yêu cầu nghiệm thu / Acceptance request');
 }
 
 /* ---- 2 · Biên bản nghiệm thu — NĐ 06/2021 Điều 21 khoản 3 ---------------------------------- */
@@ -26098,7 +26169,7 @@ function _accSheetMinute(v) {
     '<div style="margin-top:9px;font-size:.8em;color:#444;font-style:italic">' +
       'Biên bản được lập thành ' + ((t.parties || []).length || 2) + ' bản có giá trị như nhau, mỗi bên giữ 01 bản. ' +
       'Nội dung theo ' + _accE(t.law || 'Nghị định 06/2021/NĐ-CP') + '.</div>';
-  return _accSheet(body);
+  return _accSheet(body, 'HML-ACC-BBNT', 'Biên bản nghiệm thu / Acceptance minute');
 }
 function _accBasisLines(d) {
   const rows = (d.basis || []).filter(b => (b.docNo || '').trim() || (b.title || '').trim());
@@ -26149,7 +26220,7 @@ function _accSheetChecklist(v) {
     '<div style="margin-top:7px;font-size:.9em">Tài liệu căn cứ / <i>Basis documents</i>:</div>' +
     '<div style="font-size:.9em">' + _accBasisLines(d) + '</div>' +
     _accSigBlocks(v);
-  return _accSheet(body);
+  return _accSheet(body, 'HML-ACC-CHK', 'Biên bản kiểm tra / Inspection record');
 }
 
 /* ---- 4 · Phụ lục — danh mục tồn tại -------------------------------------------------------- */
@@ -26175,7 +26246,7 @@ function _accSheetPunch(v) {
         '<td style="border:1px solid #000;padding:3px 6px">' + _accE(r.responsible || '') + '</td>' +
         '<td style="border:1px solid #000;padding:3px 6px">' + _accE(_accVnDate(r.due)) + '</td></tr>';
     }).join('') + '</tbody></table>' + _accSigBlocks(v);
-  return _accSheet(body);
+  return _accSheet(body, 'HML-ACC-PUN', 'Tồn tại cần khắc phục / Outstanding items');
 }
 
 /* ═══════════════ 13 · Library: preview, adopt, import, export ═════════════════════════════ */
@@ -26636,7 +26707,8 @@ async function accDrawAdd(input) {
    through a canvas rather than storing the file verbatim is what makes `w`/`h` trustworthy: the
    shape coordinates are anchored to them, and an image whose stored size disagreed with its pixels
    would put every mark in the wrong place. */
-function _accRasterImage(file) {
+function _accRasterImage(file, maxPx) {
+  const cap = maxPx || _ACC_MAXPX;
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
     fr.onerror = () => reject(new Error('could not be read'));
@@ -26646,7 +26718,7 @@ function _accRasterImage(file) {
       img.onload = () => {
         const nw = img.naturalWidth || img.width, nh = img.naturalHeight || img.height;
         if (!nw || !nh) return reject(new Error('has no size'));
-        const s = Math.min(1, _ACC_MAXPX / Math.max(nw, nh));
+        const s = Math.min(1, cap / Math.max(nw, nh));
         const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
         const c = document.createElement('canvas'); c.width = w; c.height = h;
         const g = c.getContext('2d');
@@ -27164,7 +27236,7 @@ function _accSheetDrawing(v, row, n) {
       '<div style="margin-top:7px;font-size:.95em"><b>Hình ' + n + '.</b> ' + _accE(row.caption || row.name || '') +
         '<div style="font-style:italic;font-size:.86em;color:#444">Figure ' + n + '</div></div>' +
     '</div>' + _accSigBlocks(v);
-  return _accSheet(body);
+  return _accSheet(body, 'HML-ACC-DWG', 'Bản vẽ hoàn công / Marked-up drawing');
 }
 
 /* ═══════════════ 17 · Độ phủ nghiệm thu — what is left to accept ═══════════════════════════
@@ -27644,8 +27716,7 @@ function accIdxPrint() {
   }).join('');
 
   const p = ix._project || {};
-  const head = '<div style="display:flex;justify-content:space-between;font-size:.82em;color:#555;letter-spacing:.4px">' +
-      '<span>CLIENT\'S LOGO</span><span>CONTRACTOR\'S LOGO</span></div>' +
+  const head = _accLetterhead({ project: p }) +
     '<div style="text-align:center;margin:6px 0 12px">' +
       '<div style="font-size:1.45em;font-weight:700;text-transform:uppercase">Danh mục hồ sơ hoàn thành công trình</div>' +
       '<div style="font-size:1.02em;font-style:italic">Index of the completed-works dossier</div>' +
@@ -27672,7 +27743,8 @@ function accIdxPrint() {
       '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Đơn vị lưu<div style="font-style:italic;font-weight:400;font-size:.86em">Held by</div></th>' +
       '<th style="border:1px solid #000;padding:3px 6px;background:#EFEFEF;text-align:left">Số lượng / Số hiệu<div style="font-style:italic;font-weight:400;font-size:.86em">Quantity / reference</div></th>' +
       '<th style="border:1px solid #000;padding:3px 5px;background:#EFEFEF">Có<div style="font-style:italic;font-weight:400;font-size:.86em">Held</div></th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table>' + legend + _accIdxSigBlocks());
+    '</tr></thead><tbody>' + rows + '</tbody></table>' + legend + _accIdxSigBlocks(),
+    'HML-ACC-IDX', 'Danh mục hồ sơ hoàn thành / Dossier index');
 
   let ov = document.getElementById('accPrintOverlay');
   if (!ov) { ov = document.createElement('div'); ov.id = 'accPrintOverlay'; document.body.appendChild(ov); }
@@ -27687,7 +27759,7 @@ function accIdxPrint() {
       '<div style="display:flex;gap:7px">' +
         '<button class="btn btn-primary btn-sm" onclick="window.print()">🖨 ' + _t('Print / Save as PDF') + '</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="accPrintClose()">' + _t('Close') + '</button></div></div>' +
-    '<div id="acc-print-sheets">' + sheet + '</div>';
+    '<div id="acc-print-sheets">' + _accNumberSheets(sheet) + '</div>';
   ov.style.display = 'block';
   _accPrintSize(9.4);
 }
@@ -27843,6 +27915,75 @@ async function accNoticeSend() {
 /* The consultant and the client have no account here — they are the other side of the contract. So
    their addresses are project configuration, and a party with none recorded is why an invitation
    refuses to go rather than something the send quietly skips. */
+/* ---- the client's mark ----------------------------------------------------------------------- */
+/* Every acceptance form carries two identities across the top: the client's on the left and the
+   issuing company's on the right. Ours is the brand logo and never changes. The client's belongs to
+   the project, so it is uploaded here, once.
+
+   It saves on upload rather than waiting for the Save button that governs the fields beside it.
+   That is a deliberate inconsistency: a picture cannot show "typed but not saved" the way a text
+   box can, and a logo that looked present on the screen and was absent from the printed set is the
+   failure this card exists to prevent. */
+function _accBrandCard() {
+  const st = _accSet();
+  const nm = (st.accParties || {}).client || '';
+  const has = !!st.accClientLogo;
+  return '<div class="card" style="flex:1;min-width:330px;padding:0;overflow:hidden">' +
+    '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">' + _t('The letterhead on the forms') + '</div></div>' +
+    '<div style="padding:6px 16px 14px">' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.65;padding:8px 0">' +
+        _accE(_t('Every printed form carries the client on the left and Humiley on the right. Ours is fixed. Upload the client\'s mark here and it appears on the minutes, the checklists, the drawings and the dossier index. Without one the client\'s NAME is printed instead — never a placeholder.')) + '</div>' +
+      '<div style="border:1px solid var(--line);border-radius:9px;padding:11px;background:#fff">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+          '<div><div style="font-size:9.5px;letter-spacing:.6px;color:var(--text-light);text-transform:uppercase">Chủ đầu tư / Client</div>' +
+            (has ? '<img src="' + _tkEscA(st.accClientLogo) + '" alt="" style="max-height:42px;max-width:150px;object-fit:contain;margin-top:3px">'
+                 : '<div style="font-size:13px;font-weight:700;color:#000;margin-top:3px;max-width:170px">' +
+                   (nm ? _accE(nm) : '<span style="color:var(--text-light);font-weight:400">' + _accE(_t('no client named yet')) + '</span>') + '</div>') +
+          '</div>' +
+          '<img src="' + _tkEscA(_lhLogo()) + '" alt="Humiley" style="height:38px;object-fit:contain">' +
+        '</div>' +
+        '<div style="height:1px;background:var(--line);margin:9px 0 0"></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">' +
+        /* _t2, not a bare _t('Replace')/_t('Remove'): those are two-sense words. A shared "Remove"
+           key means gỡ here (detach a logo) and xóa nearly everywhere else in the app, and whichever
+           got written last would retranslate the other screen. */
+        '<label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0">' +
+          _accE(has ? _t2('Replace', 'Thay logo') : _t('Upload the client\'s logo')) +
+          '<input type="file" accept="image/*" style="display:none" onchange="accClientLogoAdd(this)"></label>' +
+        (has ? '<button class="btn btn-ghost btn-sm" onclick="accClientLogoClear()">' +
+          _accE(_t2('Remove', 'Gỡ logo')) + '</button>' : '') +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:7px;line-height:1.55">' +
+        _accE(_t('PNG or JPG. It is resampled to 600px and stored with the project, so a 4MB export from a brand pack costs the dossier nothing.')) + '</div>' +
+    '</div></div>';
+}
+async function accClientLogoAdd(input) {
+  const f = (input.files || [])[0]; input.value = '';
+  if (!f) return;
+  let sh;
+  try { sh = await _accRasterImage(f, 600); }
+  catch (e) { toast(_t('Could not read that image.') + ' ' + (e.message || ''), 'error'); return; }
+  await _accSaveClientLogo(sh.image);
+}
+function accClientLogoClear() { _accSaveClientLogo(''); }
+async function _accSaveClientLogo(img) {
+  const pid = _pmPid();
+  const cur = (_HR.pm_settings || []).find(x => x.id === pid) || { id: pid };
+  /* pm_settings is a whole-document PATCH: the existing row is spread first, or saving a logo would
+     erase every other setting on the project. */
+  const body = Object.assign({}, cur, { id: pid, projectId: pid, accClientLogo: img || '' });
+  try {
+    await tkApi('/api/coll/pm_settings/' + encodeURIComponent(pid), { method: 'PATCH', body: body });
+  } catch (e) {
+    try { await tkApi('/api/coll/pm_settings', { method: 'POST', body: body }); }
+    catch (e2) { toast(_errMsg(e2), 'error'); return; }
+  }
+  await _accReload(['pm_settings']);
+  toast(img ? _t('Client logo saved') : _t('Client logo removed'), 'success');
+  _accRepaint();
+}
+
 function _accContactsCard() {
   const pid = _pmPid();
   const s = (_HR.pm_settings || []).find(x => x.id === pid) || {};

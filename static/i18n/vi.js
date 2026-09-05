@@ -7041,4 +7041,14 @@ window._VI = {
   "Who the invitation goes to": "Thư mời gửi cho ai",
   "name <email>, or just email — separate several with commas": "họ tên <email>, hoặc chỉ email — nhiều người thì ngăn cách bằng dấu phẩy",
   "recipient(s)": "người nhận",
+
+  /* ── Giấy tiêu đề trên biểu mẫu nghiệm thu ─────────────────────────────────────────────────── */
+  "Client logo removed": "Đã gỡ logo chủ đầu tư",
+  "Client logo saved": "Đã lưu logo chủ đầu tư",
+  "Could not read that image.": "Không đọc được ảnh này.",
+  "Every printed form carries the client on the left and Humiley on the right. Ours is fixed. Upload the client's mark here and it appears on the minutes, the checklists, the drawings and the dossier index. Without one the client's NAME is printed instead — never a placeholder.": "Mọi biểu mẫu in ra đều mang logo chủ đầu tư bên trái và Humiley bên phải. Phần của chúng ta là cố định. Tải logo chủ đầu tư lên đây thì nó sẽ hiện trên biên bản nghiệm thu, biên bản kiểm tra, bản vẽ và danh mục hồ sơ. Nếu chưa có, hệ thống in TÊN chủ đầu tư — không bao giờ in chữ thay chỗ.",
+  "PNG or JPG. It is resampled to 600px and stored with the project, so a 4MB export from a brand pack costs the dossier nothing.": "PNG hoặc JPG. Ảnh được giảm về 600px và lưu theo dự án, nên một file 4MB xuất từ bộ nhận diện thương hiệu không làm nặng hồ sơ.",
+  "The letterhead on the forms": "Giấy tiêu đề trên biểu mẫu",
+  "Upload the client's logo": "Tải logo chủ đầu tư",
+  "no client named yet": "chưa khai báo tên chủ đầu tư",
 };
