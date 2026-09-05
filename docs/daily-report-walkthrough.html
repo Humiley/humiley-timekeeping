@@ -1,0 +1,762 @@
+<title>Daily Report Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --navy:#205090; --navy-deep:#16386A; --site:#C2571F;
+  --ink:#16202E; --mut:#5C6779; --faint:#8792A4;
+  --paper:#FFFFFF; --ground:#F1F4F9; --sunk:#E7ECF4; --line:#DBE2ED;
+  --good:#0E7C55; --warn:#B4690E; --stop:#B42318;
+  --shadow:0 1px 2px rgba(22,32,46,.06),0 6px 20px rgba(22,32,46,.05);
+  --header-bg:#16386A; --fill:#205090; --fill-site:#B8531D;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --disp:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"Source Sans 3","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --navy:#7BA6E0; --navy-deep:#A8C6EE; --site:#E89257;
+    --ink:#E8EDF5; --mut:#A2AEC0; --faint:#7C8899;
+    --paper:#161C26; --ground:#0E131B; --sunk:#1E2733; --line:#2A3542;
+    --good:#4BC08D; --warn:#E0A040; --stop:#E8776B;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+    --header-bg:#101A2B; --fill:#2E4E7E; --fill-site:#B8531D;
+  }
+}
+:root[data-theme="dark"]{
+  --navy:#7BA6E0; --navy-deep:#A8C6EE; --site:#E89257;
+  --ink:#E8EDF5; --mut:#A2AEC0; --faint:#7C8899;
+  --paper:#161C26; --ground:#0E131B; --sunk:#1E2733; --line:#2A3542;
+  --good:#4BC08D; --warn:#E0A040; --stop:#E8776B;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+  --header-bg:#101A2B; --fill:#2E4E7E; --fill-site:#B8531D;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--body); font-size:16.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1000px; margin:0 auto; padding:0 24px 96px}
+h1,h2,h3,h4{font-family:var(--disp); text-wrap:balance; margin:0}
+p{margin:0 0 1em}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono); font-size:.88em}
+
+/* ── EN / VN ──────────────────────────────────────────────────────────
+   Both languages are in the markup and one is hidden, rather than a key
+   dictionary swapped at runtime. The portal's own _VI is a single shared
+   object where a duplicated key silently wins, and a missing key leaves an
+   English string sitting in a Vietnamese screen with nothing to report it.
+   Pairing them in the DOM makes "is this translated?" a thing a checker can
+   actually see. */
+body:not(.vi) .vi{display:none}
+body.vi .en{display:none}
+.langsw{
+  position:absolute; top:22px; right:24px; display:flex; gap:2px;
+  border:1px solid rgba(255,255,255,.28); border-radius:100px; padding:2px; background:rgba(255,255,255,.08);
+}
+.langsw button{
+  font-family:var(--disp); font-weight:600; font-size:12px; letter-spacing:.06em;
+  padding:6px 14px; border-radius:100px; border:none; cursor:pointer;
+  background:transparent; color:rgba(255,255,255,.72);
+}
+.langsw button[aria-pressed="true"]{background:#fff; color:var(--header-bg)}
+.langsw button:focus-visible{outline:2px solid #fff; outline-offset:2px}
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+header.top{
+  background:var(--header-bg); color:#fff; margin-bottom:44px; position:relative;
+  padding:56px 24px 48px; border-bottom:4px solid var(--site);
+}
+header.top .inner{max-width:1000px;margin:0 auto}
+.eyebrow{
+  font-family:var(--disp); font-weight:600; font-size:11.5px; letter-spacing:.16em;
+  text-transform:uppercase; color:rgba(255,255,255,.62); margin-bottom:14px;
+}
+header.top h1{font-size:clamp(31px,5.2vw,50px); font-weight:700; line-height:1.08; color:#fff; letter-spacing:-.015em}
+header.top .lede{
+  margin:18px 0 0; font-size:18.5px; line-height:1.58; color:rgba(255,255,255,.84); max-width:62ch;
+}
+.chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:26px}
+.chip{
+  font-family:var(--disp); font-size:12px; font-weight:600; letter-spacing:.04em;
+  padding:5px 11px; border-radius:100px; border:1px solid rgba(255,255,255,.24);
+  color:rgba(255,255,255,.9); background:rgba(255,255,255,.07);
+}
+.chip.live{border-color:rgba(120,220,170,.5); background:rgba(120,220,170,.14)}
+
+/* ── generic blocks ───────────────────────────────────────────────── */
+section{margin-bottom:56px}
+.sec-head{margin-bottom:20px}
+.sec-head h2{
+  font-size:26px; font-weight:700; letter-spacing:-.01em;
+  padding-bottom:9px; border-bottom:2px solid var(--line);
+}
+.sec-head .sub{color:var(--mut); font-size:15.5px; margin:11px 0 0; max-width:70ch}
+.card{
+  background:var(--paper); border:1px solid var(--line); border-radius:12px;
+  padding:22px 24px; box-shadow:var(--shadow);
+}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:16px}
+
+/* ── the flow: a real sequence, so it is numbered ─────────────────── */
+.flow{display:flex; flex-direction:column}
+.step{display:grid; grid-template-columns:56px 1fr; gap:20px; position:relative; padding-bottom:26px}
+.step:last-child{padding-bottom:0}
+.step::before{content:""; position:absolute; left:27px; top:44px; bottom:-2px; width:2px; background:var(--line)}
+.step:last-child::before{display:none}
+.step .n{
+  width:56px; height:44px; display:flex; align-items:center; justify-content:center;
+  font-family:var(--disp); font-weight:700; font-size:19px; font-variant-numeric:tabular-nums;
+  color:#fff; background:var(--fill); border-radius:9px; z-index:1;
+}
+.step.outside .n{background:var(--fill-site)}
+.step h3{font-size:18.5px; font-weight:600; margin-bottom:5px; padding-top:8px}
+.step p{margin:0; color:var(--mut); font-size:15.5px}
+.step .where{font-family:var(--mono); font-size:11.5px; color:var(--faint); margin-top:7px; display:block}
+
+/* ── side-by-side ─────────────────────────────────────────────────── */
+.sides{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+.side{border-radius:12px; padding:20px 22px; border:1px solid var(--line); background:var(--paper)}
+.side.out{border-left:4px solid var(--site)}
+.side.in{border-left:4px solid var(--navy)}
+.side h4{font-size:12px; letter-spacing:.13em; text-transform:uppercase; margin-bottom:12px}
+.side.out h4{color:var(--site)} .side.in h4{color:var(--navy)}
+.side ul{margin:0; padding-left:18px; color:var(--mut); font-size:15px}
+.side li{margin-bottom:7px}
+
+/* ── phone ────────────────────────────────────────────────────────── */
+.phone-row{display:grid; grid-template-columns:288px 1fr; gap:32px; align-items:start}
+@media (max-width:760px){.phone-row{grid-template-columns:1fr}}
+.phone{border:9px solid var(--ink); border-radius:30px; overflow:hidden; background:var(--paper); box-shadow:var(--shadow)}
+.phone .bar{background:var(--header-bg); color:#fff; padding:15px 16px 13px}
+.phone .bar .t{font-family:var(--disp); font-weight:700; font-size:17px}
+.phone .bar .s{font-size:12px; color:rgba(255,255,255,.74); margin-top:2px}
+.phone .datebox{padding:12px 16px; border-bottom:1px solid var(--line)}
+.phone .datebox .lab{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+.phone .datebox .val{font-family:var(--mono); font-size:15px; margin-top:3px}
+.phone .rows{max-height:380px; overflow-y:auto}
+.phone .r{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:11px 16px; border-bottom:1px solid var(--line); font-size:14.5px;
+}
+.phone .r:last-child{border-bottom:none}
+.phone .r .c{font-family:var(--mono); font-size:13px; color:var(--good); font-weight:500}
+.phone .r .c.none{color:var(--faint)}
+
+/* ── tables ───────────────────────────────────────────────────────── */
+.tbl-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--paper)}
+table{border-collapse:collapse; width:100%; font-size:14.5px; min-width:440px}
+th{
+  background:var(--fill) !important; color:#fff !important;
+  font-family:var(--disp); font-weight:600; font-size:12px; letter-spacing:.06em;
+  text-transform:uppercase; text-align:left; padding:10px 13px; white-space:nowrap;
+}
+td{padding:9px 13px; border-bottom:1px solid var(--line); vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.n, th.n{text-align:right; font-variant-numeric:tabular-nums}
+tfoot td{font-weight:700; background:var(--sunk)}
+.page-no{font-family:var(--mono); color:var(--faint); font-size:13px}
+
+/* ── stat cards ───────────────────────────────────────────────────── */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:12px}
+.stat{background:var(--paper); border:1px solid var(--line); border-radius:11px; padding:15px 17px}
+.stat .k{font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--faint)}
+.stat .v{font-family:var(--disp); font-weight:700; font-size:29px; font-variant-numeric:tabular-nums; margin-top:5px; line-height:1.1}
+.stat .d{font-size:13px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums}
+.up{color:var(--good)} .down{color:var(--stop)} .flat{color:var(--faint)}
+
+/* ── callout ──────────────────────────────────────────────────────── */
+.note{
+  border:1px solid var(--line); border-left:4px solid var(--warn);
+  background:var(--paper); border-radius:0 10px 10px 0; padding:17px 20px;
+}
+.note.stop{border-left-color:var(--stop)}
+.note.good{border-left-color:var(--good)}
+.note h4{font-size:15.5px; font-weight:600; margin-bottom:6px}
+.note p{margin:0; color:var(--mut); font-size:15px}
+.note p + p{margin-top:9px}
+
+/* ── refusals ─────────────────────────────────────────────────────── */
+.ref{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px}
+.ref .r{background:var(--paper); border:1px solid var(--line); border-radius:11px; padding:18px 20px}
+.ref .r .q{font-family:var(--disp); font-weight:600; font-size:15px; color:var(--stop); margin-bottom:7px}
+.ref .r .a{font-size:14.8px; color:var(--mut)}
+.ref .r .a b{color:var(--ink); font-weight:600}
+
+.foot{margin-top:40px; padding-top:22px; border-top:1px solid var(--line); color:var(--faint); font-size:13.5px}
+</style>
+
+<header class="top">
+  <div class="langsw" role="group" aria-label="Language / Ngôn ngữ">
+    <button type="button" id="b-en" aria-pressed="true" onclick="setLang('en')">EN</button>
+    <button type="button" id="b-vi" aria-pressed="false" onclick="setLang('vi')">VN</button>
+  </div>
+  <div class="inner">
+    <div class="eyebrow"><span class="en">Humiley Portal · Project workspace</span><span class="vi">Humiley Portal · Không gian Dự án</span></div>
+    <h1><span class="en">The site's daily report,<br>without a Microsoft account</span><span class="vi">Báo cáo hằng ngày từ công trường,<br>không cần tài khoản Microsoft</span></h1>
+    <p class="lede en">
+      Mega Lifesciences receives a daily report from every contractor on the job. It used to be a
+      Power BI file somebody refreshed and exported by hand. It is now a tab of the Project
+      workspace — filled in from the site on a phone, assembled by the portal, printed on the
+      Humiley letterhead.
+    </p>
+    <p class="lede vi">
+      Mega Lifesciences nhận báo cáo hằng ngày từ mọi nhà thầu trên công trường. Trước đây đó là một
+      tệp Power BI phải làm mới và xuất bằng tay. Nay nó là một tab của không gian Dự án — điền từ
+      công trường bằng điện thoại, hệ thống tự tổng hợp, in trên giấy tiêu đề Humiley.
+    </p>
+    <div class="chips">
+      <span class="chip live"><span class="en">Live in production · v856</span><span class="vi">Đang chạy thật · v856</span></span>
+      <span class="chip">PR #243 · #245 · #246</span>
+      <span class="chip"><span class="en">Mail.Send consented 5 Sep</span><span class="vi">Mail.Send đã cấp quyền 5/9</span></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">The constraint that shaped everything</span><span class="vi">Ràng buộc đã định hình mọi thứ</span></h2>
+    <p class="sub en">
+      The contractors are not in the tenant. Taikisha and Newtecons have no Microsoft accounts and
+      are never going to be given any. Every design decision below follows from that one fact.
+    </p>
+    <p class="sub vi">
+      Các nhà thầu không nằm trong tenant của công ty. Taikisha và Newtecons không có tài khoản
+      Microsoft và sẽ không bao giờ được cấp. Mọi quyết định thiết kế bên dưới đều bắt nguồn từ đúng
+      một sự thật đó.
+    </p>
+  </div>
+  <div class="sides">
+    <div class="side out">
+      <h4><span class="en">Outside the tenant</span><span class="vi">Bên ngoài tenant</span></h4>
+      <ul class="en">
+        <li>The site foreman, on a phone, at Nhon Trach.</li>
+        <li>No account, no password, no app to install.</li>
+        <li>Reaches one permanent link and nothing else.</li>
+        <li>Can file today's numbers; cannot read anybody else's.</li>
+      </ul>
+      <ul class="vi">
+        <li>Chỉ huy công trường, dùng điện thoại, tại Nhơn Trạch.</li>
+        <li>Không tài khoản, không mật khẩu, không phải cài ứng dụng.</li>
+        <li>Chỉ vào được đúng một liên kết cố định, ngoài ra không gì khác.</li>
+        <li>Nộp được số liệu hôm nay; không đọc được số liệu của nhà thầu khác.</li>
+      </ul>
+    </div>
+    <div class="side in">
+      <h4><span class="en">Inside the portal</span><span class="vi">Bên trong portal</span></h4>
+      <ul class="en">
+        <li>Humiley staff, signed in with Microsoft.</li>
+        <li>Report Setup owns the link and the address list.</li>
+        <li>The report is assembled and exported here.</li>
+        <li>Project scoping decides who sees which job.</li>
+      </ul>
+      <ul class="vi">
+        <li>Nhân sự Humiley, đăng nhập bằng Microsoft.</li>
+        <li>Thiết lập báo cáo quản lý liên kết và danh sách email.</li>
+        <li>Báo cáo được tổng hợp và xuất tại đây.</li>
+        <li>Phạm vi dự án quyết định ai xem được công trình nào.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">How a day gets reported</span><span class="vi">Một ngày được báo cáo như thế nào</span></h2>
+    <p class="sub en">
+      Six steps, in order — the numbering is the sequence, not decoration. Orange steps happen
+      outside the tenant, on somebody's phone.
+    </p>
+    <p class="sub vi">
+      Sáu bước, theo đúng thứ tự — đánh số ở đây là trình tự thật, không phải trang trí. Các bước màu
+      cam diễn ra bên ngoài tenant, trên điện thoại của người ở công trường.
+    </p>
+  </div>
+  <div class="flow">
+    <div class="step">
+      <div class="n">1</div>
+      <div>
+        <h3><span class="en">A contractor is added, and gets a permanent link</span><span class="vi">Thêm một nhà thầu, hệ thống cấp ngay liên kết cố định</span></h3>
+        <p class="en">The token is minted server-side the moment the row exists, never in the browser — it is
+        what the whole access boundary hangs off, and a client-chosen one would be a client-chosen
+        secret. The link never changes, so it can go in a site induction pack.</p>
+        <p class="vi">Mã liên kết được sinh ở phía máy chủ ngay khi bản ghi tồn tại, không bao giờ sinh ở trình
+        duyệt — toàn bộ ranh giới truy cập treo trên nó, và để phía người dùng tự chọn thì đó là một
+        bí mật do người dùng tự đặt. Liên kết không bao giờ đổi, nên có thể in vào hồ sơ nhập công
+        trường.</p>
+        <span class="where">app.py · _coll_add → dr_access.new_token()</span>
+      </div>
+    </div>
+    <div class="step outside">
+      <div class="n">2</div>
+      <div>
+        <h3><span class="en">The foreman opens it and types an email address</span><span class="vi">Chỉ huy mở liên kết và nhập địa chỉ email</span></h3>
+        <p class="en">Only an address on that contractor's list gets anywhere. The page says exactly the same
+        thing either way, so the link cannot be used to discover who is on the list.</p>
+        <p class="vi">Chỉ địa chỉ có trong danh sách của nhà thầu đó mới đi tiếp được. Trang hiển thị đúng cùng một
+        câu trong cả hai trường hợp, nên không thể dùng liên kết để dò xem ai có trong danh sách.</p>
+        <span class="where">POST /api/dr/site/code</span>
+      </div>
+    </div>
+    <div class="step outside">
+      <div class="n">3</div>
+      <div>
+        <h3><span class="en">A six-digit code arrives, good for 15 minutes</span><span class="vi">Mã sáu chữ số được gửi tới, có hiệu lực 15 phút</span></h3>
+        <p class="en">Five wrong attempts locks the address for 15 minutes; three code requests in 15 minutes
+        is the ceiling. The send is synchronous, so "a code is on its way" is never printed over a
+        mail that failed to leave the server.</p>
+        <p class="vi">Sai năm lần thì khóa địa chỉ đó 15 phút; tối đa ba lần xin mã trong 15 phút. Việc gửi mail là
+        đồng bộ, nên câu "mã đang được gửi" không bao giờ hiện lên đè trên một email thực ra chưa hề
+        rời khỏi máy chủ.</p>
+        <span class="where">_graph_send_now → Graph /users/{sender}/sendMail</span>
+      </div>
+    </div>
+    <div class="step outside">
+      <div class="n">4</div>
+      <div>
+        <h3><span class="en">The day is filled in, one section at a time</span><span class="vi">Điền báo cáo, mỗi lần một mục</span></h3>
+        <p class="en">Fourteen sections, each saved on its own so a dropped signal on a building site costs one
+        section rather than an afternoon. Photos are downscaled to 1600px in the browser before they
+        are ever uploaded.</p>
+        <p class="vi">Mười bốn mục, mỗi mục lưu riêng, nên mất sóng giữa công trường chỉ mất một mục chứ không mất
+        cả buổi chiều. Ảnh được thu nhỏ về 1600px ngay trên trình duyệt trước khi tải lên.</p>
+        <span class="where">templates/dr_site.html · POST /api/dr/site/save</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="n">5</div>
+      <div>
+        <h3><span class="en">The portal assembles the report</span><span class="vi">Portal tổng hợp báo cáo</span></h3>
+        <p class="en">Project name, client and planned dates are read from the PM project — never typed twice,
+        because two registers holding the same start date will one day disagree about it on a
+        document the client reads every morning.</p>
+        <p class="vi">Tên dự án, chủ đầu tư và các mốc kế hoạch được đọc từ dự án PM — không nhập lại lần thứ hai,
+        vì hai sổ cùng giữ một ngày khởi công thì sẽ có ngày lệch nhau, ngay trên tài liệu khách hàng
+        đọc mỗi sáng.</p>
+        <span class="where">daily_report.merge_project · pm_projects</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="n">6</div>
+      <div>
+        <h3><span class="en">Ten pages, on the Humiley letterhead</span><span class="vi">Mười trang, trên giấy tiêu đề Humiley</span></h3>
+        <p class="en">Client logo top-left, contractor logo bottom-right, exported to PDF from the browser. The
+        print renderer is independent of screen CSS, so a phone and a laptop export the same
+        document.</p>
+        <p class="vi">Logo chủ đầu tư ở trên bên trái, logo nhà thầu ở dưới bên phải, xuất PDF ngay từ trình duyệt.
+        Bộ dựng bản in độc lập với CSS màn hình, nên điện thoại và máy tính xuất ra cùng một tài liệu.</p>
+        <span class="where">_drPrint* · jsPDF + html2canvas</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">What the site sees</span><span class="vi">Công trường nhìn thấy gì</span></h2>
+    <p class="sub en">
+      No portal chrome, no framework, English and Vietnamese. The counts beside each section are the
+      progress indicator — this is Taikisha's own configuration, so it shows Taikisha's eight
+      management roles and six work categories, not a fixed list.
+    </p>
+    <p class="sub vi">
+      Không khung portal, không framework, có cả tiếng Anh và tiếng Việt. Con số bên cạnh mỗi mục là
+      chỉ báo tiến độ — đây là cấu hình riêng của Taikisha, nên hiện tám chức danh quản lý và sáu
+      hạng mục công việc của Taikisha, không phải một danh sách cố định.
+    </p>
+  </div>
+  <div class="phone-row">
+    <div class="phone">
+      <div class="bar">
+        <div class="t"><span class="en">Daily Report</span><span class="vi">Báo cáo hằng ngày</span></div>
+        <div class="s">Taikisha · site@taikisha.example</div>
+      </div>
+      <div class="datebox">
+        <div class="lab"><span class="en">Report date</span><span class="vi">Ngày báo cáo</span></div>
+        <div class="val num">01 / 09 / 2026</div>
+      </div>
+      <div class="rows">
+        <div class="r"><span><span class="en">Weather</span><span class="vi">Thời tiết</span></span><span class="c">3</span></div>
+        <div class="r"><span><span class="en">Management staff</span><span class="vi">Nhân sự quản lý</span></span><span class="c">3</span></div>
+        <div class="r"><span><span class="en">Workers</span><span class="vi">Công nhân</span></span><span class="c">4</span></div>
+        <div class="r"><span><span class="en">Equipment &amp; machinery</span><span class="vi">Thiết bị &amp; máy móc</span></span><span class="c">3</span></div>
+        <div class="r"><span><span class="en">Material delivery</span><span class="vi">Vật tư nhập về</span></span><span class="c none">—</span></div>
+        <div class="r"><span><span class="en">Work completed today</span><span class="vi">Công việc hoàn thành hôm nay</span></span><span class="c">31</span></div>
+        <div class="r"><span><span class="en">Next day work plan</span><span class="vi">Kế hoạch công việc ngày mai</span></span><span class="c">12</span></div>
+        <div class="r"><span><span class="en">Progress photos</span><span class="vi">Hình ảnh tiến độ</span></span><span class="c">8</span></div>
+        <div class="r"><span><span class="en">Documents</span><span class="vi">Hồ sơ trao đổi</span></span><span class="c none">—</span></div>
+        <div class="r"><span><span class="en">Defects</span><span class="vi">Danh mục lỗi</span></span><span class="c none">—</span></div>
+        <div class="r"><span><span class="en">Inspection today</span><span class="vi">Nghiệm thu hôm nay</span></span><span class="c none">—</span></div>
+        <div class="r"><span><span class="en">Next day inspection</span><span class="vi">Kế hoạch nghiệm thu ngày mai</span></span><span class="c none">—</span></div>
+        <div class="r"><span><span class="en">Safety checks</span><span class="vi">Kiểm tra an toàn</span></span><span class="c">11</span></div>
+        <div class="r"><span><span class="en">Requests &amp; recommendations</span><span class="vi">Đề xuất &amp; kiến nghị</span></span><span class="c none">—</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="note good" style="margin-bottom:16px">
+        <h4><span class="en">An em-dash is not a zero</span><span class="vi">Dấu gạch ngang không phải là số 0</span></h4>
+        <p class="en">A section nobody filled in shows a dash, not a nought. It matters most on the safety
+        checklist: the source report prints eleven green ticks, and defaulting those ticks to
+        "passed" would manufacture that page for a day nobody walked the site.</p>
+        <p class="vi">Mục không ai điền sẽ hiện dấu gạch ngang, không phải số 0. Điều này quan trọng nhất ở danh mục
+        an toàn: báo cáo gốc in mười một dấu tích xanh, và nếu mặc định các dấu tích đó là "đạt" thì
+        hệ thống đã tự chế ra trang đó cho một ngày không ai đi kiểm tra công trường.</p>
+      </div>
+      <div class="note">
+        <h4><span class="en">A headcount under an unknown name is never silently dropped</span><span class="vi">Nhân sự khai dưới một tên lạ không bao giờ bị âm thầm bỏ đi</span></h4>
+        <p class="en">If a form arrives with a role that is no longer on the contractor's table, the figure is
+        printed beneath the table and left <b>out</b> of the total, with a warning — rather than
+        being folded in, or vanishing.</p>
+        <p class="vi">Nếu biểu mẫu gửi lên có một chức danh không còn trong bảng của nhà thầu, con số vẫn được in
+        bên dưới bảng và <b>không</b> cộng vào tổng, kèm một cảnh báo — thay vì bị gộp vào hoặc biến
+        mất.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">The report itself</span><span class="vi">Bản báo cáo</span></h2>
+    <p class="sub en">
+      Every figure below is Taikisha's real 1 September 2026 report, reproduced from the client's own
+      PDF. The tests assert these numbers against that document, not against the implementation.
+    </p>
+    <p class="sub vi">
+      Mọi con số bên dưới là báo cáo thật ngày 01/09/2026 của Taikisha, dựng lại từ chính tệp PDF của
+      khách hàng. Các bài kiểm thử đối chiếu những con số này với tài liệu đó, không phải với phần
+      mềm.
+    </p>
+  </div>
+
+  <div class="stats" style="margin-bottom:16px">
+    <div class="stat">
+      <div class="k"><span class="en">Total duration</span><span class="vi">Tổng thời gian</span></div>
+      <div class="v num">530</div>
+      <div class="d flat"><span class="en">days · 14 Nov 25 → 28 Apr 27</span><span class="vi">ngày · 14/11/25 → 28/04/27</span></div>
+    </div>
+    <div class="stat">
+      <div class="k"><span class="en">Elapsed</span><span class="vi">Đã thực hiện</span></div>
+      <div class="v num">292</div>
+      <div class="d flat"><span class="en">days · as at 01 Sep 26</span><span class="vi">ngày · tính đến 01/09/26</span></div>
+    </div>
+    <div class="stat">
+      <div class="k"><span class="en">Management staff</span><span class="vi">Nhân sự quản lý</span></div>
+      <div class="v num">13</div>
+      <div class="d down"><span class="en">▼ 1 on yesterday</span><span class="vi">▼ 1 so với hôm qua</span></div>
+    </div>
+    <div class="stat">
+      <div class="k"><span class="en">Workers</span><span class="vi">Công nhân</span></div>
+      <div class="v num">91</div>
+      <div class="d up"><span class="en">▲ 17 on yesterday</span><span class="vi">▲ 17 so với hôm qua</span></div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-bottom:26px">
+    <h4><span class="en">The two durations are counted differently, and that is deliberate</span><span class="vi">Hai con số thời gian được đếm theo hai cách khác nhau, và đó là cố ý</span></h4>
+    <p class="en">Total is <span class="mono">(end − start).days</span> = 530. Elapsed is
+    <span class="mono">(today − start).days + 1</span> = 292. They disagree by a day because the
+    client's own report disagrees by a day. A constant named
+    <span class="mono">INCLUSIVE_ELAPSED</span> says so, and a test guards the discrepancy itself —
+    so that nobody "fixes" it and changes a number the client has been reading for months.</p>
+    <p class="vi">Tổng là <span class="mono">(kết thúc − khởi công).days</span> = 530. Đã thực hiện là
+    <span class="mono">(hôm nay − khởi công).days + 1</span> = 292. Hai cách lệch nhau một ngày, vì
+    chính báo cáo của khách hàng lệch nhau một ngày. Một hằng số tên
+    <span class="mono">INCLUSIVE_ELAPSED</span> ghi rõ điều đó, và có một bài kiểm thử canh chính chỗ
+    lệch này — để không ai "sửa" nó rồi làm đổi một con số khách hàng đã đọc suốt nhiều tháng.</p>
+  </div>
+
+  <h3 style="font-size:17px;font-weight:600;margin-bottom:10px">
+    <span class="en">2.1 Management staff</span><span class="vi">2.1 Nhân sự quản lý</span>
+  </h3>
+  <div class="tbl-wrap" style="margin-bottom:22px">
+    <table>
+      <thead><tr>
+        <th><span class="en">Role</span><span class="vi">Chức danh</span></th>
+        <th class="n"><span class="en">Present</span><span class="vi">Có mặt</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Cad Staff</td><td class="n">7</td></tr>
+        <tr><td>Site Manager</td><td class="n">1</td></tr>
+        <tr><td>Supervisor</td><td class="n">5</td></tr>
+        <tr><td>Admin</td><td class="n">0</td></tr>
+        <tr><td>Project Manager — Electrical</td><td class="n">0</td></tr>
+        <tr><td>Project Manager — Mechanical</td><td class="n">0</td></tr>
+        <tr><td>Safety man</td><td class="n">0</td></tr>
+        <tr><td>Storage man</td><td class="n">0</td></tr>
+      </tbody>
+      <tfoot><tr>
+        <td><span class="en">Total</span><span class="vi">Tổng cộng</span></td><td class="n">13</td>
+      </tr></tfoot>
+    </table>
+  </div>
+
+  <h3 style="font-size:17px;font-weight:600;margin-bottom:10px">
+    <span class="en">2.2 Workers</span><span class="vi">2.2 Công nhân</span>
+  </h3>
+  <div class="tbl-wrap" style="margin-bottom:26px">
+    <table>
+      <thead><tr>
+        <th><span class="en">Trade</span><span class="vi">Bộ môn</span></th>
+        <th class="n"><span class="en">On site</span><span class="vi">Trên công trường</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td>HVAC</td><td class="n">43</td></tr>
+        <tr><td>Plumbing Works</td><td class="n">21</td></tr>
+        <tr><td>Electrical Works</td><td class="n">17</td></tr>
+        <tr><td>Fire Fighting Works</td><td class="n">10</td></tr>
+        <tr><td>Other Works</td><td class="n">0</td></tr>
+      </tbody>
+      <tfoot><tr>
+        <td><span class="en">Total</span><span class="vi">Tổng cộng</span></td><td class="n">91</td>
+      </tr></tfoot>
+    </table>
+  </div>
+
+  <h3 style="font-size:17px;font-weight:600;margin-bottom:10px">
+    <span class="en">The ten pages</span><span class="vi">Mười trang của báo cáo</span>
+  </h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th class="n"><span class="en">Page</span><span class="vi">Trang</span></th>
+        <th><span class="en">Section</span><span class="vi">Mục</span></th>
+        <th><span class="en">What it holds</span><span class="vi">Nội dung</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="n page-no">1</td>
+          <td><span class="en">Overview</span><span class="vi">Tổng quan</span></td>
+          <td><span class="en">Masthead, the two durations, headcount cards with day-on-day movement, site overview photos</span><span class="vi">Đầu báo cáo, hai con số thời gian, thẻ nhân lực kèm biến động so với hôm trước, ảnh toàn cảnh công trường</span></td></tr>
+        <tr><td class="n page-no">2</td>
+          <td><span class="en">Weather &amp; Manpower</span><span class="vi">Thời tiết &amp; Nhân lực</span></td>
+          <td><span class="en">Table 1 weather; 2.1 management; 2.2 workers; two seven-day bar charts</span><span class="vi">Bảng 1 thời tiết; 2.1 nhân sự quản lý; 2.2 công nhân; hai biểu đồ cột bảy ngày</span></td></tr>
+        <tr><td class="n page-no">3</td>
+          <td><span class="en">Equipment &amp; Materials</span><span class="vi">Thiết bị &amp; Vật tư</span></td>
+          <td><span class="en">3. Equipment &amp; machinery; 4. Material delivery</span><span class="vi">3. Thiết bị &amp; máy móc; 4. Vật tư nhập về</span></td></tr>
+        <tr><td class="n page-no">4</td>
+          <td><span class="en">Work Progress</span><span class="vi">Tiến độ thi công</span></td>
+          <td><span class="en">5.1 Work completed today, grouped by category</span><span class="vi">5.1 Công việc hoàn thành hôm nay, nhóm theo hạng mục</span></td></tr>
+        <tr><td class="n page-no">5</td>
+          <td><span class="en">Progress Gantt</span><span class="vi">Biểu đồ Gantt</span></td>
+          <td><span class="en">5.2 Bar chart with a today line and per-item accumulated progress</span><span class="vi">5.2 Biểu đồ thanh có vạch hôm nay và tiến độ lũy kế từng đầu việc</span></td></tr>
+        <tr><td class="n page-no">6</td>
+          <td><span class="en">Work Plan</span><span class="vi">Kế hoạch thi công</span></td>
+          <td><span class="en">5.3 Next day work plan</span><span class="vi">5.3 Kế hoạch công việc ngày mai</span></td></tr>
+        <tr><td class="n page-no">7</td>
+          <td><span class="en">Daily Photos</span><span class="vi">Hình ảnh trong ngày</span></td>
+          <td><span class="en">6. Progress photos, numbered per category</span><span class="vi">6. Hình ảnh tiến độ, đánh số theo từng hạng mục</span></td></tr>
+        <tr><td class="n page-no">8</td>
+          <td><span class="en">Document &amp; Defect</span><span class="vi">Hồ sơ &amp; Lỗi</span></td>
+          <td><span class="en">7. Site document exchange, all four groups every day; 8. Defect check list</span><span class="vi">7. Hồ sơ trao đổi tại công trường, đủ bốn nhóm mỗi ngày; 8. Danh mục kiểm tra lỗi</span></td></tr>
+        <tr><td class="n page-no">9</td>
+          <td><span class="en">Inspection</span><span class="vi">Nghiệm thu</span></td>
+          <td><span class="en">9.1 Daily inspection; 9.2 Next day inspection plan</span><span class="vi">9.1 Nghiệm thu trong ngày; 9.2 Kế hoạch nghiệm thu ngày mai</span></td></tr>
+        <tr><td class="n page-no">10</td>
+          <td><span class="en">Safety &amp; Recommendations</span><span class="vi">An toàn &amp; Kiến nghị</span></td>
+          <td><span class="en">10. Safety control activities; 11. Requests &amp; recommendations</span><span class="vi">10. Hoạt động kiểm soát an toàn; 11. Đề xuất &amp; kiến nghị</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">What it refuses to do</span><span class="vi">Những gì hệ thống từ chối làm</span></h2>
+    <p class="sub en">
+      A link that anyone can open is a link anyone can attack. These are the questions the build was
+      forced to answer, and how it answers them.
+    </p>
+    <p class="sub vi">
+      Một liên kết ai cũng mở được là một liên kết ai cũng có thể tấn công. Đây là những câu hỏi mà
+      bản dựng này buộc phải trả lời, và cách nó trả lời.
+    </p>
+  </div>
+  <div class="ref">
+    <div class="r">
+      <div class="q"><span class="en">Can I try tokens until one works?</span><span class="vi">Có thể dò mã liên kết cho tới khi trúng không?</span></div>
+      <div class="a en">A well-formed unknown token renders <b>exactly the same page</b> as a real one,
+      and every action behind it fails identically. Asking for a code gives the same sentence
+      whether or not the address is on the list.</div>
+      <div class="a vi">Một mã đúng định dạng nhưng không tồn tại sẽ hiện <b>đúng cùng một trang</b> như mã thật, và
+      mọi thao tác phía sau đều thất bại y hệt nhau. Xin mã cũng nhận về đúng một câu, dù địa chỉ có
+      trong danh sách hay không.</div>
+    </div>
+    <div class="r">
+      <div class="q"><span class="en">Is the link itself a password?</span><span class="vi">Bản thân liên kết có phải mật khẩu không?</span></div>
+      <div class="a en">No. It gets you to a form that asks for an address you have to already be on.
+      Forwarding the link to a friend forwards a page that will refuse them.</div>
+      <div class="a vi">Không. Nó chỉ đưa bạn tới một biểu mẫu hỏi địa chỉ mà bạn phải có sẵn trong danh sách. Chuyển
+      liên kết cho người khác là chuyển đi một trang sẽ từ chối họ.</div>
+    </div>
+    <div class="r">
+      <div class="q"><span class="en">Can one contractor file another's report?</span><span class="vi">Nhà thầu này nộp báo cáo thay nhà thầu kia được không?</span></div>
+      <div class="a en">No. The cookie says who you are, the link says which form — <b>both must
+      agree</b>. A confirmed device on Taikisha's link is refused on Newtecons'.</div>
+      <div class="a vi">Không. Cookie cho biết bạn là ai, liên kết cho biết đang ở biểu mẫu nào — <b>cả hai phải khớp
+      nhau</b>. Thiết bị đã xác thực trên liên kết của Taikisha sẽ bị từ chối trên liên kết của
+      Newtecons.</div>
+    </div>
+    <div class="r">
+      <div class="q"><span class="en">Someone left the site. Can I cut them off?</span><span class="vi">Có người nghỉ việc. Cắt quyền họ được không?</span></div>
+      <div class="a en">Take them off the address list — effective <b>immediately</b>, even on a phone
+      already signed in, because the session is re-checked against the list on every request.</div>
+      <div class="a vi">Xóa địa chỉ của họ khỏi danh sách — có hiệu lực <b>ngay lập tức</b>, kể cả trên điện thoại đã
+      đăng nhập từ trước, vì phiên làm việc được đối chiếu lại với danh sách ở mỗi lần gọi.</div>
+    </div>
+    <div class="r">
+      <div class="q"><span class="en">Can I sign every device out without changing the link?</span><span class="vi">Đăng xuất mọi thiết bị mà không đổi liên kết được không?</span></div>
+      <div class="a en">Yes, and it is a separate button from re-issuing. A generation number lives on
+      the contractor and is stamped <b>inside</b> the cookie's signature; raising it invalidates
+      every cookie at once, including devices nobody knew about.</div>
+      <div class="a vi">Được, và đó là một nút riêng, khác với nút cấp lại liên kết. Mỗi nhà thầu giữ một số thế hệ,
+      được đóng dấu <b>bên trong</b> chữ ký của cookie; nâng số đó lên là vô hiệu hóa toàn bộ cookie
+      cùng lúc, kể cả những thiết bị không ai biết tới.</div>
+    </div>
+    <div class="r">
+      <div class="q"><span class="en">The link leaked. Now what?</span><span class="vi">Liên kết bị lộ thì sao?</span></div>
+      <div class="a en">Issue a new one. Every bookmarked and forwarded copy stops resolving, and the
+      signed-in devices go too — a leaked link is a leaked link.</div>
+      <div class="a vi">Cấp liên kết mới. Mọi bản đã lưu hoặc đã chuyển tiếp đều ngừng hoạt động, và các thiết bị đang
+      đăng nhập cũng bị cắt — đã lộ là đã lộ.</div>
+    </div>
+  </div>
+
+  <div class="note stop" style="margin-top:18px">
+    <h4><span class="en">Why those last two are not one button</span><span class="vi">Vì sao hai chức năng cuối không gộp làm một nút</span></h4>
+    <p class="en">Collapsing them would mean re-mailing the link to an entire site crew every time one person
+    leaves. That is the kind of friction that ends with the crew sharing a single login — which is
+    the exact thing the address list exists to prevent.</p>
+    <p class="vi">Gộp lại nghĩa là mỗi lần một người nghỉ thì phải gửi lại liên kết cho cả đội. Đó chính là kiểu
+    phiền toái dẫn tới việc cả đội dùng chung một lần đăng nhập — đúng thứ mà danh sách địa chỉ sinh
+    ra để ngăn chặn.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">Two bugs worth knowing about</span><span class="vi">Hai lỗi đáng để biết</span></h2>
+    <p class="sub en">
+      Both shipped green. Both were controls that examined something <em>adjacent</em> to what they
+      claimed to examine — which is why no test caught either.
+    </p>
+    <p class="sub vi">
+      Cả hai đều đi qua kiểm thử với màu xanh. Cả hai đều là những cơ chế kiểm tra một thứ <em>nằm
+      cạnh</em> thứ mà chúng tuyên bố kiểm tra — nên không bài kiểm thử nào bắt được.
+    </p>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="font-size:16px;font-weight:600;margin-bottom:8px">
+        <span class="en">"Sign everyone out" signed nobody out</span><span class="vi">"Đăng xuất tất cả" không đăng xuất được ai</span>
+      </h4>
+      <div class="en">
+        <p style="color:var(--mut);font-size:15px;margin:0">It deleted the contractor's
+        <span class="mono">dr_access</span> rows — but those hold the pending code and lockout counter
+        for <b style="color:var(--ink)">one address</b>, not a session. The session is a
+        self-contained signed cookie the server never stored and cannot delete. A phone kept working
+        for its remaining thirty days behind a button that said otherwise.</p>
+        <p style="color:var(--mut);font-size:15px;margin:9px 0 0">Found by writing the user
+        documentation for the button. Fixed with the generation number.</p>
+      </div>
+      <div class="vi">
+        <p style="color:var(--mut);font-size:15px;margin:0">Nó xóa các bản ghi
+        <span class="mono">dr_access</span> của nhà thầu — nhưng những bản ghi đó giữ mã đang chờ và bộ
+        đếm khóa của <b style="color:var(--ink)">một địa chỉ</b>, không phải một phiên đăng nhập.
+        Phiên đăng nhập là một cookie tự chứa đã ký, máy chủ chưa bao giờ lưu và không thể xóa. Một
+        chiếc điện thoại vẫn dùng được suốt ba mươi ngày còn lại, phía sau một cái nút nói điều ngược
+        lại.</p>
+        <p style="color:var(--mut);font-size:15px;margin:9px 0 0">Phát hiện ra khi viết tài liệu hướng
+        dẫn cho chính cái nút đó. Đã sửa bằng số thế hệ.</p>
+      </div>
+    </div>
+    <div class="card">
+      <h4 style="font-size:16px;font-weight:600;margin-bottom:8px">
+        <span class="en">The sender could be the string "1"</span><span class="vi">Người gửi có thể là chuỗi "1"</span>
+      </h4>
+      <div class="en">
+        <p style="color:var(--mut);font-size:15px;margin:0">The code email's sender fell back through
+        <span class="mono">portal_apprEmail</span> — which is not an address. It is the "Approval
+        emails" <b style="color:var(--ink)">checkbox</b>, stored as "1" or "0". Both are non-empty
+        strings, so the fallback could never be falsy.</p>
+        <p style="color:var(--mut);font-size:15px;margin:9px 0 0">Found while verifying the
+        <span class="mono">Mail.Send</span> consent — by checking whether the test I had just watched
+        succeed was the same path the daily report actually uses. It was not.</p>
+      </div>
+      <div class="vi">
+        <p style="color:var(--mut);font-size:15px;margin:0">Địa chỉ gửi mã dự phòng qua
+        <span class="mono">portal_apprEmail</span> — vốn không phải một địa chỉ. Đó là
+        <b style="color:var(--ink)">ô đánh dấu</b> "Email phê duyệt", lưu dưới dạng "1" hoặc "0". Cả
+        hai đều là chuỗi khác rỗng, nên nhánh dự phòng không bao giờ có thể sai.</p>
+        <p style="color:var(--mut);font-size:15px;margin:9px 0 0">Phát hiện khi kiểm chứng quyền
+        <span class="mono">Mail.Send</span> — bằng cách xem thử cái vừa chạy thành công có đúng là
+        đường đi mà báo cáo hằng ngày thật sự dùng hay không. Hóa ra là không.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2><span class="en">Where it stands</span><span class="vi">Hiện trạng</span></h2>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th><span class="en">Piece</span><span class="vi">Hạng mục</span></th>
+        <th><span class="en">State</span><span class="vi">Trạng thái</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td><span class="en">Report, ten pages, letterhead PDF</span><span class="vi">Báo cáo mười trang, PDF giấy tiêu đề</span></td>
+            <td><b style="color:var(--good)"><span class="en">Live</span><span class="vi">Đang chạy</span></b></td></tr>
+        <tr><td><span class="en">Contractor link, code sign-in, site form</span><span class="vi">Liên kết nhà thầu, đăng nhập bằng mã, biểu mẫu công trường</span></td>
+            <td><b style="color:var(--good)"><span class="en">Live</span><span class="vi">Đang chạy</span></b></td></tr>
+        <tr><td><span class="en">Report Setup — show / email / revoke the link</span><span class="vi">Thiết lập báo cáo — hiện / gửi / thu hồi liên kết</span></td>
+            <td><b style="color:var(--good)"><span class="en">Live</span><span class="vi">Đang chạy</span></b></td></tr>
+        <tr><td><span class="en">Graph <span class="mono">Mail.Send</span> (application permission)</span><span class="vi">Quyền Graph <span class="mono">Mail.Send</span> (mức ứng dụng)</span></td>
+            <td><b style="color:var(--good)"><span class="en">Consented 5 Sep</span><span class="vi">Đã cấp 5/9</span></b></td></tr>
+        <tr><td><span class="en">SharePoint + MS Forms route</span><span class="vi">Đường SharePoint + MS Forms</span></td>
+            <td><span class="en">Built, kept as the fallback</span><span class="vi">Đã dựng, giữ làm phương án dự phòng</span></td></tr>
+        <tr><td><span class="en">Exchange application access policy</span><span class="vi">Chính sách giới hạn hộp thư của Exchange</span></td>
+            <td><b style="color:var(--warn)"><span class="en">Open</span><span class="vi">Còn bỏ ngỏ</span></b> <span class="en">— send-as is tenant-wide until it is set</span><span class="vi">— chưa đặt thì quyền gửi thay áp cho toàn tenant</span></td></tr>
+        <tr><td><span class="en">One real code, end to end, on a live link</span><span class="vi">Một mã thật, chạy trọn vòng, trên liên kết thật</span></td>
+            <td><b style="color:var(--warn)"><span class="en">Not yet run</span><span class="vi">Chưa chạy</span></b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="foot en">
+    Every figure on this page is Taikisha's 1 September 2026 report as the client received it —
+    530 and 292 days, 13 management staff, 91 workers — recomputed here through
+    <span class="mono">daily_report.py</span> rather than copied.
+  </p>
+  <p class="foot vi">
+    Mọi con số trên trang này là báo cáo ngày 01/09/2026 của Taikisha đúng như khách hàng đã nhận —
+    530 và 292 ngày, 13 nhân sự quản lý, 91 công nhân — được tính lại tại đây bằng
+    <span class="mono">daily_report.py</span> chứ không chép lại.
+  </p>
+</section>
+
+</div>
+
+<script>
+function setLang(l){
+  document.body.classList.toggle('vi', l === 'vi');
+  document.documentElement.lang = l;
+  document.getElementById('b-en').setAttribute('aria-pressed', String(l !== 'vi'));
+  document.getElementById('b-vi').setAttribute('aria-pressed', String(l === 'vi'));
+  // Per-viewer convenience only. Wrapped because a private window, cleared site data, or a
+  // thumbnail capture can make the accessor itself throw, and the page must still render.
+  try { localStorage.setItem('drDemoLang', l); } catch (e) {}
+}
+try {
+  var saved = localStorage.getItem('drDemoLang');
+  if (saved === 'vi' || saved === 'en') setLang(saved);
+  else if ((navigator.language || '').toLowerCase().indexOf('vi') === 0) setLang('vi');
+} catch (e) {}
+</script>
