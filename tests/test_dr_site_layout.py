@@ -100,3 +100,39 @@ def test_the_platform_palette_is_the_platforms(css):
                          ("--danger", "#C00000"), ("--line", "#dde2ee")):
         assert re.search(re.escape(token) + r":\s*" + re.escape(value), css, re.I), \
             "%s is not the platform's %s" % (token, value)
+
+
+def test_headings_on_the_navy_bar_set_their_colour_explicitly(css):
+    """The base rule paints headings navy, which is right on every white card and catastrophic on
+    the navy bar — it painted the title navy-on-navy and left it barely readable. A colour that
+    arrives only by inheritance is one a later rule can take away without touching the element it
+    belongs to."""
+    m = re.search(r"header h1\{([^}]*)\}", css, re.S)
+    assert m, "no header h1 rule"
+    assert "color:#fff" in m.group(1).replace(" ", ""), \
+        "the header title relies on inherited colour: %r" % m.group(1)
+
+
+def test_there_is_one_focus_colour(css):
+    """`input:focus` (0,1,1) outranks `:focus-visible` (0,1,0), so a page can end up with two focus
+    treatments — fields one colour, buttons another — without anybody choosing that. It did."""
+    rules = re.findall(r"([^{}]*focus[^{}]*)\{([^}]*)\}", css, re.S)
+    colours = set()
+    for _sel, body in rules:
+        m = re.search(r"outline:[^;]*solid\s+var\((--[a-z-]+)\)", body)
+        if m:
+            colours.add(m.group(1))
+    assert colours, "nothing sets a focus outline at all"
+    assert colours == {"--emerald"}, \
+        "focus is not one accent colour: %s" % sorted(colours)
+
+
+def test_elevation_is_a_ring_and_not_a_smudge(css):
+    """HML-BG-002: flat and engineered, no heavy drop shadows. The page had a 34px soft drop under
+    every card, which on a phone in daylight reads as a smudge rather than an edge."""
+    m = re.search(r"--shadow-card:([^;]*);", css)
+    assert m, "no --shadow-card token"
+    blur = [int(x) for x in re.findall(r"(\d+)px", m.group(1))]
+    assert max(blur) <= 24, "the card shadow is heavier than the system allows: %s" % m.group(1)
+    assert "--ring:inset 0 0 0 1px" in css.replace(" ", " "), \
+        "no hairline ring token — the card edge is a shadow again"
