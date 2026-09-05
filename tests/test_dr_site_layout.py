@@ -145,3 +145,41 @@ def test_elevation_is_a_ring_and_not_a_smudge(css):
     assert max(blur) <= 24, "the card shadow is heavier than the system allows: %s" % m.group(1)
     assert "--ring:inset 0 0 0 1px" in css.replace(" ", " "), \
         "no hairline ring token — the card edge is a shadow again"
+
+
+def test_the_footer_row_fills_the_bar(css):
+    """Sign out sat in the middle of the footer, not at its end.
+
+    `footer.doc-foot` is itself a flex container and `.frow` is its only child — so `.frow` is a
+    flex ITEM, and an item that is not told to grow is sized to its content. Measured in a browser
+    at a 1331px viewport: the row came out 907px inside a 1299px bar, leaving Sign out 372px short
+    of the edge. It reads as centred, which is what was reported.
+
+    `.fline` already carries `flex:1 1 auto` and could not fix it: there was no free space inside
+    `.frow` to distribute, because `.frow` itself had none. So the assertion is on the ROW, and on
+    the mechanism rather than on the pixel — a width that only holds at one viewport is not the
+    property anybody wants.
+    """
+    m = re.search(r"footer\.doc-foot \.frow\{([^}]*)\}", css, re.S)
+    assert m, "the footer row rule is gone"
+    body = " ".join(m.group(1).split())
+    assert re.search(r"flex:1 1 auto|flex-grow:1", body), \
+        "the footer row is not told to grow, so Sign out floats mid-bar: %s" % body
+    assert "width:100%" in body, \
+        "the row has no width to fall back on when the bar is not a flex container: %s" % body
+
+
+def test_sign_out_still_clears_the_corner_triangle(css):
+    """The other half, and the reason the fix is `flex`, not `justify-content:flex-end` on the
+    footer. The emerald corner is 52px and sits over the bottom-right; the footer's 68px right
+    padding is what keeps the button off it. Pushing content to the very edge instead would put
+    Sign out back under the triangle — the exact bug fixed earlier by measuring rather than by eye.
+    """
+    m = re.search(r"footer\.doc-foot\{([^}]*)\}", css, re.S)
+    assert m, "the footer rule is gone"
+    pad = re.search(r"padding:(\d+)px (\d+)px", " ".join(m.group(1).split()))
+    assert pad, "the footer has no padding shorthand to read: %s" % m.group(1)
+    corner = re.search(r"footer\.doc-foot \.corner\{([^}]*)\}", css, re.S)
+    size = int(re.search(r"width:(\d+)px", " ".join(corner.group(1).split())).group(1))
+    assert int(pad.group(2)) > size, \
+        "the right padding (%spx) no longer clears the %dpx corner triangle" % (pad.group(2), size)

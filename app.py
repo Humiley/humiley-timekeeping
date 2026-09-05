@@ -15077,8 +15077,20 @@ class Handler(BaseHTTPRequestHandler):
         # thing the whole access boundary hangs off, and a client-chosen one would be a client-chosen
         # secret. Emailing it is deliberately NOT automatic — the addresses are usually typed after
         # the contractor is created, so Report Setup has a Send button that reports what happened.
-        if name == "dr_contractors" and not item.get("token"):
-            item["token"] = dr_access.new_token()
+        if name == "dr_contractors":
+            if not item.get("token"):
+                item["token"] = dr_access.new_token()
+            # The mailbox this contractor's link and codes go out from, decided HERE rather than on
+            # first send. A contractor is created, then configured, then the link is emailed — often
+            # over an afternoon — and until the send there was no sender recorded at all: the health
+            # panel could not list the mailbox and the Exchange application access policy could not
+            # be built from it. Whoever sets a contractor up is the person that site will be hearing
+            # from, so record them when they set it up.
+            #
+            # From the SESSION, never from the body: this is a From address handed to Graph, so a
+            # client-supplied one would let any colleague with write access on the project make the
+            # portal send a sign-in code as somebody else.
+            item["issuedBy"] = dr_access.norm_email(u.get("email"))
         if name == "ahu_units":
             _err_fam = self._ahu_check_family(item)
             if _err_fam:
@@ -22114,6 +22126,35 @@ class Handler(BaseHTTPRequestHandler):
                 for _k in ("createdBy", "createdById", "owner"):
                     if _ex.get(_k) is not None:
                         item[_k] = _ex.get(_k)
+            # Three fields on a contractor that decide ACCESS, restored from the stored row rather
+            # than taken from the request. Report Setup saves by PATCHing the whole object back, and
+            # this route is a blind full-document replace, so whatever the browser is holding is
+            # re-asserted on every save — including a copy loaded before somebody else changed it.
+            #
+            #   issuedBy      the mailbox the app sends as; a body-supplied one is a chosen From
+            #   token         the permanent link, and a client-chosen secret is not a secret
+            #   sessionEpoch  the generation "Sign everyone out" bumps
+            #
+            # The last is the one that bites with nobody doing anything wrong: revoke bumps the
+            # generation, a browser that loaded the contractor earlier still holds the old one, and
+            # the next Save setup writes it back — signing every revoked device back in, from a
+            # screen that says nothing about sessions. These move only through the endpoints that
+            # own them (_dr_send_link, _dr_revoke_ep), which write the row directly.
+            if _ex and name == "dr_contractors":
+                for _k in ("issuedBy", "token", "sessionEpoch"):
+                    if _ex.get(_k) is not None:
+                        item[_k] = _ex.get(_k)
+                    else:
+                        item.pop(_k, None)
+                # A contractor created before the sender was recorded has none, and would keep none
+                # for as long as nobody re-sent its link — leaving it on the department mailbox and
+                # invisible to the health panel. Saving its setup adopts it: the person configuring
+                # a contractor is the person that site will be hearing from. Still from the session,
+                # so this is a migration path and not a way to nominate somebody.
+                if not dr_access.norm_email(_ex.get("issuedBy")):
+                    _who = dr_access.norm_email(u.get("email"))
+                    if _who:
+                        item["issuedBy"] = _who
             _key = "id" if name == "dr_settings" else "projectId"
             _was = str((_ex or {}).get(_key) or (iid if name == "dr_settings" else ""))
             _refuse = self._pm_write_refusal(u, _was)
