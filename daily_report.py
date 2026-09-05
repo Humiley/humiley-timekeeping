@@ -72,6 +72,28 @@ SECTION_KEYS = tuple(s["key"] for s in SECTIONS)
 DOC_GROUPS = ("7.1- Construction Shop Drawings", "7.2- Method Statements",
               "7.3- Material Submission", "7.4- Other Submissions")
 
+# The work categories 5.1, 5.3 and the photo grid group under. Shipped as the default for the same
+# reason as the safety checks below: a contractor set up in a hurry, with none entered, otherwise
+# gets a one-option dropdown on the photo section and files every image under whatever that one
+# happens to be — which is worse than an unconfigured list, because it looks configured.
+#
+# Drawn from the two reports this module was built against: the union of Taikisha's six (MEP-led)
+# and Newtecons' three (civil-led), which between them cover both kinds of package on this job. A
+# contractor edits its own list in Report Setup and the default then stops applying — the same
+# contract SAFETY_DEFAULTS has.
+CATEGORY_DEFAULTS = (
+    "Architectural Finishing Works",
+    "Civil Structure Works",
+    "Electrical Works",
+    "External Works",
+    "Fire Fighting Works",
+    "HVAC Works",
+    "Plumbing Works",
+    "Utility Works",
+    "Other Works",
+)
+
+
 # The eleven safety checks the report asks about every day. Shipped as the default for a new
 # contractor, which may then edit its own list — a site with no hot works should not be answering
 # a hot-work question daily, and a site with confined-space entry needs a line the default lacks.

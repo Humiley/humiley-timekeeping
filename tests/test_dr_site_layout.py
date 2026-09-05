@@ -42,9 +42,18 @@ def test_the_responsive_rules_come_after_the_rules_they_override(css):
 
 def test_every_breakpoint_the_brief_named_is_present(css):
     """Phone, iPad, desktop. A missing breakpoint is not a crash — it is a page that merely looks
-    unfinished on one of the three devices it was asked to work on."""
-    for q in ("max-width:400px", "min-width:700px", "min-width:1024px"):
+    unfinished on one of the three devices it was asked to work on.
+
+    The narrow-phone breakpoint is checked as a RANGE, not a pixel: where exactly the two-up fields
+    stop fitting is a judgement that moved once already (400 → 430, when the header gained a logo
+    and three things started competing for 375px). Pinning the number made the test fail on a
+    deliberate tuning and said nothing about whether phones were covered."""
+    for q in ("min-width:700px", "min-width:1024px"):
         assert "@media (" + q + ")" in css, "no rules for %s" % q
+
+    narrow = [int(n) for n in re.findall(r"@media \(max-width:(\d+)px\)", css)]
+    assert any(360 <= n <= 480 for n in narrow), \
+        "no narrow-phone breakpoint between 360 and 480px: %s" % narrow
 
 
 def test_form_text_stays_at_sixteen_pixels(css):
