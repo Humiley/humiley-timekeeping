@@ -13,6 +13,12 @@ and the portal assembles the report.
 Projects switch governs it and the project's own team scope decides who can see it. Report Setup is
 a panel of the same tab (manager level and above); there is no separate screen for it.
 
+**[daily-report-walkthrough.html](daily-report-walkthrough.html)** is the same story told for
+somebody who does not read code — the six steps of a reported day, what the site sees on a phone,
+the ten pages, and the six attacks the link has to refuse. English and Vietnamese, one HTML file
+with no build step: open it in a browser, or send it to a client. This document remains the
+reference; that one is the explanation.
+
 ## What is on it
 
 | Page | Section | What it holds |
