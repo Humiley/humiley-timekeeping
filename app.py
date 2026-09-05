@@ -4738,6 +4738,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._dr_site_page(urllib.parse.unquote(path[len("/dr/"):]).strip("/"))
         if path == "/api/dr/site/day":
             return self._dr_site_day(qs)
+        if path == "/api/dr/site/logo":
+            return self._dr_site_logo((qs.get("token") or [""])[0])
         if path == "/api/dr/report":
             return self._guard(lambda u: self._dr_report_ep(u, qs))
         if path.startswith("/api/dr/photo/"):
@@ -10532,6 +10534,50 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    def _dr_site_logo(self, token):
+        """The signed-in contractor's logo, as bytes.
+
+        Served from its own URL rather than inlined in /api/dr/site/day, for two reasons. The logo
+        is stored as a base64 data URI on the contractor row, so inlining it would put the whole
+        image into the JSON of EVERY day the site opens — the same shape as the base64-in-list-reads
+        problem that timed the Quality tab out. Here the browser caches it once and the day payload
+        stays small on a plant-room connection.
+
+        BEHIND THE SESSION, not behind the token. A valid-shaped unknown token has to render exactly
+        what a real one does, or the page becomes a way to find out which tokens exist; a logo
+        appearing before sign-in would say "this link is real, and it belongs to Taikisha" to
+        anybody holding a guess.
+        """
+        con, _sess = self._dr_site_auth(token)
+        if not con:
+            return self._err("Please sign in again.", 401)
+        raw = str(con.get("logo") or "")
+        m = re.match(r"^data:(image/[A-Za-z0-9.+-]{1,40});base64,(.+)$", raw, re.S)
+        if not m:
+            return self._err("No logo.", 404)
+        try:
+            data = base64.b64decode(m.group(2), validate=False)
+        except Exception:
+            return self._err("No logo.", 404)
+        if not data or len(data) > 4 * 1024 * 1024:
+            return self._err("No logo.", 404)
+        ctype = m.group(1)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        # private: it is one contractor's mark on one contractor's form, and a shared cache has no
+        # business holding it. Short enough that replacing the logo in Report Setup shows up the
+        # same working day.
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
+        self._emit_sec_headers(ctype)
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
+
     def _dr_photo_bytes(self, row):
         """(bytes, content-type, error). Exactly one of bytes/error is meaningful."""
         pid = str(row.get("id") or "")
@@ -10974,7 +11020,11 @@ class Handler(BaseHTTPRequestHandler):
                                 dr_access.SESSION_TTL)
         return self._json({
             "ok": True, "date": day, "today": self._vn_day(),
-            "contractor": {"name": con.get("name") or "", "email": sess.get("email")},
+            # `hasLogo`, not the logo: a flag costs nothing and the bytes come from their own
+            # cacheable URL. The page needs to know only whether to draw the <img> at all, so a
+            # contractor with no mark gets its name at full width instead of a broken frame.
+            "contractor": {"name": con.get("name") or "", "email": sess.get("email"),
+                           "hasLogo": bool(str(con.get("logo") or "").startswith("data:image/"))},
             "setup": {"mgmtRoles": list(con.get("mgmtRoles") or []),
                       "workerTrades": list(con.get("workerTrades") or []),
                       "categories": list(con.get("categories") or []),
