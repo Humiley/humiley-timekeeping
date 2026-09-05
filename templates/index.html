@@ -51626,6 +51626,9 @@ function _drSetupContractor(cons, c) {
         _t('The SharePoint forms the site fills in') + '</div>' +
       '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' +
         _t('One list per table, each row carrying its date and contractor. Paste the link to each. A list left blank contributes nothing — plenty of days have no defects list at all.') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' +
+        _t('Because every row names its contractor, ONE set of twelve lists can serve every contractor on the project — the sync only reads the rows that name this one. Build them once, then copy the links to each contractor below. Separate lists per contractor also work, if a client wants them kept apart.') +
+      '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px">' +
         _DR_LIST_KINDS.map(([k, label]) =>
           '<label style="display:flex;flex-direction:column;gap:3px;font-size:12px">' +
@@ -51633,6 +51636,7 @@ function _drSetupContractor(cons, c) {
           '<input class="form-control" data-drlist="' + k + '" value="' +
           _tkEscA(((c.lists || {})[k]) || '') + '" placeholder="https://…/sites/…/Lists/…"></label>').join('') +
       '</div>' +
+      _drCopyListsRow(c) +
       '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
         '<button class="btn btn-primary btn-sm" onclick="tkDrSaveContractor()">' + _t('Save setup') + '</button>' +
         '<button class="btn btn-outline btn-sm" onclick="tkDrDetect()">' + _t('Check the lists') + '</button>' +
@@ -51650,6 +51654,55 @@ const _DR_LIST_KINDS = [
   ['safety', 'Safety Control Activities'], ['recommendations', 'Requests & Recommendations'],
   ['photos', 'Daily Progress Photos'],
 ];
+
+
+/* ── copying one contractor's list links to another ──────────────────────────────────────────────
+   Twelve URLs typed per contractor is where this setup actually goes wrong: it is long enough that
+   somebody pastes the Progress list into the Plan field on the fourth contractor and the report then
+   shows tomorrow's work as today's, with nothing anywhere reporting a mistake. Since every row names
+   its own contractor, the same twelve lists serve the whole project — so the honest control is not a
+   faster way to type them but a way not to type them twice. */
+function _drOtherContractorsWithLists(c) {
+  return (_HR.dr_contractors || []).filter(x =>
+    String(x.projectId || '') === String(_DR.pid) &&
+    x.id !== c.id &&
+    Object.keys(x.lists || {}).some(k => String((x.lists || {})[k] || '').trim()));
+}
+
+function _drCopyListsRow(c) {
+  const others = _drOtherContractorsWithLists(c);
+  if (!others.length) return '';       // nothing to copy FROM: the control would only confuse
+  return '<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap;' +
+    'padding-top:12px;border-top:1px dashed var(--line)">' +
+    '<span style="font-size:12px;color:var(--text-light);font-weight:600">' +
+      _t('Use the same lists as') + '</span>' +
+    '<select class="form-control" id="dr-copy-from" style="width:auto;min-width:170px;font-size:13px">' +
+      others.map(o => '<option value="' + _tkEscA(o.id) + '">' + _crmEsc(o.name || o.id) +
+                      ' (' + Object.keys(o.lists || {}).filter(k => String((o.lists||{})[k]||'').trim()).length +
+                      ')</option>').join('') +
+    '</select>' +
+    '<button class="btn btn-outline btn-sm" onclick="tkDrCopyLists()">' + _t('Copy the links') + '</button>' +
+    '</div>';
+}
+
+async function tkDrCopyLists() {
+  const cur = (_HR.dr_contractors || []).find(x => x.id === _DRS.contractorId); if (!cur) return;
+  const sel = document.getElementById('dr-copy-from'); if (!sel) return;
+  const from = (_HR.dr_contractors || []).find(x => x.id === sel.value); if (!from) return;
+  const src = from.lists || {};
+  const keys = Object.keys(src).filter(k => String(src[k] || '').trim());
+  if (!keys.length) return;
+
+  /* Fill the boxes on screen rather than saving behind their back, so the links can be seen and one
+     of them changed before anything is written. The rest of this panel already works that way. */
+  let n = 0;
+  document.querySelectorAll('[data-drlist]').forEach(el => {
+    const k = el.getAttribute('data-drlist');
+    if (String(src[k] || '').trim()) { el.value = src[k]; n++; }
+  });
+  toast(_tp('{0} link(s) copied from {1}. Press Save setup to keep them.', n, from.name || from.id),
+        'info', 7000);
+}
 
 function _drListField(label, key, val, hint) {
   return '<label style="display:flex;flex-direction:column;gap:4px;font-size:12px">' +

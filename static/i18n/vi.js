@@ -6550,6 +6550,10 @@ window._VI = {
   'Issue a new link for this contractor?\n\nEvery copy of the old link stops working, including any the site has bookmarked — so it has to be emailed out again.': 'Cấp liên kết mới cho nhà thầu này?\n\nMọi bản sao của liên kết cũ sẽ ngừng hoạt động, kể cả liên kết công trường đã lưu — nên phải gửi lại qua email.',
   'A new link has been issued. Email it to the site — the old one no longer works.': 'Đã cấp liên kết mới. Hãy gửi cho công trường — liên kết cũ không còn dùng được.',
   'Could not issue a new link': 'Không cấp được liên kết mới',
+  'Because every row names its contractor, ONE set of twelve lists can serve every contractor on the project — the sync only reads the rows that name this one. Build them once, then copy the links to each contractor below. Separate lists per contractor also work, if a client wants them kept apart.': 'Vì mỗi dòng đều ghi rõ nhà thầu, MỘT bộ mười hai danh sách có thể dùng chung cho mọi nhà thầu của dự án — khi đồng bộ, hệ thống chỉ đọc những dòng ghi tên nhà thầu này. Tạo một lần, rồi sao chép liên kết sang từng nhà thầu bên dưới. Vẫn có thể tách riêng danh sách cho từng nhà thầu, nếu khách hàng muốn để riêng.',
+  'Use the same lists as': 'Dùng chung danh sách với',
+  'Copy the links': 'Sao chép liên kết',
+  '{0} link(s) copied from {1}. Press Save setup to keep them.': 'Đã sao chép {0} liên kết từ {1}. Bấm Lưu thiết lập để giữ lại.',
   /* ── Daily Report ── the construction daily report to the client: its ten sections, the
      SharePoint lists behind them, and the eleven shipped safety checks. The people who
      fill these forms in work on the site, so the screen has to be readable there. */
